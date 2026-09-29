@@ -1,0 +1,3 @@
+# Never push something that doesn't compile or breaks unit tests.
+pnpm typecheck
+pnpm test

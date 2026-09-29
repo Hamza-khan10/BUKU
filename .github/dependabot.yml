@@ -1,0 +1,25 @@
+# Weekly dependency updates, grouped to keep PR noise low. Security updates are
+# raised immediately regardless of this schedule (enable "Dependabot security
+# updates" in the repository settings).
+version: 2
+updates:
+  - package-ecosystem: npm # pnpm workspaces are supported via the npm ecosystem
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 10
+    groups:
+      prisma: { patterns: ['prisma', '@prisma/*'] }
+      lint-and-types:
+        { patterns: ['eslint*', '@eslint/*', 'typescript-eslint', 'typescript', '@types/*', 'prettier'] }
+      test: { patterns: ['vitest', 'supertest', '@types/supertest'] }
+    commit-message: { prefix: 'chore', include: 'scope' }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday }
+    commit-message: { prefix: 'ci' }
+
+  - package-ecosystem: docker
+    directories: ['/docker/node', '/docker/postgres']
+    schedule: { interval: weekly, day: monday }
+    commit-message: { prefix: 'chore', include: 'scope' }

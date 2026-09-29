@@ -1,0 +1,12 @@
+# 1) Lint + format only the staged files (fast).
+pnpm exec lint-staged
+
+# 2) Secret scan of the staged diff. A leaked Paddle/Twilio/AWS key or a
+#    committed .env is a real-money incident; block it before it exists.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --pre-commit --staged --redact --no-banner --config .gitleaks.toml
+else
+  echo "gitleaks not installed locally — scanning with Docker (install it for speed: see docs/DEVELOPMENT.md)"
+  docker run --rm -v "$(pwd):/repo" -w /repo zricethezav/gitleaks:v8.30.1 \
+    git --pre-commit --staged --redact --no-banner --config .gitleaks.toml /repo
+fi

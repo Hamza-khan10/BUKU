@@ -1,0 +1,42 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# Shared DEVELOPMENT image for every Node workload in docker-compose.dev.yml
+# (7 services, migrations, Kafka topic sync). Built once, reused by all.
+#
+# Dependencies are installed INSIDE the image; only source folders are
+# bind-mounted (read-only) at runtime, so the host's node_modules never mixes
+# with the container's, and a container cannot modify your source tree.
+# Changing package.json / pnpm-lock.yaml → `docker compose build`.
+# ═══════════════════════════════════════════════════════════════════════════
+FROM node:24.21.0-trixie-slim
+
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    NODE_ENV=development \
+    CI=true \
+    CHECKPOINT_DISABLE=1 \
+    PRISMA_HIDE_UPDATE_MESSAGE=1
+RUN npm install -g pnpm@12.8.1 --no-fund --no-audit \
+ && mkdir -p /app && chown node:node /app
+
+USER node
+WORKDIR /app
+
+# Manifests first: this layer is cached until dependencies change.
+COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY --chown=node:node packages/common/package.json   packages/common/
+COPY --chown=node:node packages/database/package.json packages/database/
+COPY --chown=node:node packages/kafka/package.json    packages/kafka/
+COPY --chown=node:node services/auth/package.json         services/auth/
+COPY --chown=node:node services/booking/package.json      services/booking/
+COPY --chown=node:node services/queue/package.json        services/queue/
+COPY --chown=node:node services/notification/package.json services/notification/
+COPY --chown=node:node services/search/package.json       services/search/
+COPY --chown=node:node services/ads/package.json          services/ads/
+COPY --chown=node:node services/analytics/package.json    services/analytics/
+RUN pnpm install --frozen-lockfile
+
+# Full source so the image also works without bind mounts.
+COPY --chown=node:node tsconfig.base.json ./
+COPY --chown=node:node packages ./packages
+COPY --chown=node:node services ./services
+RUN pnpm --filter @buku/database generate

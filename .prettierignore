@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+pnpm-lock.yaml
+packages/database/src/generated
+packages/database/prisma/migrations
+.changeset/*.md
+Buku-platformd-developement-guide.md

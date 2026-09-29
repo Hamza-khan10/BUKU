@@ -1,0 +1,17 @@
+# Keep the Docker build context small and free of secrets.
+**/node_modules
+**/dist
+**/coverage
+.git
+.github
+.husky
+.changeset
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.zip
+docs
+**/*.md
+!packages/database/prisma/**/*.md

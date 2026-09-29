@@ -1,0 +1,19 @@
+{
+  "name": "@buku/kafka",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kafka topic registry, event envelope, producer/consumer factories and the transactional-outbox relay.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "topics:sync": "tsx scripts/sync-topics.ts"
+  },
+  "dependencies": {
+    "@buku/common": "workspace:*",
+    "@buku/database": "workspace:*",
+    "@confluentinc/kafka-javascript": "1.10.1",
+    "zod": "4.6.5"
+  }
+}

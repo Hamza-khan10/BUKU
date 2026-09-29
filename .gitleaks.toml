@@ -1,0 +1,15 @@
+# gitleaks configuration — extends the default ruleset (AWS, Twilio, Stripe,
+# private keys, generic high-entropy secrets, ...).
+title = "BUKU gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented placeholders and test fixtures"
+paths = [
+  '''\.env\.example$''',
+  '''\.env\.production\.example$''',
+  '''pnpm-lock\.yaml$''',
+  '''packages/.*/test/fixtures/.*''',
+]

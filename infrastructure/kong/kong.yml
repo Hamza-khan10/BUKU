@@ -1,0 +1,170 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# BUKU API gateway — Kong 3.9 (DB-less, declarative)
+#
+# The gateway is the ONLY public entry point to the services. It provides:
+#   • routing by path to the owning service (services are never exposed)
+#   • CORS with an explicit origin allow-list (preflight answered here)
+#   • coarse per-IP rate limits (counters in Valkey → consistent across
+#     gateway replicas); services add precise per-user/per-phone limits
+#   • request-size limits (uploads bypass the API via presigned S3 URLs)
+#   • correlation ids (X-Request-ID) propagated to every service log line
+#
+# Services verify JWTs THEMSELVES (defense in depth: a request that somehow
+# bypasses the gateway is still rejected). Gateway-level JWT validation is
+# added in Phase 2, once auth-service issues tokens (see docs/BUILD_GUIDE.md).
+#
+# /health, /ready and /metrics are deliberately NOT routed: they stay internal.
+# ═══════════════════════════════════════════════════════════════════════════
+_format_version: '3.0'
+_transform: true
+
+services:
+  - name: auth-service
+    url: http://auth-service:3001
+    connect_timeout: 5000
+    read_timeout: 30000
+    write_timeout: 30000
+    retries: 0 # never auto-retry non-idempotent auth calls (e.g. OTP send)
+    routes:
+      - name: auth
+        paths: ['/v1/auth']
+        strip_path: false
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 20
+          limit_by: ip
+          policy: redis
+          fault_tolerant: true
+          hide_client_headers: false
+          error_code: 429
+          error_message: Too many authentication attempts, please wait a minute
+          redis: &redis
+            host: valkey
+            port: 6379
+            password: '{vault://env/kong-redis-password}'
+            database: 1
+            timeout: 2000
+
+  - name: booking-service
+    url: http://booking-service:3002
+    connect_timeout: 5000
+    read_timeout: 30000
+    write_timeout: 30000
+    retries: 0
+    routes:
+      - name: appointments
+        paths: ['/v1/appointments']
+        strip_path: false
+      - name: business-booking
+        paths:
+          [
+            '~/v1/businesses/[^/]+/(appointments|availability|availability-rules|availability-exceptions|services|staff)($|/)',
+          ]
+        strip_path: false
+      - name: staff-invites
+        paths: ['/v1/staff']
+        strip_path: false
+
+  - name: queue-service
+    url: http://queue-service:3003
+    retries: 0
+    routes:
+      - name: queue
+        paths: ['/v1/queue']
+        strip_path: false
+
+  - name: notification-service
+    url: http://notification-service:3004
+    routes:
+      - name: notifications
+        paths: ['/v1/notifications', '/v1/users/me/notification-prefs']
+        strip_path: false
+
+  - name: search-service
+    url: http://search-service:3005
+    routes:
+      - name: search
+        paths:
+          - '/v1/businesses/search'
+          - '/v1/businesses/nearby'
+          - '/v1/businesses/autocomplete'
+          - '/v1/businesses/featured'
+          - '/v1/businesses/trending'
+          - '/v1/categories'
+        methods: [GET, OPTIONS]
+        strip_path: false
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 200
+          limit_by: ip
+          policy: redis
+          fault_tolerant: true
+          error_code: 429
+          error_message: Too many search requests, please slow down
+          redis: *redis
+
+  - name: ads-service
+    url: http://ads-service:3006
+    routes:
+      - name: ads
+        paths: ['/v1/ads', '/v1/admin/ads', '~/v1/businesses/[^/]+/ads($|/)']
+        strip_path: false
+
+  - name: analytics-service
+    url: http://analytics-service:3007
+    routes:
+      - name: analytics
+        paths: ['~/v1/businesses/[^/]+/analytics($|/)', '/v1/admin/analytics']
+        strip_path: false
+
+plugins:
+  # ── Global plugins (every route) ──
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true
+
+  - name: cors
+    config:
+      # Explicit allow-list, never "*". Production origins are added by the
+      # production config (Phase 5).
+      origins:
+        - http://localhost:3000
+        - http://127.0.0.1:3000
+      methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+      headers: [Authorization, Content-Type, X-Request-ID, Idempotency-Key]
+      exposed_headers: [X-Request-ID, RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset, Retry-After]
+      credentials: true
+      max_age: 86400
+      preflight_continue: false
+
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 128
+      size_unit: kilobytes
+      require_content_length: false
+
+  - name: rate-limiting
+    config:
+      minute: 500
+      limit_by: ip
+      policy: redis
+      fault_tolerant: true
+      error_code: 429
+      error_message: Too many requests, please slow down
+      redis: *redis
+
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - 'X-API-Version: 1'
+
+  - name: prometheus
+    config:
+      status_code_metrics: true
+      latency_metrics: true
+      upstream_health_metrics: true

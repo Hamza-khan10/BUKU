@@ -1,0 +1,3 @@
+# Default reviewer for everything. Add owners per area as the team grows,
+# e.g. `/packages/database/ @db-owner`, `/infrastructure/ @platform-owner`.
+* @Hamza-khan10

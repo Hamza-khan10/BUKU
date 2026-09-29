@@ -1,0 +1,2 @@
+# Conventional Commits: <type>(<scope>): <description>   e.g. feat(booking): add reschedule endpoint
+pnpm exec commitlint --edit "$1"

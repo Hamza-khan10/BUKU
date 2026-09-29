@@ -1,0 +1,42 @@
+packages:
+  - packages/*
+  - services/*
+
+# ── Supply-chain policy ─────────────────────────────────────────────────────
+# pnpm blocks every dependency lifecycle script by default. Only packages
+# listed here may run install/postinstall scripts, and each entry needs a
+# reason. Review any new entry in code review like you would review code.
+allowBuilds:
+  # Downloads the prebuilt librdkafka native binding (Kafka client).
+  '@confluentinc/kafka-javascript': true
+  # Downloads the Prisma schema engine used by `prisma migrate`.
+  '@prisma/engines': true
+  prisma: true
+  # Installs the platform-specific esbuild binary (used by tsx and tsup).
+  esbuild: true
+
+# Refuse to resolve package versions younger than 24h, which is when most
+# malicious npm releases are detected and pulled. (pnpm default, kept explicit.)
+minimumReleaseAge: 1440
+
+# Peers are declared explicitly where needed. Auto-installing them would drag
+# the ~400 MB Prisma CLI (a peer of @prisma/client) into production images.
+autoInstallPeers: false
+
+# Fail the install if a dependency needs a build script that is not
+# explicitly allowed above, instead of silently skipping it.
+strictDepBuilds: true
+
+# ── Security overrides ──────────────────────────────────────────────────────
+# Force patched versions of vulnerable TRANSITIVE dependencies until upstream
+# releases pick them up. Each entry: advisory, who pulls it in, why it is safe.
+# Remove an entry once `pnpm why <pkg>` shows upstream already requires a
+# patched version.
+overrides:
+  # GHSA-3f6p-5ww8-9rcr (high) + zlib inflate DoS (moderate). Pulled in by the
+  # Prisma CLI for MySQL support, which BUKU never uses. Same major version.
+  mysql2: 3.24.4
+  # Stack exhaustion on recursive graphs (high). Used by @prisma/config only
+  # to merge our own prisma.config.ts (plain objects); v8's breaking changes
+  # concern Map merging and type names, which that code path does not use.
+  deepmerge-ts: 8.0.2

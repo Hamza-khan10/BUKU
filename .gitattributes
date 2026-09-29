@@ -1,0 +1,8 @@
+# Normalize line endings: WSL + Windows editors otherwise produce CRLF shell
+# scripts that fail inside Linux containers with "bad interpreter".
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.zip binary

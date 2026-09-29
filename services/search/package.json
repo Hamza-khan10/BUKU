@@ -1,0 +1,23 @@
+{
+  "name": "@buku/search-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Business discovery: full-text + geo search, categories, autocomplete, ad injection.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "build": "tsup --config ../../tsup.config.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@buku/common": "workspace:*",
+    "@buku/database": "workspace:*",
+    "@buku/kafka": "workspace:*",
+    "@elastic/elasticsearch": "9.5.1",
+    "express": "5.2.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6"
+  }
+}

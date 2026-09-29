@@ -1,0 +1,1060 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// BUKU — PostgreSQL 17 schema (PostGIS + pgvector)
+//
+// Conventions
+//  • Primary keys are UUIDv7 (time-ordered: new rows land at the end of the
+//    B-tree index instead of random pages → much better insert performance
+//    than UUIDv4, and still safe to expose / shard later).
+//  • Every timestamp is TIMESTAMPTZ(6). Wall-clock business hours are
+//    "HH:MM" strings interpreted in the business's `timezone`.
+//  • Money is DECIMAL(10,2) + ISO 4217 currency.
+//  • Users' email/phone are stored ENCRYPTED (AES-256-GCM) with a keyed
+//    blind-index hash for lookups and uniqueness (see docs/DECISIONS.md).
+//  • Things Prisma cannot express (CHECK constraints, exclusion constraints,
+//    generated columns, partitioning, triggers) live in the hand-written part
+//    of the migrations and are listed in comments next to the model.
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────── ENUMS ───────────────────────────────
+
+enum UserRole {
+  user
+  staff
+  business_owner
+  super_admin
+}
+
+enum UserStatus {
+  active
+  suspended
+  deleted
+}
+
+enum OAuthProvider {
+  google
+  apple
+}
+
+enum DevicePlatform {
+  ios
+  android
+  web
+}
+
+enum BusinessStatus {
+  pending
+  verified
+  suspended
+  rejected
+}
+
+enum SubscriptionTier {
+  free
+  professional
+  enterprise
+}
+
+enum DocumentType {
+  business_license
+  medical_license
+  id_proof
+  address_proof
+}
+
+enum DocumentStatus {
+  pending
+  approved
+  rejected
+}
+
+enum StaffRole {
+  owner
+  manager
+  staff
+}
+
+enum ExceptionType {
+  holiday
+  modified
+  extra_hours
+}
+
+enum AppointmentStatus {
+  pending
+  confirmed
+  rescheduled
+  completed
+  cancelled
+  no_show
+}
+
+enum AppointmentPaymentStatus {
+  unpaid
+  deposit_paid
+  paid
+  refunded
+}
+
+enum PaymentStatus {
+  pending
+  authorized
+  captured
+  refunded
+  failed
+}
+
+enum ActorType {
+  user
+  business
+  system
+}
+
+enum QueueSessionStatus {
+  open
+  paused
+  closed
+}
+
+enum QueueEntryStatus {
+  waiting
+  called
+  serving
+  completed
+  left
+  no_show
+}
+
+enum NotificationChannel {
+  push
+  sms
+  email
+  in_app
+}
+
+enum NotificationStatus {
+  pending
+  sent
+  delivered
+  failed
+  read
+}
+
+enum AdType {
+  featured_listing
+  category_spotlight
+  city_banner
+  appointment_boost
+  new_user_promo
+}
+
+enum AdStatus {
+  draft
+  pending_approval
+  active
+  paused
+  expired
+  rejected
+}
+
+enum AdEventType {
+  impression
+  click
+  booking
+  profile_view
+}
+
+enum AiCallOutcome {
+  booked
+  not_booked
+  transferred
+  error
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  cancelled
+  paused
+  trialing
+}
+
+// ═════════════════════════════ IDENTITY ═════════════════════════════
+
+/// A person using BUKU. Consumers, staff and business owners are all users; `role` is their highest role.
+/// DB extras: CHECK at least one of email_hash / phone_hash; updated_at trigger.
+model User {
+  id                String     @id @default(uuid(7)) @db.Uuid
+  /// AES-256-GCM ciphertext, context "users.email".
+  emailEncrypted    String?    @map("email_encrypted")
+  /// HMAC-SHA256 blind index of the normalized email (lookups + uniqueness).
+  emailHash         String?    @unique @map("email_hash") @db.Char(64)
+  /// AES-256-GCM ciphertext, context "users.phone".
+  phoneEncrypted    String?    @map("phone_encrypted")
+  phoneHash         String?    @unique @map("phone_hash") @db.Char(64)
+  /// Argon2id PHC string. Null for OTP-only / social-login accounts.
+  passwordHash      String?    @map("password_hash") @db.VarChar(255)
+  name              String     @db.VarChar(200)
+  avatarUrl         String?    @map("avatar_url")
+  timezone          String     @default("UTC") @db.VarChar(60)
+  locale            String     @default("en") @db.VarChar(10)
+  role              UserRole   @default(user)
+  status            UserStatus @default(active)
+  emailVerifiedAt   DateTime?  @map("email_verified_at") @db.Timestamptz(6)
+  phoneVerifiedAt   DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
+  /// GDPR/legal: which Terms version the user accepted, and when.
+  termsVersion      String?    @map("terms_version") @db.VarChar(20)
+  termsAcceptedAt   DateTime?  @map("terms_accepted_at") @db.Timestamptz(6)
+  passwordChangedAt DateTime?  @map("password_changed_at") @db.Timestamptz(6)
+  lastLoginAt       DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  /// Soft delete; a scheduled job hard-deletes 30 days later (GDPR erasure).
+  deletedAt         DateTime?  @map("deleted_at") @db.Timestamptz(6)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  oauthAccounts     OAuthAccount[]
+  refreshTokens     RefreshToken[]
+  pushTokens        PushToken[]
+  notificationPrefs NotificationPreference?
+  ownedBusinesses   Business[]              @relation("BusinessOwner")
+  staffProfiles     Staff[]
+  appointments      Appointment[]
+  payments          Payment[]
+  reviews           Review[]
+  favourites        Favourite[]
+  queueEntries      QueueEntry[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  reviewedDocuments BusinessDocument[]      @relation("DocumentReviewer")
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+/// Links a user to an external identity (Google `sub`, Apple `sub`).
+model OAuthAccount {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  userId         String        @map("user_id") @db.Uuid
+  provider       OAuthProvider
+  providerUserId String        @map("provider_user_id") @db.VarChar(255)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+/// Refresh tokens are stored as SHA-256(token) — never the token itself.
+/// Rotation: each use revokes the token and issues a new one in the same `familyId`.
+/// Reuse of an already-rotated token revokes the whole family (theft detection).
+model RefreshToken {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  familyId      String    @map("family_id") @db.Uuid
+  tokenHash     String    @unique @map("token_hash") @db.Char(64)
+  deviceInfo    Json?     @map("device_info")
+  ipAddress     String?   @map("ip_address") @db.VarChar(45)
+  userAgent     String?   @map("user_agent") @db.VarChar(500)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+  lastUsedAt    DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedReason String?   @map("revoked_reason") @db.VarChar(50)
+  replacedById  String?   @map("replaced_by_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model PushToken {
+  id         String         @id @default(uuid(7)) @db.Uuid
+  userId     String         @map("user_id") @db.Uuid
+  token      String         @unique
+  platform   DevicePlatform
+  isActive   Boolean        @default(true) @map("is_active")
+  lastSeenAt DateTime       @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("push_tokens")
+}
+
+/// One row per user. `sms_queue_called` is intentionally absent: being called
+/// in a queue is a transactional message that cannot be disabled.
+model NotificationPreference {
+  userId                   String    @id @map("user_id") @db.Uuid
+  pushBookingConfirmation  Boolean   @default(true) @map("push_booking_confirmation")
+  pushReminders            Boolean   @default(true) @map("push_reminders")
+  pushQueueUpdates         Boolean   @default(true) @map("push_queue_updates")
+  smsReminders             Boolean   @default(true) @map("sms_reminders")
+  emailBookingConfirmation Boolean   @default(true) @map("email_booking_confirmation")
+  /// GDPR: marketing requires explicit opt-in; consent timestamp recorded.
+  marketingEmails          Boolean   @default(false) @map("marketing_emails")
+  marketingConsentAt       DateTime? @map("marketing_consent_at") @db.Timestamptz(6)
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+// ═════════════════════════════ CATALOG ═════════════════════════════
+
+/// Self-referencing tree (depth 0 = top level). DB extras: CHECK depth >= 0.
+model Category {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @db.VarChar(100)
+  slug      String   @unique @db.VarChar(100)
+  icon      String?  @db.VarChar(10)
+  parentId  String?  @map("parent_id") @db.Uuid
+  depth     Int      @default(0)
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  parent     Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children   Category[]   @relation("CategoryTree")
+  businesses Business[]
+  ads        BusinessAd[]
+
+  @@index([parentId])
+  @@index([isActive, sortOrder])
+  @@map("categories")
+}
+
+/// DB extras: `location` and `search_vector` are maintained by a BEFORE trigger (from lat/lng
+/// and name/description/city); GiST + GIN + trigram indexes; rating trigger.
+model Business {
+  id                    String                                @id @default(uuid(7)) @db.Uuid
+  ownerId               String                                @map("owner_id") @db.Uuid
+  categoryId            String                                @map("category_id") @db.Uuid
+  name                  String                                @db.VarChar(200)
+  slug                  String                                @unique @db.VarChar(200)
+  description           String?
+  phone                 String?                               @db.VarChar(20)
+  email                 String?                               @db.VarChar(255)
+  website               String?                               @db.VarChar(500)
+  address               String?
+  city                  String                                @db.VarChar(100)
+  state                 String?                               @db.VarChar(100)
+  country               String                                @db.VarChar(100)
+  postalCode            String?                               @map("postal_code") @db.VarChar(20)
+  lat                   Decimal?                              @db.Decimal(10, 8)
+  lng                   Decimal?                              @db.Decimal(11, 8)
+  /// Derived from lat/lng by a DB trigger. Never written by the application.
+  location              Unsupported("geography(Point,4326)")?
+  /// Full-text vector maintained by a DB trigger. Never written by the application.
+  searchVector          Unsupported("tsvector")?              @map("search_vector")
+  /// IANA timezone. All availability math happens in this zone.
+  timezone              String                                @default("UTC") @db.VarChar(60)
+  currency              String                                @default("USD") @db.Char(3)
+  status                BusinessStatus                        @default(pending)
+  verified              Boolean                               @default(false)
+  verifiedAt            DateTime?                             @map("verified_at") @db.Timestamptz(6)
+  rejectionReason       String?                               @map("rejection_reason")
+  /// Validated by a Zod schema in the service layer (autoConfirm, cancellationHours, ...).
+  settings              Json                                  @default("{}")
+  subscriptionTier      SubscriptionTier                      @default(free) @map("subscription_tier")
+  subscriptionExpiresAt DateTime?                             @map("subscription_expires_at") @db.Timestamptz(6)
+  avgRating             Decimal                               @default(0) @map("avg_rating") @db.Decimal(3, 2)
+  reviewCount           Int                                   @default(0) @map("review_count")
+  deletedAt             DateTime?                             @map("deleted_at") @db.Timestamptz(6)
+  createdAt             DateTime                              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime                              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  owner                  User                    @relation("BusinessOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  category               Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  photos                 BusinessPhoto[]
+  documents              BusinessDocument[]
+  hours                  BusinessHours[]
+  services               Service[]
+  staff                  Staff[]
+  resources              Resource[]
+  availabilityRules      AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
+  appointments           Appointment[]
+  payments               Payment[]
+  reviews                Review[]
+  favourites             Favourite[]
+  queueSessions          QueueSession[]
+  ads                    BusinessAd[]
+  adEvents               AdEvent[]
+  aiReceptionistConfig   AiReceptionistConfig?
+  aiCallLogs             AiCallLog[]
+  webhooks               Webhook[]
+  subscriptions          Subscription[]
+
+  @@index([ownerId])
+  @@index([categoryId])
+  @@index([status, verified])
+  @@index([city, country])
+  @@index([avgRating])
+  @@index([createdAt])
+  @@index([location], type: Gist)
+  @@index([searchVector], type: Gin)
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "businesses_name_trgm_idx")
+  @@map("businesses")
+}
+
+model BusinessPhoto {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  url        String
+  altText    String?  @map("alt_text") @db.VarChar(300)
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, sortOrder])
+  @@map("business_photos")
+}
+
+/// Verification documents. `url` points to a PRIVATE bucket; served only via short-lived presigned URLs.
+model BusinessDocument {
+  id           String         @id @default(uuid(7)) @db.Uuid
+  businessId   String         @map("business_id") @db.Uuid
+  type         DocumentType
+  url          String
+  status       DocumentStatus @default(pending)
+  reviewedById String?        @map("reviewed_by_id") @db.Uuid
+  reviewedAt   DateTime?      @map("reviewed_at") @db.Timestamptz(6)
+  reviewNote   String?        @map("review_note")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  reviewedBy User?    @relation("DocumentReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([status, createdAt])
+  @@map("business_documents")
+}
+
+/// Public opening hours. Multiple rows per day allowed (split shifts).
+/// DB extras: CHECK day 0-6, HH:MM format, open < close.
+model BusinessHours {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  businessId String  @map("business_id") @db.Uuid
+  dayOfWeek  Int     @map("day_of_week") @db.SmallInt
+  openTime   String  @map("open_time") @db.VarChar(5)
+  closeTime  String  @map("close_time") @db.VarChar(5)
+  isClosed   Boolean @default(false) @map("is_closed")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, dayOfWeek, openTime])
+  @@map("business_hours")
+}
+
+/// DB extras: CHECK duration 5..1440, buffer 0..240, max_concurrent 1..100, price/deposit >= 0.
+model Service {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  businessId      String   @map("business_id") @db.Uuid
+  name            String   @db.VarChar(200)
+  description     String?
+  durationMinutes Int      @map("duration_minutes")
+  bufferMinutes   Int      @default(0) @map("buffer_minutes")
+  maxConcurrent   Int      @default(1) @map("max_concurrent")
+  price           Decimal  @db.Decimal(10, 2)
+  currency        String   @default("USD") @db.Char(3)
+  depositRequired Boolean  @default(false) @map("deposit_required")
+  depositAmount   Decimal? @map("deposit_amount") @db.Decimal(10, 2)
+  groupName       String?  @map("group_name") @db.VarChar(100)
+  sortOrder       Int      @default(0) @map("sort_order")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business     Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staff        StaffService[]
+  appointments Appointment[]
+
+  @@index([businessId, isActive, sortOrder])
+  @@map("services")
+}
+
+/// A member of a business's team. `userId` is set once the invite is accepted.
+model Staff {
+  id                   String    @id @default(uuid(7)) @db.Uuid
+  businessId           String    @map("business_id") @db.Uuid
+  userId               String?   @map("user_id") @db.Uuid
+  displayName          String    @map("display_name") @db.VarChar(100)
+  bio                  String?
+  photoUrl             String?   @map("photo_url")
+  specializations      String[]  @default([])
+  role                 StaffRole @default(staff)
+  isActive             Boolean   @default(true) @map("is_active")
+  /// Encrypted (context "staff.invite_email").
+  inviteEmailEncrypted String?   @map("invite_email_encrypted")
+  /// SHA-256 of the one-time invite token.
+  inviteTokenHash      String?   @unique @map("invite_token_hash") @db.Char(64)
+  inviteAccepted       Boolean   @default(false) @map("invite_accepted")
+  inviteExpiresAt      DateTime? @map("invite_expires_at") @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business          Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user              User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  services          StaffService[]
+  availabilityRules AvailabilityRule[]
+  exceptions        AvailabilityException[]
+  appointments      Appointment[]
+
+  @@unique([businessId, userId])
+  @@index([businessId, isActive])
+  @@index([userId])
+  @@map("staff")
+}
+
+model StaffService {
+  staffId   String @map("staff_id") @db.Uuid
+  serviceId String @map("service_id") @db.Uuid
+
+  staff   Staff   @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([staffId, serviceId])
+  @@index([serviceId])
+  @@map("staff_services")
+}
+
+/// Bookable non-human capacity: a chair, a bay, a treatment room.
+model Resource {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  name       String   @db.VarChar(100)
+  type       String   @db.VarChar(50)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business          Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  availabilityRules AvailabilityRule[]
+  exceptions        AvailabilityException[]
+  appointments      Appointment[]
+
+  @@index([businessId, isActive])
+  @@map("resources")
+}
+
+/// Weekly recurring schedule (business-wide, per staff, or per resource).
+/// DB extras: CHECK day 0-6, HH:MM, start < end.
+model AvailabilityRule {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  staffId    String?  @map("staff_id") @db.Uuid
+  resourceId String?  @map("resource_id") @db.Uuid
+  dayOfWeek  Int      @map("day_of_week") @db.SmallInt
+  startTime  String   @map("start_time") @db.VarChar(5)
+  endTime    String   @map("end_time") @db.VarChar(5)
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staff    Staff?    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  resource Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, dayOfWeek])
+  @@index([staffId, dayOfWeek])
+  @@map("availability_rules")
+}
+
+/// One-off overrides: holidays, modified hours, extra hours.
+model AvailabilityException {
+  id            String        @id @default(uuid(7)) @db.Uuid
+  businessId    String        @map("business_id") @db.Uuid
+  staffId       String?       @map("staff_id") @db.Uuid
+  resourceId    String?       @map("resource_id") @db.Uuid
+  exceptionDate DateTime      @map("exception_date") @db.Date
+  type          ExceptionType
+  startTime     String?       @map("start_time") @db.VarChar(5)
+  endTime       String?       @map("end_time") @db.VarChar(5)
+  reason        String?       @db.VarChar(200)
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staff    Staff?    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  resource Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, exceptionDate])
+  @@index([staffId, exceptionDate])
+  @@map("availability_exceptions")
+}
+
+// ═════════════════════════════ BOOKINGS ═════════════════════════════
+
+/// DB extras (integrity guarantees that hold even if application code regresses):
+///  • EXCLUDE: a staff member cannot have two overlapping pending/confirmed appointments.
+///  • EXCLUDE: a resource cannot be double-booked either.
+///  • CHECK end_at > start_at, price >= 0, version >= 1, confirmation-code format.
+model Appointment {
+  id                String                   @id @default(uuid(7)) @db.Uuid
+  businessId        String                   @map("business_id") @db.Uuid
+  serviceId         String                   @map("service_id") @db.Uuid
+  staffId           String?                  @map("staff_id") @db.Uuid
+  userId            String                   @map("user_id") @db.Uuid
+  resourceId        String?                  @map("resource_id") @db.Uuid
+  status            AppointmentStatus        @default(pending)
+  startAt           DateTime                 @map("start_at") @db.Timestamptz(6)
+  endAt             DateTime                 @map("end_at") @db.Timestamptz(6)
+  /// Customer-visible notes (sanitized).
+  notes             String?
+  /// Business-only notes. Never returned to the customer.
+  internalNotes     String?                  @map("internal_notes")
+  price             Decimal                  @db.Decimal(10, 2)
+  currency          String                   @db.Char(3)
+  paymentStatus     AppointmentPaymentStatus @default(unpaid) @map("payment_status")
+  /// Optimistic concurrency: every update must match and increment this.
+  version           Int                      @default(1)
+  confirmationCode  String                   @unique @map("confirmation_code") @db.VarChar(20)
+  reminder24hSentAt DateTime?                @map("reminder_24h_sent_at") @db.Timestamptz(6)
+  reminder2hSentAt  DateTime?                @map("reminder_2h_sent_at") @db.Timestamptz(6)
+  cancelledAt       DateTime?                @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason      String?                  @map("cancel_reason")
+  cancelledBy       ActorType?               @map("cancelled_by")
+  rescheduledFromId String?                  @unique @map("rescheduled_from_id") @db.Uuid
+  createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime                 @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business        Business                   @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  service         Service                    @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  staff           Staff?                     @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  user            User                       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  resource        Resource?                  @relation(fields: [resourceId], references: [id], onDelete: SetNull)
+  rescheduledFrom Appointment?               @relation("Reschedule", fields: [rescheduledFromId], references: [id], onDelete: SetNull)
+  rescheduledTo   Appointment?               @relation("Reschedule")
+  statusHistory   AppointmentStatusHistory[]
+  payment         Payment?
+  review          Review?
+
+  @@index([businessId, startAt])
+  @@index([userId, startAt])
+  @@index([staffId, startAt])
+  @@index([status, startAt])
+  @@index([createdAt])
+  @@map("appointments")
+}
+
+/// Append-only log of every status change; powers GET /appointments/:id/timeline.
+model AppointmentStatusHistory {
+  id            String             @id @default(uuid(7)) @db.Uuid
+  appointmentId String             @map("appointment_id") @db.Uuid
+  fromStatus    AppointmentStatus? @map("from_status")
+  toStatus      AppointmentStatus  @map("to_status")
+  actorType     ActorType          @map("actor_type")
+  actorId       String?            @map("actor_id") @db.Uuid
+  reason        String?
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId, createdAt])
+  @@map("appointment_status_history")
+}
+
+/// Appointment payments (deposits). NOTE: Paddle is a merchant of record for
+/// BUKU's own sales (subscriptions, ads); it cannot pay out to third-party
+/// businesses. Customer→business payments need a marketplace processor before
+/// this table is used in production (see docs/BUILD_GUIDE.md, open questions).
+model Payment {
+  id                    String        @id @default(uuid(7)) @db.Uuid
+  appointmentId         String        @unique @map("appointment_id") @db.Uuid
+  userId                String        @map("user_id") @db.Uuid
+  businessId            String        @map("business_id") @db.Uuid
+  amount                Decimal       @db.Decimal(10, 2)
+  currency              String        @db.Char(3)
+  platformFee           Decimal       @default(0) @map("platform_fee") @db.Decimal(10, 2)
+  status                PaymentStatus @default(pending)
+  method                String?       @db.VarChar(30)
+  providerTransactionId String?       @unique @map("provider_transaction_id") @db.VarChar(200)
+  refundId              String?       @map("refund_id") @db.VarChar(200)
+  capturedAt            DateTime?     @map("captured_at") @db.Timestamptz(6)
+  refundedAt            DateTime?     @map("refunded_at") @db.Timestamptz(6)
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  business    Business    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([businessId, createdAt])
+  @@map("payments")
+}
+
+/// One review per completed appointment. DB extras: CHECK ratings 1..5; trigger keeps
+/// businesses.avg_rating / review_count in sync.
+model Review {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  appointmentId     String    @unique @map("appointment_id") @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  businessId        String    @map("business_id") @db.Uuid
+  overallRating     Int       @map("overall_rating") @db.SmallInt
+  waitTimeRating    Int?      @map("wait_time_rating") @db.SmallInt
+  staffRating       Int?      @map("staff_rating") @db.SmallInt
+  cleanlinessRating Int?      @map("cleanliness_rating") @db.SmallInt
+  valueRating       Int?      @map("value_rating") @db.SmallInt
+  comment           String?
+  ownerResponse     String?   @map("owner_response")
+  ownerRespondedAt  DateTime? @map("owner_responded_at") @db.Timestamptz(6)
+  isFlagged         Boolean   @default(false) @map("is_flagged")
+  flagReason        String?   @map("flag_reason") @db.VarChar(200)
+  isVisible         Boolean   @default(true) @map("is_visible")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  business    Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, isVisible, createdAt])
+  @@index([businessId, overallRating])
+  @@index([userId])
+  @@map("reviews")
+}
+
+model Favourite {
+  userId     String   @map("user_id") @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@id([userId, businessId])
+  @@index([businessId])
+  @@map("favourites")
+}
+
+// ═════════════════════════════ QUEUES ═════════════════════════════
+
+/// One queue per business per day. Live state lives in Valkey; this is the durable record.
+/// DB extras: CHECK counters >= 0, max_queue_size > 0.
+model QueueSession {
+  id                 String             @id @default(uuid(7)) @db.Uuid
+  businessId         String             @map("business_id") @db.Uuid
+  sessionDate        DateTime           @map("session_date") @db.Date
+  status             QueueSessionStatus @default(open)
+  ticketPrefix       String             @default("A") @map("ticket_prefix") @db.VarChar(5)
+  currentNumber      Int                @default(0) @map("current_number")
+  lastCalledNumber   Int                @default(0) @map("last_called_number")
+  totalServed        Int                @default(0) @map("total_served")
+  avgServiceSeconds  Int                @default(300) @map("avg_service_seconds")
+  maxQueueSize       Int                @default(200) @map("max_queue_size")
+  gracePeriodSeconds Int                @default(300) @map("grace_period_seconds")
+  openedAt           DateTime?          @map("opened_at") @db.Timestamptz(6)
+  closedAt           DateTime?          @map("closed_at") @db.Timestamptz(6)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  entries  QueueEntry[]
+
+  @@unique([businessId, sessionDate])
+  @@index([status, sessionDate])
+  @@map("queue_sessions")
+}
+
+/// DB extras: partial UNIQUE (session_id, user_id) while waiting/called/serving,
+/// so a user can hold only one live ticket per queue.
+model QueueEntry {
+  id                   String           @id @default(uuid(7)) @db.Uuid
+  sessionId            String           @map("session_id") @db.Uuid
+  /// Null for walk-ins added by staff.
+  userId               String?          @map("user_id") @db.Uuid
+  ticketNumber         Int              @map("ticket_number")
+  ticketPrefix         String           @default("A") @map("ticket_prefix") @db.VarChar(5)
+  status               QueueEntryStatus @default(waiting)
+  estimatedWaitSeconds Int?             @map("estimated_wait_seconds")
+  /// Elderly / disabled priority lane.
+  priorityLane         Boolean          @default(false) @map("priority_lane")
+  notes                String?          @db.VarChar(500)
+  joinedAt             DateTime         @default(now()) @map("joined_at") @db.Timestamptz(6)
+  calledAt             DateTime?        @map("called_at") @db.Timestamptz(6)
+  servedAt             DateTime?        @map("served_at") @db.Timestamptz(6)
+  completedAt          DateTime?        @map("completed_at") @db.Timestamptz(6)
+  leftAt               DateTime?        @map("left_at") @db.Timestamptz(6)
+  actualServiceSeconds Int?             @map("actual_service_seconds")
+
+  session QueueSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, ticketNumber])
+  @@index([sessionId, status])
+  @@index([userId, joinedAt])
+  @@map("queue_entries")
+}
+
+// ═══════════════════════ NOTIFICATIONS (partitioned) ═══════════════════════
+
+/// Range-partitioned monthly by created_at (see migration); hence the composite key.
+model Notification {
+  id            String              @default(uuid(7)) @db.Uuid
+  userId        String              @map("user_id") @db.Uuid
+  appointmentId String?             @map("appointment_id") @db.Uuid
+  queueEntryId  String?             @map("queue_entry_id") @db.Uuid
+  type          String              @db.VarChar(50)
+  channel       NotificationChannel
+  title         String              @db.VarChar(200)
+  body          String
+  /// Deep-link payload for the app (screen + ids). No secrets, no PII.
+  data          Json?
+  status        NotificationStatus  @default(pending)
+  externalId    String?             @map("external_id") @db.VarChar(500)
+  failureReason String?             @map("failure_reason")
+  sentAt        DateTime?           @map("sent_at") @db.Timestamptz(6)
+  deliveredAt   DateTime?           @map("delivered_at") @db.Timestamptz(6)
+  readAt        DateTime?           @map("read_at") @db.Timestamptz(6)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([id, createdAt])
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@index([status, createdAt])
+  @@map("notifications")
+}
+
+// ═════════════════════════════ ADS ═════════════════════════════
+
+/// DB extras: CHECK budgets/counters >= 0, end_date > start_date.
+model BusinessAd {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  businessId        String    @map("business_id") @db.Uuid
+  type              AdType
+  categoryId        String?   @map("category_id") @db.Uuid
+  city              String?   @db.VarChar(100)
+  country           String?   @db.VarChar(100)
+  status            AdStatus  @default(draft)
+  startDate         DateTime  @map("start_date") @db.Timestamptz(6)
+  endDate           DateTime  @map("end_date") @db.Timestamptz(6)
+  weeklyBudget      Decimal?  @map("weekly_budget") @db.Decimal(10, 2)
+  totalBudget       Decimal   @map("total_budget") @db.Decimal(10, 2)
+  amountSpent       Decimal   @default(0) @map("amount_spent") @db.Decimal(10, 2)
+  impressions       Int       @default(0)
+  clicks            Int       @default(0)
+  bookings          Int       @default(0)
+  revenueAttributed Decimal   @default(0) @map("revenue_attributed") @db.Decimal(10, 2)
+  rejectionReason   String?   @map("rejection_reason")
+  paymentMethod     String?   @map("payment_method") @db.VarChar(30)
+  paymentRef        String?   @map("payment_ref") @db.VarChar(200)
+  paidAt            DateTime? @map("paid_at") @db.Timestamptz(6)
+  approvedAt        DateTime? @map("approved_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  events   AdEvent[]
+
+  @@index([businessId, status])
+  @@index([status, startDate, endDate])
+  @@index([type, city, country, status])
+  @@map("business_ads")
+}
+
+/// Range-partitioned monthly by created_at. `ipHash` is a keyed hash, never a raw IP.
+model AdEvent {
+  id         String      @default(uuid(7)) @db.Uuid
+  adId       String      @map("ad_id") @db.Uuid
+  businessId String      @map("business_id") @db.Uuid
+  userId     String?     @map("user_id") @db.Uuid
+  type       AdEventType
+  sessionId  String?     @map("session_id") @db.VarChar(100)
+  ipHash     String?     @map("ip_hash") @db.Char(64)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ad       BusinessAd @relation(fields: [adId], references: [id], onDelete: Cascade)
+  business Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@id([id, createdAt])
+  @@index([adId, type, createdAt])
+  @@index([businessId, type, createdAt])
+  @@index([userId, type, createdAt])
+  @@map("ad_events")
+}
+
+// ═════════════════════════════ AI RECEPTIONIST ═════════════════════════════
+
+model AiReceptionistConfig {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  businessId        String   @unique @map("business_id") @db.Uuid
+  isEnabled         Boolean  @default(false) @map("is_enabled")
+  phoneNumber       String?  @map("phone_number") @db.VarChar(20)
+  voiceId           String?  @map("voice_id") @db.VarChar(100)
+  greetingMessage   String?  @map("greeting_message")
+  /// Short always-present summary; detailed knowledge lives in ai.business_knowledge_chunks (raw SQL, pgvector).
+  businessContext   String?  @map("business_context")
+  /// [{ type: "staff_leave", staffId, reason, until }]
+  activeOverrides   Json     @default("[]") @map("active_overrides")
+  totalCallsHandled Int      @default(0) @map("total_calls_handled")
+  totalBookingsMade Int      @default(0) @map("total_bookings_made")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("ai_receptionist_configs")
+}
+
+model AiCallLog {
+  id                   String        @id @default(uuid(7)) @db.Uuid
+  businessId           String        @map("business_id") @db.Uuid
+  /// Encrypted (context "ai_call_logs.caller_phone").
+  callerPhoneEncrypted String?       @map("caller_phone_encrypted")
+  durationSeconds      Int?          @map("duration_seconds")
+  transcriptUrl        String?       @map("transcript_url")
+  appointmentId        String?       @map("appointment_id") @db.Uuid
+  outcome              AiCallOutcome
+  failureReason        String?       @map("failure_reason")
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+  @@map("ai_call_logs")
+}
+
+// ═════════════════════════════ INTEGRATIONS ═════════════════════════════
+
+/// Outgoing webhooks. The signing secret must be recoverable (to sign), so it is
+/// ENCRYPTED (context "webhooks.secret"), not hashed.
+model Webhook {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  businessId      String    @map("business_id") @db.Uuid
+  url             String
+  secretEncrypted String    @map("secret_encrypted")
+  events          String[]
+  isActive        Boolean   @default(true) @map("is_active")
+  lastTriggeredAt DateTime? @map("last_triggered_at") @db.Timestamptz(6)
+  failureCount    Int       @default(0) @map("failure_count")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business   Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([businessId, isActive])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  webhookId      String    @map("webhook_id") @db.Uuid
+  eventId        String    @map("event_id") @db.Uuid
+  eventType      String    @map("event_type") @db.VarChar(100)
+  payload        Json
+  responseStatus Int?      @map("response_status")
+  /// Truncated to 2 KB by the dispatcher.
+  responseBody   String?   @map("response_body")
+  attemptCount   Int       @default(1) @map("attempt_count")
+  deliveredAt    DateTime? @map("delivered_at") @db.Timestamptz(6)
+  nextRetryAt    DateTime? @map("next_retry_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@unique([webhookId, eventId])
+  @@index([webhookId, createdAt])
+  @@index([nextRetryAt])
+  @@map("webhook_deliveries")
+}
+
+/// Paddle subscriptions (BUKU → business billing).
+model Subscription {
+  id                   String             @id @default(uuid(7)) @db.Uuid
+  businessId           String             @map("business_id") @db.Uuid
+  paddleSubscriptionId String             @unique @map("paddle_subscription_id") @db.VarChar(200)
+  paddleCustomerId     String             @map("paddle_customer_id") @db.VarChar(200)
+  plan                 SubscriptionTier
+  status               SubscriptionStatus
+  currentPeriodStart   DateTime?          @map("current_period_start") @db.Timestamptz(6)
+  currentPeriodEnd     DateTime?          @map("current_period_end") @db.Timestamptz(6)
+  cancelAtPeriodEnd    Boolean            @default(false) @map("cancel_at_period_end")
+  cancelledAt          DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, status])
+  @@map("subscriptions")
+}
+
+// ═════════════════════════════ PLATFORM ═════════════════════════════
+
+/// Security/compliance trail. Range-partitioned monthly by created_at.
+/// Old/new values must be redacted of secrets and PII by the writer.
+model AuditLog {
+  id           String   @default(uuid(7)) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  action       String   @db.VarChar(100)
+  resourceType String   @map("resource_type") @db.VarChar(50)
+  resourceId   String?  @map("resource_id") @db.Uuid
+  oldValues    Json?    @map("old_values")
+  newValues    Json?    @map("new_values")
+  ipAddress    String?  @map("ip_address") @db.VarChar(45)
+  userAgent    String?  @map("user_agent") @db.VarChar(500)
+  requestId    String?  @map("request_id") @db.VarChar(128)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@id([id, createdAt])
+  @@index([userId, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}
+
+/// Transactional outbox (docs/ARCHITECTURE.md). A service writes its business row AND an
+/// event row in ONE transaction; a relay publishes unpublished rows to Kafka. No lost events.
+model OutboxEvent {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  aggregateType String    @map("aggregate_type") @db.VarChar(50)
+  aggregateId   String    @map("aggregate_id") @db.Uuid
+  /// Kafka topic, e.g. "bookings.created".
+  topic         String    @db.VarChar(100)
+  /// Kafka message key (per-aggregate ordering).
+  partitionKey  String    @map("partition_key") @db.VarChar(100)
+  /// The full event envelope as it will be published.
+  payload       Json
+  headers       Json?
+  attempts      Int       @default(0)
+  lastError     String?   @map("last_error")
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([publishedAt, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}
+
+/// Idempotency ledger ("inbox"). Kafka and Paddle both deliver AT LEAST once; a consumer
+/// inserts (consumer, event_id) in the same transaction as its side effect and skips
+/// the event if the row already exists.
+model ProcessedEvent {
+  consumer    String   @db.VarChar(100)
+  eventId     String   @map("event_id") @db.VarChar(200)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(6)
+
+  @@id([consumer, eventId])
+  @@index([processedAt])
+  @@map("processed_events")
+}

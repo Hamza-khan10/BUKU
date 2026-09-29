@@ -1,0 +1,76 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "analysis": {
+      "analyzer": {
+        "buku_text": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding", "english_possessive", "english_stop", "english_stemmer"]
+        }
+      },
+      "filter": {
+        "english_possessive": { "type": "stemmer", "language": "possessive_english" },
+        "english_stop": { "type": "stop", "stopwords": "_english_" },
+        "english_stemmer": { "type": "stemmer", "language": "english" }
+      },
+      "normalizer": {
+        "lowercase_ascii": { "type": "custom", "filter": ["lowercase", "asciifolding"] }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "id": { "type": "keyword" },
+      "slug": { "type": "keyword" },
+      "name": {
+        "type": "text",
+        "analyzer": "buku_text",
+        "fields": {
+          "keyword": { "type": "keyword", "normalizer": "lowercase_ascii" },
+          "suggest": { "type": "completion", "analyzer": "simple", "preserve_separators": true },
+          "prefix": { "type": "search_as_you_type" }
+        }
+      },
+      "description": { "type": "text", "analyzer": "buku_text" },
+      "category_id": { "type": "keyword" },
+      "category_slug": { "type": "keyword" },
+      "category_path": { "type": "keyword" },
+      "tags": { "type": "keyword", "normalizer": "lowercase_ascii" },
+      "location": { "type": "geo_point" },
+      "city": { "type": "keyword", "normalizer": "lowercase_ascii" },
+      "country": { "type": "keyword", "normalizer": "lowercase_ascii" },
+      "timezone": { "type": "keyword", "index": false },
+      "avg_rating": { "type": "float" },
+      "review_count": { "type": "integer" },
+      "verified": { "type": "boolean" },
+      "status": { "type": "keyword" },
+      "has_queue": { "type": "boolean" },
+      "staff_count": { "type": "integer" },
+      "subscription_tier": { "type": "keyword" },
+      "primary_photo_url": { "type": "keyword", "index": false },
+      "opening_hours": {
+        "type": "nested",
+        "properties": {
+          "day_of_week": { "type": "byte" },
+          "open_minute": { "type": "short" },
+          "close_minute": { "type": "short" }
+        }
+      },
+      "services": {
+        "type": "nested",
+        "properties": {
+          "id": { "type": "keyword" },
+          "name": { "type": "text", "analyzer": "buku_text" },
+          "duration_minutes": { "type": "integer" },
+          "price": { "type": "scaled_float", "scaling_factor": 100 },
+          "currency": { "type": "keyword" }
+        }
+      },
+      "created_at": { "type": "date" },
+      "updated_at": { "type": "date" }
+    }
+  }
+}

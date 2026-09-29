@@ -1,0 +1,134 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# CI — runs on every push and pull request. Branch protection on `main`
+# requires all jobs below to pass before a PR can merge (docs/DEVELOPMENT.md).
+#
+# Supply-chain hygiene: every third-party action is pinned to a full commit
+# SHA (a tag can be moved to malicious code; a SHA cannot). Dependabot keeps
+# the pins current. The workflow token is read-only.
+# ═══════════════════════════════════════════════════════════════════════════
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  CHECKPOINT_DISABLE: 1
+
+jobs:
+  quality:
+    name: Lint · Typecheck · Unit tests · Audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm prisma:validate
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm test
+      - name: Dependency audit (fail on high/critical)
+        run: pnpm audit:deps
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks (checksum-verified)
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          set -euo pipefail
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -sSLo gitleaks.tgz "${base}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSLo checksums.txt "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep "linux_x64.tar.gz" checksums.txt | sed "s/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz/gitleaks.tgz/" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks && sudo mv gitleaks /usr/local/bin/
+      - name: Scan full git history
+        run: gitleaks git --redact --no-banner --config .gitleaks.toml .
+
+  integration:
+    name: Integration tests · Migration drift
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    needs: quality
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Generate throwaway secrets and install
+        run: bash scripts/setup-dev.sh
+      - name: Start Postgres, Valkey and Kafka
+        run: docker compose -f docker-compose.dev.yml up -d --wait postgres valkey kafka
+      - name: Create Kafka topics from the registry
+        run: KAFKA_BROKERS=localhost:9092 pnpm kafka:topics
+      - name: Apply migrations to a fresh database
+        run: pnpm db:migrate:deploy
+      - name: Fail if schema.prisma and migrations disagree
+        working-directory: packages/database
+        run: pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+      - run: pnpm test:int
+      - name: Service logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.dev.yml logs --tail=200
+
+  images:
+    name: Production image (${{ matrix.service }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [auth, booking, queue, notification, search, ads, analytics]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/node/Dockerfile
+          build-args: SERVICE=${{ matrix.service }}
+          platforms: linux/amd64
+          push: false
+          tags: buku/${{ matrix.service }}-service:ci
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          deny-licenses: AGPL-1.0-only, AGPL-3.0-only, AGPL-3.0-or-later, GPL-3.0-only, GPL-3.0-or-later
