@@ -1,0 +1,624 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# BUKU Platform — Local Development Stack (latest stable versions)
+#   postgres 17 + PostGIS 3.5 │ redis 7.4 │ kafka 3.9 KRaft │ ES 8.17
+#   clickhouse 25.3 LTS │ localstack 4 │ kong 3.9 │ 7 services (Node 22)
+#
+# FIRST RUN:
+#   1. Linux only: sudo sysctl -w vm.max_map_count=262144
+#   2. docker compose -f docker-compose.dev.yml up --build
+#
+# PORTS: 3000 Kong │ 3001-3007 services │ 3013 queue WS │ 5432 PG │ 6379 Redis
+#        9092 Kafka │ 9200 ES │ 8123/9000 ClickHouse │ 4566 LocalStack
+#        8001 Kong admin │ 8080 Kafka UI │ 5601 Kibana │ 8002 Redis Insight
+# ═══════════════════════════════════════════════════════════════════════════
+
+networks:
+  buku-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  postgres-data:
+  redis-data:
+  kafka-data:
+  elasticsearch-data:
+  clickhouse-data:
+  clickhouse-logs:
+  localstack-data:
+
+# ── Shared anchors (must live OUTSIDE the services: block) ────────────────
+x-svc-health-timing: &svc-health-timing
+  interval: 10s
+  timeout: 5s
+  retries: 10
+  start_period: 40s
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [buku-net]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+x-service-env: &service-env
+  NODE_ENV: development
+  LOG_LEVEL: debug
+  DATABASE_URL: postgresql://buku_admin:buku_dev_password@postgres:5432/buku?schema=public&connection_limit=10&pool_timeout=10
+  REDIS_URL: redis://redis:6379
+  KAFKA_BROKERS: kafka:29092
+  KAFKA_CLIENT_ID: buku-dev
+  KAFKA_GROUP_ID_PREFIX: buku-dev
+  ELASTICSEARCH_URL: http://elasticsearch:9200
+  ELASTICSEARCH_INDEX_BUSINESSES: businesses
+  CLICKHOUSE_HOST: clickhouse
+  CLICKHOUSE_PORT: "8123"
+  CLICKHOUSE_USER: buku_analytics
+  CLICKHOUSE_PASSWORD: buku_analytics_dev
+  CLICKHOUSE_DATABASE: buku_analytics
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: buku-localstack-key
+  AWS_SECRET_ACCESS_KEY: buku-localstack-secret
+  AWS_ENDPOINT_URL: http://localstack:4566
+  AWS_S3_BUCKET_MEDIA: buku-media-dev
+  AWS_S3_BUCKET_DOCUMENTS: buku-documents-dev
+  AWS_SES_FROM_EMAIL: noreply@buku.app
+  JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+  JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+  JWT_ACCESS_EXPIRES_IN: 15m
+  JWT_REFRESH_EXPIRES_IN: 7d
+  BCRYPT_ROUNDS: "10"
+  PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-}
+  TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-AC_dev_mock}
+  TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-dev_mock}
+  TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-+15005550006}
+  FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-buku-dev}
+  PADDLE_API_KEY: ${PADDLE_API_KEY:-dev_mock}
+  PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-dev_mock}
+  AUTH_SERVICE_URL: http://auth-service:3001
+  BOOKING_SERVICE_URL: http://booking-service:3002
+  QUEUE_SERVICE_URL: http://queue-service:3003
+  SEARCH_SERVICE_URL: http://search-service:3005
+  ADS_SERVICE_URL: http://ads-service:3006
+  FRONTEND_URL: http://localhost:3000
+
+services:
+
+  # ───────────── PostgreSQL 17 + PostGIS 3.5 ─────────────
+  postgres:
+    <<: *service-defaults
+    image: postgis/postgis:17-3.5-alpine
+    container_name: buku-postgres
+    environment:
+      POSTGRES_USER: buku_admin
+      POSTGRES_PASSWORD: buku_dev_password
+      POSTGRES_DB: buku
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./packages/database/docker-init:/docker-entrypoint-initdb.d:ro
+    ports: ["5432:5432"]
+    command: >
+      postgres
+        -c shared_buffers=256MB -c effective_cache_size=512MB
+        -c work_mem=16MB -c max_connections=100
+        -c log_min_duration_statement=500
+        -c idle_in_transaction_session_timeout=60000
+        -c statement_timeout=30000
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U buku_admin -d buku -q"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # ───────────── Redis 7.4 ─────────────
+  redis:
+    <<: *service-defaults
+    image: redis:7.4-alpine
+    container_name: buku-redis
+    command: >
+      redis-server
+        --maxmemory 512mb --maxmemory-policy allkeys-lru
+        --save 60 1000 --save 300 100 --save 900 1
+        --appendonly yes --appendfsync everysec
+        --tcp-keepalive 300
+    volumes: [redis-data:/data]
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # ───────────── Kafka 3.9 (KRaft, single broker) ─────────────
+  kafka:
+    <<: *service-defaults
+    image: apache/kafka:3.9.0
+    container_name: buku-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: CONTROLLER://kafka:9093,INTERNAL://kafka:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_NUM_PARTITIONS: "6"
+      KAFKA_MIN_INSYNC_REPLICAS: "1"
+      KAFKA_LOG_RETENTION_HOURS: "24"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      CLUSTER_ID: "Jc3yPYU0Sw2NzGZFe1jDfg"
+    volumes: [kafka-data:/var/lib/kafka/data]
+    ports: ["9092:9092"]
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  kafka-init:
+    <<: *service-defaults
+    image: apache/kafka:3.9.0
+    container_name: buku-kafka-init
+    restart: "no"
+    depends_on:
+      kafka: { condition: service_healthy }
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        BS=kafka:29092
+        create() {
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server $$BS \
+            --create --if-not-exists --topic $$1 --partitions $$2 \
+            --replication-factor 1 --config retention.ms=$$3 \
+            --config min.insync.replicas=1
+          echo "  done $$1"
+        }
+        echo "Creating BUKU Kafka topics (39)..."
+        create bookings.created 12 604800000
+        create bookings.confirmed 12 604800000
+        create bookings.cancelled 12 604800000
+        create bookings.rescheduled 6 604800000
+        create bookings.completed 6 2592000000
+        create bookings.reminder 6 86400000
+        create bookings.no_show 6 2592000000
+        create queue.session.opened 3 86400000
+        create queue.session.closed 3 86400000
+        create queue.entry.joined 12 86400000
+        create queue.entry.called 12 86400000
+        create queue.entry.served 6 86400000
+        create queue.entry.completed 6 2592000000
+        create queue.entry.left 6 86400000
+        create queue.entry.no_show 6 86400000
+        create queue.position.updated 24 3600000
+        create notifications.send 12 259200000
+        create notifications.delivered 6 604800000
+        create users.registered 6 2592000000
+        create users.verified 3 2592000000
+        create users.deleted 3 2592000000
+        create businesses.created 3 2592000000
+        create businesses.verified 3 2592000000
+        create businesses.updated 6 604800000
+        create businesses.suspended 3 2592000000
+        create payments.initiated 6 7776000000
+        create payments.completed 6 7776000000
+        create payments.failed 6 7776000000
+        create payments.refunded 3 7776000000
+        create analytics.events 24 7776000000
+        create analytics.search 12 2592000000
+        create analytics.ad.impressions 12 2592000000
+        create ai.call.started 3 2592000000
+        create ai.call.completed 6 2592000000
+        create ai.call.failed 3 2592000000
+        create webhooks.dispatch 6 604800000
+        create webhooks.delivered 3 604800000
+        create webhooks.failed 6 2592000000
+        create dlq.failed-events 6 2592000000
+        create dlq.notifications 6 2592000000
+        create dlq.webhooks 6 2592000000
+        echo "All topics:" && /opt/kafka/bin/kafka-topics.sh --bootstrap-server $$BS --list
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 5s
+      timeout: 3s
+      retries: 1
+      start_period: 5s
+
+  kafka-ui:
+    <<: *service-defaults
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: buku-kafka-ui
+    depends_on:
+      kafka: { condition: service_healthy }
+    ports: ["8080:8080"]
+    environment:
+      KAFKA_CLUSTERS_0_NAME: buku-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "true"
+      AUTH_TYPE: "disabled"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/actuator/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ───────────── Elasticsearch 8.17 ─────────────
+  elasticsearch:
+    <<: *service-defaults
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: buku-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.security.enrollment.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      cluster.name: buku-local
+      action.destructive_requires_name: "true"
+    volumes: [elasticsearch-data:/usr/share/elasticsearch/data]
+    ports: ["9200:9200"]
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  kibana:
+    <<: *service-defaults
+    image: docker.elastic.co/kibana/kibana:8.17.0
+    container_name: buku-kibana
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+    environment:
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+      SERVER_NAME: buku-kibana
+    ports: ["5601:5601"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://localhost:5601/api/status | grep -q 200"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 60s
+
+  elasticsearch-init:
+    <<: *service-defaults
+    image: curlimages/curl:8.11.1
+    container_name: buku-es-init
+    restart: "no"
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+    volumes:
+      - ./packages/search/elasticsearch/mappings:/mappings:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        ES=http://elasticsearch:9200
+        CODE=$$(curl -s -o /tmp/body -w '%{http_code}' -X PUT "$$ES/businesses" \
+          -H 'Content-Type: application/json' -d @/mappings/businesses.json)
+        if [ "$$CODE" = "200" ] || grep -q resource_already_exists_exception /tmp/body; then
+          echo "businesses index ready"
+        else
+          echo "index create failed ($$CODE):" && cat /tmp/body && exit 1
+        fi
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 5s
+      timeout: 3s
+      retries: 1
+      start_period: 5s
+
+  # ───────────── ClickHouse 25.3 LTS ─────────────
+  clickhouse:
+    <<: *service-defaults
+    image: clickhouse/clickhouse-server:25.3-alpine
+    container_name: buku-clickhouse
+    environment:
+      CLICKHOUSE_DB: buku_analytics
+      CLICKHOUSE_USER: buku_analytics
+      CLICKHOUSE_PASSWORD: buku_analytics_dev
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - clickhouse-logs:/var/log/clickhouse-server
+      - ./packages/database/clickhouse:/docker-entrypoint-initdb.d:ro
+    ports: ["8123:8123", "9000:9000"]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    cap_add: [SYS_NICE]
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --host localhost --user buku_analytics --password buku_analytics_dev --query 'SELECT 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+  # ───────────── LocalStack 4 ─────────────
+  localstack:
+    <<: *service-defaults
+    image: localstack/localstack:4.0
+    container_name: buku-localstack
+    environment:
+      SERVICES: s3,ses,sns,sqs,secretsmanager,lambda,events,cloudwatch,iam
+      DEBUG: "0"
+      PERSISTENCE: "1"
+      AWS_DEFAULT_REGION: us-east-1
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./infrastructure/localstack/init:/etc/localstack/init/ready.d:ro
+    ports: ["4566:4566"]
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal s3 ls > /dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # ───────────── DB migrate (one-shot) ─────────────
+  db-migrate:
+    <<: *service-defaults
+    image: node:22-alpine
+    container_name: buku-db-migrate
+    restart: "no"
+    working_dir: /app/packages/database
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgresql://buku_admin:buku_dev_password@postgres:5432/buku?schema=public
+    volumes:
+      - ./packages/database:/app/packages/database
+      - ./packages/common:/app/packages/common
+      - ./packages/kafka:/app/packages/kafka
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "Installing dependencies..."
+        npm install --no-audit --no-fund
+        echo "Pushing schema to database..."
+        npx prisma db push --schema prisma/schema.prisma --accept-data-loss
+        npx prisma generate --schema prisma/schema.prisma
+        echo "Seeding database..."
+        npx tsx prisma/seed.ts || echo "Seed skipped."
+        echo "Database ready."
+    healthcheck:
+      test: ["CMD-SHELL", "exit 0"]
+      interval: 5s
+      timeout: 3s
+      retries: 1
+      start_period: 5s
+
+  # ═════════════ MICROSERVICES ═════════════
+  auth-service:
+    env_file:
+      - .env
+    <<: *service-defaults
+    build: { context: ., dockerfile: services/auth/Dockerfile.dev }
+    container_name: buku-auth
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      db-migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *service-env
+      SERVICE_NAME: auth-service
+      PORT: "3001"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-dev}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-dev}
+      APPLE_CLIENT_ID: ${APPLE_CLIENT_ID:-dev}
+    ports: ["3001:3001"]
+    volumes:
+      - ./services/auth/src:/app/services/auth/src
+      - ./packages:/app/packages
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3001/health || exit 1"]
+      <<: *svc-health-timing
+
+  booking-service:
+    env_file:
+      - .env
+    <<: *service-defaults
+    build: { context: ., dockerfile: services/booking/Dockerfile.dev }
+    container_name: buku-booking
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      db-migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *service-env
+      SERVICE_NAME: booking-service
+      PORT: "3002"
+      BOOKING_SLOT_LOCK_TTL_SECONDS: "30"
+    ports: ["3002:3002"]
+    volumes:
+      - ./services/booking/src:/app/services/booking/src
+      - ./packages:/app/packages
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3002/health || exit 1"]
+      <<: *svc-health-timing
+
+  queue-service:
+    env_file:
+      - .env
+    <<: *service-defaults
+    build: { context: ., dockerfile: services/queue/Dockerfile.dev }
+    container_name: buku-queue
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      db-migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *service-env
+      SERVICE_NAME: queue-service
+      PORT: "3003"
+      WS_PORT: "3013"
+      QUEUE_GRACE_PERIOD_SECONDS: "300"
+    ports: ["3003:3003", "3013:3013"]
+    volumes:
+      - ./services/queue/src:/app/services/queue/src
+      - ./packages:/app/packages
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3003/health || exit 1"]
+      <<: *svc-health-timing
+
+  notification-service:
+    env_file:
+      - .env
+    <<: *service-defaults
+    build: { context: ., dockerfile: services/notification/Dockerfile.dev }
+    container_name: buku-notification
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      localstack: { condition: service_healthy }
+    environment:
+      <<: *service-env
+      SERVICE_NAME: notification-service
+      PORT: "3004"
+    ports: ["3004:3004"]
+    volumes:
+      - ./services/notification/src:/app/services/notification/src
+      - ./packages:/app/packages
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3004/health || exit 1"]
+      <<: *svc-health-timing
+
+  search-service:
+    env_file:
+      - .env
+    <<: *service-defaults
+    build: { context: ., dockerfile: services/search/Dockerfile.dev }
+    container_name: buku-search
+    depends_on:
+      elasticsearch: { condition: service_healthy }
+      elasticsearch-init: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      db-migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *service-env
+      SERVICE_NAME: search-service
+      PORT: "3005"
+      SEARCH_REBUILD_INDEX_ON_EMPTY: "true"
+    ports: ["3005:3005"]
+    volumes:
+      - ./services/search/src:/app/services/search/src
+      - ./packages:/app/packages
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3005/health || exit 1"]
+      <<: *svc-health-timing
+
+  ads-service:
+    env_file:
+      - .env
+    <<: *service-defaults
+    build: { context: ., dockerfile: services/ads/Dockerfile.dev }
+    container_name: buku-ads
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+      db-migrate: { condition: service_completed_successfully }
+    environment:
+      <<: *service-env
+      SERVICE_NAME: ads-service
+      PORT: "3006"
+      AD_ATTRIBUTION_WINDOW_DAYS: "7"
+    ports: ["3006:3006"]
+    volumes:
+      - ./services/ads/src:/app/services/ads/src
+      - ./packages:/app/packages
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3006/health || exit 1"]
+      <<: *svc-health-timing
+
+  analytics-service:
+    env_file:
+      - .env
+    <<: *service-defaults
+    build: { context: ., dockerfile: services/analytics/Dockerfile.dev }
+    container_name: buku-analytics
+    depends_on:
+      clickhouse: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+      kafka-init: { condition: service_completed_successfully }
+    environment:
+      <<: *service-env
+      SERVICE_NAME: analytics-service
+      PORT: "3007"
+    ports: ["3007:3007"]
+    volumes:
+      - ./services/analytics/src:/app/services/analytics/src
+      - ./packages:/app/packages
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3007/health || exit 1"]
+      <<: *svc-health-timing
+
+  # ───────────── Kong 3.9 (DB-less) ─────────────
+  kong:
+    <<: *service-defaults
+    image: kong:3.9
+    container_name: buku-kong
+    depends_on:
+      auth-service: { condition: service_healthy }
+      booking-service: { condition: service_healthy }
+      queue-service: { condition: service_healthy }
+      notification-service: { condition: service_healthy }
+      search-service: { condition: service_healthy }
+      ads-service: { condition: service_healthy }
+      analytics-service: { condition: service_healthy }
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/buku.yml
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_STATUS_LISTEN: "0.0.0.0:8100"
+      KONG_PLUGINS: bundled
+      KONG_LOG_LEVEL: notice
+    volumes:
+      - ./infrastructure/kong/buku.yml:/kong/buku.yml:ro
+    ports: ["3000:8000", "8001:8001"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:8100/status || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  redis-insight:
+    <<: *service-defaults
+    image: redis/redisinsight:latest
+    container_name: buku-redis-insight
+    depends_on:
+      redis: { condition: service_healthy }
+    ports: ["8002:5540"]
+    healthcheck:
+      disable: true
