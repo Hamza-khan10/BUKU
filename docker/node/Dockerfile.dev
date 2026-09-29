@@ -7,7 +7,7 @@
 # with the container's, and a container cannot modify your source tree.
 # Changing package.json / pnpm-lock.yaml → `docker compose build`.
 # ═══════════════════════════════════════════════════════════════════════════
-FROM node:24.21.0-trixie-slim
+FROM node:26.10.0-trixie-slim
 
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
