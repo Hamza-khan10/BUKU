@@ -30,6 +30,14 @@ for _ in $(seq 1 36); do
   sleep 5
 done
 
+# Containers can be healthy a few seconds before the gateway has re-resolved
+# them (Kong DNS TTL 5s). Wait until requests actually route (no 5xx).
+for _ in $(seq 1 20); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/queue)
+  [[ "$code" =~ ^[234] ]] && break
+  sleep 2
+done
+
 echo "═══ 1. Code quality ═══"
 check "TypeScript compiles (strict)"       pnpm typecheck
 check "ESLint clean (0 warnings)"          pnpm lint

@@ -363,6 +363,11 @@ services:
       PORT: '3001'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?run pnpm bootstrap}
+      # Local development only: sign in as any email without Google
+      # (POST /v1/auth/dev/login). auth-service refuses this in production.
+      AUTH_DEV_LOGIN_ENABLED: 'true'
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS:-}
+      APPLE_SIGN_IN_ENABLED: 'false'
       PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS}
       PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}

@@ -193,33 +193,40 @@ enum SubscriptionStatus {
 /// A person using BUKU. Consumers, staff and business owners are all users; `role` is their highest role.
 /// DB extras: CHECK at least one of email_hash / phone_hash; updated_at trigger.
 model User {
-  id                String     @id @default(uuid(7)) @db.Uuid
+  id                       String     @id @default(uuid(7)) @db.Uuid
   /// AES-256-GCM ciphertext, context "users.email".
-  emailEncrypted    String?    @map("email_encrypted")
+  emailEncrypted           String?    @map("email_encrypted")
   /// HMAC-SHA256 blind index of the normalized email (lookups + uniqueness).
-  emailHash         String?    @unique @map("email_hash") @db.Char(64)
+  emailHash                String?    @unique @map("email_hash") @db.Char(64)
   /// AES-256-GCM ciphertext, context "users.phone".
-  phoneEncrypted    String?    @map("phone_encrypted")
-  phoneHash         String?    @unique @map("phone_hash") @db.Char(64)
+  phoneEncrypted           String?    @map("phone_encrypted")
+  phoneHash                String?    @unique @map("phone_hash") @db.Char(64)
+  /// Phone added after sign-up, not yet verified by OTP (context "users.unverified_phone").
+  /// Deliberately NOT unique: an unverified claim must not let anyone block someone
+  /// else's number. Moves to phone_* once verification exists (SMS/WhatsApp OTP).
+  unverifiedPhoneEncrypted String?    @map("unverified_phone_encrypted")
+  unverifiedPhoneHash      String?    @map("unverified_phone_hash") @db.Char(64)
+  /// Explicit WhatsApp opt-in (required by WhatsApp Business policy), with timestamp.
+  whatsappOptInAt          DateTime?  @map("whatsapp_opt_in_at") @db.Timestamptz(6)
   /// Argon2id PHC string. Null for OTP-only / social-login accounts.
-  passwordHash      String?    @map("password_hash") @db.VarChar(255)
-  name              String     @db.VarChar(200)
-  avatarUrl         String?    @map("avatar_url")
-  timezone          String     @default("UTC") @db.VarChar(60)
-  locale            String     @default("en") @db.VarChar(10)
-  role              UserRole   @default(user)
-  status            UserStatus @default(active)
-  emailVerifiedAt   DateTime?  @map("email_verified_at") @db.Timestamptz(6)
-  phoneVerifiedAt   DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
+  passwordHash             String?    @map("password_hash") @db.VarChar(255)
+  name                     String     @db.VarChar(200)
+  avatarUrl                String?    @map("avatar_url")
+  timezone                 String     @default("UTC") @db.VarChar(60)
+  locale                   String     @default("en") @db.VarChar(10)
+  role                     UserRole   @default(user)
+  status                   UserStatus @default(active)
+  emailVerifiedAt          DateTime?  @map("email_verified_at") @db.Timestamptz(6)
+  phoneVerifiedAt          DateTime?  @map("phone_verified_at") @db.Timestamptz(6)
   /// GDPR/legal: which Terms version the user accepted, and when.
-  termsVersion      String?    @map("terms_version") @db.VarChar(20)
-  termsAcceptedAt   DateTime?  @map("terms_accepted_at") @db.Timestamptz(6)
-  passwordChangedAt DateTime?  @map("password_changed_at") @db.Timestamptz(6)
-  lastLoginAt       DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  termsVersion             String?    @map("terms_version") @db.VarChar(20)
+  termsAcceptedAt          DateTime?  @map("terms_accepted_at") @db.Timestamptz(6)
+  passwordChangedAt        DateTime?  @map("password_changed_at") @db.Timestamptz(6)
+  lastLoginAt              DateTime?  @map("last_login_at") @db.Timestamptz(6)
   /// Soft delete; a scheduled job hard-deletes 30 days later (GDPR erasure).
-  deletedAt         DateTime?  @map("deleted_at") @db.Timestamptz(6)
-  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt                DateTime?  @map("deleted_at") @db.Timestamptz(6)
+  createdAt                DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   oauthAccounts     OAuthAccount[]
   refreshTokens     RefreshToken[]
@@ -239,6 +246,7 @@ model User {
   @@index([status])
   @@index([createdAt])
   @@index([deletedAt])
+  @@index([unverifiedPhoneHash])
   @@map("users")
 }
 

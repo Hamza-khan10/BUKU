@@ -68,7 +68,8 @@ fields rejected) · an ownership/authorization check with a test proving
 another user or business is denied · rate limits where abuse is possible ·
 an audit-log entry for security-relevant actions · events via the outbox ·
 unit + integration tests for the success path and the attack path · an
-updated `docs/API_REFERENCE.md` (generated from the same Zod schemas).
+updated `docs/API_REFERENCE.md` (contracts live in each service's `routes/schemas.ts`;
+OpenAPI generation from them arrives with the web app in Phase 3).
 
 ### 2.0 Kickoff ✅
 
@@ -77,7 +78,7 @@ opt-in compose profiles (search runs on Postgres); **database rule: one
 customer can never hold two overlapping active appointments, even at two
 different businesses**.
 
-### 2.1 Auth service
+### 2.1 Auth service — 🚧 part 1 done (Google sign-in, sessions, profile)
 
 1. Google sign-in (ID token verified server-side against Google's keys). Apple sign-in built
    behind a feature flag, **locked** until the Apple Developer account exists.
@@ -88,10 +89,14 @@ different businesses**.
    receive `SESSION_REVOKED` with reason `password_changed` to show "sign in again".
 4. Profile: name, timezone, locale; **phone number required after sign-up** (for WhatsApp
    notifications, with explicit WhatsApp opt-in); push tokens.
-5. Data requests: export my data, delete my account (the self-service "my data" section).
+5. Data requests: export my data, delete my account (the self-service "my data" section). ⏭ part 2
 6. Development-only sign-in (hard-disabled in production) so the rest of Phase 2 and the web
    app can be built without real Google/Apple credentials.
-7. Audit log; `users.*` events; Kong validates tokens at the gateway too.
+7. Audit log; `users.*` events. Kong validates tokens at the gateway too (⏭ part 2).
+
+Part 1 status: items 1–4, 6, 7 (audit + events) are built and covered by 24 integration tests
+(`services/auth/test/auth.int.test.ts`); password sign-in and password change arrive with business
+sub-accounts in 2.2, reusing the "end all sessions" mechanism built here.
 
 ### 2.2 Business service (new)
 

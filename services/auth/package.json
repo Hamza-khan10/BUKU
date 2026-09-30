@@ -15,6 +15,7 @@
     "@buku/kafka": "workspace:*",
     "express": "5.2.1",
     "ioredis": "6.0.0",
+    "jose": "6.2.12",
     "zod": "4.6.5"
   },
   "devDependencies": {

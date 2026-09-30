@@ -1,10 +1,10 @@
 import {
   createBlindIndexer,
   createFieldCipher,
-  createHttpApp,
   createJwtSigner,
   createJwtVerifierFromEnv,
   createRedisClient,
+  createRevocationStore,
   loadConfig,
   logger,
   parseKeyring,
@@ -13,9 +13,10 @@ import {
   type ShutdownHook,
 } from '@buku/common';
 import { createDatabaseClient, pingDatabase } from '@buku/database';
-import { createKafka, EventProducer, kafkaConnectionFromEnv } from '@buku/kafka';
+import { createKafka, EventProducer, kafkaConnectionFromEnv, OutboxRelay } from '@buku/kafka';
+import { buildAuthApp } from './app.js';
 import { Env } from './config.js';
-import { registerRoutes } from './routes.js';
+import { createOidcVerifier } from './identity/oidc.js';
 
 const env = loadConfig(Env);
 
@@ -28,10 +29,6 @@ const db = createDatabaseClient({
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
 const producer = new EventProducer(createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env)));
 const verifier = await createJwtVerifierFromEnv(env);
-
-// Fail fast on bad key material: sign a probe token and verify it with the
-// PUBLIC key every other service uses. A mismatched pair is caught here, at
-// boot, instead of as "every login returns 401" in production.
 const signer = await createJwtSigner({
   privateKeyPem: env.JWT_PRIVATE_KEY,
   keyId: env.JWT_KEY_ID,
@@ -39,16 +36,22 @@ const signer = await createJwtSigner({
   audience: env.JWT_AUDIENCE,
   ttlSeconds: env.JWT_ACCESS_TTL_SECONDS,
 });
+
+// Fail fast on bad key material: sign a probe token and verify it with the
+// PUBLIC key every other service uses. A mismatched pair is caught here, at
+// boot, instead of as "every login returns 401" in production.
 await verifier.verify(
   (await signer.sign({ sub: '00000000-0000-4000-8000-000000000000', role: 'user' })).token,
 );
-const fieldCipher = createFieldCipher(
-  parseKeyring(env.PII_ENCRYPTION_KEYS, env.PII_ENCRYPTION_ACTIVE_KEY_ID),
-);
-const blindIndexer = createBlindIndexer(Buffer.from(env.PII_BLIND_INDEX_KEY, 'base64'));
-await producer.connect();
 
-// ── Readiness: every dependency must answer before traffic is routed here ──
+if (env.AUTH_DEV_LOGIN_ENABLED) logger.warn('DEV LOGIN IS ENABLED — development only');
+
+await producer.connect();
+// Publishes committed outbox events (e.g. users.registered) to Kafka.
+const relay = new OutboxRelay({ db, producer });
+relay.start();
+
+// ── Readiness ──
 const readiness = new Readiness()
   .add('postgres', () => pingDatabase(db))
   .add('valkey', () => redis.ping())
@@ -56,17 +59,35 @@ const readiness = new Readiness()
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const app = createHttpApp({
-  service: env.SERVICE_NAME,
-  logger,
-  readiness,
-  trustProxyHops: env.TRUST_PROXY_HOPS,
-  bodyLimit: env.HTTP_BODY_LIMIT,
-  routes: (router) =>
-    registerRoutes(router, { db, redis, producer, verifier, signer, fieldCipher, blindIndexer }),
+const app = buildAuthApp({
+  db,
+  redis,
+  signer,
+  verifier,
+  cipher: createFieldCipher(parseKeyring(env.PII_ENCRYPTION_KEYS, env.PII_ENCRYPTION_ACTIVE_KEY_ID)),
+  indexer: createBlindIndexer(Buffer.from(env.PII_BLIND_INDEX_KEY, 'base64')),
+  revocations: createRevocationStore(redis, env.JWT_ACCESS_TTL_SECONDS),
+  identity: {
+    google: env.GOOGLE_CLIENT_IDS.length ? createOidcVerifier('google', env.GOOGLE_CLIENT_IDS) : null,
+    apple: env.APPLE_SIGN_IN_ENABLED ? createOidcVerifier('apple', env.APPLE_CLIENT_IDS) : null,
+  },
+  settings: {
+    termsVersion: env.TERMS_VERSION,
+    devLoginEnabled: env.AUTH_DEV_LOGIN_ENABLED,
+    sessionIdleTimeoutDays: env.SESSION_IDLE_TIMEOUT_DAYS,
+    adminSessionIdleTimeoutHours: env.ADMIN_SESSION_IDLE_TIMEOUT_HOURS,
+    refreshReuseGraceSeconds: env.REFRESH_REUSE_GRACE_SECONDS,
+  },
+  http: {
+    service: env.SERVICE_NAME,
+    logger,
+    readiness,
+    trustProxyHops: env.TRUST_PROXY_HOPS,
+    bodyLimit: env.HTTP_BODY_LIMIT,
+  },
 });
 
-// Hooks run in REVERSE order on shutdown: stop producing before closing stores.
+// Hooks run in REVERSE order on shutdown: stop the relay, flush Kafka, close stores.
 const hooks: ShutdownHook[] = [
   { name: 'postgres', fn: () => db.$disconnect() },
   {
@@ -76,6 +97,7 @@ const hooks: ShutdownHook[] = [
     },
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
+  { name: 'outbox-relay', fn: () => relay.stop() },
 ];
 
 await runService({

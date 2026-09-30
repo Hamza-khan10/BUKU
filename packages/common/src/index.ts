@@ -19,6 +19,7 @@ export * from './security/tokens.js';
 export * from './security/password.js';
 export * from './security/jwt.js';
 export * from './security/webhook-signature.js';
+export * from './security/revocation.js';
 
 // Infrastructure clients
 export * from './redis.js';

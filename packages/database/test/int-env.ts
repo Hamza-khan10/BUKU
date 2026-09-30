@@ -24,4 +24,6 @@ export const testEnv = {
   appUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_test`,
   migratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_test`,
   kafkaBrokers: process.env.TEST_KAFKA_BROKERS ?? 'localhost:9092',
+  redisUrl: `redis://:${encodeURIComponent(required('VALKEY_PASSWORD'))}@${host}:${process.env.VALKEY_HOST_PORT ?? '6379'}/0`,
+  piiKeyring: required('PII_ENCRYPTION_KEYS'),
 };
