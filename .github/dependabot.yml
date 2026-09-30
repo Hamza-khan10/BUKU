@@ -17,6 +17,9 @@ updates:
       # Node major versions follow the LTS schedule deliberately (docs/DECISIONS.md D-001).
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+      # TypeScript 7 (native compiler) waits for typescript-eslint support (D-001).
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
