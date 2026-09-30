@@ -27,6 +27,8 @@ export const ErrorCodes = {
   OAUTH_TOKEN_INVALID: 'OAUTH_TOKEN_INVALID',
   TERMS_NOT_ACCEPTED: 'TERMS_NOT_ACCEPTED',
   FEATURE_DISABLED: 'FEATURE_DISABLED',
+  /** Sensitive action (e.g. deleting the account) needs a fresh sign-in. */
+  REAUTH_REQUIRED: 'REAUTH_REQUIRED',
 
   // Identity
   USER_EXISTS: 'USER_EXISTS',

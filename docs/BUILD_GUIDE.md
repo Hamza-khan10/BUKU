@@ -78,7 +78,7 @@ opt-in compose profiles (search runs on Postgres); **database rule: one
 customer can never hold two overlapping active appointments, even at two
 different businesses**.
 
-### 2.1 Auth service — 🚧 part 1 done (Google sign-in, sessions, profile)
+### 2.1 Auth service ✅
 
 1. Google sign-in (ID token verified server-side against Google's keys). Apple sign-in built
    behind a feature flag, **locked** until the Apple Developer account exists.
@@ -89,13 +89,15 @@ different businesses**.
    receive `SESSION_REVOKED` with reason `password_changed` to show "sign in again".
 4. Profile: name, timezone, locale; **phone number required after sign-up** (for WhatsApp
    notifications, with explicit WhatsApp opt-in); push tokens.
-5. Data requests: export my data, delete my account (the self-service "my data" section). ⏭ part 2
+5. Data requests: export my data; delete my account (fresh sign-in required, 30-day restorable
+   grace period, then irreversible anonymization by an hourly job).
 6. Development-only sign-in (hard-disabled in production) so the rest of Phase 2 and the web
    app can be built without real Google/Apple credentials.
-7. Audit log; `users.*` events. Kong validates tokens at the gateway too (⏭ part 2).
+7. Audit log; `users.*` events. The gateway validates access tokens too (deny by default;
+   public routes listed explicitly in `infrastructure/kong/kong.template.yml`).
 
-Part 1 status: items 1–4, 6, 7 (audit + events) are built and covered by 24 integration tests
-(`services/auth/test/auth.int.test.ts`); password sign-in and password change arrive with business
+Status: built and covered by 31 integration tests (`services/auth/test/auth.int.test.ts`) plus
+gateway checks in `pnpm verify`. Password sign-in and password change arrive with business
 sub-accounts in 2.2, reusing the "end all sessions" mechanism built here.
 
 ### 2.2 Business service (new)

@@ -76,7 +76,7 @@ Email security@buku.app (to be created before launch). Do not open a public issu
 
 ## Known limitations (tracked)
 
-- Kong gateway JWT validation is added in Phase 2.1 (services already verify every token).
+- Gateway 401 responses use Kong's `{"message"}` body instead of the BUKU envelope (documented for clients).
 - Kong OSS has no releases after 3.9; plan a migration path (see DECISIONS D-011) before 2027.
 - Soft-deleted users are hidden from direct queries but can still appear through relations until
   the GDPR purge anonymises them; Phase 2 routes must not expose them.

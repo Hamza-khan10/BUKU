@@ -14,8 +14,10 @@ import type { Redis } from 'ioredis';
 import { requestContext } from '../http/context.js';
 import type { OidcVerifier } from '../identity/oidc.js';
 import type { SessionService } from '../sessions/session-service.js';
+import type { DataRightsService } from '../users/data-rights.js';
 import type { SignInResult, UserService } from '../users/user-service.js';
 import {
+  DeleteAccountBody,
   DevSignInBody,
   OAuthSignInBody,
   PushTokenBody,
@@ -30,6 +32,7 @@ import type { JwtVerifier } from '@buku/common';
 export interface RouteDeps {
   users: UserService;
   sessions: SessionService;
+  rights: DataRightsService;
   verifier: JwtVerifier;
   revocations: RevocationStore;
   redis: Redis;
@@ -186,6 +189,32 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       if (!(await deps.users.removePushToken(requireAuth(req).userId, params.token)))
         throw AppError.notFound('Push token');
       sendNoContent(res);
+    }),
+  );
+
+  // ── My data (export / delete) ────────────────────────────────────────────
+  const exportLimit = rateLimit({
+    keyPrefix: 'rl:auth:export',
+    points: 5,
+    durationSeconds: 3600,
+    redis: deps.redis,
+  });
+
+  r.get('/me/export', auth, exportLimit, async (req, res) => {
+    const data = await deps.rights.exportData(requireAuth(req).userId, requestContext(req));
+    const day = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Disposition', `attachment; filename="buku-data-export-${day}.json"`);
+    sendSuccess(res, data);
+  });
+
+  r.delete(
+    '/me',
+    auth,
+    writeLimit,
+    validated({ body: DeleteAccountBody }, async ({ body }, req, res) => {
+      const { userId, sessionId } = requireAuth(req);
+      const result = await deps.rights.requestDeletion(userId, sessionId, body.reason, requestContext(req));
+      sendSuccess(res, { status: 'scheduled', ...result }, 202);
     }),
   );
 

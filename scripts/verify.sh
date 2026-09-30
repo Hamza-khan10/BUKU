@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════════
-# Phase 1 acceptance: every foundation "brick" verified against the running
-# stack. Run after `pnpm dev`.                                  (pnpm verify)
+# Acceptance checks for everything built so far, against the running stack.
+# Run after `pnpm dev`.                                          (pnpm verify)
 # Exit code 0 only if everything passes.
 # ═══════════════════════════════════════════════════════════════════════════
 set -uo pipefail
@@ -33,7 +33,7 @@ done
 # Containers can be healthy a few seconds before the gateway has re-resolved
 # them (Kong DNS TTL 5s). Wait until requests actually route (no 5xx).
 for _ in $(seq 1 20); do
-  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/queue)
+  code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/businesses/x/services)
   [[ "$code" =~ ^[234] ]] && break
   sleep 2
 done
@@ -80,17 +80,34 @@ echo "═══ 6. Gateway & security baseline ═══"
 check "Only localhost-bound published ports"          bash -c "! docker compose -f docker-compose.dev.yml ps --format '{{.Publishers}}' | grep -q '0.0.0.0'"
 check "Services not reachable directly from host"      bash -c "! curl -s --max-time 2 http://localhost:3001/health"
 check "Internal endpoints not routed by gateway"       eq "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/metrics)" 404
-check "Security headers on API responses"              bash -c "curl -s -D - -o /dev/null http://localhost:8000/v1/queue | grep -qi \"content-security-policy: default-src 'none'\""
-check "Standard error envelope with request id"        bash -c "curl -s http://localhost:8000/v1/queue | grep -q '\"requestId\"'"
+check "Security headers on API responses"              bash -c "curl -s -D - -o /dev/null http://localhost:8000/v1/businesses/x/services | grep -qi \"content-security-policy: default-src 'none'\""
+check "Standard error envelope with request id"        bash -c "curl -s http://localhost:8000/v1/businesses/x/services | grep -q '\"requestId\"'"
 check "CORS allows the web origin"                     bash -c "curl -s -D - -o /dev/null -X OPTIONS -H 'Origin: http://localhost:3000' -H 'Access-Control-Request-Method: POST' http://localhost:8000/v1/auth/login | grep -qi 'access-control-allow-origin: http://localhost:3000'"
 check "CORS rejects unknown origins"                   bash -c "! curl -s -D - -o /dev/null -X OPTIONS -H 'Origin: https://evil.example' -H 'Access-Control-Request-Method: POST' http://localhost:8000/v1/auth/login | grep -qi 'access-control-allow-origin: https://evil.example'"
 check "Node containers run as non-root, read-only FS"  bash -c "[[ \$(docker inspect buku-auth-service-1 --format '{{.Config.User}}/{{.HostConfig.ReadonlyRootfs}}') == 'node/true' ]]"
 check "Valkey dangerous commands disabled"             bash -c "docker compose -f docker-compose.dev.yml exec -T valkey valkey-cli FLUSHALL 2>&1 | grep -q 'unknown command'"
 check ".env is git-ignored"                            git check-ignore -q .env
 
-echo "═══ 7. Integration tests (real Postgres + Kafka) ═══"
+echo "═══ 7. Auth & gateway access-token check ═══"
+# A token with our real key id but a forged signature.
+FORGED=$(python3 -c "
+import base64,json,time,sys
+b=lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b'=').decode()
+print(b({'alg':'RS256','kid':sys.argv[1]})+'.'+b({'sub':'x','role':'super_admin','exp':int(time.time())+600})+'.'+'A'*342)
+" "$(grep ^JWT_KEY_ID= .env | cut -d= -f2)")
+check "Gateway rejects requests without a token"       eq "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/auth/me)" 401
+check "Gateway rejects a forged token"                 bash -c "curl -s -H 'Authorization: Bearer $FORGED' http://localhost:8000/v1/auth/me | grep -q 'Invalid signature'"
+check "Gateway ignores tokens passed in the URL"       eq "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8000/v1/queue?jwt=$FORGED")" 401
+check "Public routes need no token (sign-in, browse)"  bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/businesses/x/services) == 404 ]]"
+check "Sign-in → /me → log out everywhere works end to end" bash -c '
+  T=$(curl -s -X POST http://localhost:8000/v1/auth/dev/login -H "Content-Type: application/json" -d "{\"email\":\"verify@buku.dev\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"data\"][\"accessToken\"])")
+  [[ $(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $T" http://localhost:8000/v1/auth/me) == 200 ]] &&
+  [[ $(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Authorization: Bearer $T" http://localhost:8000/v1/auth/logout-all) == 204 ]] &&
+  curl -s -H "Authorization: Bearer $T" http://localhost:8000/v1/auth/me | grep -q logged_out_everywhere'
+
+echo "═══ 8. Integration tests (real Postgres + Kafka) ═══"
 check "Integration tests pass"                         pnpm test:int
 
 echo
 echo "Passed: $PASS   Failed: $FAIL"
-[[ $FAIL == 0 ]] && echo "PHASE 1 VERIFIED ✔" || { echo "PHASE 1 NOT VERIFIED ✘"; exit 1; }
+[[ $FAIL == 0 ]] && echo "ALL CHECKS PASSED ✔" || { echo "VERIFICATION FAILED ✘"; exit 1; }

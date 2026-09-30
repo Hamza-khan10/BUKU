@@ -596,7 +596,12 @@ services:
     image: kong:3.9.3
     environment:
       KONG_DATABASE: 'off'
-      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_DECLARATIVE_CONFIG: /tmp/kong.yml
+      # Public key(s) for the gateway's access-token check (render-config.sh).
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY}
+      JWT_KEY_ID: ${JWT_KEY_ID}
+      JWT_PREVIOUS_PUBLIC_KEY: ${JWT_PREVIOUS_PUBLIC_KEY:-}
+      JWT_PREVIOUS_KEY_ID: ${JWT_PREVIOUS_KEY_ID:-}
       KONG_PROXY_LISTEN: '0.0.0.0:8000'
       # Admin API: dev convenience only, localhost-bound. Disabled in prod.
       KONG_ADMIN_LISTEN: '0.0.0.0:8001'
@@ -613,7 +618,10 @@ services:
       # TTL; without this Kong keeps routing to a replaced container's old IP
       # (504s after every service restart or deploy).
       KONG_DNS_VALID_TTL: '5'
-    volumes: [./infrastructure/kong/kong.yml:/kong/kong.yml:ro]
+    entrypoint: ['/bin/sh', '/kong/render-config.sh']
+    volumes:
+      - ./infrastructure/kong/kong.template.yml:/kong/kong.template.yml:ro
+      - ./infrastructure/kong/render-config.sh:/kong/render-config.sh:ro
     ports: ['127.0.0.1:8000:8000', '127.0.0.1:8001:8001']
     depends_on:
       valkey: { condition: service_healthy }

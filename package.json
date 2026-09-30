@@ -19,7 +19,7 @@
     "dev:down": "docker compose -f docker-compose.dev.yml --profile '*' down",
     "dev:wipe": "docker compose -f docker-compose.dev.yml --profile '*' down -v",
     "health": "bash scripts/health-check.sh",
-    "verify": "bash scripts/verify-phase1.sh",
+    "verify": "bash scripts/verify.sh",
     "lint": "eslint --max-warnings=0 .",
     "lint:fix": "eslint --fix .",
     "format": "prettier --write .",

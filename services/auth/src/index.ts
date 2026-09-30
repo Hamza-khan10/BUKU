@@ -15,6 +15,7 @@ import {
 import { createDatabaseClient, pingDatabase } from '@buku/database';
 import { createKafka, EventProducer, kafkaConnectionFromEnv, OutboxRelay } from '@buku/kafka';
 import { buildAuthApp } from './app.js';
+import { AccountPurger } from './users/data-rights.js';
 import { Env } from './config.js';
 import { createOidcVerifier } from './identity/oidc.js';
 
@@ -59,7 +60,7 @@ const readiness = new Readiness()
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const app = buildAuthApp({
+const { app, rights } = buildAuthApp({
   db,
   redis,
   signer,
@@ -77,6 +78,8 @@ const app = buildAuthApp({
     sessionIdleTimeoutDays: env.SESSION_IDLE_TIMEOUT_DAYS,
     adminSessionIdleTimeoutHours: env.ADMIN_SESSION_IDLE_TIMEOUT_HOURS,
     refreshReuseGraceSeconds: env.REFRESH_REUSE_GRACE_SECONDS,
+    deletionGraceDays: env.ACCOUNT_DELETION_GRACE_DAYS,
+    reauthWindowMinutes: env.REAUTH_WINDOW_MINUTES,
   },
   http: {
     service: env.SERVICE_NAME,
@@ -86,6 +89,10 @@ const app = buildAuthApp({
     bodyLimit: env.HTTP_BODY_LIMIT,
   },
 });
+
+// Hourly: anonymize accounts whose deletion grace period is over.
+const purger = new AccountPurger(rights, (err) => logger.error({ err }, 'account purge failed'));
+purger.start();
 
 // Hooks run in REVERSE order on shutdown: stop the relay, flush Kafka, close stores.
 const hooks: ShutdownHook[] = [
@@ -98,6 +105,7 @@ const hooks: ShutdownHook[] = [
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
   { name: 'outbox-relay', fn: () => relay.stop() },
+  { name: 'account-purger', fn: () => purger.stop() },
 ];
 
 await runService({

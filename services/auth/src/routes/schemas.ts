@@ -14,6 +14,8 @@ export const OAuthSignInBody = zBody({
   idToken: z.string().min(20).max(8192),
   /** Required for NEW accounts: the Terms/Privacy version the user agreed to. */
   acceptedTermsVersion: z.string().max(20).optional(),
+  /** Set after the user chose "Restore my account" (sign-in during the deletion grace period). */
+  restoreAccount: z.boolean().optional(),
   device: DeviceSchema.optional(),
   timezone: zTimezone.optional(),
   locale: zLocale.optional(),
@@ -50,3 +52,10 @@ export const PushTokenBody = zBody({
 });
 
 export const PushTokenParams = z.object({ token: z.string().min(10).max(4096) });
+
+export const DeleteAccountBody = zBody({
+  /** Typed confirmation, so a stray request can't delete an account. */
+  confirmation: z.literal('DELETE'),
+  /** Optional feedback: why the person is leaving. */
+  reason: zSafeText({ max: 500 }).optional(),
+});
