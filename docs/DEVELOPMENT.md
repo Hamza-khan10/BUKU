@@ -67,6 +67,13 @@ Inside the same transaction as the business change:
 `await enqueueEvent(tx, createEvent({ type: TOPICS.X, source, subject: aggregateId, data }), 'aggregate')`.
 Consumers wrap side effects in `processOnce(db, '<service>:<topic>', event.id, fn)`.
 
+### Make a route public (no sign-in)
+
+Every route behind the gateway requires a valid access token by default. To make one public,
+add it as its own route WITHOUT the `jwt` plugin in `infrastructure/kong/kong.template.yml`
+(restrict `methods` where possible, e.g. `[GET, OPTIONS]`), then `docker compose -f
+docker-compose.dev.yml up -d --force-recreate kong`. The service must still not trust the caller.
+
 ### Add an environment variable
 
 1. Add it to the service's Zod schema in `services/<svc>/src/config.ts`.

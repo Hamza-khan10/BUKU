@@ -129,6 +129,9 @@ Schemas: `public` (Prisma), `partitions` (monthly partitions), `ai` (vector stor
 | ads _(deferred)_       | business_ads, ad_events                                                                                    | `analytics.ad.impressions` | `bookings.created`                                  |
 | analytics _(deferred)_ | ClickHouse tables                                                                                          | —                          | `analytics.*`, `bookings.*`, `queue.session.closed` |
 
+auth-service's data export reads the other services' tables read-only (GDPR aggregation, D-043);
+no service ever writes another service's tables.
+
 Deferred services keep their code and configuration but run only with their compose profile
 (`--profile ads`, `--profile analytics`, `--profile elasticsearch`).
 

@@ -15,6 +15,7 @@ import type { Redis } from 'ioredis';
 import type { OidcVerifier } from './identity/oidc.js';
 import { registerRoutes } from './routes/index.js';
 import { SessionService } from './sessions/session-service.js';
+import { DataRightsService } from './users/data-rights.js';
 import { UserService } from './users/user-service.js';
 
 /**
@@ -37,11 +38,13 @@ export interface AuthAppDeps {
     sessionIdleTimeoutDays: number;
     adminSessionIdleTimeoutHours: number;
     refreshReuseGraceSeconds: number;
+    deletionGraceDays: number;
+    reauthWindowMinutes: number;
   };
   http: { service: string; logger: Logger; readiness: Readiness; trustProxyHops: number; bodyLimit?: string };
 }
 
-export function buildAuthApp(deps: AuthAppDeps): Express {
+export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRightsService } {
   const { settings } = deps;
   const sessions = new SessionService({
     db: deps.db,
@@ -61,14 +64,22 @@ export function buildAuthApp(deps: AuthAppDeps): Express {
     indexer: deps.indexer,
     sessions,
     termsVersion: settings.termsVersion,
+    deletionGraceDays: settings.deletionGraceDays,
+  });
+  const rights = new DataRightsService({
+    db: deps.db,
+    users,
+    sessions,
+    settings: { graceDays: settings.deletionGraceDays, reauthWindowMinutes: settings.reauthWindowMinutes },
   });
 
-  return createHttpApp({
+  const app = createHttpApp({
     ...deps.http,
     routes: (app) =>
       registerRoutes(app, {
         users,
         sessions,
+        rights,
         verifier: deps.verifier,
         revocations: deps.revocations,
         redis: deps.redis,
@@ -76,4 +87,5 @@ export function buildAuthApp(deps: AuthAppDeps): Express {
         devLoginEnabled: settings.devLoginEnabled,
       }),
   });
+  return { app, rights };
 }

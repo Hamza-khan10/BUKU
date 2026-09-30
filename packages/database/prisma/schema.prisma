@@ -223,8 +223,11 @@ model User {
   termsAcceptedAt          DateTime?  @map("terms_accepted_at") @db.Timestamptz(6)
   passwordChangedAt        DateTime?  @map("password_changed_at") @db.Timestamptz(6)
   lastLoginAt              DateTime?  @map("last_login_at") @db.Timestamptz(6)
-  /// Soft delete; a scheduled job hard-deletes 30 days later (GDPR erasure).
+  /// Account deletion requested (GDPR erasure). The account is hidden immediately and can be
+  /// restored by signing in during the grace period; after it, personal data is purged.
   deletedAt                DateTime?  @map("deleted_at") @db.Timestamptz(6)
+  /// When personal data was irreversibly anonymized after the grace period.
+  purgedAt                 DateTime?  @map("purged_at") @db.Timestamptz(6)
   createdAt                DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 

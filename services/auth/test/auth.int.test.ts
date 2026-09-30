@@ -20,6 +20,8 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
 import { buildAuthApp } from '../src/app.js';
+import type { DataRightsService } from '../src/users/data-rights.js';
+import { appointmentData, createBusinessFixture } from '../../../packages/database/test/fixtures.js';
 import { createOidcVerifierWithKeys } from '../src/identity/oidc.js';
 
 /**
@@ -31,6 +33,7 @@ const GOOGLE_CLIENT_ID = 'buku-test.apps.googleusercontent.com';
 const TERMS = '1.0';
 
 let app: Express;
+let rights: DataRightsService;
 let db: Database;
 let redis: Redis;
 let googleKey: CryptoKey;
@@ -100,7 +103,7 @@ beforeAll(async () => {
 
   cipher = createFieldCipher(parseKeyring(`k1:${randomBytes(32).toString('base64')}`, 'k1'));
   indexer = createBlindIndexer(randomBytes(32));
-  app = buildAuthApp({
+  ({ app, rights } = buildAuthApp({
     db,
     redis,
     signer,
@@ -123,6 +126,8 @@ beforeAll(async () => {
       sessionIdleTimeoutDays: 180,
       adminSessionIdleTimeoutHours: 24,
       refreshReuseGraceSeconds: 15,
+      deletionGraceDays: 30,
+      reauthWindowMinutes: 10,
     },
     http: {
       service: 'auth-test',
@@ -130,7 +135,7 @@ beforeAll(async () => {
       readiness: new Readiness(),
       trustProxyHops: 1,
     },
-  });
+  }));
 });
 
 afterAll(async () => {
@@ -482,5 +487,194 @@ describe('My account', () => {
     ] as const) {
       expect((await request(app)[method](path)).status).toBe(401);
     }
+  });
+});
+
+describe('My data: export and deletion', () => {
+  it('exports everything about me — and nothing about anyone else', async () => {
+    const s = await signUp();
+    const other = await signUp();
+    const f = await createBusinessFixture(db);
+    await db.appointment.create({
+      data: {
+        ...appointmentData(f, new Date('2031-05-01T10:00:00Z')),
+        userId: s.user.id,
+        internalNotes: 'business-only note',
+      },
+    });
+    await db.appointment.create({
+      data: { ...appointmentData(f, new Date('2031-05-02T10:00:00Z')), userId: other.user.id },
+    });
+
+    const res = await request(app).get('/v1/auth/me/export').set(bearer(s.accessToken));
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toMatch(
+      /attachment; filename="buku-data-export-\d{4}-\d{2}-\d{2}\.json"/,
+    );
+    const data = res.body.data;
+    expect(data.format).toBe('buku-data-export/1');
+    expect(data.account.email).toBe(s.user.email);
+    expect(data.signInMethods).toEqual([expect.objectContaining({ provider: 'google' })]);
+    expect(data.appointments).toHaveLength(1);
+    expect(data.appointments[0].business.name).toBe(f.business.name);
+    expect(JSON.stringify(data)).not.toContain('business-only note');
+    expect(JSON.stringify(data)).not.toContain(other.user.id);
+    expect(data.securityLog.map((e: { action: string }) => e.action)).toContain('auth.signed_up');
+  });
+
+  it('requires a recent sign-in to delete the account', async () => {
+    const s = await signUp();
+    // Pretend this session was signed in 20 minutes ago (refreshes don't count).
+    await db.refreshToken.updateMany({
+      where: { familyId: s.sessionId },
+      data: { createdAt: new Date(Date.now() - 20 * 60_000) },
+    });
+    const res = await request(app)
+      .delete('/v1/auth/me')
+      .set(bearer(s.accessToken))
+      .send({ confirmation: 'DELETE' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatchObject({ code: 'REAUTH_REQUIRED', details: { withinMinutes: 10 } });
+  });
+
+  it('requires the typed confirmation', async () => {
+    const s = await signUp();
+    expect((await request(app).delete('/v1/auth/me').set(bearer(s.accessToken)).send({})).status).toBe(400);
+    expect(
+      (await request(app).delete('/v1/auth/me').set(bearer(s.accessToken)).send({ confirmation: 'yes' }))
+        .status,
+    ).toBe(400);
+  });
+
+  it('deleting signs out everywhere, stops notifications, and tells other services', async () => {
+    const s = await signUp();
+    await request(app)
+      .post('/v1/auth/push-tokens')
+      .set(bearer(s.accessToken))
+      .send({ token: `fcm-${randomUUID()}`, platform: 'ios' });
+    const res = await request(app)
+      .delete('/v1/auth/me')
+      .set(bearer(s.accessToken))
+      .send({ confirmation: 'DELETE', reason: 'Just testing' });
+    expect(res.status).toBe(202);
+    expect(new Date(res.body.data.purgeAfter).getTime()).toBeGreaterThan(Date.now() + 29 * 86_400_000);
+
+    const me = await request(app).get('/v1/auth/me').set(bearer(s.accessToken));
+    expect(me.body.error).toMatchObject({ code: 'SESSION_REVOKED', details: { reason: 'account_deleted' } });
+    expect(await db.pushToken.count({ where: { userId: s.user.id } })).toBe(0);
+    const topics = (await db.outboxEvent.findMany({ where: { aggregateId: s.user.id } })).map((e) => e.topic);
+    expect(topics).toContain('users.deleted');
+  });
+
+  it('signing in during the grace period offers restore, and restoring works', async () => {
+    const sub = randomUUID();
+    const first = await post('/v1/auth/oauth/google').send({
+      idToken: await googleIdToken({ sub }),
+      acceptedTermsVersion: TERMS,
+    });
+    await request(app)
+      .delete('/v1/auth/me')
+      .set(bearer(first.body.data.accessToken))
+      .send({ confirmation: 'DELETE' });
+
+    const blocked = await post('/v1/auth/oauth/google').send({ idToken: await googleIdToken({ sub }) });
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error.details).toMatchObject({ reason: 'account_deleted', canRestore: true });
+
+    const restored = await post('/v1/auth/oauth/google').send({
+      idToken: await googleIdToken({ sub }),
+      restoreAccount: true,
+    });
+    expect(restored.status).toBe(200);
+    expect(restored.body.data.user.id).toBe(first.body.data.user.id);
+    expect(
+      (await db.user.findUniqueOrThrow({ where: { id: first.body.data.user.id } })).deletedAt,
+    ).toBeNull();
+  });
+
+  it('restoring can never lift a suspension', async () => {
+    const sub = randomUUID();
+    const first = await post('/v1/auth/oauth/google').send({
+      idToken: await googleIdToken({ sub }),
+      acceptedTermsVersion: TERMS,
+    });
+    await request(app)
+      .delete('/v1/auth/me')
+      .set(bearer(first.body.data.accessToken))
+      .send({ confirmation: 'DELETE' });
+    await db.user.update({
+      where: { id: first.body.data.user.id, deletedAt: undefined },
+      data: { status: 'suspended' },
+    });
+    const attempt = await post('/v1/auth/oauth/google').send({
+      idToken: await googleIdToken({ sub }),
+      restoreAccount: true,
+    });
+    expect(attempt.status).toBe(403);
+    expect(attempt.body.error.message).toMatch(/suspended/);
+  });
+
+  it('after the grace period, personal data is purged for good; records stay anonymous', async () => {
+    const sub = randomUUID();
+    const first = await post('/v1/auth/oauth/google').send({
+      idToken: await googleIdToken({ sub }),
+      acceptedTermsVersion: TERMS,
+    });
+    const userId = first.body.data.user.id as string;
+    await request(app)
+      .put('/v1/auth/me/phone')
+      .set(bearer(first.body.data.accessToken))
+      .send({ phone: '+923001112233', whatsappOptIn: true });
+    const f = await createBusinessFixture(db);
+    const appt = await db.appointment.create({
+      data: {
+        ...appointmentData(f, new Date('2020-01-01T10:00:00Z')),
+        userId,
+        status: 'completed',
+        notes: 'my private note',
+      },
+    });
+    await db.review.create({
+      data: {
+        appointmentId: appt.id,
+        userId,
+        businessId: f.business.id,
+        overallRating: 5,
+        comment: 'Great, ask for Ali',
+      },
+    });
+    await request(app)
+      .delete('/v1/auth/me')
+      .set(bearer(first.body.data.accessToken))
+      .send({ confirmation: 'DELETE' });
+    await db.user.update({
+      where: { id: userId, deletedAt: undefined },
+      data: { deletedAt: new Date(Date.now() - 31 * 86_400_000) },
+    });
+
+    expect(await rights.purgeDue()).toBeGreaterThanOrEqual(1);
+
+    const purged = await db.user.findFirstOrThrow({ where: { id: userId, deletedAt: undefined } });
+    expect(purged).toMatchObject({
+      name: 'Deleted user',
+      emailEncrypted: null,
+      emailHash: null,
+      unverifiedPhoneEncrypted: null,
+      whatsappOptInAt: null,
+    });
+    expect(purged.purgedAt).not.toBeNull();
+    expect(await db.oAuthAccount.count({ where: { userId } })).toBe(0);
+    const review = await db.review.findUniqueOrThrow({ where: { appointmentId: appt.id } });
+    expect(review).toMatchObject({ overallRating: 5, comment: null }); // rating kept, words gone
+    expect((await db.appointment.findUniqueOrThrow({ where: { id: appt.id } })).notes).toBeNull();
+    expect(await rights.purgeDue()).toBe(0); // idempotent
+
+    // The same Google account can now start a completely fresh account.
+    const fresh = await post('/v1/auth/oauth/google').send({
+      idToken: await googleIdToken({ sub }),
+      acceptedTermsVersion: TERMS,
+    });
+    expect(fresh.status).toBe(201);
+    expect(fresh.body.data.user.id).not.toBe(userId);
   });
 });

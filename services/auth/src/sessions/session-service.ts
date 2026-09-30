@@ -234,6 +234,16 @@ export class SessionService {
     await this.deps.revocations.revokeAllForUser(userId, reason);
   }
 
+  /** When the user actually signed in on this session (not the last refresh). */
+  async signedInAt(userId: string, familyId: string): Promise<Date | null> {
+    const first = await this.deps.db.refreshToken.findFirst({
+      where: { familyId, userId },
+      orderBy: { createdAt: 'asc' },
+      select: { createdAt: true },
+    });
+    return first?.createdAt ?? null;
+  }
+
   /** Active sessions (devices) of a user, newest activity first. */
   async list(userId: string) {
     const rows = await this.deps.db.refreshToken.findMany({

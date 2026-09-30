@@ -169,3 +169,17 @@ _Why:_ saves ~1.3 GB RAM on the lean launch server; the GIN/GiST indexes already
 
 **D-041 · Deferred features run only behind compose profiles** (`elasticsearch`, `analytics`,
 `ads`). Code, config and tests stay; the default stack is 14 containers instead of 19.
+
+**D-042 · Gateway token check: deny by default, keys selected by `kid`.**
+Every route requires a valid token unless listed as public in `kong.template.yml`. Kong looks up
+the verification key by the token's `kid` header (not `iss`), so current and previous keys can
+both be accepted during a rotation. The config is rendered from a template at container start
+from the same `JWT_*` variables the services use, and validated (`kong config parse`) before
+Kong starts. Gateway 401s keep Kong's body format rather than adding custom Lua to the gateway.
+
+**D-043 · Account deletion: fresh sign-in, 30-day restorable grace, then anonymization.**
+Deletion is recorded only in `deleted_at` (never `status`), so restoring cannot lift a
+suspension. Purge anonymizes instead of deleting rows: appointment history stays for the
+businesses (and accounting), ratings stay in business averages, while contact data,
+credentials, devices, favourites, notifications and review/appointment texts are removed.
+The export endpoint reads other services' tables read-only (a deliberate exception).

@@ -32,6 +32,9 @@ The request/response contracts are defined in each service's `src/routes/schemas
 | `expired` / `logged_out`                | Normal sign-in screen                              |
 | `account_suspended` / `account_deleted` | Account status message                             |
 
+- **Gateway rejections** (missing/forged/expired token on a protected route) are answered by
+  the gateway itself as `401 {"message": "Unauthorized" | "Invalid signature" | …}` — not the
+  envelope. Client rule for ANY `401`: try `POST /v1/auth/refresh` once, then show sign-in.
 - `401 TOKEN_EXPIRED` → refresh and retry. `401 TOKEN_INVALID` with `details.reason = "superseded"`
   on refresh → another request already rotated the token; use the newest one you have.
 
@@ -94,7 +97,9 @@ with `details.termsVersion` (show the consent screen, then retry). Response `201
 ```
 
 Errors: `401 OAUTH_TOKEN_INVALID` (bad/expired/foreign token, or email not verified by Google),
-`403 ACCOUNT_SUSPENDED`, `403 FEATURE_DISABLED` (Google client id not configured), `429 RATE_LIMITED`.
+`403 ACCOUNT_SUSPENDED` — if `details.reason` is `account_deleted` with `canRestore: true`, the
+account is scheduled for deletion on `details.purgeAfter`: offer "Restore my account" and resend
+the same request with `"restoreAccount": true`, `403 FEATURE_DISABLED` (Google client id not configured), `429 RATE_LIMITED`.
 
 When `onboarding.phoneRequired` is `true`, the app must collect a phone number (`PUT /me/phone`)
 before booking.
@@ -130,3 +135,28 @@ verification exists; the most recently entered number is the one used for notifi
 ```json
 { "token": "<FCM / APNs token>", "platform": "android" }
 ```
+
+### `GET /v1/auth/me/export`
+
+Returns (as a `Content-Disposition: attachment` JSON download) everything BUKU holds about the
+signed-in person: account, sign-in methods, devices, notification preferences, appointments
+(without the business's internal notes), reviews, favourites, queue history, notifications and
+their security log. Format id: `buku-data-export/1`.
+
+### `DELETE /v1/auth/me`
+
+```json
+{ "confirmation": "DELETE", "reason": "optional feedback" }
+```
+
+Requires that this session signed in within the last 10 minutes, otherwise
+`403 REAUTH_REQUIRED` (sign in again, then retry). Response `202`:
+
+```json
+{ "status": "scheduled", "purgeAfter": "2026-10-30T12:00:00.000Z" }
+```
+
+Immediately: every device is signed out (`SESSION_REVOKED` / `account_deleted`), push
+notifications stop, and other services are told (`users.deleted`) to cancel upcoming bookings.
+Until `purgeAfter` the person can restore the account by signing in (see above). After it,
+personal data is erased for good; appointment records remain for the businesses, anonymized.

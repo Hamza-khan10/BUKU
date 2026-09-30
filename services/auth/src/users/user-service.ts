@@ -32,6 +32,8 @@ export const CONTEXT = {
 
 export interface SignInInput {
   acceptedTermsVersion?: string | undefined;
+  /** Cancel a pending account deletion by signing in during the grace period. */
+  restoreAccount?: boolean | undefined;
   device?: DeviceInfo | undefined;
   timezone?: string | undefined;
   locale?: string | undefined;
@@ -49,6 +51,7 @@ export interface UserServiceDeps {
   indexer: BlindIndexer;
   sessions: SessionService;
   termsVersion: string;
+  deletionGraceDays: number;
 }
 
 export class UserService {
@@ -102,7 +105,7 @@ export class UserService {
     if (!user && emailHash) {
       const byEmail = await db.user.findFirst({ where: { emailHash, deletedAt: undefined } });
       if (byEmail?.emailVerifiedAt) {
-        this.assertActive(byEmail);
+        this.assertNotBlocked(byEmail, input);
         await db.$transaction(async (tx) => {
           await tx.oAuthAccount.create({
             data: { userId: byEmail.id, provider: identity.provider, providerUserId: identity.subject },
@@ -121,8 +124,21 @@ export class UserService {
     }
 
     if (user) {
-      this.assertActive(user);
-      const updated = await db.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+      this.assertNotBlocked(user, input);
+      const restoring = user.deletedAt !== null;
+      const updated = await db.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date(), ...(restoring && { deletedAt: null }) },
+      });
+      if (restoring) {
+        await recordAudit(db, {
+          userId: user.id,
+          action: 'user.deletion_cancelled',
+          resourceType: 'user',
+          resourceId: user.id,
+          ...auditCtx(ctx),
+        });
+      }
       const session = await sessions.start(updated, input.device ?? {}, ctx);
       await recordAudit(db, {
         userId: user.id,
@@ -234,7 +250,7 @@ export class UserService {
           notificationPrefs: { create: {} },
         },
       }));
-    this.assertActive(user);
+    this.assertNotBlocked(user, {});
     const session = await this.deps.sessions.start(user, device, ctx);
     await recordAudit(this.deps.db, {
       userId: user.id,
@@ -358,10 +374,16 @@ export class UserService {
     };
   }
 
-  private assertActive(user: User): void {
-    if (user.deletedAt) {
-      throw new AppError('This account has been deleted', ErrorCodes.ACCOUNT_SUSPENDED, 403, {
-        details: { reason: 'account_deleted' },
+  /**
+   * Suspended accounts can't sign in. Accounts pending deletion can only sign
+   * in by explicitly restoring (the app offers "Restore my account").
+   * Deletion never changes `status`, so restoring can't lift a suspension.
+   */
+  private assertNotBlocked(user: User, input: Pick<SignInInput, 'restoreAccount'>): void {
+    if (user.deletedAt && !input.restoreAccount) {
+      const purgeAfter = new Date(user.deletedAt.getTime() + this.deps.deletionGraceDays * 86_400_000);
+      throw new AppError('This account is scheduled for deletion', ErrorCodes.ACCOUNT_SUSPENDED, 403, {
+        details: { reason: 'account_deleted', canRestore: true, purgeAfter: purgeAfter.toISOString() },
       });
     }
     if (user.status !== 'active') {

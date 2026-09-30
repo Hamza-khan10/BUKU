@@ -44,6 +44,11 @@ export const Env = baseServiceEnv
     APPLE_SIGN_IN_ENABLED: envBool.default(false),
     APPLE_CLIENT_IDS: csv,
 
+    /** Days between "delete my account" and irreversible anonymization (restorable meanwhile). */
+    ACCOUNT_DELETION_GRACE_DAYS: z.coerce.number().int().min(1).max(90).default(30),
+    /** Sensitive actions (account deletion) require signing in within this many minutes. */
+    REAUTH_WINDOW_MINUTES: z.coerce.number().int().min(1).max(60).default(10),
+
     /** Version of the Terms/Privacy Policy new users must accept. */
     TERMS_VERSION: z.string().min(1).max(20).default('1.0'),
 
