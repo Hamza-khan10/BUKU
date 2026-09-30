@@ -94,8 +94,11 @@ export function validated<
 
 export interface AuthenticateOptions {
   verifier: JwtVerifier;
-  /** Optional revocation check (e.g. Valkey deny-list of logged-out token ids). */
-  isRevoked?: (token: VerifiedAccessToken) => Promise<boolean>;
+  /**
+   * Optional revocation check (see RevocationStore). Return `false` if the token
+   * is still good, or the revocation reason (e.g. "password_changed").
+   */
+  isRevoked?: (token: VerifiedAccessToken) => Promise<false | string>;
 }
 
 /** Requires a valid `Authorization: Bearer <jwt>`; sets `req.auth`. */
@@ -108,8 +111,11 @@ export function authenticate(options: AuthenticateOptions): RequestHandler {
       throw AppError.unauthorized('Invalid access token', ErrorCodes.TOKEN_INVALID);
 
     const claims = await options.verifier.verify(token);
-    if (options.isRevoked && (await options.isRevoked(claims))) {
-      throw AppError.unauthorized('Access token has been revoked', ErrorCodes.TOKEN_REVOKED);
+    const revokedReason = options.isRevoked ? await options.isRevoked(claims) : false;
+    if (revokedReason) {
+      throw new AppError('Your session has ended, please sign in again', ErrorCodes.SESSION_REVOKED, 401, {
+        details: { reason: revokedReason },
+      });
     }
     req.auth = {
       userId: claims.sub,

@@ -47,9 +47,12 @@ export default tseslint.config(
     rules: { 'no-console': 'off' },
   },
   {
+    // HTTP response bodies in tests are untyped (supertest); production code stays strict.
     files: ['**/*.test.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
     },

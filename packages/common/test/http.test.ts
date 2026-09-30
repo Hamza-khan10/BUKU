@@ -216,7 +216,10 @@ describe('authentication and RBAC', () => {
     });
     const revoked = new Set<string>();
     app = buildApp(new Readiness(), (a) => {
-      const auth = authenticate({ verifier, isRevoked: (t) => Promise.resolve(revoked.has(t.jti)) });
+      const auth = authenticate({
+        verifier,
+        isRevoked: (t) => Promise.resolve(revoked.has(t.jti) ? 'logged_out' : false),
+      });
       a.get('/me', auth, (req, res) => sendSuccess(res, requireAuth(req)));
       a.get('/admin', auth, requireRole('super_admin'), (_req, res) => sendSuccess(res, { ok: true }));
       a.post('/revoke', auth, (req, res) => {
@@ -248,13 +251,13 @@ describe('authentication and RBAC', () => {
     expect((await request(app).get('/admin').set('Authorization', `Bearer ${admin}`)).status).toBe(200);
   });
 
-  it('honors the revocation hook', async () => {
+  it('honors the revocation hook and tells the client why', async () => {
     const { token } = await signer.sign({ sub: 'u', role: 'user' });
     const h = { Authorization: `Bearer ${token}` };
     expect((await request(app).post('/revoke').set(h)).status).toBe(200);
     const res = await request(app).get('/me').set(h);
     expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('TOKEN_REVOKED');
+    expect(res.body.error).toMatchObject({ code: 'SESSION_REVOKED', details: { reason: 'logged_out' } });
   });
 });
 

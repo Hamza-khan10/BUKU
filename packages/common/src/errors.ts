@@ -22,6 +22,11 @@ export const ErrorCodes = {
   TOKEN_REVOKED: 'TOKEN_REVOKED',
   INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
   ACCOUNT_SUSPENDED: 'ACCOUNT_SUSPENDED',
+  /** A session was ended server-side; `details.reason` says why (password_changed, logged_out_everywhere, ...). */
+  SESSION_REVOKED: 'SESSION_REVOKED',
+  OAUTH_TOKEN_INVALID: 'OAUTH_TOKEN_INVALID',
+  TERMS_NOT_ACCEPTED: 'TERMS_NOT_ACCEPTED',
+  FEATURE_DISABLED: 'FEATURE_DISABLED',
 
   // Identity
   USER_EXISTS: 'USER_EXISTS',
