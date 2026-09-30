@@ -117,3 +117,55 @@ of runtime images (`autoInstallPeers: false`), and unused database WASM compiler
 
 **D-027 · Minimal CI in Phase 1 (not Phase 5).**
 _Why:_ branch protection needs checks to require; catching problems from the first commit is cheaper.
+
+## Phase 2 product decisions (2026-09-30)
+
+**D-028 · Sign-in with Google; Apple built but locked; SMS later.**
+_Why:_ free during development (Apple needs a $99/yr developer account; SMS costs per message).
+The `oauth_accounts` table means adding providers needs no schema change.
+
+**D-029 · Sessions last until logout (sliding refresh tokens), revoked everywhere on password change.**
+_Why:_ the product owner wants apps to stay signed in. Security is kept by rotating refresh
+tokens with reuse detection, a long inactivity timeout, a visible device list, and
+"log out all devices"; the revocation reason is returned so clients can explain it.
+
+**D-030 · No guest bookings; customer subscription with a one-use free trial.**
+_Why:_ monetisation is at the customer level. Price lives in configuration because it will be
+revised after tax/fees review. Paddle (merchant of record) handles tax on the web.
+
+**D-031 · Worldwide-ready from day one, Pakistan first.** Per-business timezone and currency,
+E.164 phones, country-flexible business legal details.
+
+**D-032 · Unverified businesses may take bookings, clearly badged "Not verified".**
+_Why:_ lowers the barrier to onboarding. Mitigations: badge, report button, admin suspension.
+
+**D-033 · Country-flexible KYB profile; audited per-country export.** Registration identifiers
+and tax ids are stored encrypted; exports for government requests are admin-only, audited, and
+released only through a documented legal process (to be defined with a lawyer).
+
+**D-034 · AWS-IAM-style business sub-accounts** (Owner, Manager, Front desk, Staff) with
+business-scoped username + password and forced password change on first sign-in.
+
+**D-035 · Two-way reputation.** Customer reliability (no-shows, last-minute cancels, small
+effect, visible to the customer); business reliability (business cancellations) shown next
+to the star rating and used in ranking. Star ratings stay pure customer reviews.
+
+**D-036 · One customer can never hold overlapping appointments, across all businesses.**
+Enforced by a database exclusion constraint (`appointments_no_user_overlap`).
+
+**D-037 · Booking horizon per business (default 12 months); 3 future bookings per customer per business.**
+_Why:_ people legitimately book months ahead; the per-business cap stops slot hoarding.
+
+**D-038 · Remote queue join within a business-set distance (default 5 km) and one active queue per customer.**
+_Why:_ phone GPS can be spoofed, so the one-queue rule plus no-show reputation is the real
+deterrent; the distance check filters casual abuse.
+
+**D-039 · Notification channels: push for every alert, WhatsApp for key transactional messages.**
+_Why:_ push is free; WhatsApp Business messages sent by the business are billed per message
+by Meta (outside a 24-hour window the customer opened), so frequent queue updates go by push.
+
+**D-040 · Postgres search for the MVP; Elasticsearch kept but off (`SEARCH_ENGINE`).**
+_Why:_ saves ~1.3 GB RAM on the lean launch server; the GIN/GiST indexes already exist.
+
+**D-041 · Deferred features run only behind compose profiles** (`elasticsearch`, `analytics`,
+`ads`). Code, config and tests stay; the default stack is 14 containers instead of 19.

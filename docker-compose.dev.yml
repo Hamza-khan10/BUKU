@@ -209,6 +209,7 @@ services:
     deploy: { resources: { limits: { memory: 1g } } }
 
   elasticsearch:
+    profiles: [elasticsearch]
     <<: *infra
     image: docker.elastic.co/elasticsearch/elasticsearch:9.5.3
     environment:
@@ -238,6 +239,7 @@ services:
     deploy: { resources: { limits: { memory: 1280m } } }
 
   clickhouse:
+    profiles: [analytics]
     <<: *infra
     image: clickhouse/clickhouse-server:26.3.36-alpine
     environment:
@@ -321,6 +323,7 @@ services:
       postgres: { condition: service_healthy }
 
   elasticsearch-init:
+    profiles: [elasticsearch]
     <<: *oneshot
     image: curlimages/curl:8.22.0
     user: curl_user
@@ -493,6 +496,9 @@ services:
       <<: *service-env
       SERVICE_NAME: search-service
       PORT: '3005'
+      # MVP: Postgres full-text + PostGIS. Set to `elasticsearch` (and start the
+      # stack with --profile elasticsearch) to switch engines.
+      SEARCH_ENGINE: postgres
       ELASTICSEARCH_URL: http://elasticsearch:9200
       ELASTICSEARCH_INDEX_BUSINESSES: businesses
     volumes:
@@ -503,7 +509,6 @@ services:
       - ./services/search/src:/app/services/search/src:ro
     depends_on:
       <<: *needs-core
-      elasticsearch-init: { condition: service_completed_successfully }
     healthcheck:
       <<: *node-healthcheck
       test:
@@ -516,6 +521,7 @@ services:
     deploy: { resources: { limits: { memory: 384m } } }
 
   ads-service:
+    profiles: [ads]
     <<: [*infra, *node-image, *node-hardening]
     working_dir: /app/services/ads
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
@@ -546,6 +552,7 @@ services:
     deploy: { resources: { limits: { memory: 384m } } }
 
   analytics-service:
+    profiles: [analytics]
     <<: [*infra, *node-image, *node-hardening]
     working_dir: /app/services/analytics
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
@@ -610,8 +617,8 @@ services:
       queue-service: { condition: service_healthy }
       notification-service: { condition: service_healthy }
       search-service: { condition: service_healthy }
-      ads-service: { condition: service_healthy }
-      analytics-service: { condition: service_healthy }
+      # ads-service / analytics-service are opt-in profiles (deferred features);
+      # their routes answer 503 until those profiles are started.
     healthcheck:
       test: ['CMD', 'kong', 'health']
       interval: 10s
@@ -624,7 +631,7 @@ services:
 
   kibana:
     <<: *infra
-    profiles: [tools]
+    profiles: [elasticsearch]
     image: docker.elastic.co/kibana/kibana:9.5.3
     environment:
       ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'

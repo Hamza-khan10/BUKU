@@ -16,6 +16,9 @@ check() { # check "<description>" <command...>
 }
 psql_q() { "${COMPOSE[@]}" exec -T postgres psql -U buku_admin -d buku -tAc "$1" 2>/dev/null; }
 eq() { [[ "$1" == "$2" ]]; }
+RUNNING=$("${COMPOSE[@]}" ps --status running --services 2>/dev/null)
+running() { grep -qx "$1" <<< "$RUNNING"; }
+skip() { printf '  \033[90m–\033[0m %s (opt-in profile not running)\n' "$1"; }
 ge() { [[ "${1:-0}" -ge "$2" ]]; }
 
 # Wait (up to 3 min) for every long-running container to report healthy, so a
@@ -43,7 +46,7 @@ check "Extensions: postgis, vector, pg_trgm, btree_gist, pgcrypto" eq "$(psql_q 
 check "All migrations applied, no drift"               bash -c "cd packages/database && pnpm exec prisma migrate status | grep -q 'Database schema is up to date'"
 check "3 tables range-partitioned by month"            eq "$(psql_q "SELECT count(*) FROM pg_partitioned_table")" 3
 check "≥ 12 future monthly partitions per table"       ge "$(psql_q "SELECT count(*) FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='partitions'")" 39
-check "Exclusion constraints (no double booking)"      eq "$(psql_q "SELECT count(*) FROM pg_constraint WHERE contype='x'")" 2
+check "Exclusion constraints (staff, resource, customer)" eq "$(psql_q "SELECT count(*) FROM pg_constraint WHERE contype='x'")" 3
 check "≥ 60 CHECK constraints"                          ge "$(psql_q "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE contype='c' AND n.nspname='public'")" 60
 check "HNSW vector index on ai.business_knowledge_chunks" eq "$(psql_q "SELECT count(*) FROM pg_indexes WHERE schemaname='ai' AND indexdef ILIKE '%hnsw%'")" 1
 check "Seed data present (20 businesses, 200 appointments)" eq "$(psql_q "SELECT (SELECT count(*) FROM businesses)||'/'||(SELECT count(*) FROM appointments)")" "20/200"
@@ -55,9 +58,14 @@ check "41 topics exactly match the registry"           bash -c "docker compose -
 check "Auto topic creation disabled"                   bash -c "docker compose -f docker-compose.dev.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:29092 --entity-type brokers --entity-name 1 --describe --all | grep -q 'auto.create.topics.enable=false'"
 
 echo "═══ 5. Search & analytics stores ═══"
-check "Elasticsearch alias businesses → businesses_v1" bash -c "curl -sf http://localhost:9200/_alias/businesses | grep -q businesses_v1"
-check "Elasticsearch mapping is strict"                bash -c "curl -sf http://localhost:9200/businesses_v1/_mapping | grep -q '\"dynamic\":\"strict\"'"
-check "ClickHouse: 4 analytics tables"                 eq "$("${COMPOSE[@]}" exec -T clickhouse clickhouse-client --user buku_analytics --password "$(grep ^CLICKHOUSE_PASSWORD= .env | cut -d= -f2)" -q "SELECT count() FROM system.tables WHERE database='buku_analytics'" 2>/dev/null)" 4
+check "Postgres full-text search index on businesses"  eq "$(psql_q "SELECT count(*) FROM pg_indexes WHERE indexname='businesses_search_vector_idx'")" 1
+if running elasticsearch; then
+  check "Elasticsearch alias businesses → businesses_v1" bash -c "curl -sf http://localhost:9200/_alias/businesses | grep -q businesses_v1"
+  check "Elasticsearch mapping is strict"                bash -c "curl -sf http://localhost:9200/businesses_v1/_mapping | grep -q '\"dynamic\":\"strict\"'"
+else skip "Elasticsearch checks"; fi
+if running clickhouse; then
+  check "ClickHouse: 4 analytics tables"                 eq "$("${COMPOSE[@]}" exec -T clickhouse clickhouse-client --user buku_analytics --password "$(grep ^CLICKHOUSE_PASSWORD= .env | cut -d= -f2)" -q "SELECT count() FROM system.tables WHERE database='buku_analytics'" 2>/dev/null)" 4
+else skip "ClickHouse checks"; fi
 check "S3 buckets created"                             bash -c "docker compose -f docker-compose.dev.yml logs s3-init 2>/dev/null | grep -q 'buku-documents-dev'"
 
 echo "═══ 6. Gateway & security baseline ═══"

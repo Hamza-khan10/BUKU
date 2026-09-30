@@ -21,11 +21,11 @@ const db = createDatabaseClient({
   maxConnections: env.DATABASE_POOL_SIZE,
   applicationName: env.SERVICE_NAME,
 });
-const elasticsearch = new ElasticsearchClient({
-  node: env.ELASTICSEARCH_URL,
-  requestTimeout: 5_000,
-  maxRetries: 2,
-});
+// Only created when Elasticsearch is the selected engine (see config.ts).
+const elasticsearch =
+  env.SEARCH_ENGINE === 'elasticsearch'
+    ? new ElasticsearchClient({ node: env.ELASTICSEARCH_URL, requestTimeout: 5_000, maxRetries: 2 })
+    : undefined;
 const producer = new EventProducer(createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env)));
 const verifier = await createJwtVerifierFromEnv(env);
 await producer.connect();
@@ -33,10 +33,10 @@ await producer.connect();
 // ── Readiness: every dependency must answer before traffic is routed here ──
 const readiness = new Readiness()
   .add('postgres', () => pingDatabase(db))
-  .add('elasticsearch', () => elasticsearch.ping())
   .add('kafka', () =>
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
+if (elasticsearch) readiness.add('elasticsearch', () => elasticsearch.ping());
 
 const app = createHttpApp({
   service: env.SERVICE_NAME,
@@ -50,7 +50,7 @@ const app = createHttpApp({
 // Hooks run in REVERSE order on shutdown: stop producing before closing stores.
 const hooks: ShutdownHook[] = [
   { name: 'postgres', fn: () => db.$disconnect() },
-  { name: 'elasticsearch', fn: () => elasticsearch.close() },
+  ...(elasticsearch ? [{ name: 'elasticsearch', fn: () => elasticsearch.close() }] : []),
   { name: 'kafka-producer', fn: () => producer.disconnect() },
 ];
 

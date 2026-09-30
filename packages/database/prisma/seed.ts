@@ -484,9 +484,14 @@ async function main(): Promise<void> {
     const startAt = pktToUtc(day, Math.floor(startMinute / 60), startMinute % 60);
     const endAt = new Date(startAt.getTime() + service.duration * 60_000);
 
-    // Skip anything that would overlap this staff member's existing bookings.
+    // Skip anything that would overlap an existing booking of the same staff
+    // member OR the same customer (a person can't be in two places at once).
+    const userId = pick(customerIds);
     const clash = appointments.some(
-      (a) => a.staffId === staffId && startAt < (a.endAt as Date) && endAt > (a.startAt as Date),
+      (a) =>
+        (a.staffId === staffId || a.userId === userId) &&
+        startAt < (a.endAt as Date) &&
+        endAt > (a.startAt as Date),
     );
     if (clash) continue;
 
@@ -506,7 +511,6 @@ async function main(): Promise<void> {
         ? 'confirmed'
         : 'pending';
     const id = uuidv7(startAt.getTime() - 3 * 86_400_000);
-    const userId = pick(customerIds);
     appointments.push({
       id,
       businessId: biz.id,

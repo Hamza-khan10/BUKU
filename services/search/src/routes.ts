@@ -7,7 +7,8 @@ import type { EventProducer } from '@buku/kafka';
 /** Everything a route handler may use. Constructed once in index.ts. */
 export interface ServiceDeps {
   db: Database;
-  elasticsearch: ElasticsearchClient;
+  /** Present only when SEARCH_ENGINE=elasticsearch. */
+  elasticsearch: ElasticsearchClient | undefined;
   producer: EventProducer;
   verifier: JwtVerifier;
 }

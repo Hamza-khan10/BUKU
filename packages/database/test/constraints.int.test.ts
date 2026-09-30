@@ -42,11 +42,15 @@ describe('no double booking (exclusion constraints)', () => {
     ).resolves.toBeDefined();
   });
 
-  it('allows the same time with a different staff member', async () => {
+  it('allows the same time with a different staff member (for a different customer)', async () => {
+    const secondCustomer = await db.user.create({ data: { name: 'Second', phoneHash: 'e'.repeat(64) } });
     await db.appointment.create({ data: appointmentData(f, at('2030-01-09T10:00:00Z')) });
     await expect(
       db.appointment.create({
-        data: appointmentData(f, at('2030-01-09T10:00:00Z'), 30, { staffId: f.staffB.id }),
+        data: {
+          ...appointmentData(f, at('2030-01-09T10:00:00Z'), 30, { staffId: f.staffB.id }),
+          userId: secondCustomer.id,
+        },
       }),
     ).resolves.toBeDefined();
   });
@@ -57,6 +61,25 @@ describe('no double booking (exclusion constraints)', () => {
     });
     await expect(
       db.appointment.create({ data: appointmentData(f, at('2030-01-10T10:00:00Z')) }),
+    ).resolves.toBeDefined();
+  });
+
+  it('never lets one customer hold overlapping appointments, even at two businesses', async () => {
+    const other = await createBusinessFixture(db);
+    await db.appointment.create({ data: appointmentData(f, at('2030-01-12T10:00:00Z')) });
+    const elsewhere = {
+      ...appointmentData(other, at('2030-01-12T10:15:00Z')),
+      userId: f.customer.id,
+    };
+    const err: unknown = await db.appointment.create({ data: elsewhere }).catch((e: unknown) => e);
+    expect(isExclusionViolation(err)).toBe(true);
+    expect(constraintNameOf(err)).toBe('appointments_no_user_overlap');
+
+    // Right after the first one ends is fine.
+    await expect(
+      db.appointment.create({
+        data: { ...appointmentData(other, at('2030-01-12T10:30:00Z')), userId: f.customer.id },
+      }),
     ).resolves.toBeDefined();
   });
 
