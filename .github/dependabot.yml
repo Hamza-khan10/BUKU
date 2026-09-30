@@ -13,6 +13,13 @@ updates:
         { patterns: ['eslint*', '@eslint/*', 'typescript-eslint', 'typescript', '@types/*', 'prettier'] }
       test: { patterns: ['vitest', 'supertest', '@types/supertest'] }
     commit-message: { prefix: 'chore', include: 'scope' }
+    ignore:
+      # Node major versions follow the LTS schedule deliberately (docs/DECISIONS.md D-001).
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+      # TypeScript 7 (native compiler) waits for typescript-eslint support (D-001).
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
@@ -23,3 +30,9 @@ updates:
     directories: ['/docker/node', '/docker/postgres']
     schedule: { interval: weekly, day: monday }
     commit-message: { prefix: 'chore', include: 'scope' }
+    ignore:
+      # Only LTS Node lines, and Postgres majors are planned migrations, not bumps.
+      - dependency-name: 'node'
+        update-types: ['version-update:semver-major']
+      - dependency-name: 'postgis/postgis'
+        update-types: ['version-update:semver-major']

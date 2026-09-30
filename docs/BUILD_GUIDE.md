@@ -12,7 +12,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | Phase | Scope                                                                                          | Status                              |
 | ----- | ---------------------------------------------------------------------------------------------- | ----------------------------------- |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34 |
-| 2     | Backend services (MVP core first)                                                              | ⏭ Next                              |
+| 2     | Backend services (MVP core first)                                                              | 🚧 In progress                      |
 | 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | Planned                             |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                             |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                             |
@@ -57,73 +57,119 @@ transaction never emits its event.
 
 ---
 
-## Phase 2 — Backend services ⏭
+## Phase 2 — Backend services 🚧
 
-Order matters: each step only depends on steps above it. Every step ends with
-unit tests, integration tests, and an updated `docs/API_REFERENCE.md`.
+MVP scope and rules were decided on 2026-09-30 (see "Product decisions" at the
+end of this guide and DECISIONS D-028 → D-041). Order matters: each step only
+depends on the steps above it.
 
-### 2.0 Decisions to make first (see "Open questions" below)
+**Every endpoint, in every step, must have:** Zod-validated input (unknown
+fields rejected) · an ownership/authorization check with a test proving
+another user or business is denied · rate limits where abuse is possible ·
+an audit-log entry for security-relevant actions · events via the outbox ·
+unit + integration tests for the success path and the attack path · an
+updated `docs/API_REFERENCE.md` (generated from the same Zod schemas).
 
-Service boundaries for the domains the spec forgot, and the MVP cut.
+### 2.0 Kickoff ✅
 
-### 2.1 Auth service — identity is the root of everything
+Decisions recorded; Elasticsearch, ClickHouse, analytics and ads moved to
+opt-in compose profiles (search runs on Postgres); **database rule: one
+customer can never hold two overlapping active appointments, even at two
+different businesses**.
 
-1. Registration by email or phone → OTP (6 digits, keyed hash in Valkey, 10-min TTL, 3 attempts then 15-min lockout, 3 sends/hour per destination, per-IP limits).
-2. Verify OTP → access token (RS256, 15 min) + refresh token (256-bit random, stored as SHA-256, 7 days).
-3. Refresh **rotation with reuse detection**: reuse of a rotated token revokes the whole session family.
-4. Password login (Argon2id, dummy-hash timing equalisation, rehash on login), forgot/reset/change password.
-5. Logout / logout-all (refresh revocation + access-token `jti` deny-list in Valkey).
-6. `GET/PATCH /me`, push tokens, GDPR export (`/me/export`) and deletion (soft → purge after 30 days).
-7. Google / Apple sign-in (server-side token verification) via `oauth_accounts`.
-8. Audit log for every security-relevant action; `users.*` events via the outbox.
-9. Gateway: render Kong's JWT plugin config from the public key (defense in depth).
+### 2.1 Auth service
 
-### 2.2 Business onboarding & catalog (_spec gap — recommended new `business-service`_)
+1. Google sign-in (ID token verified server-side against Google's keys). Apple sign-in built
+   behind a feature flag, **locked** until the Apple Developer account exists.
+2. Sessions that last **until the user logs out**: rotating refresh tokens with theft
+   detection (reuse of an old token revokes that device's session), a long inactivity
+   timeout, a device/session list, "log out this device" and "log out all devices".
+3. Password change (business sub-accounts) → every session on every device revoked; clients
+   receive `SESSION_REVOKED` with reason `password_changed` to show "sign in again".
+4. Profile: name, timezone, locale; **phone number required after sign-up** (for WhatsApp
+   notifications, with explicit WhatsApp opt-in); push tokens.
+5. Data requests: export my data, delete my account (the self-service "my data" section).
+6. Development-only sign-in (hard-disabled in production) so the rest of Phase 2 and the web
+   app can be built without real Google/Apple credentials.
+7. Audit log; `users.*` events; Kong validates tokens at the gateway too.
 
-Business create/update, opening hours, photos & documents (presigned S3 uploads, type/size checks),
-admin verification queue, categories admin, reviews + owner replies, favourites. Events: `businesses.*`.
+### 2.2 Business service (new)
 
-### 2.3 Booking service — the core product
+Business onboarding with a **country-flexible legal profile (KYB)**: legal name, registration
+type and number per country, tax id (encrypted), registered address, responsible person,
+documents. Opening hours, photos and documents (direct-to-storage uploads). **Unverified
+businesses can take bookings but are clearly badged "Not verified"**; "Report this business";
+admin verification and suspension; audited per-country business export for lawful requests.
+**Service categories** (a business groups its services), reviews + owner replies, favourites.
 
-1. Services, staff (+ invites), resources, availability rules and exceptions CRUD.
-2. **Availability engine**: slot generation in the business's timezone (DST-safe), buffers, staff/resource
-   filters, min-advance / max-advance, exceptions; cached 30 s in Valkey, invalidated on change.
-3. **Create booking**: Valkey lock (fast rejection) → DB transaction (exclusion constraint = final
-   guarantee) → confirmation code → status history → outbox event. Idempotency-Key header support.
-4. State machine: confirm / cancel (policy window) / reschedule (atomic swap) / complete / no-show,
-   optimistic concurrency via `version`.
-5. BullMQ jobs: 24 h / 2 h reminders, review requests (idempotent, re-check DB before sending).
-6. Plan limits (free tier caps) — enforced server-side.
+**Business sub-accounts (AWS-IAM-style):** the owner creates accounts (business-scoped
+username + password, forced change on first sign-in) for employees' phones and shared
+tablets. Roles:
+
+| Role       | Can do                                                                   |
+| ---------- | ------------------------------------------------------------------------ |
+| Owner      | Everything, including billing and deleting the business                  |
+| Manager    | All appointments, staff, schedules, settings                             |
+| Front desk | All appointments and the live queue (shared tablets); no settings        |
+| Staff      | Own schedule, own working hours/time off, own appointments; check-in/out |
+
+### 2.3 Booking service
+
+Services (in categories), staff ↔ services, working hours per employee (editable by the
+employee), time off, availability engine in the business's timezone. Check-in/check-out
+records attendance and marks who is present for the live queue and walk-ins (bookable slots
+come from working hours). Booking rules:
+
+- **Sign-in required**; no guest bookings. Free-trial / subscription entitlement checked (2.5).
+- **One customer cannot hold overlapping appointments anywhere** (enforced by the database).
+- Booking horizon set by each business (default 12 months, no platform limit); at most
+  3 future bookings per customer per business (anti-hoarding). While choosing a time, the
+  customer sees their own existing bookings.
+- "Any staff" → the least-booked eligible employee that day.
+- Confirmation mode per business: automatic (default) or manual approval.
+- Cancellation: customer cancels outside the business's window (default 12 h) → no rating
+  impact; picks a reason (feeds the business's cancellation chart); "I'll book later" →
+  reminder notification a few days later. Last-minute cancel / no-show → small impact on the
+  customer's reliability score. Business cancelling → impact on the business's reliability.
 
 ### 2.4 Queue service
 
-Daily sessions, join (atomic `INCR` tickets, priority lane), call-next, serve/complete/no-show/leave,
-Valkey ZSET positions, Socket.IO with JWT handshake (`user:{id}` / `biz:{id}` rooms), recompute and
-broadcast all positions after each change, grace-period no-show jobs, durable record in Postgres.
+Remote (virtual) queue joining, allowed only **within a distance set by the business
+(default 5 km)** and **one active queue per customer**. Live positions over WebSocket.
+Alerts when 10 ahead, 5 ahead, then at every step. Called and not present after the grace
+period (5 min) → no-show (reliability impact). Walk-ins added by front desk.
 
-### 2.5 Notification service
+### 2.5 Billing service (Paddle, sandbox during development)
 
-Idempotent Kafka consumers → channel routing by user preferences → email (SMTP: Mailpit dev / SES prod),
-SMS (Twilio; logged in dev), push (FCM); in-app inbox API; templates; failures → `dlq.notifications`.
+Customer entitlement: **1 free appointment or queue join, then a monthly subscription**
+(price is configuration, not code — $1.99 today, likely $2.99–3.99 after tax review).
+Paddle checkout, signature-verified idempotent webhooks, entitlement checks used by booking
+and queue. Business plans come later.
 
-### 2.6 Search service
+### 2.6 Notification service
 
-Indexer consumers (`businesses.*`) → Elasticsearch; rebuild-on-start if the index lags Postgres;
-search / nearby / autocomplete / categories / featured / trending; zero-downtime reindex via alias swap.
+Push (free) for every alert; WhatsApp for important transactional messages once the provider
+is connected; email for receipts. Preferences, in-app inbox, templates, provider switch
+(dev: logged only).
 
-### 2.7 Ads service → 2.8 Analytics service → 2.9 Billing (Paddle) → 2.10 Outgoing webhooks
+### 2.7 Search service (Postgres)
 
-Ads: campaigns, approval, impression batching, click tracking, budgets, attribution, then ad injection
-in search. Analytics: Kafka → ClickHouse batch ingestion (dedupe by event id), dashboard queries.
-Billing: Paddle checkout, **signature-verified + idempotent** webhooks, plan enforcement.
-Webhooks: signed deliveries with timestamp (anti-replay), retries with backoff, **SSRF protection**
-(block private/metadata IP ranges on every delivery).
+Text + location search, nearby, autocomplete, categories, ranking that includes rating and
+reliability. Elasticsearch implementation kept for later (`SEARCH_ENGINE=elasticsearch`).
 
-### 2.11 Phase 2 acceptance
+### 2.8 Reputation
 
-End-to-end flows from the spec (register → book → confirm → remind → complete → review; queue join →
-call → serve), concurrency tests (50 bookings → 1 success; 200 queue joins → 200 unique tickets),
-security tests (authz on every route: a user can never read another user's or business's data).
+Customer reliability score (visible to the customer; businesses see a simple summary such as
+"shows up 95%"), business reliability figure next to its star rating, cancellation analytics.
+
+### 2.9 Phase 2 acceptance
+
+End-to-end: sign in → add phone → trial booking → confirm → reminder → complete → review;
+subscribe → second booking; queue join (distance + one-queue rule) → called → served.
+Concurrency tests; authorization tests on every route.
+
+**Deferred (built later on the same foundation):** ads, ClickHouse analytics, outgoing
+webhooks, business pricing plans, AI receptionist, Elasticsearch search, mobile app (Phase 4).
 
 ---
 
@@ -149,28 +195,28 @@ load tests (k6) → security review & penetration test → runbooks → go-live 
 
 ---
 
-## Open questions (decisions needed from the product owner)
+## Product decisions (2026-09-30)
 
-1. **Missing service owners.** The spec defines endpoints for businesses (create/verify), reviews,
-   favourites, Paddle billing and outgoing webhooks, but assigns them to no service.
-   _Recommendation:_ add `business-service` (profiles, hours, media, verification, reviews,
-   favourites) and `billing-service` (Paddle + plan enforcement); outgoing webhooks live in
-   `notification-service` (same delivery/retry machinery).
-2. **Customer → business payments.** Paddle is a merchant of record for _BUKU's own_ sales
-   (subscriptions, ads); it cannot pay out to third-party businesses. _Recommendation:_ MVP is
-   pay-at-venue; add a marketplace processor later if deposits are needed.
-3. **MVP scope.** _Recommendation for a first launch:_ auth, business onboarding + verification,
-   services/staff/availability, booking, queue, email + SMS notifications, search, web app.
-   Defer ads, ClickHouse analytics, AI receptionist, outgoing webhooks, paid plans, mobile app
-   (the web app is mobile-responsive first). The foundation already supports all of them.
-4. **Deployment topology.** k3s (spec) vs. a lean start: one DigitalOcean droplet running the
-   production compose stack + **managed** PostgreSQL and Valkey (backups, failover, patching
-   handled by DO). _Recommendation:_ lean start; the Kubernetes path stays open (images are
-   already production-grade).
-5. **SMS provider for Pakistan.** Twilio works but is expensive for +92; compare local providers
-   before launch. The notification service will use a provider interface either way.
-6. **AI receptionist.** The spec has tables and topics but no service definition (its own
-   Section 23 says so). Needs a written spec (telephony provider, LLM + embedding provider)
-   before any build work.
-7. **Legal pages.** Privacy policy / ToS (governing law: Pakistan) must be reviewed by a lawyer
-   before launch; we will draft them in Phase 3.
+Recorded from the product owner; rationale for each is in DECISIONS.md.
+
+| Topic        | Decision                                                                                                                                                                                       |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Services     | Add `business-service` and `billing-service`; outgoing webhooks (later) live in notification-service                                                                                           |
+| Sign-in      | Google now; Apple built but locked until the Apple Developer account; business sub-accounts use username + password; SMS/Twilio later                                                          |
+| Sessions     | Signed in until logout; password change logs out every device with a clear "sign in again" message                                                                                             |
+| Guests       | No guest bookings                                                                                                                                                                              |
+| Monetisation | Customers: 1 free booking or queue join, then a monthly subscription (price configurable; $1.99 → likely $2.99–3.99). Businesses: pricing later. Appointments themselves are paid at the venue |
+| Market       | Pakistan first, built for worldwide from day one                                                                                                                                               |
+| Language     | English first; more languages by user majority                                                                                                                                                 |
+| Verification | Unverified businesses may take bookings, clearly badged; detailed country-flexible business details                                                                                            |
+| Teams        | AWS-style sub-accounts with Owner / Manager / Front desk / Staff roles                                                                                                                         |
+| Reputation   | Two-way: customer reliability (no-shows, last-minute cancels) and business reliability (business cancellations)                                                                                |
+| Scheduling   | No overlapping appointments per customer across businesses; business-set booking horizon; 3 future bookings per customer per business                                                          |
+| Queue        | Remote join within a business-set distance (default 5 km); one active queue per customer; alerts at 10, 5, then every step                                                                     |
+| Data rights  | Self-service section for customers and businesses to export or delete their data                                                                                                               |
+| Hosting      | Web app on Vercel (thebuku.vercel.app) until a domain is bought; backend on DigitalOcean (lean: droplet + managed Postgres/Valkey)                                                             |
+| Search       | Postgres first; Elasticsearch kept, not running                                                                                                                                                |
+
+**Still open:** SMS/WhatsApp provider choice and cost (before launch) · AI receptionist
+specification · app-store in-app-purchase rules for the subscription (Phase 4) · lawyer review
+of legal pages and of the process for government data requests.

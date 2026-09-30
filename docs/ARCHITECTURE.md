@@ -117,18 +117,20 @@ Schemas: `public` (Prisma), `partitions` (monthly partitions), `ai` (vector stor
 
 ## Service ownership
 
-| Service      | Owns (writes)                                                                | Publishes                           | Consumes (Phase 2)                            |
-| ------------ | ---------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------- |
-| auth         | users, oauth_accounts, refresh_tokens, push_tokens, notification_preferences | users.*                             | —                                             |
-| booking      | services, staff, resources, availability_*, appointments, status history     | bookings.*                          | bookings.completed                            |
-| queue        | queue_sessions, queue_entries                                                | queue.*                             | —                                             |
-| notification | notifications, webhooks, webhook_deliveries                                  | notifications.delivered, webhooks.* | bookings._, queue._, users.registered         |
-| search       | Elasticsearch index                                                          | analytics.search                    | businesses.*                                  |
-| ads          | business_ads, ad_events                                                      | analytics.ad.impressions            | bookings.created                              |
-| analytics    | ClickHouse tables                                                            | —                                   | analytics._, bookings._, queue.session.closed |
+| Service                | Owns (writes)                                                                                              | Publishes                  | Consumes                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------- | --------------------------------------------------- |
+| auth                   | users, oauth_accounts, refresh_tokens, push_tokens, notification_preferences                               | `users.*`                  | —                                                   |
+| business               | businesses (+ legal profile), hours, photos, documents, reviews, favourites, business sub-accounts & roles | `businesses.*`             | —                                                   |
+| booking                | services, staff ↔ services, working hours, availability, appointments, status history                      | `bookings.*`               | `bookings.completed`                                |
+| queue                  | queue_sessions, queue_entries                                                                              | `queue.*`                  | —                                                   |
+| billing                | subscriptions, customer entitlements (free trial)                                                          | `payments.*`               | `bookings.created`, `queue.entry.joined`            |
+| notification           | notifications (inbox), later webhooks                                                                      | `notifications.delivered`  | `bookings.*`, `queue.*`, `users.*`                  |
+| search                 | reads businesses via Postgres (MVP); Elasticsearch index later                                             | `analytics.search`         | `businesses.*`                                      |
+| ads _(deferred)_       | business_ads, ad_events                                                                                    | `analytics.ad.impressions` | `bookings.created`                                  |
+| analytics _(deferred)_ | ClickHouse tables                                                                                          | —                          | `analytics.*`, `bookings.*`, `queue.session.closed` |
 
-Businesses, reviews, favourites and billing need an owner — see
-[BUILD_GUIDE.md → Open questions](BUILD_GUIDE.md#open-questions-decisions-needed-from-the-product-owner).
+Deferred services keep their code and configuration but run only with their compose profile
+(`--profile ads`, `--profile analytics`, `--profile elasticsearch`).
 
 ## Repository map
 
