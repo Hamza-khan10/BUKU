@@ -246,3 +246,54 @@ Apps must show the `verification.label` badge on unverified businesses (D-032).
 
 `dayOfWeek` 0 = Sunday … 6 = Saturday, local time of the business. Days not listed are closed;
 overlapping or inverted intervals are rejected.
+
+### Verification requirements
+
+`POST /v1/admin/businesses/:id/verify` succeeds only when the checklist is complete, otherwise
+`409 VERIFICATION_REQUIREMENTS_NOT_MET` with `details.missing`:
+
+- `legal_profile` — legal/registration details submitted
+- `approved_document` — at least one document approved by an admin
+- `medical_license` — additionally, for categories under **Health & Medical**
+
+### `PUT /v1/businesses/:id/legal-profile` (owner)
+
+```json
+{
+  "legalName": "Fade Masters (Private) Limited",
+  "registrationCountry": "PK",
+  "registrationType": "SECP company",
+  "registrationNumber": "0123456-78",
+  "taxId": "1234567-8",
+  "registeredAddress": "12 Main Boulevard, Gulberg, Lahore",
+  "responsiblePerson": { "name": "Ayesha Khan", "role": "Director", "email": "…", "phone": "+92…" }
+}
+```
+
+`registrationType` is free text because every country has its own scheme ("NTN", "Companies
+House", "EIN", "Trade licence"…). Identifiers are stored encrypted and returned masked
+(`••••5678`). Changing the legal name, number or country of a verified business sends it back
+to review (`reverificationRequired: true`).
+
+### Uploading a document or photo (3 steps)
+
+1. `POST …/documents/uploads` `{ "type": "business_license", "contentType": "application/pdf", "sizeBytes": 183201 }`
+   → `201 { "documentId", "upload": { "method": "PUT", "url", "headers", "expiresAt" } }`
+2. The app sends the file itself **directly to `upload.url`** with exactly `upload.headers`
+   (the link is valid 10 minutes, for this one file, type and size only).
+3. `POST …/documents/:documentId/complete` → the server checks the file really arrived, has the
+   declared size and is genuinely a PDF/JPEG/PNG (file signature), then marks it `pending` review.
+   Anything else is deleted and refused (`400 FILE_TYPE_NOT_ALLOWED`, `409 UPLOAD_NOT_FOUND`).
+
+Documents: PDF, JPEG, PNG up to 25 MB, max 20 per business. Photos: JPEG, PNG, WebP up to
+10 MB, max 20; the first becomes the cover. Photos appear in the public profile as `photos[]`.
+
+### `POST /v1/admin/business-exports`
+
+```json
+{ "country": "PK", "reference": "SECP/2026/0042", "legalBasis": "Written request from … under …" }
+```
+
+Returns every business in that country with decrypted legal details (JSON attachment). The
+admin, reference, legal basis and row count are written to the audit log. Use only for
+requests that have gone through the legal process (docs/DECISIONS.md D-033).

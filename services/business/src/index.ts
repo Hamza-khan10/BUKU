@@ -1,9 +1,12 @@
 import {
+  createBlindIndexer,
+  createFieldCipher,
   createJwtVerifierFromEnv,
   createRedisClient,
   createRevocationStore,
   loadConfig,
   logger,
+  parseKeyring,
   Readiness,
   runService,
   type ShutdownHook,
@@ -12,6 +15,7 @@ import { createDatabaseClient, pingDatabase } from '@buku/database';
 import { createKafka, EventProducer, kafkaConnectionFromEnv, OutboxRelay } from '@buku/kafka';
 import { buildBusinessApp } from './app.js';
 import { Env } from './config.js';
+import { createS3Storage } from './storage/object-storage.js';
 
 const env = loadConfig(Env);
 
@@ -24,6 +28,14 @@ const db = createDatabaseClient({
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
 const producer = new EventProducer(createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env)));
 const verifier = await createJwtVerifierFromEnv(env);
+const storage = createS3Storage({
+  endpoint: env.S3_ENDPOINT,
+  publicEndpoint: env.S3_PUBLIC_ENDPOINT,
+  region: env.S3_REGION,
+  accessKeyId: env.S3_ACCESS_KEY_ID,
+  secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+  forcePathStyle: env.S3_FORCE_PATH_STYLE,
+});
 await producer.connect();
 // Publishes committed outbox events (businesses.*). Only one relay across all
 // services is active at a time (advisory lock), so running one here is safe.
@@ -34,6 +46,7 @@ relay.start();
 const readiness = new Readiness()
   .add('postgres', () => pingDatabase(db))
   .add('valkey', () => redis.ping())
+  .add('object-storage', () => storage.ping([env.S3_BUCKET_DOCUMENTS, env.S3_BUCKET_MEDIA]))
   .add('kafka', () =>
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
@@ -43,7 +56,13 @@ const app = buildBusinessApp({
   redis,
   verifier,
   revocations: createRevocationStore(redis),
+  cipher: createFieldCipher(parseKeyring(env.PII_ENCRYPTION_KEYS, env.PII_ENCRYPTION_ACTIVE_KEY_ID)),
+  indexer: createBlindIndexer(Buffer.from(env.PII_BLIND_INDEX_KEY, 'base64')),
+  storage,
   settings: {
+    documentsBucket: env.S3_BUCKET_DOCUMENTS,
+    mediaBucket: env.S3_BUCKET_MEDIA,
+    mediaPublicBaseUrl: env.MEDIA_PUBLIC_BASE_URL,
     businessTermsVersion: env.BUSINESS_TERMS_VERSION,
     maxBusinessesPerOwner: env.MAX_BUSINESSES_PER_OWNER,
   },

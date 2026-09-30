@@ -10,6 +10,7 @@ import {
   zUuid,
 } from '@buku/common';
 import { z } from 'zod';
+import { DOCUMENT_TYPES, MAX_DOCUMENT_BYTES, MAX_PHOTO_BYTES, PHOTO_TYPES } from '../storage/file-types.js';
 
 /** Request contracts for business-service (source for docs/API_REFERENCE.md). */
 
@@ -110,3 +111,68 @@ export const ReportListQuery = zPagination.extend({
 });
 
 export const ResolveReportBody = zBody({ status: z.enum(['reviewed', 'dismissed']) });
+
+// ── Legal profile (KYB) ────────────────────────────────────────────────────
+
+/** Registration numbers vary by country; allow the usual characters only. */
+const zIdentifier = z
+  .string()
+  .trim()
+  .min(3)
+  .max(64)
+  .regex(/^[A-Za-z0-9 .\-/]+$/, 'may contain letters, digits, spaces, "-", "." and "/" only');
+
+export const LegalProfileBody = zBody({
+  legalName: zSafeText({ min: 2, max: 300 }),
+  registrationCountry: zCountryCode,
+  /** Free text per country, e.g. "NTN", "SECP company", "Companies House", "EIN". */
+  registrationType: zSafeText({ min: 2, max: 100 }),
+  registrationNumber: zIdentifier,
+  taxId: zIdentifier.optional(),
+  registeredAddress: zSafeText({ min: 5, max: 500 }),
+  responsiblePerson: z.strictObject({
+    name: zSafeText({ min: 2, max: 200 }),
+    role: zSafeText({ min: 2, max: 100 }),
+    email: zEmail.optional(),
+    phone: zPhone.optional(),
+  }),
+});
+
+// ── Uploads ────────────────────────────────────────────────────────────────
+
+export const DocumentUploadBody = zBody({
+  type: z.enum([
+    'business_license',
+    'medical_license',
+    'id_proof',
+    'address_proof',
+    'tax_certificate',
+    'other',
+  ]),
+  contentType: z.enum(DOCUMENT_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_DOCUMENT_BYTES),
+});
+
+export const PhotoUploadBody = zBody({
+  contentType: z.enum(PHOTO_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_PHOTO_BYTES),
+  altText: zSafeText({ max: 300 }).optional(),
+});
+
+export const DocumentParams = z.object({ id: zUuid, documentId: zUuid });
+export const PhotoParams = z.object({ id: zUuid, photoId: zUuid });
+
+// ── Admin ──────────────────────────────────────────────────────────────────
+
+export const ReviewDocumentBody = zBody({
+  decision: z.enum(['approved', 'rejected']),
+  note: zSafeText({ max: 1000 }).optional(),
+});
+
+export const ExportBody = zBody({
+  country: zCountryCode,
+  /** The official request's reference number (e.g. a regulator's letter id). */
+  reference: zSafeText({ min: 3, max: 100 }),
+  /** Why this disclosure is lawful. Recorded in the audit log. */
+  legalBasis: zSafeText({ min: 10, max: 1000 }),
+});

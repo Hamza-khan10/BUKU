@@ -86,6 +86,8 @@ jobs:
         run: docker compose -f docker-compose.dev.yml up -d --wait postgres valkey kafka
       - name: Create Kafka topics from the registry
         run: KAFKA_BROKERS=localhost:9092 pnpm kafka:topics
+      - name: Start object storage and create buckets
+        run: docker compose -f docker-compose.dev.yml run --rm s3-init
       - name: Apply migrations to a fresh database
         run: pnpm db:migrate:deploy
       - name: Fail if schema.prisma and migrations disagree

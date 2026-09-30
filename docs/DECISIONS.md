@@ -198,3 +198,16 @@ listing could be turned into a different business.
 
 **D-047 · Countries as ISO 3166-1 codes from a fixed list.** Runtime region lookups accept
 user-assigned codes like `ZZ`, so the 249 official codes are listed explicitly.
+
+**D-048 · Uploads bypass the API: presigned, single-object links + server-side inspection.**
+The link is signed for one key, content type and exact size (storage refuses anything else);
+on completion we check size and file signature before accepting. The API never streams files,
+so upload size can't exhaust service memory or bandwidth.
+
+**D-049 · Verification needs a legal profile and an approved document** (plus a medical licence
+for Health & Medical). One checklist function drives both the owner's view and the admin guard.
+
+**D-050 · KYB is country-flexible, encrypted, and cross-checked.** Registration type is free
+text per country; identifiers are encrypted with a keyed fingerprint so admins see when a
+different owner reuses the same registration (same-owner reuse is normal: branches).
+Photos: presigned links in dev, a CDN/public base URL in production (`MEDIA_PUBLIC_BASE_URL`).

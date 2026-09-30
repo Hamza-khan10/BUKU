@@ -504,6 +504,18 @@ services:
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
       BUSINESS_TERMS_VERSION: '1.0'
       MAX_BUSINESSES_PER_OWNER: '5'
+      PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS}
+      PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
+      PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
+      S3_ENDPOINT: http://s3:9000
+      # Presigned links must point at an address the BROWSER can reach.
+      S3_PUBLIC_ENDPOINT: http://localhost:9100
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_FORCE_PATH_STYLE: 'true'
+      S3_BUCKET_DOCUMENTS: buku-documents-dev
+      S3_BUCKET_MEDIA: buku-media-dev
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -513,6 +525,7 @@ services:
     depends_on:
       <<: *needs-core
       valkey: { condition: service_healthy }
+      s3-init: { condition: service_completed_successfully }
     healthcheck:
       <<: *node-healthcheck
       test:
