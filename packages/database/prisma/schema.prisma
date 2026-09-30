@@ -69,9 +69,13 @@ enum DocumentType {
   medical_license
   id_proof
   address_proof
+  tax_certificate
+  other
 }
 
 enum DocumentStatus {
+  /// Upload link issued, file not confirmed yet.
+  awaiting_upload
   pending
   approved
   rejected
@@ -447,6 +451,7 @@ model Business {
   aiCallLogs             AiCallLog[]
   webhooks               Webhook[]
   subscriptions          Subscription[]
+  legalProfile           BusinessLegalProfile?
   members                BusinessMember[]
   reports                BusinessReport[]
 
@@ -462,14 +467,19 @@ model Business {
   @@map("businesses")
 }
 
+/// Public photos. Stored in the media bucket under `businesses/<id>/photos/<photoId>`;
+/// shown only once the upload is confirmed and verified to be a real image (uploadedAt set).
 model BusinessPhoto {
-  id         String   @id @default(uuid(7)) @db.Uuid
-  businessId String   @map("business_id") @db.Uuid
-  url        String
-  altText    String?  @map("alt_text") @db.VarChar(300)
-  isPrimary  Boolean  @default(false) @map("is_primary")
-  sortOrder  Int      @default(0) @map("sort_order")
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id          String    @id @default(uuid(7)) @db.Uuid
+  businessId  String    @map("business_id") @db.Uuid
+  storageKey  String    @unique @map("storage_key") @db.VarChar(300)
+  contentType String    @map("content_type") @db.VarChar(100)
+  sizeBytes   Int       @map("size_bytes")
+  altText     String?   @map("alt_text") @db.VarChar(300)
+  isPrimary   Boolean   @default(false) @map("is_primary")
+  sortOrder   Int       @default(0) @map("sort_order")
+  uploadedAt  DateTime? @map("uploaded_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
@@ -477,13 +487,17 @@ model BusinessPhoto {
   @@map("business_photos")
 }
 
-/// Verification documents. `url` points to a PRIVATE bucket; served only via short-lived presigned URLs.
+/// Verification documents in the PRIVATE documents bucket (`businesses/<id>/documents/<docId>`);
+/// never public, viewed by admins only through short-lived presigned links.
 model BusinessDocument {
   id           String         @id @default(uuid(7)) @db.Uuid
   businessId   String         @map("business_id") @db.Uuid
   type         DocumentType
-  url          String
-  status       DocumentStatus @default(pending)
+  storageKey   String         @unique @map("storage_key") @db.VarChar(300)
+  contentType  String         @map("content_type") @db.VarChar(100)
+  sizeBytes    Int            @map("size_bytes")
+  uploadedAt   DateTime?      @map("uploaded_at") @db.Timestamptz(6)
+  status       DocumentStatus @default(awaiting_upload)
   reviewedById String?        @map("reviewed_by_id") @db.Uuid
   reviewedAt   DateTime?      @map("reviewed_at") @db.Timestamptz(6)
   reviewNote   String?        @map("review_note")
@@ -787,6 +801,33 @@ model Favourite {
   @@id([userId, businessId])
   @@index([businessId])
   @@map("favourites")
+}
+
+/// Know-your-business (KYB) details: who is legally behind a business. Country-flexible:
+/// the registration TYPE is free text per country (e.g. PK "NTN", GB "Companies House").
+/// Identifiers and the responsible person's contact details are ENCRYPTED; the keyed hash of
+/// the registration number lets admins spot one registration used by different owners.
+model BusinessLegalProfile {
+  businessId                  String   @id @map("business_id") @db.Uuid
+  legalName                   String   @map("legal_name") @db.VarChar(300)
+  registrationCountry         String   @map("registration_country") @db.Char(2)
+  registrationType            String   @map("registration_type") @db.VarChar(100)
+  registrationNumberEncrypted String   @map("registration_number_encrypted")
+  registrationNumberHash      String   @map("registration_number_hash") @db.Char(64)
+  taxIdEncrypted              String?  @map("tax_id_encrypted")
+  registeredAddress           String   @map("registered_address")
+  responsibleName             String   @map("responsible_name") @db.VarChar(200)
+  responsibleRole             String   @map("responsible_role") @db.VarChar(100)
+  responsibleEmailEncrypted   String?  @map("responsible_email_encrypted")
+  responsiblePhoneEncrypted   String?  @map("responsible_phone_encrypted")
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([registrationNumberHash])
+  @@index([registrationCountry])
+  @@map("business_legal_profiles")
 }
 
 /// Access to a business for someone other than its owner (owner = businesses.owner_id).

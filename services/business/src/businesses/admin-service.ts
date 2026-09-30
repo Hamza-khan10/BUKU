@@ -2,6 +2,8 @@ import { AppError, ErrorCodes, pageMeta, toSkipTake, type Pagination } from '@bu
 import { recordAudit, type BusinessStatus, type Database } from '@buku/database';
 import { createEvent, enqueueEvent, TOPICS, type Topic } from '@buku/kafka';
 import { auditCtx, type RequestContext } from '../http/context.js';
+import type { LegalService } from '../legal/legal-service.js';
+import { verificationChecklist } from '../verification/checklist.js';
 
 /**
  * Platform-admin moderation (super_admin only).
@@ -16,7 +18,10 @@ import { auditCtx, type RequestContext } from '../http/context.js';
  *   suspended ── reinstate ▶ verified (if it was verified) / pending
  */
 export class AdminService {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly legal: LegalService,
+  ) {}
 
   async list(status: BusinessStatus, page: Pagination) {
     const where = { status, deletedAt: null };
@@ -49,7 +54,20 @@ export class AdminService {
     };
   }
 
-  verify(id: string, adminId: string, ctx: RequestContext) {
+  async verify(id: string, adminId: string, ctx: RequestContext) {
+    const exists = await this.db.business.count({ where: { id, deletedAt: null } });
+    if (!exists) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+    const checklist = await verificationChecklist(this.db, id);
+    if (!checklist.ready) {
+      throw new AppError(
+        'This business has not provided everything needed for verification',
+        ErrorCodes.VERIFICATION_REQUIREMENTS_NOT_MET,
+        409,
+        {
+          details: { missing: checklist.items.filter((i) => !i.met).map((i) => i.key) },
+        },
+      );
+    }
     return this.transition(id, adminId, ctx, {
       from: ['pending'],
       data: { status: 'verified', verified: true, verifiedAt: new Date(), rejectionReason: null },
@@ -91,6 +109,57 @@ export class AdminService {
       action: 'admin.business_reinstated',
       event: wasVerified ? TOPICS.BUSINESSES_VERIFIED : TOPICS.BUSINESSES_UPDATED,
     });
+  }
+
+  /**
+   * Per-country list of businesses with their decrypted legal details, for a
+   * LAWFUL request (e.g. a regulator). Requires a request reference and legal
+   * basis, both recorded in the audit log with the admin and row count (D-033).
+   */
+  async exportCountry(
+    country: string,
+    request: { reference: string; legalBasis: string },
+    adminId: string,
+    ctx: RequestContext,
+  ) {
+    const rows = await this.db.business.findMany({
+      where: { country, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        status: true,
+        verified: true,
+        verifiedAt: true,
+        address: true,
+        city: true,
+        state: true,
+        country: true,
+        postalCode: true,
+        phone: true,
+        email: true,
+        website: true,
+        createdAt: true,
+        legalProfile: true,
+      },
+    });
+    await recordAudit(this.db, {
+      userId: adminId,
+      action: 'admin.business_export',
+      resourceType: 'country',
+      newValues: { country, reference: request.reference, legalBasis: request.legalBasis, rows: rows.length },
+      ...auditCtx(ctx),
+    });
+    return {
+      country,
+      generatedAt: new Date().toISOString(),
+      request,
+      businesses: rows.map(({ legalProfile, ...b }) => ({
+        ...b,
+        legal: legalProfile ? this.legal.decrypted(legalProfile) : null,
+      })),
+    };
   }
 
   async listReports(status: 'open' | 'reviewed' | 'dismissed', page: Pagination) {

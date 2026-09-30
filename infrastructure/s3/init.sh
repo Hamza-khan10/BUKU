@@ -28,11 +28,15 @@ for bucket in buku-media-dev buku-documents-dev buku-backups-dev; do
 done
 
 # Browser uploads (presigned PUT) come from the web app origin only.
-aws $EP s3api put-bucket-cors --bucket buku-media-dev --cors-configuration '{
+CORS='{
   "CORSRules": [{
     "AllowedOrigins": ["http://localhost:3000"],
     "AllowedMethods": ["GET", "PUT"],
-    "AllowedHeaders": ["Content-Type", "Content-MD5", "x-amz-*"],
+    "AllowedHeaders": ["Content-Type", "Content-Length"],
     "MaxAgeSeconds": 3600
   }]
-}' > /dev/null 2>&1 && echo "✔ CORS on buku-media-dev" || echo "  (CORS not supported by this S3 emulator)"
+}'
+for bucket in buku-media-dev buku-documents-dev; do
+  aws $EP s3api put-bucket-cors --bucket "$bucket" --cors-configuration "$CORS" > /dev/null 2>&1 \
+    && echo "✔ CORS on $bucket" || echo "  (CORS not supported by this S3 emulator)"
+done

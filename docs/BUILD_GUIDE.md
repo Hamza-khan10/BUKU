@@ -100,7 +100,7 @@ Status: built and covered by 31 integration tests (`services/auth/test/auth.int.
 gateway checks in `pnpm verify`. Password sign-in and password change arrive with business
 sub-accounts in 2.2, reusing the "end all sessions" mechanism built here.
 
-### 2.2 Business service (new) — 🚧 part 1 done (onboarding, profile, hours, verification, reports)
+### 2.2 Business service (new) — 🚧 parts 1–2 done (onboarding, verification, legal details, documents, photos)
 
 Business onboarding with a **country-flexible legal profile (KYB)**: legal name, registration
 type and number per country, tax id (encrypted), registered address, responsible person,
@@ -108,6 +108,12 @@ documents. Opening hours, photos and documents (direct-to-storage uploads). **Un
 businesses can take bookings but are clearly badged "Not verified"**; "Report this business";
 admin verification and suspension; audited per-country business export for lawful requests.
 **Service categories** (a business groups its services), reviews + owner replies, favourites.
+
+Built so far: part 1 — onboarding, public profile, hours, reports, admin verify/suspend;
+part 2 — encrypted legal profile with a duplicate-registration signal, direct-to-storage
+document and photo uploads (exact size + real file signature checked), admin document review
+with 5-minute links, a verification checklist that also gates "verify" (health categories need
+a medical licence), and the audited per-country export. Next: part 3 — sub-accounts below.
 
 **Business sub-accounts (AWS-IAM-style):** the owner creates accounts (business-scoped
 username + password, forced change on first sign-in) for employees' phones and shared

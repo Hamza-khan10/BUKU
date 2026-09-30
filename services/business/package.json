@@ -10,6 +10,8 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1142.0",
+    "@aws-sdk/s3-request-presigner": "3.1142.0",
     "@buku/common": "workspace:*",
     "@buku/database": "workspace:*",
     "@buku/kafka": "workspace:*",

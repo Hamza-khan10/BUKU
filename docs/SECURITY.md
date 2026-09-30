@@ -29,21 +29,24 @@ Status legend: ✅ in place and tested (Phase 1) · 🔜 built in the phase show
 | Query parser `simple` (no nested objects from `?a[b]=`; closes prototype-pollution class)                       | ✅                     |
 | Free text: HTML and control characters stripped before storage                                                  | ✅ `zSafeText`         |
 | SQL: Prisma parameterized queries; raw SQL only via tagged templates                                            | ✅ convention + review |
-| Body size limits (gateway 128 KB, service 100 KB); uploads go direct to S3 via presigned URLs                   | ✅ / 🔜 2.2            |
+| Body size limits (gateway 128 KB, service 100 KB); uploads go direct to S3 via presigned URLs                   | ✅ tested              |
 | Errors: generic 500 to clients (no stack/SQL), full detail in logs, request id in both                          | ✅ tested              |
 | Security headers on every response (CSP `default-src 'none'`, HSTS, nosniff, frame DENY, no-store)              | ✅                     |
 
 ## 3. Data protection
 
-| Control                                                                                                                                | Status              |
-| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| User email/phone encrypted (AES-256-GCM, random IV, column-bound AAD, key ring with rotation) + HMAC blind index for lookup/uniqueness | ✅                  |
-| Webhook signing secrets encrypted (must be recoverable to sign)                                                                        | ✅ schema           |
-| Logs: redaction of auth headers, cookies, passwords, tokens, OTPs, emails, phones; query strings never logged                          | ✅                  |
-| Least-privilege DB roles: services connect as `buku_app` (no DDL, no TRUNCATE) — proven by tests                                       | ✅                  |
-| `statement_timeout`, `lock_timeout`, idle-transaction timeout on the app role                                                          | ✅                  |
-| Private buckets; documents only via short-lived presigned URLs                                                                         | ✅ buckets · 🔜 2.2 |
-| Retention: ClickHouse TTLs (13–25 months), monthly partitions for audit/notifications, GDPR export + erasure                           | ✅ / 🔜 2.1         |
+| Control                                                                                                                                                             | Status      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| User email/phone encrypted (AES-256-GCM, random IV, column-bound AAD, key ring with rotation) + HMAC blind index for lookup/uniqueness                              | ✅          |
+| Webhook signing secrets encrypted (must be recoverable to sign)                                                                                                     | ✅ schema   |
+| Logs: redaction of auth headers, cookies, passwords, tokens, OTPs, emails, phones; query strings never logged                                                       | ✅          |
+| Least-privilege DB roles: services connect as `buku_app` (no DDL, no TRUNCATE) — proven by tests                                                                    | ✅          |
+| `statement_timeout`, `lock_timeout`, idle-transaction timeout on the app role                                                                                       | ✅          |
+| Private buckets; verification documents viewed by admins only through 5-minute links, every view audited                                                            | ✅ tested   |
+| Upload links bound to one key, content type and exact size (storage refuses anything else); on completion the real file signature is checked and mismatches deleted | ✅ tested   |
+| KYB identifiers and responsible-person contacts encrypted, masked for owners; same registration under a different owner flagged to admins                           | ✅ tested   |
+| Per-country business export: admin-only, needs reference + legal basis, rate-limited, audited                                                                       | ✅ tested   |
+| Retention: ClickHouse TTLs (13–25 months), monthly partitions for audit/notifications, GDPR export + erasure                                                        | ✅ / 🔜 2.1 |
 
 ## 4. Infrastructure
 
@@ -76,6 +79,8 @@ Email security@buku.app (to be created before launch). Do not open a public issu
 
 ## Known limitations (tracked)
 
+- Photo metadata (EXIF, e.g. GPS) is not stripped yet: business photos are stored as uploaded.
+  An image-processing step (resize + strip metadata) is planned before launch.
 - Gateway 401 responses use Kong's `{"message"}` body instead of the BUKU envelope (documented for clients).
 - Kong OSS has no releases after 3.9; plan a migration path (see DECISIONS D-011) before 2027.
 - Soft-deleted users are hidden from direct queries but can still appear through relations until

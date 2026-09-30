@@ -167,12 +167,19 @@ services:
         strip_path: false
         plugins: [*jwt]
       - name: business-manage
-        paths: ['~/v1/businesses/[^/]+/(manage|hours|reports)$']
+        paths:
+          ['~/v1/businesses/[^/]+/(manage|hours|reports|verification|legal-profile|documents|photos)($|/)']
         regex_priority: 10
         strip_path: false
         plugins: [*jwt]
       - name: business-admin
-        paths: ['/v1/admin/businesses', '/v1/admin/business-reports']
+        paths:
+          [
+            '/v1/admin/businesses',
+            '/v1/admin/business-reports',
+            '/v1/admin/business-documents',
+            '/v1/admin/business-exports',
+          ]
         strip_path: false
         plugins: [*jwt]
 

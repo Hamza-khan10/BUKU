@@ -26,4 +26,11 @@ export const testEnv = {
   kafkaBrokers: process.env.TEST_KAFKA_BROKERS ?? 'localhost:9092',
   redisUrl: `redis://:${encodeURIComponent(required('VALKEY_PASSWORD'))}@${host}:${process.env.VALKEY_HOST_PORT ?? '6379'}/0`,
   piiKeyring: required('PII_ENCRYPTION_KEYS'),
+  s3: {
+    endpoint: process.env.TEST_S3_ENDPOINT ?? 'http://localhost:9100',
+    accessKeyId: required('S3_ACCESS_KEY_ID'),
+    secretAccessKey: required('S3_SECRET_ACCESS_KEY'),
+    documentsBucket: 'buku-documents-dev',
+    mediaBucket: 'buku-media-dev',
+  },
 };
