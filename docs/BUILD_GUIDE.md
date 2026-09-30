@@ -126,6 +126,19 @@ tablets. Roles:
 | Front desk | All appointments and the live queue (shared tablets); no settings        |
 | Staff      | Own schedule, own working hours/time off, own appointments; check-in/out |
 
+**Part 4 — pictures of people (planned, requested 2026-09-30):** reuses the upload pipeline
+from part 2 (presigned link bound to type and exact size, file signature check, metadata
+stripped before anything is shown).
+
+- **Business logo** next to the cover photo on the public profile.
+- **Employee photos**, optional and entirely the business's choice, uploaded by an owner or
+  manager and shown on the booking page next to the employee's name, so a customer who forgot
+  the name can recognise the person. The business confirms it has the employee's consent; the
+  employee can see their photo and ask for it to be removed; the photo is deleted when they
+  leave the team. Replaces the current `staff.photo_url` text field.
+- **Customer profile picture**, private: visible only to that customer (never to other
+  customers or on public pages), removed with the account, included in "my data" export.
+
 ### 2.3 Booking service
 
 Services (in categories), staff ↔ services, working hours per employee (editable by the
@@ -181,7 +194,8 @@ End-to-end: sign in → add phone → trial booking → confirm → reminder →
 subscribe → second booking; queue join (distance + one-queue rule) → called → served.
 Concurrency tests; authorization tests on every route.
 
-**Deferred (built later on the same foundation):** ads, ClickHouse analytics, outgoing
+**Deferred (built later on the same foundation):** ads (image and video creatives for
+businesses on the Enterprise plan only), ClickHouse analytics, outgoing
 webhooks, business pricing plans, AI receptionist, Elasticsearch search, mobile app (Phase 4).
 
 ---
@@ -229,7 +243,9 @@ Recorded from the product owner; rationale for each is in DECISIONS.md.
 | Data rights  | Self-service section for customers and businesses to export or delete their data                                                                                                               |
 | Hosting      | Web app on Vercel (thebuku.vercel.app) until a domain is bought; backend on DigitalOcean (lean: droplet + managed Postgres/Valkey)                                                             |
 | Search       | Postgres first; Elasticsearch kept, not running                                                                                                                                                |
+| Pictures     | Business cover + logo; optional employee photos chosen by the business; customer profile picture visible only to that customer; ad images and videos only on the Enterprise business plan      |
 
-**Still open:** SMS/WhatsApp provider choice and cost (before launch) · AI receptionist
+**Still open:** whether the business a customer booked with may see the customer's profile
+picture (default: no) · Enterprise plan contents and price · SMS/WhatsApp provider choice and cost (before launch) · AI receptionist
 specification · app-store in-app-purchase rules for the subscription (Phase 4) · lawyer review
 of legal pages and of the process for government data requests.
