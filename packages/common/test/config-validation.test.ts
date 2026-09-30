@@ -110,3 +110,13 @@ describe('error envelope', () => {
     });
   });
 });
+
+describe('country codes', () => {
+  it('accepts real ISO codes (any case) and rejects user-assigned or made-up ones', async () => {
+    const { zCountryCode, ISO_COUNTRY_CODES } = await import('../src/index.js');
+    expect(ISO_COUNTRY_CODES.size).toBe(249);
+    expect(zCountryCode.parse('pk')).toBe('PK');
+    for (const bad of ['ZZ', 'XA', 'QM', 'Pakistan', 'P', 'PAK'])
+      expect(zCountryCode.safeParse(bad).success).toBe(false);
+  });
+});

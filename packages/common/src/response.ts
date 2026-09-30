@@ -8,17 +8,17 @@ import { type AppError, HttpStatus } from './errors.js';
  *   { "success": true,  "data": ..., "meta": { ... } }
  *   { "success": false, "error": { "code", "message", "details?", "requestId?" } }
  */
-export interface PageMeta {
+export type PageMeta = {
   page: number;
   limit: number;
   total: number;
   totalPages: number;
-}
+};
 
-export interface CursorMeta {
+export type CursorMeta = {
   limit: number;
   nextCursor: string | null;
-}
+};
 
 export type ResponseMeta = Partial<PageMeta> & Partial<CursorMeta> & Record<string, unknown>;
 

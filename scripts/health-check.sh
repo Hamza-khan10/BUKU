@@ -31,7 +31,7 @@ curl -s -o /dev/null http://localhost:9100 && ok "Object storage (S3)" || bad "O
 curl -sf http://localhost:8025/livez > /dev/null && ok "Mailpit" || bad "Mailpit"
 
 echo "── Services (readiness = all dependencies reachable) ──"
-for svc in auth:3001 booking:3002 queue:3003 notification:3004 search:3005 ads:3006 analytics:3007; do
+for svc in auth:3001 business:3008 booking:3002 queue:3003 notification:3004 search:3005 ads:3006 analytics:3007; do
   name=${svc%%:*}; port=${svc##*:}
   if [[ "$name" == "ads" || "$name" == "analytics" ]] && ! running "${name}-service"; then
     skip "${name}-service" "$name"; continue

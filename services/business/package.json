@@ -1,0 +1,23 @@
+{
+  "name": "@buku/business-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Businesses: onboarding, public profile, opening hours, verification, reports, legal details and media.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "build": "tsup --config ../../tsup.config.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@buku/common": "workspace:*",
+    "@buku/database": "workspace:*",
+    "@buku/kafka": "workspace:*",
+    "express": "5.2.1",
+    "ioredis": "6.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6"
+  }
+}

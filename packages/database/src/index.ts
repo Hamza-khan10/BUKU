@@ -7,6 +7,7 @@ import { softDeleteUsers } from './soft-delete.js';
 export * from './generated/prisma/client.js';
 export { softDeleteUsers };
 export { recordAudit, type AuditEntry } from './audit.js';
+export { businessRoleOf, requireBusinessPermission } from './authz.js';
 
 /**
  * Shared database client factory.

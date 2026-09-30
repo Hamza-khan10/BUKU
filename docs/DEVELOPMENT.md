@@ -99,7 +99,7 @@ router.post(
 - **Trunk-based:** `main` is always deployable. Work on short-lived branches:
   `feat/<scope>-<slug>`, `fix/<scope>-<slug>`, `chore/<scope>-<slug>`.
 - **Commits:** Conventional Commits, enforced by a hook — `feat(booking): add reschedule endpoint`.
-  Scopes: `common database kafka auth booking queue notification search ads analytics web mobile
+  Scopes: `common database kafka auth business booking queue billing notification search ads analytics web mobile
 infra docker kong ci deps docs repo security release`.
 - **Hooks:** pre-commit (lint-staged + gitleaks), commit-msg (commitlint), pre-push (typecheck + tests).
   Using a GUI git client? Create `~/.config/husky/init.sh` containing

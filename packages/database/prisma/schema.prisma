@@ -83,6 +83,32 @@ enum StaffRole {
   staff
 }
 
+/// Access roles inside a business (the owner is businesses.owner_id, not a member row).
+enum BusinessMemberRole {
+  manager
+  front_desk
+  staff
+}
+
+enum BusinessMemberStatus {
+  active
+  disabled
+}
+
+enum BusinessReportReason {
+  fake_business
+  wrong_information
+  inappropriate_content
+  scam_or_fraud
+  other
+}
+
+enum BusinessReportStatus {
+  open
+  reviewed
+  dismissed
+}
+
 enum ExceptionType {
   holiday
   modified
@@ -245,6 +271,10 @@ model User {
   notifications     Notification[]
   auditLogs         AuditLog[]
   reviewedDocuments BusinessDocument[]      @relation("DocumentReviewer")
+  memberships       BusinessMember[]        @relation("MemberUser")
+  createdMembers    BusinessMember[]        @relation("MemberCreatedBy")
+  businessReports   BusinessReport[]        @relation("Reporter")
+  reviewedReports   BusinessReport[]        @relation("ReportReviewer")
 
   @@index([status])
   @@index([createdAt])
@@ -355,42 +385,46 @@ model Category {
 /// DB extras: `location` and `search_vector` are maintained by a BEFORE trigger (from lat/lng
 /// and name/description/city); GiST + GIN + trigram indexes; rating trigger.
 model Business {
-  id                    String                                @id @default(uuid(7)) @db.Uuid
-  ownerId               String                                @map("owner_id") @db.Uuid
-  categoryId            String                                @map("category_id") @db.Uuid
-  name                  String                                @db.VarChar(200)
-  slug                  String                                @unique @db.VarChar(200)
-  description           String?
-  phone                 String?                               @db.VarChar(20)
-  email                 String?                               @db.VarChar(255)
-  website               String?                               @db.VarChar(500)
-  address               String?
-  city                  String                                @db.VarChar(100)
-  state                 String?                               @db.VarChar(100)
-  country               String                                @db.VarChar(100)
-  postalCode            String?                               @map("postal_code") @db.VarChar(20)
-  lat                   Decimal?                              @db.Decimal(10, 8)
-  lng                   Decimal?                              @db.Decimal(11, 8)
+  id                      String                                @id @default(uuid(7)) @db.Uuid
+  ownerId                 String                                @map("owner_id") @db.Uuid
+  categoryId              String                                @map("category_id") @db.Uuid
+  name                    String                                @db.VarChar(200)
+  slug                    String                                @unique @db.VarChar(200)
+  description             String?
+  phone                   String?                               @db.VarChar(20)
+  email                   String?                               @db.VarChar(255)
+  website                 String?                               @db.VarChar(500)
+  address                 String?
+  city                    String                                @db.VarChar(100)
+  state                   String?                               @db.VarChar(100)
+  /// ISO 3166-1 alpha-2 code, e.g. "PK". DB extras: CHECK ^[A-Z]{2}$.
+  country                 String                                @db.Char(2)
+  postalCode              String?                               @map("postal_code") @db.VarChar(20)
+  lat                     Decimal?                              @db.Decimal(10, 8)
+  lng                     Decimal?                              @db.Decimal(11, 8)
   /// Derived from lat/lng by a DB trigger. Never written by the application.
-  location              Unsupported("geography(Point,4326)")?
+  location                Unsupported("geography(Point,4326)")?
   /// Full-text vector maintained by a DB trigger. Never written by the application.
-  searchVector          Unsupported("tsvector")?              @map("search_vector")
+  searchVector            Unsupported("tsvector")?              @map("search_vector")
   /// IANA timezone. All availability math happens in this zone.
-  timezone              String                                @default("UTC") @db.VarChar(60)
-  currency              String                                @default("USD") @db.Char(3)
-  status                BusinessStatus                        @default(pending)
-  verified              Boolean                               @default(false)
-  verifiedAt            DateTime?                             @map("verified_at") @db.Timestamptz(6)
-  rejectionReason       String?                               @map("rejection_reason")
+  timezone                String                                @default("UTC") @db.VarChar(60)
+  currency                String                                @default("USD") @db.Char(3)
+  status                  BusinessStatus                        @default(pending)
+  verified                Boolean                               @default(false)
+  verifiedAt              DateTime?                             @map("verified_at") @db.Timestamptz(6)
+  rejectionReason         String?                               @map("rejection_reason")
   /// Validated by a Zod schema in the service layer (autoConfirm, cancellationHours, ...).
-  settings              Json                                  @default("{}")
-  subscriptionTier      SubscriptionTier                      @default(free) @map("subscription_tier")
-  subscriptionExpiresAt DateTime?                             @map("subscription_expires_at") @db.Timestamptz(6)
-  avgRating             Decimal                               @default(0) @map("avg_rating") @db.Decimal(3, 2)
-  reviewCount           Int                                   @default(0) @map("review_count")
-  deletedAt             DateTime?                             @map("deleted_at") @db.Timestamptz(6)
-  createdAt             DateTime                              @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime                              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  settings                Json                                  @default("{}")
+  subscriptionTier        SubscriptionTier                      @default(free) @map("subscription_tier")
+  subscriptionExpiresAt   DateTime?                             @map("subscription_expires_at") @db.Timestamptz(6)
+  avgRating               Decimal                               @default(0) @map("avg_rating") @db.Decimal(3, 2)
+  reviewCount             Int                                   @default(0) @map("review_count")
+  /// Business Terms version accepted by the owner at registration, and when.
+  businessTermsVersion    String?                               @map("business_terms_version") @db.VarChar(20)
+  businessTermsAcceptedAt DateTime?                             @map("business_terms_accepted_at") @db.Timestamptz(6)
+  deletedAt               DateTime?                             @map("deleted_at") @db.Timestamptz(6)
+  createdAt               DateTime                              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                              @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   owner                  User                    @relation("BusinessOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   category               Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
@@ -413,6 +447,8 @@ model Business {
   aiCallLogs             AiCallLog[]
   webhooks               Webhook[]
   subscriptions          Subscription[]
+  members                BusinessMember[]
+  reports                BusinessReport[]
 
   @@index([ownerId])
   @@index([categoryId])
@@ -751,6 +787,50 @@ model Favourite {
   @@id([userId, businessId])
   @@index([businessId])
   @@map("favourites")
+}
+
+/// Access to a business for someone other than its owner (owner = businesses.owner_id).
+/// Owned by auth-service (identity & access); every service reads it for authorization
+/// through `businessRoleOf()` in @buku/database.
+model BusinessMember {
+  id          String               @id @default(uuid(7)) @db.Uuid
+  businessId  String               @map("business_id") @db.Uuid
+  userId      String               @map("user_id") @db.Uuid
+  role        BusinessMemberRole
+  status      BusinessMemberStatus @default(active)
+  createdById String?              @map("created_by_id") @db.Uuid
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business  Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user      User     @relation("MemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("MemberCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([businessId, userId])
+  @@index([userId, status])
+  @@map("business_members")
+}
+
+/// "Report this business" (important because unverified businesses can take bookings, D-032).
+/// One report per person per business.
+model BusinessReport {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  businessId   String               @map("business_id") @db.Uuid
+  reporterId   String?              @map("reporter_id") @db.Uuid
+  reason       BusinessReportReason
+  details      String?
+  status       BusinessReportStatus @default(open)
+  reviewedById String?              @map("reviewed_by_id") @db.Uuid
+  reviewedAt   DateTime?            @map("reviewed_at") @db.Timestamptz(6)
+  createdAt    DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  reporter   User?    @relation("Reporter", fields: [reporterId], references: [id], onDelete: SetNull)
+  reviewedBy User?    @relation("ReportReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@unique([businessId, reporterId])
+  @@index([status, createdAt])
+  @@map("business_reports")
 }
 
 // ═════════════════════════════ QUEUES ═════════════════════════════

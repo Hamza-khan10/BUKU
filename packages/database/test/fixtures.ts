@@ -18,7 +18,7 @@ export async function createBusinessFixture(db: Database) {
       name: `Test Barber ${suffix}`,
       slug: `test-barber-${suffix}`,
       city: 'Lahore',
-      country: 'Pakistan',
+      country: 'PK',
       lat: 31.5204,
       lng: 74.3587,
       timezone: 'Asia/Karachi',

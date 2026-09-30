@@ -129,6 +129,10 @@ Schemas: `public` (Prisma), `partitions` (monthly partitions), `ai` (vector stor
 | ads _(deferred)_       | business_ads, ad_events                                                                                    | `analytics.ad.impressions` | `bookings.created`                                  |
 | analytics _(deferred)_ | ClickHouse tables                                                                                          | —                          | `analytics.*`, `bookings.*`, `queue.session.closed` |
 
+**Authorization across services:** every service resolves a user's role in a business with the
+shared read-only helper `requireBusinessPermission()` (owner from `businesses.owner_id`, others
+from `business_members`), checked against the single permission table in `@buku/common`.
+
 auth-service's data export reads the other services' tables read-only (GDPR aggregation, D-043);
 no service ever writes another service's tables.
 

@@ -402,6 +402,31 @@ importers:
         specifier: 5.0.6
         version: 5.0.6
 
+  services/business:
+    dependencies:
+      '@buku/common':
+        specifier: workspace:*
+        version: link:../../packages/common
+      '@buku/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@buku/kafka':
+        specifier: workspace:*
+        version: link:../../packages/kafka
+      express:
+        specifier: 5.2.1
+        version: 5.2.1
+      ioredis:
+        specifier: 6.0.0
+        version: 6.0.0
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/express':
+        specifier: 5.0.6
+        version: 5.0.6
+
   services/notification:
     dependencies:
       '@buku/common':

@@ -183,3 +183,18 @@ suspension. Purge anonymizes instead of deleting rows: appointment history stays
 businesses (and accounting), ratings stay in business averages, while contact data,
 credentials, devices, favourites, notifications and review/appointment texts are removed.
 The export endpoint reads other services' tables read-only (a deliberate exception).
+
+**D-044 · Identity & access (users, credentials, memberships) belong to auth-service; the business itself to business-service.**
+Ownership comes from `businesses.owner_id`, written in the same transaction that creates the
+business, so no service writes another's tables. Roles are resolved from the database on every
+request (not cached in tokens), so disabling an employee takes effect immediately.
+
+**D-045 · One permission table for business roles** (`@buku/common` `authz.ts`), used by every
+service through `requireBusinessPermission()`: no role → 404, role without permission → 403.
+
+**D-046 · Identity changes re-trigger verification.** Editing name, category or address of a
+verified business puts it back to `pending` (badge "Not verified") — otherwise a verified
+listing could be turned into a different business.
+
+**D-047 · Countries as ISO 3166-1 codes from a fixed list.** Runtime region lookups accept
+user-assigned codes like `ZZ`, so the 249 official codes are listed explicitly.

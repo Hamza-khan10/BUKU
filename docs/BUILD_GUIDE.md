@@ -100,7 +100,7 @@ Status: built and covered by 31 integration tests (`services/auth/test/auth.int.
 gateway checks in `pnpm verify`. Password sign-in and password change arrive with business
 sub-accounts in 2.2, reusing the "end all sessions" mechanism built here.
 
-### 2.2 Business service (new)
+### 2.2 Business service (new) — 🚧 part 1 done (onboarding, profile, hours, verification, reports)
 
 Business onboarding with a **country-flexible legal profile (KYB)**: legal name, registration
 type and number per country, tax id (encrypted), registered address, responsible person,
