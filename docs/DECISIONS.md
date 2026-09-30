@@ -211,3 +211,10 @@ for Health & Medical). One checklist function drives both the owner's view and t
 text per country; identifiers are encrypted with a keyed fingerprint so admins see when a
 different owner reuses the same registration (same-owner reuse is normal: branches).
 Photos: presigned links in dev, a CDN/public base URL in production (`MEDIA_PUBLIC_BASE_URL`).
+
+**D-051 · Pictures of people are opt-in and minimal-exposure.** Employee photos are optional,
+added by the business with the employee's consent and removed when they leave; customer
+profile pictures are private to the customer (other customers never see them). Every image
+goes through the part-2 upload checks and has metadata (e.g. GPS) stripped before display.
+Ad images and videos are an Enterprise-plan feature, built with ads after the MVP; videos will
+need their own size/length limits and processing.
