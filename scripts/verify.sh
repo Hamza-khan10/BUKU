@@ -49,7 +49,8 @@ echo "═══ 2. Stack health ═══"
 check "Every component healthy (health-check.sh)" bash scripts/health-check.sh
 
 echo "═══ 3. Database ═══"
-check "34 Prisma-managed tables in public (+1 in ai)" eq "$(psql_q "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename <> '_prisma_migrations'")" 34
+EXPECTED_TABLES=$(grep -c '^model ' packages/database/prisma/schema.prisma)
+check "All $EXPECTED_TABLES Prisma models exist as tables in public" eq "$(psql_q "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename <> '_prisma_migrations'")" "$EXPECTED_TABLES"
 check "Extensions: postgis, vector, pg_trgm, btree_gist, pgcrypto" eq "$(psql_q "SELECT count(*) FROM pg_extension WHERE extname IN ('postgis','vector','pg_trgm','btree_gist','pgcrypto')")" 5
 check "All migrations applied, no drift"               bash -c "cd packages/database && pnpm exec prisma migrate status | grep -q 'Database schema is up to date'"
 check "3 tables range-partitioned by month"            eq "$(psql_q "SELECT count(*) FROM pg_partitioned_table")" 3
@@ -99,6 +100,9 @@ check "Gateway rejects requests without a token"       eq "$(curl -s -o /dev/nul
 check "Gateway rejects a forged token"                 bash -c "curl -s -H 'Authorization: Bearer $FORGED' http://localhost:8000/v1/auth/me | grep -q 'Invalid signature'"
 check "Gateway ignores tokens passed in the URL"       eq "$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8000/v1/queue?jwt=$FORGED")" 401
 check "Public routes need no token (sign-in, browse)"  bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/businesses/x/services) == 404 ]]"
+check "Private business routes are guarded at the gateway" bash -c "curl -s http://localhost:8000/v1/businesses/mine | grep -q '\"message\":\"Unauthorized\"'"
+check "Search paths are not swallowed by business profiles" bash -c "curl -s http://localhost:8000/v1/businesses/search | grep -q 'Route not found'"
+check "Public business profile works without a token"   bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/businesses/\$(docker compose -f docker-compose.dev.yml exec -T postgres psql -U buku_admin -d buku -tAc \"select slug from businesses where status='verified' limit 1\")) == 200 ]]"
 check "Sign-in → /me → log out everywhere works end to end" bash -c '
   T=$(curl -s -X POST http://localhost:8000/v1/auth/dev/login -H "Content-Type: application/json" -d "{\"email\":\"verify@buku.dev\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"data\"][\"accessToken\"])")
   [[ $(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $T" http://localhost:8000/v1/auth/me) == 200 ]] &&

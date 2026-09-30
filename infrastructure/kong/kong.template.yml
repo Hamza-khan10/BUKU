@@ -126,17 +126,55 @@ services:
           error_message: Too many search requests, please slow down
           redis: *redis
     routes:
-      # Public: discovery works without signing in.
+      # Public: discovery works without signing in. Explicit regex priority so
+      # these win over the business public-profile route /v1/businesses/{slug}.
       - name: search
-        paths:
-          - '/v1/businesses/search'
-          - '/v1/businesses/nearby'
-          - '/v1/businesses/autocomplete'
-          - '/v1/businesses/featured'
-          - '/v1/businesses/trending'
-          - '/v1/categories'
+        paths: ['~/v1/businesses/(search|nearby|autocomplete|featured|trending)$', '/v1/categories']
         methods: [GET, OPTIONS]
+        regex_priority: 20
         strip_path: false
+
+  - name: business-service
+    url: http://business-service:3008
+    connect_timeout: 5000
+    read_timeout: 30000
+    write_timeout: 30000
+    retries: 0
+    routes:
+      # Public: a business profile by slug or id.
+      - name: business-public-profile
+        paths: ['~/v1/businesses/[a-z0-9-]+$']
+        methods: [GET, OPTIONS]
+        regex_priority: 5
+        strip_path: false
+      # Same methods as the public-profile route: Kong ranks routes with a
+      # method condition above regex_priority alone, so this must match too.
+      - name: business-mine
+        paths: ['~/v1/businesses/mine$']
+        methods: [GET, OPTIONS]
+        regex_priority: 20
+        strip_path: false
+        plugins: [*jwt]
+      - name: business-create
+        paths: ['~/v1/businesses$']
+        methods: [POST, OPTIONS]
+        strip_path: false
+        plugins: [*jwt]
+      - name: business-update
+        paths: ['~/v1/businesses/[^/]+$']
+        methods: [PATCH, DELETE, OPTIONS]
+        regex_priority: 5
+        strip_path: false
+        plugins: [*jwt]
+      - name: business-manage
+        paths: ['~/v1/businesses/[^/]+/(manage|hours|reports)$']
+        regex_priority: 10
+        strip_path: false
+        plugins: [*jwt]
+      - name: business-admin
+        paths: ['/v1/admin/businesses', '/v1/admin/business-reports']
+        strip_path: false
+        plugins: [*jwt]
 
   # Deferred (opt-in compose profiles): routes answer 503 until started.
   - name: ads-service

@@ -160,3 +160,89 @@ Immediately: every device is signed out (`SESSION_REVOKED` / `account_deleted`),
 notifications stop, and other services are told (`users.deleted`) to cancel upcoming bookings.
 Until `purgeAfter` the person can restore the account by signing in (see above). After it,
 personal data is erased for good; appointment records remain for the businesses, anonymized.
+
+## Business service — `/v1/businesses`, `/v1/admin`
+
+Roles inside a business: **owner** (whoever registered it) and members with **manager**,
+**front desk** or **staff** roles. What each role may do is defined once in
+`packages/common/src/authz.ts`. Someone with no role in a business gets `404` for its private
+endpoints (we don't confirm what they can't manage); a role without the permission gets `403`.
+
+| Method & path                                                                    | Auth | Who                                        | Purpose                                                         |
+| -------------------------------------------------------------------------------- | ---- | ------------------------------------------ | --------------------------------------------------------------- |
+| `POST /v1/businesses`                                                            | ✔    | anyone signed in (5/hour, max 5 per owner) | Register a business → `201`, status `pending`, **not verified** |
+| `GET /v1/businesses/mine`                                                        | ✔    | —                                          | Businesses I own or work at, with `myRole`                      |
+| `GET /v1/businesses/:idOrSlug`                                                   | —    | public                                     | Public profile (pending + verified only)                        |
+| `GET /v1/businesses/:id/manage`                                                  | ✔    | any team role                              | Private view: status, rejection reason, settings                |
+| `PATCH /v1/businesses/:id`                                                       | ✔    | owner, manager                             | Edit profile                                                    |
+| `PUT /v1/businesses/:id/hours`                                                   | ✔    | owner, manager                             | Replace weekly opening hours                                    |
+| `POST /v1/businesses/:id/reports`                                                | ✔    | anyone but the owner (once)                | Report a business                                               |
+| `GET /v1/admin/businesses?status=`                                               | ✔    | super_admin                                | Review queue (oldest first)                                     |
+| `POST /v1/admin/businesses/:id/verify` · `/reject` · `/suspend` · `/reinstate`   | ✔    | super_admin                                | Moderation (reject/suspend need `{ "reason" }`)                 |
+| `GET /v1/admin/business-reports` · `POST /v1/admin/business-reports/:id/resolve` | ✔    | super_admin                                | Handle reports                                                  |
+
+### `POST /v1/businesses`
+
+```json
+{
+  "name": "Fade Masters",
+  "categoryId": "…",
+  "description": "Classic cuts and hot-towel shaves.",
+  "phone": "+924235550000",
+  "email": "hello@fademasters.pk",
+  "website": "https://fademasters.pk",
+  "address": "12 Main Boulevard, Gulberg",
+  "city": "Lahore",
+  "state": "Punjab",
+  "country": "PK",
+  "postalCode": "54000",
+  "lat": 31.5204,
+  "lng": 74.3587,
+  "timezone": "Asia/Karachi",
+  "currency": "PKR",
+  "acceptedBusinessTermsVersion": "1.0"
+}
+```
+
+`country` is an ISO 3166-1 code, `currency` ISO 4217, `timezone` IANA; websites must be `https://`.
+HTML is stripped from text. Errors: `422 TERMS_NOT_ACCEPTED`, `409 PLAN_LIMIT_REACHED`.
+
+**Verification lifecycle:** `pending` → (admin) `verified` or `rejected`. Changing the name,
+category or address of a verified business sends it back to `pending` (it's what was verified).
+A rejected business is resubmitted by fixing its details. `suspended` businesses are hidden
+from the public and read-only for their team (`403 BUSINESS_SUSPENDED`).
+
+### Public profile
+
+```json
+{
+  "id": "…",
+  "slug": "fade-masters-lahore",
+  "name": "Fade Masters",
+  "category": { "id": "…", "name": "Barbershop", "slug": "barbershop" },
+  "contact": { "phone": "+924235550000", "email": null, "website": "https://fademasters.pk" },
+  "address": { "line": "…", "city": "Lahore", "state": null, "country": "PK", "postalCode": null },
+  "location": { "lat": 31.5204, "lng": 74.3587 },
+  "timezone": "Asia/Karachi",
+  "currency": "PKR",
+  "verification": { "status": "not_verified", "label": "Not verified by BUKU", "verifiedAt": null },
+  "rating": { "average": 4.5, "count": 12 },
+  "hours": [{ "dayOfWeek": 1, "openTime": "09:00", "closeTime": "13:00" }]
+}
+```
+
+Apps must show the `verification.label` badge on unverified businesses (D-032).
+
+### `PUT /v1/businesses/:id/hours`
+
+```json
+{
+  "hours": [
+    { "dayOfWeek": 1, "openTime": "09:00", "closeTime": "13:00" },
+    { "dayOfWeek": 1, "openTime": "14:00", "closeTime": "18:00" }
+  ]
+}
+```
+
+`dayOfWeek` 0 = Sunday … 6 = Saturday, local time of the business. Days not listed are closed;
+overlapping or inverted intervals are rejected.

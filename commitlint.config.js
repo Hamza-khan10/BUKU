@@ -19,8 +19,10 @@ export default {
         'kafka',
         // services
         'auth',
+        'business',
         'booking',
         'queue',
+        'billing',
         'notification',
         'search',
         'ads',
