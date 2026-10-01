@@ -254,3 +254,12 @@ no table or sweeper is needed. Cleaning with sharp/libvips (Apache-2.0 / LGPL, p
 install scripts): auto-orient, strip all metadata, sRGB, resize per use, WebP, 40 MP input
 limit, one image at a time per process. Public pictures get a new key on every change so CDNs
 can cache them forever. Adds ~55 MB to the auth and business images.
+
+**D-057 · Receipts and queue tickets instead of customer pictures; nothing extra stored.**
+Businesses never see a customer's profile picture. Customers identify themselves with what
+they already have: the appointment's booking code (`BK-XXXXXX`, a QR of it) or their queue
+ticket number (`A-023`). The business sees all receipts and tickets on its side and can serve a
+customer without a phone from its own list. Receipts are views of the appointment / queue row,
+rendered on request; the QR is drawn by the app from the code, so no PDF, image or file is ever
+generated or stored. A screenshot can't be forged into a booking: the business checks against
+its own list. The QR carries only the code, never personal data.
