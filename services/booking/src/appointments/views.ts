@@ -45,7 +45,8 @@ function cancellationInfo(a: AppointmentRow) {
 /** The customer's receipt. */
 export function receiptView(a: AppointmentRow, cancellationWindowHours: number, now = new Date()) {
   const windowStart = new Date(a.startAt.getTime() - cancellationWindowHours * 3_600_000);
-  const live = LIVE.has(a.status) && a.startAt > now;
+  // Once the customer has checked in, the visit is underway: no cancelling or moving it.
+  const live = LIVE.has(a.status) && a.startAt > now && a.checkedInAt === null;
   return {
     id: a.id,
     code: a.confirmationCode,
@@ -72,6 +73,7 @@ export function receiptView(a: AppointmentRow, cancellationWindowHours: number, 
       freeCancellationUntil: windowStart.toISOString(),
       canReschedule: live && now < windowStart,
     },
+    checkedInAt: a.checkedInAt?.toISOString() ?? null,
     cancellation: cancellationInfo(a),
     rescheduledFromId: a.rescheduledFromId,
     createdAt: a.createdAt.toISOString(),
@@ -92,6 +94,7 @@ export function businessView(a: AppointmentRow) {
     currency: a.currency,
     notes: a.notes,
     internalNotes: a.internalNotes,
+    checkedInAt: a.checkedInAt?.toISOString() ?? null,
     cancellation: cancellationInfo(a) && { ...cancellationInfo(a), late: a.lateCancellation },
     rescheduledFromId: a.rescheduledFromId,
     createdAt: a.createdAt.toISOString(),

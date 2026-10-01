@@ -15,6 +15,7 @@ import { CatalogService } from './catalog/catalog-service.js';
 import { registerRoutes } from './routes/index.js';
 import { ScheduleService } from './schedules/schedule-service.js';
 import { SettingsService } from './settings/settings-service.js';
+import { AttendanceService } from './staff/attendance-service.js';
 import { StaffService } from './staff/staff-service.js';
 
 /** All dependencies injected: index.ts builds real ones, tests build test ones. */
@@ -48,6 +49,7 @@ export function buildBookingApp(deps: BookingAppDeps): BookingApp {
         availability,
         appointments,
         catalog,
+        attendance: new AttendanceService(deps.db),
         staff,
         schedules,
         settings,

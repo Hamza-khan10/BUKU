@@ -31,6 +31,8 @@ export const BUSINESS_PERMISSIONS = {
   /** Booking settings: confirmation mode, horizon, limits, cancellation window. */
   'booking.settings': ['owner', 'manager'],
   'appointments.manage_all': ['owner', 'manager', 'front_desk'],
+  /** Clock anyone in or out (the shared front-desk tablet); everyone can clock themselves. */
+  'attendance.manage': ['owner', 'manager', 'front_desk'],
   'queue.operate': ['owner', 'manager', 'front_desk'],
   'schedule.manage_all': ['owner', 'manager'],
   'schedule.manage_own': ['owner', 'manager', 'front_desk', 'staff'],

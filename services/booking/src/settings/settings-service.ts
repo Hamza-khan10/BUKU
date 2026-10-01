@@ -13,6 +13,7 @@ export interface BookingSettingsView {
   cancellationWindowHours: number;
   minNoticeMinutes: number;
   slotStepMinutes: number;
+  noShowGraceMinutes: number;
 }
 
 export const DEFAULT_BOOKING_SETTINGS: BookingSettingsView = {
@@ -22,6 +23,7 @@ export const DEFAULT_BOOKING_SETTINGS: BookingSettingsView = {
   cancellationWindowHours: 12,
   minNoticeMinutes: 60,
   slotStepMinutes: 15,
+  noShowGraceMinutes: 15,
 };
 
 export class SettingsService {
@@ -38,6 +40,7 @@ export class SettingsService {
       cancellationWindowHours: row.cancellationWindowHours,
       minNoticeMinutes: row.minNoticeMinutes,
       slotStepMinutes: row.slotStepMinutes,
+      noShowGraceMinutes: row.noShowGraceMinutes,
     };
   }
 

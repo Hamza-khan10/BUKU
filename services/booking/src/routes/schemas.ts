@@ -97,6 +97,7 @@ export const BookingSettingsBody = zBody({
   cancellationWindowHours: z.number().int().min(0).max(168).optional(),
   minNoticeMinutes: z.number().int().min(0).max(10080).optional(),
   slotStepMinutes: z.literal([5, 10, 15, 20, 30, 60]).optional(),
+  noShowGraceMinutes: z.number().int().min(0).max(240).optional(),
 }).refine(atLeastOne, 'at least one field is required');
 
 // ── Availability and appointments ──────────────────────────────────────────
@@ -154,3 +155,23 @@ export const BusinessAppointmentsQuery = z.object({
 
 export const DeclineBody = zBody({ reason: zSafeText({ max: 500 }).optional() });
 export const BusinessCancelBody = zBody({ reason: zSafeText({ min: 3, max: 500 }) });
+
+// ── At the venue ───────────────────────────────────────────────────────────
+
+/** Scanned from the receipt's QR, or typed. Case doesn't matter. */
+export const CheckInByCodeBody = zBody({
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^BK-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/, 'must look like BK-7KQ2MX'),
+});
+
+export const ClockInBody = zBody({ note: zSafeText({ max: 300 }).optional() });
+export const AttendanceQuery = z.object({ date: zDate.optional(), staffId: zUuid.optional() });
+export const ShiftParams = z.object({ id: zUuid, shiftId: zUuid });
+export const CorrectShiftBody = zBody({
+  checkInAt: z.iso.datetime({ offset: true }).optional(),
+  checkOutAt: z.iso.datetime({ offset: true }).optional(),
+  note: zSafeText({ max: 300 }).optional(),
+}).refine(atLeastOne, 'at least one field is required');

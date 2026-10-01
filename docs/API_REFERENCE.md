@@ -536,3 +536,28 @@ details, no picture) and finds it by scanning, by typing the code, or by the cus
 Cancelling after `freeCancellationUntil` is a late cancellation (it affects the customer's
 reliability, 2.8). `bookLater: true` schedules a "book again?" reminder. Rescheduling creates a
 new appointment with a new code; the old one becomes `rescheduled`.
+
+## Booking service — at the venue and employee shifts (2.3 part 3)
+
+| Method & path                                                              | Who                                             | Purpose                                                                   |
+| -------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------- |
+| `POST /v1/businesses/:id/check-in` `{ "code" }`                            | owner, manager, front desk; staff for their own | Scan or type the receipt code (any case)                                  |
+| `POST …/appointments/:appointmentId/check-in`                              | same                                            | Check in from the list (customer without a phone)                         |
+| `POST …/appointments/:appointmentId/complete`                              | same                                            | Visit done (from its start time) → `bookings.completed`                   |
+| `POST …/appointments/:appointmentId/no-show`                               | same                                            | Didn't come (after the grace period, default 15 min) → `bookings.no_show` |
+| `POST /v1/businesses/:id/staff/:staffId/attendance/check-in` `{ "note"? }` | the employee; owner, manager, front desk        | Clock in                                                                  |
+| `POST …/staff/:staffId/attendance/check-out`                               | same                                            | Clock out                                                                 |
+| `GET /v1/businesses/:id/attendance?date=&staffId=`                         | team (employees: own shifts)                    | Shifts that started on a date, with minutes worked                        |
+| `GET /v1/businesses/:id/attendance/present`                                | any team role                                   | Who is in right now                                                       |
+| `PATCH /v1/businesses/:id/attendance/:shiftId`                             | owner, manager                                  | Correct a shift (audited)                                                 |
+
+**Check-in** opens 2 hours before the start and closes when the appointment ends. Scanning twice
+is harmless. A request still `pending` (manual approval) is approved by checking in (front desk,
+manager or owner). The appointment stays `confirmed` with `checkedInAt` set; from then on it can
+only be completed — the customer can't cancel or move it, nor can the business cancel it.
+A code from another business is "not found". Employees (staff role) only handle their own
+customers.
+
+**Shifts:** one open shift per person (`409` on a second clock-in, even from two devices at
+once). Clocking out after more than 24 hours is refused — a manager corrects the shift instead.
+Attendance doesn't change bookable times; those come from working hours.
