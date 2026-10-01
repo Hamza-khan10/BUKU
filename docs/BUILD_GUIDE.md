@@ -189,10 +189,16 @@ come from working hours). Booking rules:
   from the list — so a customer without a phone is served just the same. Built from the
   appointment on request: no PDF or image is generated or stored; the QR is drawn by the app.
 
-### 2.4 Queue service
+### 2.4 Queue service — 🚧 part 1 done (the queue itself)
+
+Part 1 (built): open/pause/close the day's queue, remote joining within the distance (PostGIS)
+with one live ticket per customer anywhere (database rule), walk-ins and a priority lane, call
+next / serve / complete / no-show after the grace period, wait estimates from the day's real
+service times and the staff on shift, alerts as events, per-business queue settings.
+Next: part 2 — live updates for phones and the shop's display screen.
 
 Remote (virtual) queue joining, allowed only **within a distance set by the business
-(default 5 km)** and **one active queue per customer**. Live positions over WebSocket.
+(default 5 km)** and **one active queue per customer**. Live positions pushed to the app.
 Alerts when 10 ahead, 5 ahead, then at every step. Called and not present after the grace
 period (5 min) → no-show (reliability impact). Walk-ins added by front desk.
 **Queue ticket (D-057):** joining gives a ticket number (`A-023`, already numbered per queue

@@ -295,3 +295,12 @@ confirmed or completed appointments, which makes "checked in, then cancelled" im
 opens 2 hours before the start; a no-show can be recorded after a per-business grace period
 (default 15 min) and never after check-in. Employee shifts (`staff_attendance`) have at most one
 open shift per person (partial unique index); front desk can clock anyone (shared tablet).
+
+**D-062 · How the queue works.** One session per business per day; every change locks the
+session row, so ticket numbers and "who's next" can never be handed out twice. One live ticket
+per customer in any queue is a partial unique index (was: per queue). Remote joins are checked
+with PostGIS against the business's location; a business without one takes sign-ups at the
+counter. The priority lane goes first; "last called" is the ticket most recently called (not the
+highest number). Wait estimates divide the people ahead among the staff clocked in and learn the
+day's real average service time. Alerts (10, 5, then every step) are events, sent once per count
+and only when moving closer. Queue settings live in `queue_settings` (owned by queue-service).

@@ -443,9 +443,7 @@ services:
       <<: *service-env
       SERVICE_NAME: queue-service
       PORT: '3003'
-      WS_PORT: '3013'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
-      QUEUE_GRACE_PERIOD_SECONDS: '300'
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/database/src:/app/packages/database/src:ro

@@ -561,3 +561,52 @@ customers.
 **Shifts:** one open shift per person (`409` on a second clock-in, even from two devices at
 once). Clocking out after more than 24 hours is refused — a manager corrects the shift instead.
 Attendance doesn't change bookable times; those come from working hours.
+
+## Queue service — the virtual queue (2.4 part 1)
+
+| Method & path                                                              | Auth | Who                         | Purpose                                                                                |
+| -------------------------------------------------------------------------- | ---- | --------------------------- | -------------------------------------------------------------------------------------- |
+| `GET /v1/queue/public/:idOrSlug`                                           | —    | anyone                      | Open or not, how many waiting, tickets called / being served, wait estimate (no names) |
+| `POST /v1/queue/join` `{ businessId, lat, lng }`                           | ✔    | customers (10/hour)         | Join from the phone → `201` ticket                                                     |
+| `GET /v1/queue/my-ticket`                                                  | ✔    | the customer                | My live ticket anywhere, or `null`                                                     |
+| `GET /v1/queue/tickets/:id` · `POST …/leave`                               | ✔    | the customer                | A ticket (`404` for anyone else) · leave the line                                      |
+| `GET /v1/businesses/:id/queue`                                             | ✔    | any team role               | The front desk's screen: waiting (in order), called, being served, staff on shift      |
+| `POST …/queue/open` · `/pause` · `/resume` · `/close`                      | ✔    | owner, manager, front desk  | Today's queue; pause = no new remote joins                                             |
+| `POST …/queue/walk-ins` `{ name?, priority? }`                             | ✔    | owner, manager, front desk  | Someone at the counter (also while paused)                                             |
+| `POST …/queue/call-next`                                                   | ✔    | owner, manager, front desk  | Priority lane first, then by ticket                                                    |
+| `POST …/queue/entries/:entryId/call` · `/serve` · `/complete` · `/no-show` | ✔    | owner, manager, front desk  | Per ticket; no-show only after the grace period                                        |
+| `PUT …/queue/entries/:entryId/priority` `{ priority }`                     | ✔    | owner, manager, front desk  | Move a waiting ticket into or out of the priority lane                                 |
+| `GET`/`PUT …/queue/settings`                                               | ✔    | owner, manager (read: team) | Distance, size, grace, ticket letters, starting estimate                               |
+
+### The ticket (D-057)
+
+```json
+{
+  "id": "…",
+  "ticket": "A-023",
+  "qr": "A-023",
+  "status": "waiting",
+  "business": { "id": "…", "name": "NADRA Centre Gulberg", "slug": "…" },
+  "ahead": 3,
+  "estimatedWaitMinutes": 15,
+  "priority": false,
+  "joinedAt": "…",
+  "calledAt": null,
+  "comeBy": null,
+  "servedAt": null
+}
+```
+
+The app shows the ticket number large, with a QR of it. When called, `comeBy` says until when the
+customer should reach the counter (the grace period, default 5 minutes). The estimate shares the
+people ahead among the staff clocked in and uses the day's real average service time.
+
+**Joining:** only within `remoteJoinRadiusMeters` of the business (default 5 km, measured by
+PostGIS from the phone's position): `422 QUEUE_TOO_FAR` with `details.distanceMeters`; a business
+without a location takes sign-ups at the counter only. One live ticket per customer anywhere:
+`409 QUEUE_ALREADY_JOINED`. `409 QUEUE_CLOSED` / `QUEUE_PAUSED` / `QUEUE_FULL`. Employee
+accounts can't join.
+
+**Alerts:** `queue.position.updated` events (ids, ticket and `ahead`, never names) when a customer
+reaches 10 ahead, 5 ahead, then every step — delivered as push notifications in 2.6.
+`queue.entry.called` tells them it's their turn.

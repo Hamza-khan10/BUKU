@@ -1,6 +1,6 @@
 import {
-  createHttpApp,
   createJwtVerifierFromEnv,
+  createRevocationStore,
   createRedisClient,
   loadConfig,
   logger,
@@ -11,7 +11,7 @@ import {
 import { createDatabaseClient, pingDatabase } from '@buku/database';
 import { createKafka, EventProducer, kafkaConnectionFromEnv } from '@buku/kafka';
 import { Env } from './config.js';
-import { registerRoutes } from './routes.js';
+import { buildQueueApp } from './app.js';
 
 const env = loadConfig(Env);
 
@@ -34,13 +34,18 @@ const readiness = new Readiness()
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const app = createHttpApp({
-  service: env.SERVICE_NAME,
-  logger,
-  readiness,
-  trustProxyHops: env.TRUST_PROXY_HOPS,
-  bodyLimit: env.HTTP_BODY_LIMIT,
-  routes: (router) => registerRoutes(router, { db, redis, producer, verifier }),
+const { app } = buildQueueApp({
+  db,
+  redis,
+  verifier,
+  revocations: createRevocationStore(redis),
+  http: {
+    service: env.SERVICE_NAME,
+    logger,
+    readiness,
+    trustProxyHops: env.TRUST_PROXY_HOPS,
+    bodyLimit: env.HTTP_BODY_LIMIT,
+  },
 });
 
 // Hooks run in REVERSE order on shutdown: stop producing before closing stores.

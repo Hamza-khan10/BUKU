@@ -64,6 +64,8 @@ export const ErrorCodes = {
   QUEUE_FULL: 'QUEUE_FULL',
   QUEUE_ALREADY_JOINED: 'QUEUE_ALREADY_JOINED',
   QUEUE_ENTRY_NOT_FOUND: 'QUEUE_ENTRY_NOT_FOUND',
+  /** Remote joining is only allowed within the business's distance (D-038). */
+  QUEUE_TOO_FAR: 'QUEUE_TOO_FAR',
 
   // Business
   BUSINESS_NOT_FOUND: 'BUSINESS_NOT_FOUND',
