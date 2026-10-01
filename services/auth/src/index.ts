@@ -80,6 +80,9 @@ const { app, rights } = buildAuthApp({
     refreshReuseGraceSeconds: env.REFRESH_REUSE_GRACE_SECONDS,
     deletionGraceDays: env.ACCOUNT_DELETION_GRACE_DAYS,
     reauthWindowMinutes: env.REAUTH_WINDOW_MINUTES,
+    memberLoginMaxAttempts: env.MEMBER_LOGIN_MAX_ATTEMPTS,
+    memberLockoutMinutes: env.MEMBER_LOCKOUT_MINUTES,
+    maxMembersPerBusiness: env.MAX_MEMBERS_PER_BUSINESS,
   },
   http: {
     service: env.SERVICE_NAME,

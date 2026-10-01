@@ -199,6 +199,12 @@ describe('Registering a business', () => {
   it('requires signing in', async () => {
     expect((await request(app).post('/v1/businesses').send(validBusiness())).status).toBe(401);
   });
+
+  it('employee accounts cannot register a business', async () => {
+    const employee = await person('staff');
+    const res = await request(app).post('/v1/businesses').set(employee.auth).send(validBusiness());
+    expect(res.status).toBe(403);
+  });
 });
 
 describe('Public profile', () => {

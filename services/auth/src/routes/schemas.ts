@@ -1,4 +1,4 @@
-import { zBody, zEmail, zPhone, zSafeText, zTimezone } from '@buku/common';
+import { MEMBER_ROLES, zBody, zEmail, zPassword, zPhone, zSafeText, zTimezone } from '@buku/common';
 import { z } from 'zod';
 
 /** Request/response contracts for auth-service. Also the source for docs/API_REFERENCE.md. */
@@ -59,3 +59,39 @@ export const DeleteAccountBody = zBody({
   /** Optional feedback: why the person is leaving. */
   reason: zSafeText({ max: 500 }).optional(),
 });
+
+// ── Employee accounts (D-034) ────────────────────────────────────────────
+
+export const zUsername = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9._-]{2,39}$/, 'must be 3–40 characters: letters, digits, ".", "_" or "-"');
+
+export const BusinessSignInBody = zBody({
+  /** The business's handle (the slug in its BUKU link). */
+  business: z.string().trim().toLowerCase().min(1).max(120),
+  username: zUsername,
+  password: z.string().min(1).max(256),
+  device: DeviceSchema.optional(),
+});
+
+export const ChangePasswordBody = zBody({
+  currentPassword: z.string().min(1).max(256),
+  newPassword: zPassword,
+});
+
+export const BusinessParams = z.object({ businessId: z.uuid() });
+export const MemberParams = z.object({ businessId: z.uuid(), memberId: z.uuid() });
+
+export const CreateMemberBody = zBody({
+  name: zSafeText({ min: 1, max: 100 }),
+  username: zUsername,
+  role: z.enum(MEMBER_ROLES),
+});
+
+export const UpdateMemberBody = zBody({
+  name: zSafeText({ min: 1, max: 100 }).optional(),
+  role: z.enum(MEMBER_ROLES).optional(),
+  status: z.enum(['active', 'disabled']).optional(),
+}).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');

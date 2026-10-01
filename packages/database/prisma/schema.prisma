@@ -252,6 +252,17 @@ model User {
   termsVersion             String?    @map("terms_version") @db.VarChar(20)
   termsAcceptedAt          DateTime?  @map("terms_accepted_at") @db.Timestamptz(6)
   passwordChangedAt        DateTime?  @map("password_changed_at") @db.Timestamptz(6)
+  /// Employee accounts (D-034): created by a business for its staff, they sign in with
+  /// business + username + password and exist only for that business.
+  managedByBusinessId      String?    @map("managed_by_business_id") @db.Uuid
+  /// Unique within the managing business; lowercase letters, digits, ".", "_", "-".
+  username                 String?    @db.VarChar(40)
+  /// Set when the business issues a temporary password; the account has no business
+  /// access until the employee chooses their own.
+  mustChangePassword       Boolean    @default(false) @map("must_change_password")
+  /// Consecutive wrong passwords; reaching the limit locks sign-in until `lockedUntil`.
+  failedLoginCount         Int        @default(0) @map("failed_login_count")
+  lockedUntil              DateTime?  @map("locked_until") @db.Timestamptz(6)
   lastLoginAt              DateTime?  @map("last_login_at") @db.Timestamptz(6)
   /// Account deletion requested (GDPR erasure). The account is hidden immediately and can be
   /// restored by signing in during the grace period; after it, personal data is purged.
@@ -279,7 +290,9 @@ model User {
   createdMembers    BusinessMember[]        @relation("MemberCreatedBy")
   businessReports   BusinessReport[]        @relation("Reporter")
   reviewedReports   BusinessReport[]        @relation("ReportReviewer")
+  managedByBusiness Business?               @relation("ManagedAccounts", fields: [managedByBusinessId], references: [id], onDelete: Restrict)
 
+  @@unique([managedByBusinessId, username])
   @@index([status])
   @@index([createdAt])
   @@index([deletedAt])
@@ -453,6 +466,7 @@ model Business {
   subscriptions          Subscription[]
   legalProfile           BusinessLegalProfile?
   members                BusinessMember[]
+  managedAccounts        User[]                  @relation("ManagedAccounts")
   reports                BusinessReport[]
 
   @@index([ownerId])

@@ -100,7 +100,7 @@ Status: built and covered by 31 integration tests (`services/auth/test/auth.int.
 gateway checks in `pnpm verify`. Password sign-in and password change arrive with business
 sub-accounts in 2.2, reusing the "end all sessions" mechanism built here.
 
-### 2.2 Business service (new) — 🚧 parts 1–2 done (onboarding, verification, legal details, documents, photos)
+### 2.2 Business service (new) — 🚧 parts 1–3 done (onboarding, verification, legal details, documents, photos, employee accounts)
 
 Business onboarding with a **country-flexible legal profile (KYB)**: legal name, registration
 type and number per country, tax id (encrypted), registered address, responsible person,
@@ -113,7 +113,11 @@ Built so far: part 1 — onboarding, public profile, hours, reports, admin verif
 part 2 — encrypted legal profile with a duplicate-registration signal, direct-to-storage
 document and photo uploads (exact size + real file signature checked), admin document review
 with 5-minute links, a verification checklist that also gates "verify" (health categories need
-a medical licence), and the audited per-country export. Next: part 3 — sub-accounts below.
+a medical licence), and the audited per-country export;
+part 3 — employee accounts and roles (in auth-service): business + username + password
+sign-in, temporary passwords with no access until changed, lockout, team management with
+manager limits, sessions ended on password change / reset / access removed.
+Next: part 4 — pictures (below).
 
 **Business sub-accounts (AWS-IAM-style):** the owner creates accounts (business-scoped
 username + password, forced change on first sign-in) for employees' phones and shared

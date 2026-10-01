@@ -14,6 +14,8 @@ import type { Express } from 'express';
 import type { Redis } from 'ioredis';
 import type { OidcVerifier } from './identity/oidc.js';
 import { registerRoutes } from './routes/index.js';
+import { MemberService } from './members/member-service.js';
+import { PasswordAuthService } from './members/password-auth.js';
 import { SessionService } from './sessions/session-service.js';
 import { DataRightsService } from './users/data-rights.js';
 import { UserService } from './users/user-service.js';
@@ -40,6 +42,9 @@ export interface AuthAppDeps {
     refreshReuseGraceSeconds: number;
     deletionGraceDays: number;
     reauthWindowMinutes: number;
+    memberLoginMaxAttempts: number;
+    memberLockoutMinutes: number;
+    maxMembersPerBusiness: number;
   };
   http: { service: string; logger: Logger; readiness: Readiness; trustProxyHops: number; bodyLimit?: string };
 }
@@ -73,6 +78,18 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
     settings: { graceDays: settings.deletionGraceDays, reauthWindowMinutes: settings.reauthWindowMinutes },
   });
 
+  const passwords = new PasswordAuthService({
+    db: deps.db,
+    users,
+    sessions,
+    settings: { maxAttempts: settings.memberLoginMaxAttempts, lockoutMinutes: settings.memberLockoutMinutes },
+  });
+  const members = new MemberService({
+    db: deps.db,
+    sessions,
+    settings: { maxMembersPerBusiness: settings.maxMembersPerBusiness },
+  });
+
   const app = createHttpApp({
     ...deps.http,
     routes: (app) =>
@@ -80,6 +97,8 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
         users,
         sessions,
         rights,
+        passwords,
+        members,
         verifier: deps.verifier,
         revocations: deps.revocations,
         redis: deps.redis,

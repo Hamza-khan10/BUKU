@@ -36,3 +36,23 @@ export type BusinessPermission = keyof typeof BUSINESS_PERMISSIONS;
 export function can(role: BusinessRole | null | undefined, permission: BusinessPermission): boolean {
   return role != null && (BUSINESS_PERMISSIONS[permission] as readonly BusinessRole[]).includes(role);
 }
+
+/** Roles a person can be given as a member (owner is not a member role). */
+export const MEMBER_ROLES = ['manager', 'front_desk', 'staff'] as const;
+export type MemberRole = (typeof MEMBER_ROLES)[number];
+
+/**
+ * Which member roles each business role may create and manage
+ * (`members.manage`): the owner manages everyone, a manager only front desk
+ * and staff — so a manager can never promote anyone, or themselves, to manager.
+ */
+export const MANAGEABLE_ROLES = {
+  owner: ['manager', 'front_desk', 'staff'],
+  manager: ['front_desk', 'staff'],
+  front_desk: [],
+  staff: [],
+} as const satisfies Record<BusinessRole, readonly MemberRole[]>;
+
+export function canManageRole(actor: BusinessRole, target: MemberRole): boolean {
+  return (MANAGEABLE_ROLES[actor] as readonly MemberRole[]).includes(target);
+}

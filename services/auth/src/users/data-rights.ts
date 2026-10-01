@@ -176,6 +176,13 @@ export class DataRightsService {
     feedback: string | undefined,
     ctx: RequestContext,
   ): Promise<{ purgeAfter: string }> {
+    const owner = await this.deps.db.user.findUnique({
+      where: { id: userId },
+      select: { managedByBusinessId: true },
+    });
+    if (owner?.managedByBusinessId) {
+      throw AppError.forbidden('Employee accounts are closed by the business that created them');
+    }
     const signedIn = sessionId ? await this.deps.sessions.signedInAt(userId, sessionId) : null;
     const windowMs = this.deps.settings.reauthWindowMinutes * 60_000;
     if (!signedIn || Date.now() - signedIn.getTime() > windowMs) {
@@ -263,6 +270,7 @@ export class DataRightsService {
               unverifiedPhoneHash: NIL,
               whatsappOptInAt: NIL,
               passwordHash: NIL,
+              username: NIL,
               avatarUrl: NIL,
               purgedAt: new Date(),
             },

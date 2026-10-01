@@ -1,4 +1,5 @@
 import {
+  AppError,
   authenticate,
   rateLimit,
   requireAuth,
@@ -79,7 +80,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     createLimit,
     validated({ body: CreateBusinessBody }, async ({ body }, req, res) => {
-      sendCreated(res, await deps.businesses.create(requireAuth(req).userId, body, requestContext(req)));
+      const { userId, role } = requireAuth(req);
+      // Employee accounts (platform role `staff`) exist only inside the business that made them.
+      if (role === 'staff') throw AppError.forbidden('Employee accounts cannot register a business');
+      sendCreated(res, await deps.businesses.create(userId, body, requestContext(req)));
     }),
   );
 

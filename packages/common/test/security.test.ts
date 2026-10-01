@@ -7,21 +7,25 @@ import {
   createFieldCipher,
   createJwtSigner,
   createJwtVerifier,
+  createRevocationStore,
   DecryptionError,
   generateConfirmationCode,
   generateOtp,
   generateSecureToken,
   hashPassword,
   hashToken,
+  issuedAtMs,
   needsRehash,
   normalizeEmail,
   normalizePhone,
   parseKeyring,
   safeEqual,
   signWebhookPayload,
+  uuidv7,
   verifyPassword,
   verifyWebhookSignature,
 } from '../src/index.js';
+import type { Redis } from 'ioredis';
 
 const key = () => randomBytes(32).toString('base64');
 
@@ -305,5 +309,49 @@ describe('webhook signatures', () => {
     for (const h of [undefined, '', 'sha256=abc', 't=abc,v1=zz', 't=1']) {
       expect(verifyWebhookSignature(secret, body, h)).toMatchObject({ valid: false, reason: 'malformed' });
     }
+  });
+});
+
+describe('access-token revocation', () => {
+  /** Just enough of Valkey for the store: SET with expiry and MGET. */
+  function fakeRedis() {
+    const data = new Map<string, string>();
+    return {
+      set: (k: string, v: string) => (data.set(k, v), Promise.resolve('OK')),
+      mget: (...keys: string[]) => Promise.resolve(keys.map((k) => data.get(k) ?? null)),
+    } as unknown as Redis;
+  }
+  const tokenAt = (ms: number) => ({
+    sub: 'u1',
+    role: 'user' as const,
+    jti: uuidv7(ms),
+    iat: Math.floor(ms / 1000),
+    exp: Math.floor(ms / 1000) + 900,
+  });
+
+  it('"sign out everywhere" kills earlier tokens but not one issued a moment later in the same second', async () => {
+    const store = createRevocationStore(fakeRedis());
+    const before = tokenAt(Date.now() - 1);
+    await store.revokeAllForUser('u1', 'password_changed');
+    const after = tokenAt(Date.now() + 1);
+    expect(await store.isRevoked(before)).toBe('password_changed');
+    expect(await store.isRevoked(after)).toBe(false);
+  });
+
+  it('treats tokens without a matching UUIDv7 id as issued at the end of their second (safe side)', () => {
+    const iat = 1_800_000_000;
+    expect(issuedAtMs({ jti: '6f1c0e4e-8a3b-4c2d-9e1f-0a1b2c3d4e5f', iat })).toBe(iat * 1000 + 999);
+    // A v7 id from another second does not get to claim an earlier time.
+    expect(issuedAtMs({ jti: uuidv7((iat - 5) * 1000), iat })).toBe(iat * 1000 + 999);
+    expect(issuedAtMs({ jti: uuidv7(iat * 1000 + 250), iat })).toBe(iat * 1000 + 250);
+  });
+
+  it('still honours markers written in the old whole-second format', async () => {
+    const redis = fakeRedis();
+    const nowSec = Math.floor(Date.now() / 1000);
+    await redis.set('auth:rev:user:u1', JSON.stringify({ before: nowSec, reason: 'logged_out_everywhere' }));
+    const store = createRevocationStore(redis);
+    expect(await store.isRevoked(tokenAt(nowSec * 1000 + 500))).toBe('logged_out_everywhere');
+    expect(await store.isRevoked(tokenAt((nowSec + 1) * 1000))).toBe(false);
   });
 });

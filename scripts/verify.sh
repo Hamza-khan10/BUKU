@@ -58,7 +58,8 @@ check "≥ 12 future monthly partitions per table"       ge "$(psql_q "SELECT co
 check "Exclusion constraints (staff, resource, customer)" eq "$(psql_q "SELECT count(*) FROM pg_constraint WHERE contype='x'")" 3
 check "≥ 60 CHECK constraints"                          ge "$(psql_q "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE contype='c' AND n.nspname='public'")" 60
 check "HNSW vector index on ai.business_knowledge_chunks" eq "$(psql_q "SELECT count(*) FROM pg_indexes WHERE schemaname='ai' AND indexdef ILIKE '%hnsw%'")" 1
-check "Seed data present (20 businesses, 200 appointments)" eq "$(psql_q "SELECT (SELECT count(*) FROM businesses)||'/'||(SELECT count(*) FROM appointments)")" "20/200"
+# At least the seed: data created while using the dev app must not fail this check.
+check "Seed data present (≥ 20 businesses, ≥ 200 appointments)" eq "$(psql_q "SELECT (SELECT count(*) FROM businesses) >= 20 AND (SELECT count(*) FROM appointments) >= 200")" "t"
 check "User emails stored encrypted, never plaintext"  eq "$(psql_q "SELECT count(*) FROM users WHERE email_encrypted IS NOT NULL AND email_encrypted NOT LIKE 'enc:1:%'")" 0
 check "App role cannot DROP tables (least privilege)"  bash -c "! docker compose -f docker-compose.dev.yml exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql -h localhost -U buku_app -d buku -c 'DROP TABLE categories' 2>/dev/null"
 
