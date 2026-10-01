@@ -453,3 +453,86 @@ Dates are in the business's timezone, never in the past, up to 62 days at once.
 | `cancellationWindowHours`      | 12          | 0–168 (later = late cancel)                                 |
 | `minNoticeMinutes`             | 60          | 0–10080                                                     |
 | `slotStepMinutes`              | 15          | 5, 10, 15, 20, 30, 60                                       |
+
+## Booking service — availability and appointments (2.3 part 2)
+
+| Method & path                                                               | Auth | Who                        | Purpose                                                     |
+| --------------------------------------------------------------------------- | ---- | -------------------------- | ----------------------------------------------------------- |
+| `GET /v1/businesses/:idOrSlug/availability?serviceId=&date=&days=&staffId=` | —    | anyone (60/min)            | Free start times, 1–14 days                                 |
+| `POST /v1/appointments`                                                     | ✔    | customers (20/hour)        | Book → `201` with the receipt                               |
+| `GET /v1/appointments?scope=upcoming\|past&page=&limit=`                    | ✔    | the customer               | My receipts                                                 |
+| `GET /v1/appointments/:id`                                                  | ✔    | the customer               | One receipt (`404` for anyone else)                         |
+| `POST /v1/appointments/:id/cancel`                                          | ✔    | the customer               | `{ "reasonCode", "note"?, "bookLater"? }`                   |
+| `POST /v1/appointments/:id/reschedule`                                      | ✔    | the customer               | `{ "startAt", "staffId"? }`, before the cancellation window |
+| `GET /v1/businesses/:id/appointments?date=&staffId=&status=&q=`             | ✔    | team (staff: own only)     | The day's list, or search by code / customer name           |
+| `GET /v1/businesses/:id/appointments/:appointmentId`                        | ✔    | team (staff: own only)     | One appointment                                             |
+| `POST …/appointments/:appointmentId/confirm` · `/decline`                   | ✔    | owner, manager, front desk | Manual approval                                             |
+| `POST …/appointments/:appointmentId/cancel`                                 | ✔    | owner, manager, front desk | `{ "reason" }` (counts against the business)                |
+
+### Availability
+
+```json
+GET /v1/businesses/noor-beauty-lounge-lahore/availability?serviceId=…&date=2026-10-04&days=1
+{ "timezone": "Asia/Karachi", "serviceId": "…", "durationMinutes": 45,
+  "days": [{ "date": "2026-10-04", "slots": [
+    { "startAt": "2026-10-04T05:00:00.000Z", "endAt": "2026-10-04T05:45:00.000Z", "time": "10:00", "staffIds": ["…", "…"] }
+  ] }] }
+```
+
+Times come from each employee's working hours and extra hours, minus time off, closures and
+existing appointments (with their clean-up time), between the minimum notice and the booking
+horizon, every `slotStepMinutes`. Daylight-saving changes are handled. Never cached.
+
+### Booking
+
+```json
+POST /v1/appointments
+{ "businessId": "…", "serviceId": "…", "staffId": "…", "startAt": "2026-10-04T05:00:00.000Z", "notes": "Please use a round brush" }
+```
+
+`startAt` must be one of the offered times. Leave out `staffId` for "anyone": the person with
+the fewest bookings that day. Automatic businesses confirm at once; manual ones leave it
+`pending` until the business confirms or declines.
+
+| Error                                                       | When                                                              |
+| ----------------------------------------------------------- | ----------------------------------------------------------------- |
+| `409 SLOT_UNAVAILABLE`                                      | The time isn't offered, or someone just took it                   |
+| `409 APPOINTMENT_OVERLAP`                                   | The customer already has an appointment then, anywhere (D-036)    |
+| `409 LIMIT_REACHED`                                         | Already at this business's limit of upcoming bookings (default 3) |
+| `422 SLOT_IN_PAST` · `SLOT_TOO_SOON` · `SLOT_TOO_FAR_AHEAD` | Outside "now + notice … horizon"                                  |
+| `403 BOOKING_NOT_ALLOWED`                                   | Employee accounts can't book                                      |
+
+### The receipt (D-057)
+
+```json
+{
+  "id": "…",
+  "code": "BK-YQR924",
+  "qr": "BK-YQR924",
+  "status": "confirmed",
+  "business": {
+    "name": "Noor Beauty Lounge",
+    "address": { "line": "5 Gulberg", "city": "Lahore" },
+    "phone": null
+  },
+  "service": { "name": "Blow-dry", "durationMinutes": 45 },
+  "staff": { "displayName": "Hina" },
+  "startAt": "…",
+  "endAt": "…",
+  "local": { "date": "2026-10-04", "startTime": "10:00", "endTime": "10:45", "timezone": "Asia/Karachi" },
+  "price": "2500.00",
+  "currency": "PKR",
+  "payment": "pay_at_venue",
+  "policy": { "canCancel": true, "canReschedule": true, "freeCancellationUntil": "…" },
+  "cancellation": null
+}
+```
+
+The app draws a QR code from `qr` (only the code, never personal data) and shows it with the
+code in large letters. Nothing is generated or stored: the receipt is the appointment itself.
+The business sees the same appointment in its list with the customer's **name only** (no contact
+details, no picture) and finds it by scanning, by typing the code, or by the customer's name.
+
+Cancelling after `freeCancellationUntil` is a late cancellation (it affects the customer's
+reliability, 2.8). `bookLater: true` schedules a "book again?" reminder. Rescheduling creates a
+new appointment with a new code; the old one becomes `rescheduled`.

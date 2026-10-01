@@ -142,6 +142,17 @@ enum PaymentStatus {
   failed
 }
 
+enum CancelReasonCode {
+  schedule_conflict
+  found_alternative
+  too_expensive
+  not_needed
+  illness
+  business_unavailable
+  declined
+  other
+}
+
 enum ActorType {
   user
   business
@@ -760,6 +771,9 @@ model Appointment {
   status            AppointmentStatus        @default(pending)
   startAt           DateTime                 @map("start_at") @db.Timestamptz(6)
   endAt             DateTime                 @map("end_at") @db.Timestamptz(6)
+  /// End plus the service's clean-up buffer: the employee is busy until then
+  /// (the staff no-overlap rule uses this; the customer sees `endAt`).
+  blockedUntil      DateTime                 @map("blocked_until") @db.Timestamptz(6)
   /// Customer-visible notes (sanitized).
   notes             String?
   /// Business-only notes. Never returned to the customer.
@@ -773,7 +787,14 @@ model Appointment {
   reminder24hSentAt DateTime?                @map("reminder_24h_sent_at") @db.Timestamptz(6)
   reminder2hSentAt  DateTime?                @map("reminder_2h_sent_at") @db.Timestamptz(6)
   cancelledAt       DateTime?                @map("cancelled_at") @db.Timestamptz(6)
+  /// Free-text note with a cancellation.
   cancelReason      String?                  @map("cancel_reason")
+  /// Why it was cancelled (feeds the business's cancellation chart, D-035).
+  cancelReasonCode  CancelReasonCode?        @map("cancel_reason_code")
+  /// Cancelled by the customer inside the business's cancellation window (reliability, D-035).
+  lateCancellation  Boolean                  @default(false) @map("late_cancellation")
+  /// "I'll book later": remind the customer around this time (notifications, 2.6).
+  rebookReminderAt  DateTime?                @map("rebook_reminder_at") @db.Timestamptz(6)
   cancelledBy       ActorType?               @map("cancelled_by")
   rescheduledFromId String?                  @unique @map("rescheduled_from_id") @db.Uuid
   createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)

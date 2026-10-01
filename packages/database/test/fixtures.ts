@@ -51,6 +51,7 @@ export function appointmentData(
     status: overrides.status ?? 'confirmed',
     startAt,
     endAt: new Date(startAt.getTime() + minutes * 60_000),
+    blockedUntil: new Date(startAt.getTime() + minutes * 60_000),
     price: 800,
     currency: 'PKR',
     confirmationCode: generateConfirmationCode(),

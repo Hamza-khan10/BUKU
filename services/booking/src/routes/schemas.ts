@@ -1,4 +1,4 @@
-import { zBody, zSafeText, zTimeOfDay, zUuid } from '@buku/common';
+import { zBody, zPagination, zSafeText, zTimeOfDay, zUuid } from '@buku/common';
 import { z } from 'zod';
 
 /** Request contracts for booking-service (source for docs/API_REFERENCE.md). */
@@ -98,3 +98,59 @@ export const BookingSettingsBody = zBody({
   minNoticeMinutes: z.number().int().min(0).max(10080).optional(),
   slotStepMinutes: z.literal([5, 10, 15, 20, 30, 60]).optional(),
 }).refine(atLeastOne, 'at least one field is required');
+
+// ── Availability and appointments ──────────────────────────────────────────
+
+export const AvailabilityQuery = z.object({
+  serviceId: zUuid,
+  date: zDate,
+  days: z.coerce.number().int().min(1).max(14).default(1),
+  staffId: zUuid.optional(),
+});
+
+export const BookBody = zBody({
+  businessId: zUuid,
+  serviceId: zUuid,
+  /** Leave out for "anyone available". */
+  staffId: zUuid.optional(),
+  /** A start time offered by the availability endpoint, with its UTC offset. */
+  startAt: z.iso.datetime({ offset: true }),
+  notes: zSafeText({ max: 500 }).optional(),
+});
+
+export const MyAppointmentsQuery = zPagination.extend({
+  scope: z.enum(['upcoming', 'past']).default('upcoming'),
+});
+
+export const AppointmentParams = z.object({ id: zUuid });
+export const BusinessAppointmentParams = z.object({ id: zUuid, appointmentId: zUuid });
+
+export const CancelBody = zBody({
+  reasonCode: z.enum([
+    'schedule_conflict',
+    'found_alternative',
+    'too_expensive',
+    'not_needed',
+    'illness',
+    'other',
+  ]),
+  note: zSafeText({ max: 500 }).optional(),
+  /** "I'll book later" → a reminder in a few days. */
+  bookLater: z.boolean().optional(),
+});
+
+export const RescheduleBody = zBody({
+  startAt: z.iso.datetime({ offset: true }),
+  staffId: zUuid.optional(),
+});
+
+export const BusinessAppointmentsQuery = z.object({
+  date: zDate.optional(),
+  staffId: zUuid.optional(),
+  status: z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'no_show', 'rescheduled']).optional(),
+  /** A booking code ("BK-7KQ2MX") or part of a customer's name. */
+  q: zSafeText({ min: 1, max: 100 }).optional(),
+});
+
+export const DeclineBody = zBody({ reason: zSafeText({ max: 500 }).optional() });
+export const BusinessCancelBody = zBody({ reason: zSafeText({ min: 3, max: 500 }) });

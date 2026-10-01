@@ -29,7 +29,11 @@ afterAll(async () => {
 describe('no double booking (exclusion constraints)', () => {
   it('rejects an overlapping active appointment for the same staff member', async () => {
     await db.appointment.create({ data: appointmentData(f, at('2030-01-07T10:00:00Z')) });
-    const overlapping = db.appointment.create({ data: appointmentData(f, at('2030-01-07T10:15:00Z')) });
+    // A different customer, so only the staff rule can fire (not the customer one).
+    const other = await db.user.create({ data: { name: 'Other', phoneHash: 'f'.repeat(64) } });
+    const overlapping = db.appointment.create({
+      data: { ...appointmentData(f, at('2030-01-07T10:15:00Z')), userId: other.id },
+    });
     const err: unknown = await overlapping.catch((e: unknown) => e);
     expect(isExclusionViolation(err)).toBe(true);
     expect(constraintNameOf(err)).toBe('appointments_no_staff_overlap');

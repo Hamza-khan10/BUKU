@@ -278,3 +278,12 @@ deleted: past appointments point at them.
 escaping, so "Salt & Pepper" was stored as "Salt &amp; Pepper" and apps (which escape on output)
 would show it literally. It now strips tags, decodes the escaping, and repeats until nothing
 changes, so stored text contains no tags (also none hidden as `&lt;script&gt;`) and reads as typed.
+
+**D-060 · How booking works.** A pure slot calculator (Intl timezones, no date library,
+daylight-saving tested) both shows free times and checks a booking, so only offered times can be
+booked. The database settles races: an employee's busy time runs to `blocked_until` (end + clean-up
+buffer) and both no-overlap rules are exclusion constraints; "anyone" tries the least-booked free
+person first and moves to the next if someone else just took them. The per-customer limit is
+counted under an advisory lock per (customer, business). Rescheduling creates a new appointment
+(new code) and marks the old one `rescheduled`, allowed until the cancellation window starts.
+Declining a request is not counted as a business cancellation.
