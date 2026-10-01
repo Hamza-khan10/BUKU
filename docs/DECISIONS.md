@@ -7,7 +7,7 @@ Format: decision → why → consequence. Newest decisions go at the bottom.
 ## Versions & tooling
 
 **D-001 · Current stable versions instead of the spec's 2024 versions.**
-Node 24 LTS, TypeScript 6.0, Express 5, Prisma 7.10, Zod 4, PostgreSQL 17 + PostGIS 3.5,
+Node 24 LTS, TypeScript 6.0, Express 5, Prisma 7.10, Zod 4, PostgreSQL 17 + PostGIS 3.6,
 Kafka 4.3, Elasticsearch 9.5, ClickHouse 26.3 LTS, Kong 3.9.
 _Why:_ a new build should not start on versions that leave support soon.
 _Not_ adopted: TypeScript 7 (the new native compiler — typescript-eslint doesn't support it yet)
@@ -218,3 +218,10 @@ profile pictures are private to the customer (other customers never see them). E
 goes through the part-2 upload checks and has metadata (e.g. GPS) stripped before display.
 Ad images and videos are an Enterprise-plan feature, built with ads after the MVP; videos will
 need their own size/length limits and processing.
+
+**D-054 · The database image is built on the official `postgres:17-bookworm`.**
+The previous base, `postgis/postgis:17-3.5`, runs on Debian 11, which reached end of life; the
+PostgreSQL apt repository stopped serving it on 2026-10-01 and the image could no longer be
+built. PostGIS and pgvector now come from that repository for Debian 12, which ships PostGIS
+3.6 (was 3.5). Existing databases upgrade in place: `ALTER EXTENSION postgis UPDATE`. Text is
+sorted by code point (`C.UTF-8`), so changing the operating system does not reorder indexes.
