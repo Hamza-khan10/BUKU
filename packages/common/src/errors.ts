@@ -29,10 +29,15 @@ export const ErrorCodes = {
   FEATURE_DISABLED: 'FEATURE_DISABLED',
   /** Sensitive action (e.g. deleting the account) needs a fresh sign-in. */
   REAUTH_REQUIRED: 'REAUTH_REQUIRED',
+  /** Too many wrong passwords; `details.retryAfterSeconds` says when to try again. */
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+  /** Employee account on a temporary password: only "change password" is allowed. */
+  PASSWORD_CHANGE_REQUIRED: 'PASSWORD_CHANGE_REQUIRED',
 
   // Identity
   USER_EXISTS: 'USER_EXISTS',
   USER_NOT_FOUND: 'USER_NOT_FOUND',
+  USERNAME_TAKEN: 'USERNAME_TAKEN',
   OTP_EXPIRED: 'OTP_EXPIRED',
   OTP_INVALID: 'OTP_INVALID',
   OTP_LOCKED: 'OTP_LOCKED',

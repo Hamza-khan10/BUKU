@@ -45,6 +45,8 @@ The request/response contracts are defined in each service's `src/routes/schemas
 | `POST /oauth/google`         | —    | 10/min/IP  | Sign in or sign up with a Google ID token                       |
 | `POST /oauth/apple`          | —    | 10/min/IP  | Sign in with Apple — **locked**: `403 FEATURE_DISABLED`         |
 | `POST /dev/login`            | —    | 10/min/IP  | **Development only** (404 elsewhere): sign in as any email/role |
+| `POST /business-login`       | —    | 10/min/IP  | Employee account sign-in: business + username + password        |
+| `POST /password`             | ✔    | 30/min     | Change my password → every device signs out, this one included  |
 | `POST /refresh`              | —    | 60/min/IP  | Rotate the refresh token, get a new access token                |
 | `POST /logout`               | —    | 60/min/IP  | End this device's session → `204`                               |
 | `POST /logout-all`           | ✔    | 30/min     | End every session on every device → `204`                       |
@@ -160,6 +162,51 @@ Immediately: every device is signed out (`SESSION_REVOKED` / `account_deleted`),
 notifications stop, and other services are told (`users.deleted`) to cancel upcoming bookings.
 Until `purgeAfter` the person can restore the account by signing in (see above). After it,
 personal data is erased for good; appointment records remain for the businesses, anonymized.
+
+### Employee accounts (D-034)
+
+A business creates sign-ins for its staff phones and shared tablets. They sign in with the
+business handle (the slug in its BUKU link), a username and a password:
+
+```json
+POST /v1/auth/business-login
+{ "business": "fade-masters-lahore", "username": "ali", "password": "<the temporary or own password>" }
+```
+
+The response is the same as any sign-in. `user.account` tells the app what kind of account it is:
+
+```json
+{ "type": "employee", "businessId": "…", "username": "ali", "mustChangePassword": true }
+```
+
+- **`mustChangePassword: true`** — the account is on the temporary password the business gave
+  out. It has **no business access** until the employee picks their own via
+  `POST /v1/auth/password` `{ "currentPassword", "newPassword" }`. The app should show only that
+  screen.
+- A password change returns `{ "signInAgain": true }` and ends **every** session of the account,
+  including the current one; the app signs in again with the new password.
+- Wrong business, username or password all return the same `401 INVALID_CREDENTIALS`.
+- 5 wrong passwords in a row lock sign-in for 15 minutes (`429 ACCOUNT_LOCKED`,
+  `details.retryAfterSeconds`). The owner or a manager can unlock at once by resetting the password.
+- Access turned off by the business → `403 ACCOUNT_SUSPENDED` (only shown after a correct password).
+- Employee accounts can't register a business or delete themselves; the business removes them.
+
+### A business's team — `/v1/businesses/:id/members`
+
+Served by auth-service. Requires `members.manage` (owner, manager). Managers create and manage
+**front desk and staff only**; nobody changes their own access here.
+
+| Method & path                            | Purpose                                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `GET /members`                           | Team list: role, status, username, `passwordChangePending`, `locked`, last sign-in                           |
+| `POST /members`                          | `{ "name", "username", "role": "manager" \| "front_desk" \| "staff" }` → `201 { member, temporaryPassword }` |
+| `PATCH /members/:memberId`               | `{ "name"?, "role"?, "status"?: "active" \| "disabled" }`; turning off ends the employee's sessions          |
+| `POST /members/:memberId/reset-password` | New temporary password (also unlocks); ends the employee's sessions                                          |
+| `DELETE /members/:memberId`              | Remove: the employee account is closed and the username is free again → `204`                                |
+
+The temporary password is returned **once** and never stored in clear: hand it to the employee
+in person. Usernames: 3–40 characters (letters, digits, `.`, `_`, `-`), case-insensitive,
+unique within the business (`409 USERNAME_TAKEN`). Up to 50 team accounts per business.
 
 ## Business service — `/v1/businesses`, `/v1/admin`
 

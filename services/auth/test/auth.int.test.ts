@@ -12,7 +12,7 @@ import {
   type BlindIndexer,
   type FieldCipher,
 } from '@buku/common';
-import { createDatabaseClient, type Database } from '@buku/database';
+import { businessRoleOf, createDatabaseClient, type Database } from '@buku/database';
 import type { Express } from 'express';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose';
 import type { Redis } from 'ioredis';
@@ -128,6 +128,9 @@ beforeAll(async () => {
       refreshReuseGraceSeconds: 15,
       deletionGraceDays: 30,
       reauthWindowMinutes: 10,
+      memberLoginMaxAttempts: 5,
+      memberLockoutMinutes: 15,
+      maxMembersPerBusiness: 50,
     },
     http: {
       service: 'auth-test',
@@ -676,5 +679,370 @@ describe('My data: export and deletion', () => {
     });
     expect(fresh.status).toBe(201);
     expect(fresh.body.data.user.id).not.toBe(userId);
+  });
+});
+
+describe('Business team: employee accounts', () => {
+  /**
+   * Test passwords are generated per run: nothing password-like is committed,
+   * so secret scanners have nothing to flag and no alert ever needs dismissing.
+   */
+  const pw = (prefix = 'Pw') => `${prefix}-${randomUUID().slice(0, 13)}`;
+  const NEW_PASSWORD = pw();
+
+  /** A Google user who owns a fresh business. */
+  async function owner() {
+    const s = await signUp();
+    const suffix = randomUUID().slice(-12);
+    const category = await db.category.create({ data: { name: `Cat ${suffix}`, slug: `cat-${suffix}` } });
+    const business = await db.business.create({
+      data: {
+        ownerId: s.user.id,
+        categoryId: category.id,
+        name: `Team Barber ${suffix}`,
+        slug: `team-barber-${suffix}`,
+        city: 'Lahore',
+        country: 'PK',
+        lat: 31.5204,
+        lng: 74.3587,
+        timezone: 'Asia/Karachi',
+        currency: 'PKR',
+      },
+    });
+    return { ...s, business };
+  }
+
+  const team = (businessId: string) => `/v1/businesses/${businessId}/members`;
+
+  async function addMember(token: string, businessId: string, body: Record<string, unknown>) {
+    return post(team(businessId)).set(bearer(token)).send(body);
+  }
+
+  const login = (business: string, username: string, password: string) =>
+    post('/v1/auth/business-login').send({
+      business,
+      username,
+      password,
+      device: { name: 'Front desk tablet' },
+    });
+
+  /** Create an employee and take them through their first sign-in + password change. */
+  async function employee(
+    o: Awaited<ReturnType<typeof owner>>,
+    role: string,
+    username = `emp-${randomInt(1e9)}`,
+  ) {
+    const created = await addMember(o.accessToken, o.business.id, { name: 'Ali Raza', username, role });
+    expect(created.status).toBe(201);
+    const first = await login(o.business.slug, username, created.body.data.temporaryPassword);
+    expect(first.status).toBe(200);
+    const changed = await post('/v1/auth/password')
+      .set(bearer(first.body.data.accessToken))
+      .send({ currentPassword: created.body.data.temporaryPassword, newPassword: NEW_PASSWORD });
+    expect(changed.status).toBe(200);
+    const signedIn = await login(o.business.slug, username, NEW_PASSWORD);
+    expect(signedIn.status).toBe(200);
+    return {
+      memberId: created.body.data.member.id as string,
+      userId: created.body.data.member.userId as string,
+      username,
+      accessToken: signedIn.body.data.accessToken as string,
+      refreshToken: signedIn.body.data.refreshToken as string,
+    };
+  }
+
+  it('the owner creates an employee: a temporary password shown once, stored only as a hash', async () => {
+    const o = await owner();
+    const res = await addMember(o.accessToken, o.business.id, {
+      name: '  Ali <b>Raza</b> ',
+      username: ' Ali.Front ',
+      role: 'front_desk',
+    });
+    expect(res.status).toBe(201);
+    const { member, temporaryPassword } = res.body.data;
+    expect(temporaryPassword).toMatch(/^[a-z2-9]{4}(-[a-z2-9]{4}){3}$/);
+    expect(member).toMatchObject({
+      name: 'Ali Raza',
+      username: 'ali.front',
+      role: 'front_desk',
+      status: 'active',
+      accountType: 'employee',
+      passwordChangePending: true,
+    });
+
+    const row = await db.user.findUniqueOrThrow({ where: { id: member.userId } });
+    expect(row).toMatchObject({
+      role: 'staff',
+      managedByBusinessId: o.business.id,
+      mustChangePassword: true,
+    });
+    expect(row.passwordHash).toMatch(/^\$argon2id\$/);
+    expect(row.emailHash).toBeNull();
+
+    const audit = await db.auditLog.findFirstOrThrow({
+      where: { action: 'business.member_created', resourceId: member.id },
+    });
+    expect(JSON.stringify(audit)).not.toContain(temporaryPassword);
+
+    const list = await request(app).get(team(o.business.id)).set(bearer(o.accessToken));
+    expect(list.body.data).toHaveLength(1);
+    expect(JSON.stringify(list.body.data)).not.toContain(temporaryPassword);
+  });
+
+  it('a temporary password gives no business access until it is changed; changing it signs out everywhere', async () => {
+    const o = await owner();
+    const created = await addMember(o.accessToken, o.business.id, {
+      name: 'Sana',
+      username: 'sana',
+      role: 'manager',
+    });
+    const temp = created.body.data.temporaryPassword;
+    const userId = created.body.data.member.userId;
+
+    const first = await login(o.business.slug, 'SANA', temp);
+    expect(first.status).toBe(200);
+    expect(first.body.data.user).toMatchObject({
+      role: 'staff',
+      email: null,
+      account: { type: 'employee', businessId: o.business.id, username: 'sana', mustChangePassword: true },
+      onboarding: { phoneRequired: false },
+    });
+    expect(await businessRoleOf(db, o.business.id, userId)).toBeNull();
+    // ...so the team (and everything else in the business) is out of reach.
+    expect(
+      (await request(app).get(team(o.business.id)).set(bearer(first.body.data.accessToken))).status,
+    ).toBe(404);
+
+    const changed = await post('/v1/auth/password')
+      .set(bearer(first.body.data.accessToken))
+      .send({ currentPassword: temp, newPassword: NEW_PASSWORD });
+    expect(changed.body.data).toEqual({ signInAgain: true });
+
+    const me = await request(app).get('/v1/auth/me').set(bearer(first.body.data.accessToken));
+    expect(me.body.error).toMatchObject({ code: 'SESSION_REVOKED', details: { reason: 'password_changed' } });
+    const refresh = await post('/v1/auth/refresh').send({ refreshToken: first.body.data.refreshToken });
+    expect(refresh.body.error.details.reason).toBe('password_changed');
+
+    expect((await login(o.business.slug, 'sana', temp)).status).toBe(401);
+    // Signing straight back in works — the new token is not caught by the revocation a moment ago.
+    const again = await login(o.business.slug, 'sana', NEW_PASSWORD);
+    expect(again.body.data.user.account.mustChangePassword).toBe(false);
+    expect((await request(app).get('/v1/auth/me').set(bearer(again.body.data.accessToken))).status).toBe(200);
+    expect(await businessRoleOf(db, o.business.id, userId)).toBe('manager');
+  });
+
+  it('wrong business, wrong username and wrong password look exactly the same', async () => {
+    const o = await owner();
+    const e = await employee(o, 'staff');
+    const answers = await Promise.all([
+      login('no-such-business', e.username, NEW_PASSWORD),
+      login(o.business.slug, 'nobody-here', NEW_PASSWORD),
+      login(o.business.slug, e.username, pw()),
+    ]);
+    for (const res of answers) {
+      expect(res.status).toBe(401);
+      expect(res.body.error).toMatchObject({
+        code: 'INVALID_CREDENTIALS',
+        message: 'Business, username or password is incorrect',
+      });
+    }
+  });
+
+  it('locks sign-in after 5 wrong passwords; a password reset by the owner unlocks it', async () => {
+    const o = await owner();
+    const e = await employee(o, 'staff');
+    for (let i = 1; i <= 4; i++) {
+      expect((await login(o.business.slug, e.username, pw(`Guess${i}`))).status).toBe(401);
+    }
+    const fifth = await login(o.business.slug, e.username, pw('Guess5'));
+    expect(fifth.status).toBe(429);
+    expect(fifth.body.error.code).toBe('ACCOUNT_LOCKED');
+    expect(fifth.body.error.details.retryAfterSeconds).toBeGreaterThan(800);
+    // Even the right password is not checked while locked.
+    expect((await login(o.business.slug, e.username, NEW_PASSWORD)).body.error.code).toBe('ACCOUNT_LOCKED');
+
+    const list = await request(app).get(team(o.business.id)).set(bearer(o.accessToken));
+    expect(list.body.data[0].locked).toBe(true);
+
+    const reset = await post(`${team(o.business.id)}/${e.memberId}/reset-password`).set(
+      bearer(o.accessToken),
+    );
+    expect(reset.status).toBe(200);
+    // The reset ends the employee's sessions and replaces the old password.
+    const me = await request(app).get('/v1/auth/me').set(bearer(e.accessToken));
+    expect(me.body.error.details.reason).toBe('password_reset');
+    expect((await login(o.business.slug, e.username, NEW_PASSWORD)).status).toBe(401);
+    const back = await login(o.business.slug, e.username, reset.body.data.temporaryPassword);
+    expect(back.status).toBe(200);
+    expect(back.body.data.user.account.mustChangePassword).toBe(true);
+  });
+
+  it('managers manage front desk and staff only; nobody changes their own access', async () => {
+    const o = await owner();
+    const manager = await employee(o, 'manager');
+    const otherManager = await employee(o, 'manager');
+
+    const staff = await addMember(manager.accessToken, o.business.id, {
+      name: 'Bilal',
+      username: 'bilal',
+      role: 'staff',
+    });
+    expect(staff.status).toBe(201);
+    const promote = await addMember(manager.accessToken, o.business.id, {
+      name: 'X',
+      username: 'xman',
+      role: 'manager',
+    });
+    expect(promote.status).toBe(403);
+
+    const path = `${team(o.business.id)}`;
+    const staffId = staff.body.data.member.id;
+    expect(
+      (
+        await request(app)
+          .patch(`${path}/${staffId}`)
+          .set(bearer(manager.accessToken))
+          .send({ role: 'manager' })
+      ).status,
+    ).toBe(403);
+    expect(
+      (await post(`${path}/${otherManager.memberId}/reset-password`).set(bearer(manager.accessToken))).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .patch(`${path}/${manager.memberId}`)
+          .set(bearer(manager.accessToken))
+          .send({ role: 'staff' })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await request(app)
+          .patch(`${path}/${staffId}`)
+          .set(bearer(manager.accessToken))
+          .send({ role: 'front_desk' })
+      ).body.data.role,
+    ).toBe('front_desk');
+  });
+
+  it('front desk and staff cannot see the team; outsiders cannot even tell the business exists', async () => {
+    const o = await owner();
+    const frontDesk = await employee(o, 'front_desk');
+    const outsider = await signUp();
+    expect((await request(app).get(team(o.business.id)).set(bearer(frontDesk.accessToken))).status).toBe(403);
+    expect((await request(app).get(team(o.business.id)).set(bearer(outsider.accessToken))).status).toBe(404);
+    expect((await request(app).get(team(o.business.id))).status).toBe(401);
+  });
+
+  it('turning access off ends the employee’s sessions at once; turning it back on restores sign-in', async () => {
+    const o = await owner();
+    const e = await employee(o, 'staff');
+    const off = await request(app)
+      .patch(`${team(o.business.id)}/${e.memberId}`)
+      .set(bearer(o.accessToken))
+      .send({ status: 'disabled' });
+    expect(off.body.data.status).toBe('disabled');
+    const me = await request(app).get('/v1/auth/me').set(bearer(e.accessToken));
+    expect(me.body.error.details.reason).toBe('access_removed');
+    expect((await post('/v1/auth/refresh').send({ refreshToken: e.refreshToken })).status).toBe(401);
+
+    // Only someone with the right password learns that access is off.
+    expect((await login(o.business.slug, e.username, pw())).body.error.code).toBe('INVALID_CREDENTIALS');
+    const blocked = await login(o.business.slug, e.username, NEW_PASSWORD);
+    expect(blocked.status).toBe(403);
+    expect(blocked.body.error.code).toBe('ACCOUNT_SUSPENDED');
+
+    await request(app)
+      .patch(`${team(o.business.id)}/${e.memberId}`)
+      .set(bearer(o.accessToken))
+      .send({ status: 'active' });
+    expect((await login(o.business.slug, e.username, NEW_PASSWORD)).status).toBe(200);
+  });
+
+  it('removing an employee closes the account and frees the username', async () => {
+    const o = await owner();
+    const e = await employee(o, 'staff', 'farah');
+    expect(
+      (
+        await request(app)
+          .delete(`${team(o.business.id)}/${e.memberId}`)
+          .set(bearer(o.accessToken))
+      ).status,
+    ).toBe(204);
+
+    expect((await login(o.business.slug, 'farah', NEW_PASSWORD)).status).toBe(401);
+    expect((await request(app).get('/v1/auth/me').set(bearer(e.accessToken))).status).toBe(401);
+    const row = await db.user.findFirstOrThrow({ where: { id: e.userId, deletedAt: { not: null } } });
+    expect(row).toMatchObject({ username: null, passwordHash: null });
+
+    const reused = await addMember(o.accessToken, o.business.id, {
+      name: 'New Farah',
+      username: 'farah',
+      role: 'staff',
+    });
+    expect(reused.status).toBe(201);
+  });
+
+  it('usernames are unique within a business, not across businesses', async () => {
+    const a = await owner();
+    const b = await owner();
+    expect(
+      (await addMember(a.accessToken, a.business.id, { name: 'One', username: 'zain', role: 'staff' }))
+        .status,
+    ).toBe(201);
+    const dup = await addMember(a.accessToken, a.business.id, {
+      name: 'Two',
+      username: 'ZAIN',
+      role: 'staff',
+    });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error.code).toBe('USERNAME_TAKEN');
+    expect(
+      (await addMember(b.accessToken, b.business.id, { name: 'Three', username: 'zain', role: 'staff' }))
+        .status,
+    ).toBe(201);
+  });
+
+  it('refuses unknown fields, owner role, bad usernames and weak new passwords', async () => {
+    const o = await owner();
+    for (const body of [
+      { name: 'A', username: 'abc', role: 'owner' },
+      { name: 'A', username: 'ab', role: 'staff' },
+      { name: 'A', username: 'a b c', role: 'staff' },
+      { name: 'A', username: 'abcd', role: 'staff', passwordHash: 'x' },
+    ]) {
+      expect((await addMember(o.accessToken, o.business.id, body)).status).toBe(400);
+    }
+
+    const e = await employee(o, 'staff', 'hamid');
+    const weak = await post('/v1/auth/password')
+      .set(bearer(e.accessToken))
+      .send({ currentPassword: NEW_PASSWORD, newPassword: 'password123' });
+    expect(weak.status).toBe(400);
+    const withName = await post('/v1/auth/password')
+      .set(bearer(e.accessToken))
+      .send({ currentPassword: NEW_PASSWORD, newPassword: pw('Hamid') });
+    expect(withName.status).toBe(422);
+    const wrongCurrent = await post('/v1/auth/password')
+      .set(bearer(e.accessToken))
+      .send({ currentPassword: pw(), newPassword: pw() });
+    expect(wrongCurrent.status).toBe(403);
+  });
+
+  it('employee accounts cannot delete themselves; Google accounts have no password to change', async () => {
+    const o = await owner();
+    const e = await employee(o, 'staff');
+    const del = await request(app)
+      .delete('/v1/auth/me')
+      .set(bearer(e.accessToken))
+      .send({ confirmation: 'DELETE' });
+    expect(del.status).toBe(403);
+    expect(del.body.error.message).toMatch(/closed by the business/);
+
+    const change = await post('/v1/auth/password')
+      .set(bearer(o.accessToken))
+      .send({ currentPassword: pw(), newPassword: pw() });
+    expect(change.status).toBe(409);
   });
 });

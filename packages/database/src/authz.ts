@@ -4,7 +4,9 @@ import type { Database, Transaction } from './index.js';
 /**
  * Resolve a user's role in a business, straight from the database on every
  * call — so a removed or disabled employee loses access immediately, with no
- * stale role cached in a token. Deleted businesses grant no role at all.
+ * stale role cached in a token. Deleted businesses grant no role at all, and
+ * neither does an employee account still on its temporary password (D-034):
+ * whoever saw that password must not be able to act for the business.
  */
 export async function businessRoleOf(
   db: Database | Transaction,
@@ -15,7 +17,11 @@ export async function businessRoleOf(
     where: { id: businessId, deletedAt: null },
     select: {
       ownerId: true,
-      members: { where: { userId, status: 'active' }, select: { role: true }, take: 1 },
+      members: {
+        where: { userId, status: 'active', user: { mustChangePassword: false } },
+        select: { role: true },
+        take: 1,
+      },
     },
   });
   if (!business) return null;

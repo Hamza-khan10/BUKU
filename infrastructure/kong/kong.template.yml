@@ -56,7 +56,8 @@ services:
     routes:
       # Public: signing in and refreshing happen BEFORE the client has a valid access token.
       - name: auth-public
-        paths: ['/v1/auth/oauth', '/v1/auth/dev', '/v1/auth/refresh', '/v1/auth/logout']
+        paths:
+          ['/v1/auth/oauth', '/v1/auth/business-login', '/v1/auth/dev', '/v1/auth/refresh', '/v1/auth/logout']
         strip_path: false
       # Everything else under /v1/auth needs a token (longest prefix wins, so
       # /v1/auth/logout-all lands here, not on the public /v1/auth/logout).
@@ -74,6 +75,12 @@ services:
               header_names: [authorization]
               uri_param_names: [] # never accept tokens in URLs (they end up in logs)
               cookie_names: []
+      # A business's team (employee accounts, roles) lives in auth-service (D-044).
+      - name: business-members
+        paths: ['~/v1/businesses/[^/]+/members($|/)']
+        regex_priority: 20
+        strip_path: false
+        plugins: [*jwt]
 
   - name: booking-service
     url: http://booking-service:3002

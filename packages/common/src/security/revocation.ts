@@ -1,4 +1,5 @@
 import type { Redis } from 'ioredis';
+import { uuidv7Timestamp } from '../ids.js';
 import type { VerifiedAccessToken } from './jwt.js';
 
 /**
@@ -10,7 +11,7 @@ import type { VerifiedAccessToken } from './jwt.js';
  * everywhere" and "password changed" that is not acceptable, so auth-service
  * writes a small marker to Valkey and every service checks it per request:
  *
- *   auth:rev:user:<userId>  → { before, reason }  tokens issued at/before `before` are dead
+ *   auth:rev:user:<userId>  → { beforeMs, reason }  tokens issued at/before `beforeMs` are dead
  *   auth:rev:sid:<sessionId> → reason              one device/session is dead
  *
  * Markers only need to live as long as the longest access token, so they
@@ -20,6 +21,10 @@ export type RevocationReason =
   | 'logged_out'
   | 'logged_out_everywhere'
   | 'password_changed'
+  /** A business reset an employee's password. */
+  | 'password_reset'
+  /** A business disabled or removed an employee's access. */
+  | 'access_removed'
   | 'reuse_detected'
   | 'revoked_by_user'
   | 'account_suspended'
@@ -42,8 +47,8 @@ export function createRevocationStore(redis: Redis, accessTokenTtlSeconds = 15 *
   const ttl = accessTokenTtlSeconds + 120;
   return {
     async revokeAllForUser(userId, reason) {
-      const before = Math.floor(Date.now() / 1000);
-      await redis.set(userKey(userId), JSON.stringify({ before, reason }), 'EX', ttl);
+      const beforeMs = Date.now();
+      await redis.set(userKey(userId), JSON.stringify({ beforeMs, reason }), 'EX', ttl);
     },
     async revokeSession(sessionId, reason) {
       await redis.set(sessionKey(sessionId), reason, 'EX', ttl);
@@ -55,10 +60,28 @@ export function createRevocationStore(redis: Redis, accessTokenTtlSeconds = 15 *
       );
       if (sessionMarker) return sessionMarker;
       if (userMarker) {
-        const { before, reason } = JSON.parse(userMarker) as { before: number; reason: string };
-        if (token.iat <= before) return reason;
+        const marker = JSON.parse(userMarker) as { beforeMs?: number; before?: number; reason: string };
+        // `before` (whole seconds) is the format written by earlier versions.
+        const beforeMs = marker.beforeMs ?? (marker.before ?? 0) * 1000 + 999;
+        if (issuedAtMs(token) <= beforeMs) return marker.reason;
       }
       return false;
     },
   };
+}
+
+const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * When a token was issued, to the millisecond. Comparing whole seconds would
+ * also revoke a token issued moments AFTER "sign out everywhere" within the
+ * same second, e.g. signing in again right after changing the password. Our
+ * jti is a UUIDv7 whose timestamp must agree with the signed `iat`; anything
+ * else counts as issued at the very end of its `iat` second (the safe side).
+ */
+export function issuedAtMs(token: Pick<VerifiedAccessToken, 'jti' | 'iat'>): number {
+  const endOfSecond = token.iat * 1000 + 999;
+  if (!UUID_V7.test(token.jti)) return endOfSecond;
+  const ms = uuidv7Timestamp(token.jti).getTime();
+  return Math.floor(ms / 1000) === token.iat ? ms : endOfSecond;
 }

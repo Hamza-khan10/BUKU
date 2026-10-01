@@ -369,8 +369,17 @@ export class UserService {
       timezone: user.timezone,
       locale: user.locale,
       role: user.role,
+      account: user.managedByBusinessId
+        ? {
+            type: 'employee',
+            businessId: user.managedByBusinessId,
+            username: user.username,
+            mustChangePassword: user.mustChangePassword,
+          }
+        : { type: 'personal' },
       createdAt: user.createdAt.toISOString(),
-      onboarding: { phoneRequired: phone === null },
+      // Employee accounts belong to the business: no personal phone is asked for.
+      onboarding: { phoneRequired: phone === null && !user.managedByBusinessId },
     };
   }
 
@@ -402,6 +411,10 @@ export interface MeView {
   timezone: string;
   locale: string;
   role: string;
+  /** Personal (Google/Apple) account, or an employee account created by a business (D-034). */
+  account:
+    | { type: 'personal' }
+    | { type: 'employee'; businessId: string; username: string | null; mustChangePassword: boolean };
   createdAt: string;
   onboarding: { phoneRequired: boolean };
 }

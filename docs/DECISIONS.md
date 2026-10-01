@@ -219,6 +219,20 @@ goes through the part-2 upload checks and has metadata (e.g. GPS) stripped befor
 Ad images and videos are an Enterprise-plan feature, built with ads after the MVP; videos will
 need their own size/length limits and processing.
 
+**D-052 · Employee accounts are ordinary `users` rows that belong to one business.**
+`managed_by_business_id` + a username unique within that business; platform role `staff`.
+Sessions, revocation, audit and purge work unchanged. A temporary password gives no business
+access (`businessRoleOf` ignores it) until the employee picks their own, and any password change
+signs the account out everywhere, this device included (D-029). Lockout: 5 wrong passwords →
+15 minutes; the business can unlock by resetting. Turning an employee off, resetting or
+removing them ends that account's sessions; a personal BUKU account that is a member keeps its
+sessions (it loses the business's access immediately anyway, D-044). Removing an employee
+closes the account at once and frees the username.
+
+**D-053 · "Sign out everywhere" is cut off to the millisecond.** Access-token ids are UUIDv7, so
+the issue time is known to the millisecond (`iat` has whole seconds). Without this, a token
+issued right after a password change, within the same second, would be treated as revoked.
+
 **D-054 · The database image is built on the official `postgres:17-bookworm`.**
 The previous base, `postgis/postgis:17-3.5`, runs on Debian 11, which reached end of life; the
 PostgreSQL apt repository stopped serving it on 2026-10-01 and the image could no longer be

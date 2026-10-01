@@ -13,12 +13,19 @@ import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
 import { requestContext } from '../http/context.js';
 import type { OidcVerifier } from '../identity/oidc.js';
+import type { MemberService } from '../members/member-service.js';
+import type { PasswordAuthService } from '../members/password-auth.js';
 import type { SessionService } from '../sessions/session-service.js';
 import type { DataRightsService } from '../users/data-rights.js';
 import type { SignInResult, UserService } from '../users/user-service.js';
 import {
+  BusinessParams,
+  BusinessSignInBody,
+  ChangePasswordBody,
+  CreateMemberBody,
   DeleteAccountBody,
   DevSignInBody,
+  MemberParams,
   OAuthSignInBody,
   PushTokenBody,
   PushTokenParams,
@@ -26,6 +33,7 @@ import {
   SessionIdParams,
   SetPhoneBody,
   UpdateMeBody,
+  UpdateMemberBody,
 } from './schemas.js';
 import type { JwtVerifier } from '@buku/common';
 
@@ -33,6 +41,8 @@ export interface RouteDeps {
   users: UserService;
   sessions: SessionService;
   rights: DataRightsService;
+  passwords: PasswordAuthService;
+  members: MemberService;
   verifier: JwtVerifier;
   revocations: RevocationStore;
   redis: Redis;
@@ -87,6 +97,15 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       }),
     );
   }
+
+  // Employee accounts: business + username + password (D-034).
+  r.post(
+    '/business-login',
+    signInLimit,
+    validated({ body: BusinessSignInBody }, async ({ body }, req, res) => {
+      sendSuccess(res, signInResponse(await deps.passwords.signIn(body, requestContext(req))));
+    }),
+  );
 
   if (deps.devLoginEnabled) {
     r.post(
@@ -192,6 +211,17 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     }),
   );
 
+  // Every session ends, this one included: the app signs in again with the new password.
+  r.post(
+    '/password',
+    auth,
+    writeLimit,
+    validated({ body: ChangePasswordBody }, async ({ body }, req, res) => {
+      await deps.passwords.changePassword(requireAuth(req).userId, body, requestContext(req));
+      sendSuccess(res, { signInAgain: true });
+    }),
+  );
+
   // ── My data (export / delete) ────────────────────────────────────────────
   const exportLimit = rateLimit({
     keyPrefix: 'rl:auth:export',
@@ -219,4 +249,74 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   );
 
   app.use('/v1/auth', r);
+
+  // ── A business's team (employee accounts and roles) ──────────────────────
+  const team = Router({ mergeParams: true });
+  team.use(auth, writeLimit);
+
+  team.get(
+    '/',
+    validated({ params: BusinessParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.members.list(params.businessId, requireAuth(req).userId));
+    }),
+  );
+
+  team.post(
+    '/',
+    validated({ params: BusinessParams, body: CreateMemberBody }, async ({ params, body }, req, res) => {
+      const result = await deps.members.create(
+        params.businessId,
+        requireAuth(req).userId,
+        body,
+        requestContext(req),
+      );
+      sendSuccess(res, result, 201);
+    }),
+  );
+
+  team.patch(
+    '/:memberId',
+    validated({ params: MemberParams, body: UpdateMemberBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.members.update(
+          params.businessId,
+          params.memberId,
+          requireAuth(req).userId,
+          body,
+          requestContext(req),
+        ),
+      );
+    }),
+  );
+
+  team.post(
+    '/:memberId/reset-password',
+    validated({ params: MemberParams }, async ({ params }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.members.resetPassword(
+          params.businessId,
+          params.memberId,
+          requireAuth(req).userId,
+          requestContext(req),
+        ),
+      );
+    }),
+  );
+
+  team.delete(
+    '/:memberId',
+    validated({ params: MemberParams }, async ({ params }, req, res) => {
+      await deps.members.remove(
+        params.businessId,
+        params.memberId,
+        requireAuth(req).userId,
+        requestContext(req),
+      );
+      sendNoContent(res);
+    }),
+  );
+
+  app.use('/v1/businesses/:businessId/members', team);
 }

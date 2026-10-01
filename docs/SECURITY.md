@@ -9,17 +9,22 @@ Status legend: ✅ in place and tested (Phase 1) · 🔜 built in the phase show
 
 ## 1. Identity & access
 
-| Control                                                                                                                                                  | Status                         | Where                                     |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ----------------------------------------- |
-| RS256 access tokens, 15 min; algorithm pinned on verify (blocks `alg:none` and RS256→HS256 confusion); `iss`/`aud`/`exp` checked; unknown `kid` rejected | ✅                             | `common/security/jwt.ts` (+ attack tests) |
-| Private signing key only in auth-service; other services get public keys only                                                                            | ✅                             | `docker-compose.dev.yml`                  |
-| Key rotation via `kid` + previous-key window                                                                                                             | ✅                             | `createJwtVerifierFromEnv`                |
-| Boot-time check that the signing/verification keys match                                                                                                 | ✅                             | `services/auth/src/index.ts`              |
-| Role-based access (`requireRole`), token revocation hook (jti deny-list)                                                                                 | ✅ primitives · 🔜 2.1 wiring  | `common/http/middleware.ts`               |
-| Passwords: Argon2id (m=19 MiB, t=2), PHC format, rehash-on-login, length-based policy (NIST 800-63B), 128-char cap, dummy hash against user enumeration  | ✅                             | `common/security/password.ts`             |
-| Refresh tokens: 256-bit random, stored as SHA-256, rotation with family reuse detection                                                                  | ✅ schema · 🔜 2.1             | `refresh_tokens`                          |
-| OTP: keyed hash, 10-min TTL, 3 attempts → lockout, per-destination send limits                                                                           | 🔜 2.1                         | —                                         |
-| Object-level authorization (a user can only reach their own data)                                                                                        | 🔜 every Phase 2 route + tests | —                                         |
+| Control                                                                                                                                                                              | Status                         | Where                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ | ----------------------------------------- |
+| RS256 access tokens, 15 min; algorithm pinned on verify (blocks `alg:none` and RS256→HS256 confusion); `iss`/`aud`/`exp` checked; unknown `kid` rejected                             | ✅                             | `common/security/jwt.ts` (+ attack tests) |
+| Private signing key only in auth-service; other services get public keys only                                                                                                        | ✅                             | `docker-compose.dev.yml`                  |
+| Key rotation via `kid` + previous-key window                                                                                                                                         | ✅                             | `createJwtVerifierFromEnv`                |
+| Boot-time check that the signing/verification keys match                                                                                                                             | ✅                             | `services/auth/src/index.ts`              |
+| Role-based access (`requireRole`), token revocation hook (jti deny-list)                                                                                                             | ✅ primitives · 🔜 2.1 wiring  | `common/http/middleware.ts`               |
+| Passwords: Argon2id (m=19 MiB, t=2), PHC format, rehash-on-login, length-based policy (NIST 800-63B), 128-char cap, dummy hash against user enumeration                              | ✅                             | `common/security/password.ts`             |
+| Refresh tokens: 256-bit random, stored as SHA-256, rotation with family reuse detection                                                                                              | ✅ schema · 🔜 2.1             | `refresh_tokens`                          |
+| Employee accounts: same answer for wrong business/username/password (dummy-hash timing); 5 wrong passwords → 15-min lock, counted atomically, password not even checked while locked | ✅ tested                      | `auth/members/password-auth.ts`           |
+| Business-issued temporary passwords (~79 bits, shown once, hash only) grant **no** business access until replaced                                                                    | ✅ tested                      | `businessRoleOf()`                        |
+| Password change / reset / access removed → every session of that account ends at once (refresh + access tokens)                                                                      | ✅ tested                      | `endAllSessions()`                        |
+| "Sign out everywhere" cut-off kept to the millisecond (token id is a UUIDv7), so signing in right after a password change is not caught by it                                        | ✅ tested                      | `common/security/revocation.ts`           |
+| Managers can't create or manage managers; nobody changes their own access                                                                                                            | ✅ tested                      | `MANAGEABLE_ROLES`                        |
+| OTP: keyed hash, 10-min TTL, 3 attempts → lockout, per-destination send limits                                                                                                       | 🔜 2.1                         | —                                         |
+| Object-level authorization (a user can only reach their own data)                                                                                                                    | 🔜 every Phase 2 route + tests | —                                         |
 
 ## 2. Input & output
 
@@ -81,6 +86,8 @@ Email security@buku.app (to be created before launch). Do not open a public issu
 
 - Photo metadata (EXIF, e.g. GPS) is not stripped yet: business photos are stored as uploaded.
   An image-processing step (resize + strip metadata) is planned before launch.
+- Employee lockout can be triggered by anyone who knows a business handle and a username (a
+  15-minute nuisance, not a takeover); the business can unlock by resetting the password.
 - Gateway 401 responses use Kong's `{"message"}` body instead of the BUKU envelope (documented for clients).
 - Kong OSS has no releases after 3.9; plan a migration path (see DECISIONS D-011) before 2027.
 - Soft-deleted users are hidden from direct queries but can still appear through relations until

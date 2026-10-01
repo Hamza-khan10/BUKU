@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   errors as joseErrors,
   importPKCS8,
@@ -10,6 +9,7 @@ import {
   type JWTPayload,
 } from 'jose';
 import { AppError, ErrorCodes } from '../errors.js';
+import { uuidv7 } from '../ids.js';
 
 /**
  * Access tokens: short-lived RS256 JWTs.
@@ -66,8 +66,11 @@ export async function createJwtSigner(options: SignerOptions): Promise<JwtSigner
   const ttl = options.ttlSeconds ?? 15 * 60;
   return {
     async sign(claims) {
-      const jti = randomUUID();
-      const now = Math.floor(Date.now() / 1000);
+      // jti is a UUIDv7: it records the issue time to the millisecond, which
+      // "sign out everywhere" needs (`iat` only has whole seconds).
+      const nowMs = Date.now();
+      const jti = uuidv7(nowMs);
+      const now = Math.floor(nowMs / 1000);
       const token = await new SignJWT({ role: claims.role, ...(claims.sid ? { sid: claims.sid } : {}) })
         .setProtectedHeader({ alg: ALGORITHM, kid: options.keyId, typ: 'JWT' })
         .setSubject(claims.sub)
