@@ -145,7 +145,8 @@ refused). Only the cleaned copy is published; the original is deleted (or expire
 - **Customer profile picture**, private: visible only to that customer (never to other
   customers, businesses or public pages), deleted when the account is purged, included in
   "my data" export.
-- Still open: may the business a customer booked with see their picture? Default: no.
+- Businesses never see customer pictures (decided 2026-10-01); customers identify themselves
+  with their appointment receipt or queue ticket instead (D-057, 2.3 and 2.4).
 
 ### 2.3 Booking service
 
@@ -165,6 +166,13 @@ come from working hours). Booking rules:
   impact; picks a reason (feeds the business's cancellation chart); "I'll book later" →
   reminder notification a few days later. Last-minute cancel / no-show → small impact on the
   customer's reliability score. Business cancelling → impact on the business's reliability.
+- **Appointment receipt (D-057):** the customer's app/web shows a receipt for each booking:
+  booking code (`BK-7KQ2MX`, already generated per appointment) with a QR code, business,
+  service, employee, date/time in the business's timezone, price ("pay at the venue") and
+  status. The business sees every receipt for its bookings (today's list, search by code or
+  customer name) and checks the customer in by scanning the QR, typing the code, or picking them
+  from the list — so a customer without a phone is served just the same. Built from the
+  appointment on request: no PDF or image is generated or stored; the QR is drawn by the app.
 
 ### 2.4 Queue service
 
@@ -172,6 +180,10 @@ Remote (virtual) queue joining, allowed only **within a distance set by the busi
 (default 5 km)** and **one active queue per customer**. Live positions over WebSocket.
 Alerts when 10 ahead, 5 ahead, then at every step. Called and not present after the grace
 period (5 min) → no-show (reliability impact). Walk-ins added by front desk.
+**Queue ticket (D-057):** joining gives a ticket number (`A-023`, already numbered per queue
+session) shown large in the app/web with a QR, plus live position. The business's queue screen
+lists every ticket; front desk calls, serves or marks no-show from there, including walk-ins
+and customers without a phone. Nothing beyond the queue entry itself is stored.
 
 ### 2.5 Billing service (Paddle, sandbox during development)
 
