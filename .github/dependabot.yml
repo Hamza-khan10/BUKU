@@ -34,5 +34,5 @@ updates:
       # Only LTS Node lines, and Postgres majors are planned migrations, not bumps.
       - dependency-name: 'node'
         update-types: ['version-update:semver-major']
-      - dependency-name: 'postgis/postgis'
+      - dependency-name: 'postgres'
         update-types: ['version-update:semver-major']
