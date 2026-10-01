@@ -11,13 +11,25 @@ import {
 } from '@buku/common';
 import { Router, type Express, type Response } from 'express';
 import type { Redis } from 'ioredis';
+import type { AppointmentService } from '../appointments/appointment-service.js';
+import type { AvailabilityService } from '../availability/availability-service.js';
 import type { CatalogService } from '../catalog/catalog-service.js';
 import { requestContext } from '../http/context.js';
 import type { ScheduleService } from '../schedules/schedule-service.js';
 import type { SettingsService } from '../settings/settings-service.js';
 import type { StaffService } from '../staff/staff-service.js';
 import {
+  AppointmentParams,
+  AvailabilityQuery,
+  BookBody,
   BookingSettingsBody,
+  BusinessAppointmentParams,
+  BusinessAppointmentsQuery,
+  BusinessCancelBody,
+  CancelBody,
+  DeclineBody,
+  MyAppointmentsQuery,
+  RescheduleBody,
   CategoryBody,
   CategoryParams,
   ClosureBody,
@@ -37,6 +49,8 @@ import {
 } from './schemas.js';
 
 export interface RouteDeps {
+  availability: AvailabilityService;
+  appointments: AppointmentService;
   catalog: CatalogService;
   staff: StaffService;
   schedules: ScheduleService;
@@ -72,6 +86,22 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdOrSlugParams }, async ({ params }, _req, res) => {
       publicCache(res);
       sendSuccess(res, await deps.staff.publicList(params.idOrSlug));
+    }),
+  );
+
+  // Free times are computed per request: limit how often one client can ask.
+  const availabilityLimit = rateLimit({
+    keyPrefix: 'rl:booking:availability',
+    points: 60,
+    durationSeconds: 60,
+    redis: deps.redis,
+  });
+  r.get(
+    '/:idOrSlug/availability',
+    availabilityLimit,
+    validated({ params: IdOrSlugParams, query: AvailabilityQuery }, async ({ params, query }, _req, res) => {
+      res.setHeader('Cache-Control', 'no-store'); // times change with every booking
+      sendSuccess(res, await deps.availability.publicAvailability(params.idOrSlug, query));
     }),
   );
 
@@ -335,5 +365,138 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     }),
   );
 
+  // ── The business's appointments ──────────────────────────────────────────
+  r.get(
+    '/:id/appointments',
+    auth,
+    validated({ params: IdParams, query: BusinessAppointmentsQuery }, async ({ params, query }, req, res) => {
+      sendSuccess(res, await deps.appointments.businessList(params.id, requireAuth(req).userId, query));
+    }),
+  );
+  r.get(
+    '/:id/appointments/:appointmentId',
+    auth,
+    validated({ params: BusinessAppointmentParams }, async ({ params }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.appointments.businessAppointment(params.id, params.appointmentId, requireAuth(req).userId),
+      );
+    }),
+  );
+  r.post(
+    '/:id/appointments/:appointmentId/confirm',
+    auth,
+    writeLimit,
+    validated({ params: BusinessAppointmentParams }, async ({ params }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.appointments.confirm(
+          params.id,
+          params.appointmentId,
+          requireAuth(req).userId,
+          requestContext(req),
+        ),
+      );
+    }),
+  );
+  r.post(
+    '/:id/appointments/:appointmentId/decline',
+    auth,
+    writeLimit,
+    validated(
+      { params: BusinessAppointmentParams, body: DeclineBody },
+      async ({ params, body }, req, res) => {
+        sendSuccess(
+          res,
+          await deps.appointments.decline(
+            params.id,
+            params.appointmentId,
+            requireAuth(req).userId,
+            body.reason,
+            requestContext(req),
+          ),
+        );
+      },
+    ),
+  );
+  r.post(
+    '/:id/appointments/:appointmentId/cancel',
+    auth,
+    writeLimit,
+    validated(
+      { params: BusinessAppointmentParams, body: BusinessCancelBody },
+      async ({ params, body }, req, res) => {
+        sendSuccess(
+          res,
+          await deps.appointments.cancelByBusiness(
+            params.id,
+            params.appointmentId,
+            requireAuth(req).userId,
+            body.reason,
+            requestContext(req),
+          ),
+        );
+      },
+    ),
+  );
+
   app.use('/v1/businesses', r);
+
+  // ── The customer's appointments and receipts ─────────────────────────────
+  const mine = Router();
+  mine.use(auth);
+  const bookLimit = rateLimit({
+    keyPrefix: 'rl:booking:book',
+    points: 20,
+    durationSeconds: 3600,
+    redis: deps.redis,
+  });
+
+  mine.post(
+    '/',
+    bookLimit,
+    validated({ body: BookBody }, async ({ body }, req, res) => {
+      const { userId, role } = requireAuth(req);
+      sendCreated(res, await deps.appointments.book(userId, role, body, requestContext(req)));
+    }),
+  );
+  mine.get(
+    '/',
+    validated({ query: MyAppointmentsQuery }, async ({ query }, req, res) => {
+      const { items, meta } = await deps.appointments.myAppointments(
+        requireAuth(req).userId,
+        query.scope,
+        query.page,
+        query.limit,
+      );
+      sendSuccess(res, items, 200, meta);
+    }),
+  );
+  mine.get(
+    '/:id',
+    validated({ params: AppointmentParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.appointments.myAppointment(requireAuth(req).userId, params.id));
+    }),
+  );
+  mine.post(
+    '/:id/cancel',
+    writeLimit,
+    validated({ params: AppointmentParams, body: CancelBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.appointments.cancelMine(requireAuth(req).userId, params.id, body, requestContext(req)),
+      );
+    }),
+  );
+  mine.post(
+    '/:id/reschedule',
+    bookLimit,
+    validated({ params: AppointmentParams, body: RescheduleBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.appointments.rescheduleMine(requireAuth(req).userId, params.id, body, requestContext(req)),
+      );
+    }),
+  );
+  app.use('/v1/appointments', mine);
 }

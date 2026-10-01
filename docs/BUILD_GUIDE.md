@@ -148,13 +148,18 @@ refused). Only the cleaned copy is published; the original is deleted (or expire
 - Businesses never see customer pictures (decided 2026-10-01); customers identify themselves
   with their appointment receipt or queue ticket instead (D-057, 2.3 and 2.4).
 
-### 2.3 Booking service — 🚧 part 1 done (menu, staff, schedules, settings)
+### 2.3 Booking service — 🚧 parts 1–2 done (menu, staff, schedules, availability, booking, receipts)
 
 Part 1 (built): service categories and services, staff profiles linked to team accounts
 (deactivated automatically when someone leaves), weekly working hours and time off managed by
 the employee themself or a manager, business closures, booking settings, public menu and
-staff list with photos. Next: part 2 — availability and booking (receipts, D-057); part 3 —
-check-in and attendance.
+staff list with photos.
+
+Part 2 (built): the slot calculator (pure, daylight-saving-aware, unit-tested), booking with
+every rule below (the database settles races), receipts (D-057), the business's day list and
+search by code or name, approve/decline, cancel (reasons, late flag, "book later"),
+reschedule, status history and events. The free-trial/subscription check is added here in 2.5.
+Next: part 3 — check-in and attendance.
 
 Services (in categories), staff ↔ services, working hours per employee (editable by the
 employee), time off, availability engine in the business's timezone. Check-in/check-out

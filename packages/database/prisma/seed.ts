@@ -525,6 +525,7 @@ async function main(): Promise<void> {
       status,
       startAt,
       endAt,
+      blockedUntil: endAt,
       price: service.price,
       currency: 'PKR',
       confirmationCode: code,

@@ -46,6 +46,10 @@ export const ErrorCodes = {
 
   // Booking
   SLOT_UNAVAILABLE: 'SLOT_UNAVAILABLE',
+  /** The customer already has an appointment at that time, anywhere (D-036). */
+  APPOINTMENT_OVERLAP: 'APPOINTMENT_OVERLAP',
+  /** Employee accounts and suspended businesses can't book or be booked. */
+  BOOKING_NOT_ALLOWED: 'BOOKING_NOT_ALLOWED',
   SLOT_IN_PAST: 'SLOT_IN_PAST',
   SLOT_TOO_SOON: 'SLOT_TOO_SOON',
   SLOT_TOO_FAR_AHEAD: 'SLOT_TOO_FAR_AHEAD',

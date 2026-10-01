@@ -9,6 +9,8 @@ import type { Database } from '@buku/database';
 import type { MediaLinks } from '@buku/media';
 import type { Express } from 'express';
 import type { Redis } from 'ioredis';
+import { AppointmentService } from './appointments/appointment-service.js';
+import { AvailabilityService } from './availability/availability-service.js';
 import { CatalogService } from './catalog/catalog-service.js';
 import { registerRoutes } from './routes/index.js';
 import { ScheduleService } from './schedules/schedule-service.js';
@@ -37,10 +39,14 @@ export function buildBookingApp(deps: BookingAppDeps): BookingApp {
   const catalog = new CatalogService(deps.db, settings);
   const staff = new StaffService(deps.db, deps.mediaLinks);
   const schedules = new ScheduleService(deps.db);
+  const availability = new AvailabilityService(deps.db, settings);
+  const appointments = new AppointmentService(deps.db, availability, settings);
   const app = createHttpApp({
     ...deps.http,
     routes: (app) =>
       registerRoutes(app, {
+        availability,
+        appointments,
         catalog,
         staff,
         schedules,
