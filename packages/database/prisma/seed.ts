@@ -351,7 +351,6 @@ async function main(): Promise<void> {
   for (const [i, [leaf, name]] of BUSINESS_NAMES.entries()) {
     const city = CITIES[i % CITIES.length]!;
     const businessId = uuidv7();
-    const isGovernment = leaf === 'Passport Office';
     await db.business.create({
       data: {
         id: businessId,
@@ -376,7 +375,6 @@ async function main(): Promise<void> {
         status: i < 17 ? 'verified' : 'pending',
         verified: i < 17,
         verifiedAt: i < 17 ? now : null,
-        settings: { queueEnabled: isGovernment || i % 4 === 0 },
         subscriptionTier: i % 5 === 0 ? 'professional' : 'free',
       },
     });

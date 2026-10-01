@@ -34,6 +34,8 @@ export const BUSINESS_PERMISSIONS = {
   /** Clock anyone in or out (the shared front-desk tablet); everyone can clock themselves. */
   'attendance.manage': ['owner', 'manager', 'front_desk'],
   'queue.operate': ['owner', 'manager', 'front_desk'],
+  /** Queue settings: distance limit, size, grace period, ticket letters. */
+  'queue.settings': ['owner', 'manager'],
   'schedule.manage_all': ['owner', 'manager'],
   'schedule.manage_own': ['owner', 'manager', 'front_desk', 'staff'],
   'billing.manage': ['owner'],

@@ -467,6 +467,7 @@ model Business {
   staffPhotos            StaffPhoto[]
   serviceCategories      ServiceCategory[]
   staffAttendance        StaffAttendance[]
+  queueSettings          QueueSettings?
   bookingSettings        BookingSettings?
   documents              BusinessDocument[]
   hours                  BusinessHours[]
@@ -1042,8 +1043,26 @@ model QueueSession {
   @@map("queue_sessions")
 }
 
-/// DB extras: partial UNIQUE (session_id, user_id) while waiting/called/serving,
-/// so a user can hold only one live ticket per queue.
+/// How a business runs its queue (owned by queue-service). No row → the defaults below.
+model QueueSettings {
+  businessId             String   @id @map("business_id") @db.Uuid
+  /// Remote joins only within this distance of the business (D-038).
+  remoteJoinRadiusMeters Int      @default(5000) @map("remote_join_radius_meters")
+  maxQueueSize           Int      @default(200) @map("max_queue_size")
+  /// A called customer who doesn't come within this long can be marked a no-show (decision H).
+  gracePeriodSeconds     Int      @default(300) @map("grace_period_seconds")
+  ticketPrefix           String   @default("A") @map("ticket_prefix") @db.VarChar(3)
+  /// Starting estimate of one service; replaced by the day's real average once people are served.
+  avgServiceSeconds      Int      @default(300) @map("avg_service_seconds")
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("queue_settings")
+}
+
+/// DB extras: partial UNIQUE (user_id) while waiting/called/serving, so a customer holds
+/// at most ONE live ticket in any queue anywhere (D-038).
 model QueueEntry {
   id                   String           @id @default(uuid(7)) @db.Uuid
   sessionId            String           @map("session_id") @db.Uuid
@@ -1062,6 +1081,12 @@ model QueueEntry {
   completedAt          DateTime?        @map("completed_at") @db.Timestamptz(6)
   leftAt               DateTime?        @map("left_at") @db.Timestamptz(6)
   actualServiceSeconds Int?             @map("actual_service_seconds")
+  /// Joined from their phone (within the distance limit) rather than at the counter.
+  joinedRemotely       Boolean          @default(false) @map("joined_remotely")
+  /// Walk-ins added by the front desk: an optional name to call out (no account).
+  walkInName           String?          @map("walk_in_name") @db.VarChar(100)
+  /// Last "people ahead of you" count we alerted about (10, 5, then every step), so each alert goes once.
+  lastAlertedAhead     Int?             @map("last_alerted_ahead")
 
   session QueueSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   user    User?        @relation(fields: [userId], references: [id], onDelete: SetNull)

@@ -107,8 +107,19 @@ services:
     url: http://queue-service:3003
     retries: 0
     routes:
+      # Public: whether a business has a queue and how long it is (ticket numbers only).
+      - name: queue-public
+        paths: ['/v1/queue/public']
+        methods: [GET, OPTIONS]
+        strip_path: false
       - name: queue
         paths: ['/v1/queue']
+        strip_path: false
+        plugins: [*jwt]
+      # The front desk's queue screen and controls.
+      - name: business-queue
+        paths: ['~/v1/businesses/[^/]+/queue($|/)']
+        regex_priority: 20
         strip_path: false
         plugins: [*jwt]
 
