@@ -28,15 +28,15 @@ Status legend: ✅ in place and tested (Phase 1) · 🔜 built in the phase show
 
 ## 2. Input & output
 
-| Control                                                                                                         | Status                 |
-| --------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Every body/query/param validated with Zod before business logic; unknown body fields rejected (mass assignment) | ✅ `validated()`       |
-| Query parser `simple` (no nested objects from `?a[b]=`; closes prototype-pollution class)                       | ✅                     |
-| Free text: HTML and control characters stripped before storage                                                  | ✅ `zSafeText`         |
-| SQL: Prisma parameterized queries; raw SQL only via tagged templates                                            | ✅ convention + review |
-| Body size limits (gateway 128 KB, service 100 KB); uploads go direct to S3 via presigned URLs                   | ✅ tested              |
-| Errors: generic 500 to clients (no stack/SQL), full detail in logs, request id in both                          | ✅ tested              |
-| Security headers on every response (CSP `default-src 'none'`, HSTS, nosniff, frame DENY, no-store)              | ✅                     |
+| Control                                                                                                                                                   | Status                 |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Every body/query/param validated with Zod before business logic; unknown body fields rejected (mass assignment)                                           | ✅ `validated()`       |
+| Query parser `simple` (no nested objects from `?a[b]=`; closes prototype-pollution class)                                                                 | ✅                     |
+| Free text: HTML and control characters stripped before storage; tags hidden as entities stripped too; stored as plain text ("Salt & Pepper", not "&amp;") | ✅ `zSafeText`         |
+| SQL: Prisma parameterized queries; raw SQL only via tagged templates                                                                                      | ✅ convention + review |
+| Body size limits (gateway 128 KB, service 100 KB); uploads go direct to S3 via presigned URLs                                                             | ✅ tested              |
+| Errors: generic 500 to clients (no stack/SQL), full detail in logs, request id in both                                                                    | ✅ tested              |
+| Security headers on every response (CSP `default-src 'none'`, HSTS, nosniff, frame DENY, no-store)                                                        | ✅                     |
 
 ## 3. Data protection
 

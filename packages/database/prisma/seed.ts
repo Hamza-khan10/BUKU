@@ -20,7 +20,7 @@ import {
   parseKeyring,
   uuidv7,
 } from '@buku/common';
-import { createDatabaseClient, type Prisma, type StaffRole } from '../src/index.js';
+import { createDatabaseClient, type Prisma } from '../src/index.js';
 
 if (process.env.NODE_ENV === 'production') {
   console.error('Refusing to seed a production database.');
@@ -259,8 +259,6 @@ const LAST = [
   'Iqbal',
   'Mirza',
 ];
-const staffRoleFor = (index: number): StaffRole =>
-  index === 0 ? 'owner' : index === 1 ? 'manager' : 'staff';
 const personName = () => `${pick(FIRST)} ${pick(LAST)}`;
 const slugify = (s: string) =>
   s
@@ -378,13 +376,7 @@ async function main(): Promise<void> {
         status: i < 17 ? 'verified' : 'pending',
         verified: i < 17,
         verifiedAt: i < 17 ? now : null,
-        settings: {
-          autoConfirm: i % 2 === 0,
-          cancellationHours: 12,
-          minAdvanceHours: 1,
-          maxAdvanceDays: 60,
-          queueEnabled: isGovernment || i % 4 === 0,
-        },
+        settings: { queueEnabled: isGovernment || i % 4 === 0 },
         subscriptionTier: i % 5 === 0 ? 'professional' : 'free',
       },
     });
@@ -408,7 +400,19 @@ async function main(): Promise<void> {
       })),
     });
 
+    // Every other business approves bookings by hand.
+    await db.bookingSettings.create({
+      data: { businessId, confirmationMode: i % 2 === 0 ? 'automatic' : 'manual' },
+    });
+
     const menu = SERVICE_MENUS[leaf]!;
+    const [popular, more] = [uuidv7(), uuidv7()];
+    await db.serviceCategory.createMany({
+      data: [
+        { id: popular, businessId, name: 'Popular', sortOrder: 0 },
+        { id: more, businessId, name: 'More services', sortOrder: 1 },
+      ],
+    });
     const services = menu.map(([serviceName, duration, price], s) => ({
       id: uuidv7(),
       businessId,
@@ -417,6 +421,7 @@ async function main(): Promise<void> {
       bufferMinutes: duration >= 60 ? 15 : 5,
       price,
       currency: 'PKR',
+      categoryId: s < 2 ? popular : more,
       sortOrder: s,
     }));
     await db.service.createMany({ data: services });
@@ -426,9 +431,7 @@ async function main(): Promise<void> {
       businessId,
       userId: s === 0 ? ownerIds[i]! : null,
       displayName: s === 0 ? users.find((u) => u.id === ownerIds[i])!.name : personName(),
-      role: staffRoleFor(s),
       specializations: [menu[s % menu.length]![0]],
-      inviteAccepted: s === 0,
     }));
     await db.staff.createMany({ data: staffRows });
     await db.staffService.createMany({

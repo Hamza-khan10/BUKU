@@ -383,3 +383,73 @@ automatically when they leave the team.
 Returns every business in that country with decrypted legal details (JSON attachment). The
 admin, reference, legal basis and row count are written to the audit log. Use only for
 requests that have gone through the legal process (docs/DECISIONS.md D-033).
+
+## Booking service — menu, staff and schedules (2.3 part 1)
+
+All under `/v1/businesses/:id/…`. Public pages accept the business's id **or slug**.
+
+| Method & path                                                       | Auth | Who                                  | Purpose                                                                 |
+| ------------------------------------------------------------------- | ---- | ------------------------------------ | ----------------------------------------------------------------------- |
+| `GET /:idOrSlug/services`                                           | —    | anyone                               | The menu: active services by category, plus booking terms (cached 60 s) |
+| `GET /:idOrSlug/staff`                                              | —    | anyone                               | Active staff: name, bio, photo, services they do (cached 60 s)          |
+| `GET /:id/services/manage` · `GET /:id/staff/manage`                | ✔    | any team role                        | Same, archived/inactive included                                        |
+| `POST /:id/service-categories` · `PATCH`/`DELETE …/:categoryId`     | ✔    | owner, manager                       | Categories (deleting keeps the services, uncategorized)                 |
+| `POST /:id/services` · `PATCH …/:serviceId` · `DELETE …/:serviceId` | ✔    | owner, manager                       | Services; `DELETE` archives (history keeps pointing at it)              |
+| `POST /:id/staff` · `PATCH …/:staffId` · `DELETE …/:staffId`        | ✔    | owner, manager                       | Staff profiles; `DELETE` deactivates                                    |
+| `GET`/`PUT /:id/staff/:staffId/hours`                               | ✔    | owner, manager, **or that employee** | Weekly working hours                                                    |
+| `GET`/`POST /:id/staff/:staffId/time-off` · `DELETE …/:entryId`     | ✔    | owner, manager, **or that employee** | Days off, part of a day off, extra hours                                |
+| `GET`/`POST /:id/closures` · `DELETE …/:closureId`                  | ✔    | owner, manager (list: any team role) | Whole business closed (public holiday)                                  |
+| `GET`/`PUT /:id/booking-settings`                                   | ✔    | owner, manager (read: any team role) | How bookings work here                                                  |
+
+### Services
+
+```json
+POST /v1/businesses/:id/services
+{ "name": "Skin fade", "categoryId": "…", "durationMinutes": 45, "bufferMinutes": 10, "price": 1200, "staffIds": ["…"] }
+```
+
+`price` has at most 2 decimals and is always in the business's currency (returned as a string,
+`"1200.00"`, never through floating point). `bufferMinutes` is clean-up time after the service,
+used for availability, never shown to customers. Unknown fields (e.g. `currency`) are refused.
+
+### Staff profiles
+
+```json
+POST /v1/businesses/:id/staff
+{ "displayName": "Ali Raza", "bio": "Fades & beards", "specializations": ["Fades"], "userId": "…", "serviceIds": ["…"] }
+```
+
+`userId` links the profile to a team account (the owner or a member, also one still on a
+temporary password), once per business. A linked person manages their own hours and time off.
+When someone is removed from the team, their profile is deactivated automatically
+(`businesses.member_removed`).
+
+### Working hours and time off
+
+```json
+PUT /v1/businesses/:id/staff/:staffId/hours
+{ "days": [{ "dayOfWeek": 1, "ranges": [{ "start": "09:00", "end": "13:00" }, { "start": "14:00", "end": "18:00" }] }] }
+```
+
+Replaces the whole week; days not listed are days off. `dayOfWeek` 0 = Sunday. Up to 4 ranges a
+day, no overlaps. Times are in the business's timezone.
+
+```json
+POST /v1/businesses/:id/staff/:staffId/time-off
+{ "from": "2026-10-20", "to": "2026-10-24", "reason": "Eid holidays" }      // whole days
+{ "from": "2026-10-06", "startTime": "13:00", "endTime": "15:00" }          // part of a day
+{ "kind": "extra_hours", "from": "2026-10-07", "startTime": "18:00", "endTime": "21:00" }
+```
+
+Dates are in the business's timezone, never in the past, up to 62 days at once.
+
+### Booking settings
+
+| Field                          | Default     | Range                                                       |
+| ------------------------------ | ----------- | ----------------------------------------------------------- |
+| `confirmationMode`             | `automatic` | `automatic` · `manual` (the business approves each booking) |
+| `bookingHorizonDays`           | 365         | 1–1825                                                      |
+| `maxFutureBookingsPerCustomer` | 3           | 1–20                                                        |
+| `cancellationWindowHours`      | 12          | 0–168 (later = late cancel)                                 |
+| `minNoticeMinutes`             | 60          | 0–10080                                                     |
+| `slotStepMinutes`              | 15          | 5, 10, 15, 20, 30, 60                                       |
