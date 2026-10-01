@@ -478,6 +478,7 @@ describe('Booking settings', () => {
       cancellationWindowHours: 12,
       minNoticeMinutes: 60,
       slotStepMinutes: 15,
+      noShowGraceMinutes: 15,
     });
     const manager = await member('manager');
     const res = await put(`${base}/booking-settings`, manager, {

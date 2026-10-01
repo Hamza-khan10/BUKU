@@ -304,6 +304,8 @@ model User {
   businessReports    BusinessReport[]        @relation("Reporter")
   reviewedReports    BusinessReport[]        @relation("ReportReviewer")
   staffPhotoConsents StaffPhoto[]            @relation("StaffPhotoConsent")
+  checkIns           Appointment[]           @relation("AppointmentCheckIn")
+  shiftsRecorded     StaffAttendance[]       @relation("AttendanceRecordedBy")
   managedByBusiness  Business?               @relation("ManagedAccounts", fields: [managedByBusinessId], references: [id], onDelete: Restrict)
 
   @@unique([managedByBusinessId, username])
@@ -464,6 +466,7 @@ model Business {
   photos                 BusinessPhoto[]
   staffPhotos            StaffPhoto[]
   serviceCategories      ServiceCategory[]
+  staffAttendance        StaffAttendance[]
   bookingSettings        BookingSettings?
   documents              BusinessDocument[]
   hours                  BusinessHours[]
@@ -633,6 +636,30 @@ model ServiceCategory {
   @@map("service_categories")
 }
 
+/// Employee shifts: clocking in and out (decision C). At most one open shift per person.
+/// Owned by booking-service; also tells the queue who is present (2.4).
+model StaffAttendance {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  businessId   String    @map("business_id") @db.Uuid
+  staffId      String    @map("staff_id") @db.Uuid
+  checkInAt    DateTime  @map("check_in_at") @db.Timestamptz(6)
+  checkOutAt   DateTime? @map("check_out_at") @db.Timestamptz(6)
+  /// Who last recorded or corrected this shift (the employee, front desk or a manager).
+  recordedById String?   @map("recorded_by_id") @db.Uuid
+  note         String?   @db.VarChar(300)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// Composite key: the shift belongs to an employee of the same business.
+  staff      Staff    @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
+  recordedBy User?    @relation("AttendanceRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([businessId, checkInAt])
+  @@index([staffId, checkInAt])
+  @@map("staff_attendance")
+}
+
 /// How a business takes bookings (owned by booking-service). No row → the defaults below.
 model BookingSettings {
   businessId                   String           @id @map("business_id") @db.Uuid
@@ -648,6 +675,8 @@ model BookingSettings {
   minNoticeMinutes             Int              @default(60) @map("min_notice_minutes")
   /// Slot start times are multiples of this.
   slotStepMinutes              Int              @default(15) @map("slot_step_minutes")
+  /// A customer who hasn\'t arrived this long after the start can be marked a no-show.
+  noShowGraceMinutes           Int              @default(15) @map("no_show_grace_minutes")
   updatedAt                    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
@@ -673,6 +702,7 @@ model Staff {
   exceptions        AvailabilityException[]
   appointments      Appointment[]
   photo             StaffPhoto?
+  attendance        StaffAttendance[]
 
   @@unique([businessId, userId])
   @@unique([id, businessId])
@@ -795,6 +825,10 @@ model Appointment {
   lateCancellation  Boolean                  @default(false) @map("late_cancellation")
   /// "I'll book later": remind the customer around this time (notifications, 2.6).
   rebookReminderAt  DateTime?                @map("rebook_reminder_at") @db.Timestamptz(6)
+  /// The customer arrived (receipt scanned, code typed, or picked from the list).
+  /// Status stays `confirmed`, so the no-overlap rules keep applying during the visit.
+  checkedInAt       DateTime?                @map("checked_in_at") @db.Timestamptz(6)
+  checkedInById     String?                  @map("checked_in_by_id") @db.Uuid
   cancelledBy       ActorType?               @map("cancelled_by")
   rescheduledFromId String?                  @unique @map("rescheduled_from_id") @db.Uuid
   createdAt         DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -807,6 +841,7 @@ model Appointment {
   resource        Resource?                  @relation(fields: [resourceId], references: [id], onDelete: SetNull)
   rescheduledFrom Appointment?               @relation("Reschedule", fields: [rescheduledFromId], references: [id], onDelete: SetNull)
   rescheduledTo   Appointment?               @relation("Reschedule")
+  checkedInBy     User?                      @relation("AppointmentCheckIn", fields: [checkedInById], references: [id], onDelete: SetNull)
   statusHistory   AppointmentStatusHistory[]
   payment         Payment?
   review          Review?

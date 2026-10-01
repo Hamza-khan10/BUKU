@@ -17,9 +17,15 @@ import type { CatalogService } from '../catalog/catalog-service.js';
 import { requestContext } from '../http/context.js';
 import type { ScheduleService } from '../schedules/schedule-service.js';
 import type { SettingsService } from '../settings/settings-service.js';
+import type { AttendanceService } from '../staff/attendance-service.js';
 import type { StaffService } from '../staff/staff-service.js';
 import {
   AppointmentParams,
+  AttendanceQuery,
+  CheckInByCodeBody,
+  ClockInBody,
+  CorrectShiftBody,
+  ShiftParams,
   AvailabilityQuery,
   BookBody,
   BookingSettingsBody,
@@ -52,6 +58,7 @@ export interface RouteDeps {
   availability: AvailabilityService;
   appointments: AppointmentService;
   catalog: CatalogService;
+  attendance: AttendanceService;
   staff: StaffService;
   schedules: ScheduleService;
   settings: SettingsService;
@@ -438,6 +445,97 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
         );
       },
     ),
+  );
+
+  // ── At the venue: customers arriving, visits done, no-shows ──────────────
+  r.post(
+    '/:id/check-in',
+    auth,
+    writeLimit,
+    validated({ params: IdParams, body: CheckInByCodeBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.appointments.checkIn(
+          params.id,
+          { code: body.code },
+          requireAuth(req).userId,
+          requestContext(req),
+        ),
+      );
+    }),
+  );
+  for (const [action, method] of [
+    ['check-in', 'checkIn'],
+    ['complete', 'complete'],
+    ['no-show', 'noShow'],
+  ] as const) {
+    r.post(
+      `/:id/appointments/:appointmentId/${action}`,
+      auth,
+      writeLimit,
+      validated({ params: BusinessAppointmentParams }, async ({ params }, req, res) => {
+        const ctx = requestContext(req);
+        const actor = requireAuth(req).userId;
+        sendSuccess(
+          res,
+          method === 'checkIn'
+            ? await deps.appointments.checkIn(params.id, { appointmentId: params.appointmentId }, actor, ctx)
+            : await deps.appointments[method](params.id, params.appointmentId, actor, ctx),
+        );
+      }),
+    );
+  }
+
+  // ── Employee shifts ──────────────────────────────────────────────────────
+  r.post(
+    '/:id/staff/:staffId/attendance/check-in',
+    auth,
+    writeLimit,
+    validated({ params: StaffParams, body: ClockInBody }, async ({ params, body }, req, res) => {
+      sendCreated(
+        res,
+        await deps.attendance.clockIn(params.id, params.staffId, requireAuth(req).userId, body.note),
+      );
+    }),
+  );
+  r.post(
+    '/:id/staff/:staffId/attendance/check-out',
+    auth,
+    writeLimit,
+    validated({ params: StaffParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.attendance.clockOut(params.id, params.staffId, requireAuth(req).userId));
+    }),
+  );
+  r.get(
+    '/:id/attendance',
+    auth,
+    validated({ params: IdParams, query: AttendanceQuery }, async ({ params, query }, req, res) => {
+      sendSuccess(res, await deps.attendance.list(params.id, requireAuth(req).userId, query));
+    }),
+  );
+  r.get(
+    '/:id/attendance/present',
+    auth,
+    validated({ params: IdParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.attendance.present(params.id, requireAuth(req).userId));
+    }),
+  );
+  r.patch(
+    '/:id/attendance/:shiftId',
+    auth,
+    writeLimit,
+    validated({ params: ShiftParams, body: CorrectShiftBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.attendance.correct(
+          params.id,
+          params.shiftId,
+          requireAuth(req).userId,
+          body,
+          requestContext(req),
+        ),
+      );
+    }),
   );
 
   app.use('/v1/businesses', r);

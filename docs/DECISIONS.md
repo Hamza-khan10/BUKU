@@ -287,3 +287,11 @@ person first and moves to the next if someone else just took them. The per-custo
 counted under an advisory lock per (customer, business). Rescheduling creates a new appointment
 (new code) and marks the old one `rescheduled`, allowed until the cancellation window starts.
 Declining a request is not counted as a business cancellation.
+
+**D-061 · Arrival is a timestamp, not a status; shifts are their own table.**
+Checking in sets `checked_in_at` and keeps the appointment `confirmed`, so the no-overlap rules
+keep protecting the visit while it happens; a database rule allows an arrival time only on
+confirmed or completed appointments, which makes "checked in, then cancelled" impossible. Check-in
+opens 2 hours before the start; a no-show can be recorded after a per-business grace period
+(default 15 min) and never after check-in. Employee shifts (`staff_attendance`) have at most one
+open shift per person (partial unique index); front desk can clock anyone (shared tablet).

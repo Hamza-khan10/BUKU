@@ -44,6 +44,10 @@ import { appointmentInclude, businessView, receiptView, type AppointmentRow } fr
 
 const LIVE = ['pending', 'confirmed'] as const;
 const REBOOK_REMINDER_DAYS = 3;
+/** Check-in opens this long before the start. */
+const CHECK_IN_OPENS_MS = 2 * 3_600_000;
+
+type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'rescheduled' | 'completed' | 'no_show';
 
 export type CancelReasonCode =
   | 'schedule_conflict'
@@ -394,6 +398,7 @@ export class AppointmentService {
     ctx: RequestContext,
   ) {
     const a = await this.businessAppointmentFor(businessId, appointmentId, actorId);
+    if (a.checkedInAt) throw checkedIn();
     await this.db.$transaction(async (tx) => {
       await this.transition(tx, a, 'cancelled', { type: 'business', id: actorId }, reason, {
         cancelledAt: new Date(),
@@ -407,6 +412,121 @@ export class AppointmentService {
       });
     });
     return businessView(await this.load(a.id));
+  }
+
+  // ── At the venue: arrival, completion, no-show ───────────────────────────
+
+  /**
+   * The customer arrived: the receipt was scanned, the code typed, or the
+   * customer picked from the list (no phone needed). Scanning twice is fine.
+   * A request not yet approved (manual mode) is approved by checking in.
+   */
+  async checkIn(
+    businessId: string,
+    ref: { appointmentId: string } | { code: string },
+    actorId: string,
+    ctx: RequestContext,
+  ) {
+    const { a, role } = await this.visit(businessId, ref, actorId);
+    if (a.checkedInAt) return businessView(a);
+    if (a.status === 'pending' && !can(role, 'appointments.manage_all')) throw AppError.forbidden();
+    if (a.status !== 'pending' && a.status !== 'confirmed') throw invalidTransition(a.status, 'checked in');
+    const now = new Date();
+    if (now.getTime() < a.startAt.getTime() - CHECK_IN_OPENS_MS) {
+      const opens = wallClock(a.startAt.getTime() - CHECK_IN_OPENS_MS, a.business.timezone);
+      throw new AppError(
+        `Check-in opens 2 hours before the appointment (${opens.date} ${opens.time})`,
+        ErrorCodes.INVALID_TRANSITION,
+        409,
+      );
+    }
+    if (now > a.endAt)
+      throw new AppError('This appointment has already ended', ErrorCodes.INVALID_TRANSITION, 409);
+
+    await this.db.$transaction(async (tx) => {
+      const { count } = await tx.appointment.updateMany({
+        where: { id: a.id, status: a.status, checkedInAt: null },
+        data: { status: 'confirmed', checkedInAt: now, checkedInById: actorId, version: { increment: 1 } },
+      });
+      if (count === 0) throw invalidTransition(a.status, 'checked in');
+      if (a.status === 'pending') {
+        await this.history(
+          tx,
+          a.id,
+          'pending',
+          'confirmed',
+          { type: 'business', id: actorId },
+          'approved on arrival',
+        );
+        await this.publish(tx, TOPICS.BOOKINGS_CONFIRMED, a, ctx);
+      }
+    });
+    return businessView(await this.load(a.id));
+  }
+
+  /** The visit is done (from its start time on; with or without a recorded check-in). */
+  async complete(businessId: string, appointmentId: string, actorId: string, ctx: RequestContext) {
+    const { a } = await this.visit(businessId, { appointmentId }, actorId);
+    if (a.status === 'confirmed' && new Date() < a.startAt) {
+      throw new AppError(
+        'An appointment can’t be completed before it starts',
+        ErrorCodes.INVALID_TRANSITION,
+        409,
+      );
+    }
+    await this.db.$transaction(async (tx) => {
+      await this.transition(tx, a, 'completed', { type: 'business', id: actorId }, undefined, {}, [
+        'confirmed',
+      ]);
+      await this.publish(tx, TOPICS.BOOKINGS_COMPLETED, a, ctx, { checkedIn: a.checkedInAt !== null });
+    });
+    return businessView(await this.load(a.id));
+  }
+
+  /** The customer didn't come: only after the grace period, and never once they checked in. */
+  async noShow(businessId: string, appointmentId: string, actorId: string, ctx: RequestContext) {
+    const { a } = await this.visit(businessId, { appointmentId }, actorId);
+    if (a.checkedInAt) throw checkedIn();
+    const settings = await this.settings.effective(businessId);
+    if (a.status === 'confirmed' && Date.now() < a.startAt.getTime() + settings.noShowGraceMinutes * 60_000) {
+      throw new AppError(
+        `A no-show can be recorded ${settings.noShowGraceMinutes} minutes after the start`,
+        ErrorCodes.INVALID_TRANSITION,
+        409,
+      );
+    }
+    await this.db.$transaction(async (tx) => {
+      await this.transition(tx, a, 'no_show', { type: 'business', id: actorId }, undefined, {}, [
+        'confirmed',
+      ]);
+      await this.publish(tx, TOPICS.BOOKINGS_NO_SHOW, a, ctx);
+    });
+    return businessView(await this.load(a.id));
+  }
+
+  /**
+   * An appointment the actor may handle at the venue: owner, manager and front
+   * desk for all; an employee for their own. Codes of other businesses — and
+   * appointments of colleagues — are simply "not found".
+   */
+  private async visit(
+    businessId: string,
+    ref: { appointmentId: string } | { code: string },
+    actorId: string,
+  ) {
+    const role = await businessRoleOf(this.db, businessId, actorId);
+    if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+    const where = 'code' in ref ? { confirmationCode: ref.code.toUpperCase() } : { id: ref.appointmentId };
+    const a = await this.db.appointment.findFirst({
+      where: { businessId, ...where },
+      include: appointmentInclude,
+    });
+    if (!a) throw AppError.notFound('Appointment', ErrorCodes.APPOINTMENT_NOT_FOUND);
+    if (!can(role, 'appointments.manage_all')) {
+      const mine = a.staffId ? await this.db.staff.count({ where: { id: a.staffId, userId: actorId } }) : 0;
+      if (mine === 0) throw AppError.notFound('Appointment', ErrorCodes.APPOINTMENT_NOT_FOUND);
+    }
+    return { a, role };
   }
 
   // ── internals ────────────────────────────────────────────────────────────
@@ -494,7 +614,7 @@ export class AppointmentService {
   private async transition(
     tx: Transaction,
     a: { id: string; status: string },
-    to: 'confirmed' | 'cancelled' | 'rescheduled',
+    to: AppointmentStatus,
     actor: Actor,
     reason?: string,
     extra: Record<string, unknown> = {},
@@ -502,7 +622,12 @@ export class AppointmentService {
   ) {
     if (!from.includes(a.status)) throw invalidTransition(a.status, to);
     const { count } = await tx.appointment.updateMany({
-      where: { id: a.id, status: a.status as never },
+      where: {
+        id: a.id,
+        status: a.status as never,
+        // Once the customer has arrived, the visit can only be completed (never cancelled or moved).
+        ...((to === 'cancelled' || to === 'rescheduled') && { checkedInAt: null }),
+      },
       data: { status: to, version: { increment: 1 }, ...extra },
     });
     if (count === 0) throw invalidTransition(a.status, to);
@@ -512,8 +637,8 @@ export class AppointmentService {
   private history(
     tx: Transaction,
     appointmentId: string,
-    fromStatus: 'pending' | 'confirmed' | null,
-    toStatus: 'pending' | 'confirmed' | 'cancelled' | 'rescheduled',
+    fromStatus: AppointmentStatus | null,
+    toStatus: AppointmentStatus,
     actor: Actor,
     reason?: string,
   ) {
@@ -575,6 +700,7 @@ export class AppointmentService {
     if (!a) throw AppError.notFound('Appointment', ErrorCodes.APPOINTMENT_NOT_FOUND);
     if (!LIVE.includes(a.status as never) || a.startAt <= new Date())
       throw invalidTransition(a.status, 'cancelled');
+    if (a.checkedInAt) throw checkedIn();
     return a;
   }
 
@@ -606,5 +732,11 @@ const slotTaken = () =>
   new AppError('That time is no longer available; please pick another', ErrorCodes.SLOT_UNAVAILABLE, 409);
 const overlap = () =>
   new AppError('You already have an appointment at that time', ErrorCodes.APPOINTMENT_OVERLAP, 409);
+const checkedIn = () =>
+  new AppError(
+    'The customer has already checked in; the visit can only be completed',
+    ErrorCodes.INVALID_TRANSITION,
+    409,
+  );
 const invalidTransition = (from: string, to: string) =>
   new AppError(`An appointment that is ${from} can’t be ${to}`, ErrorCodes.INVALID_TRANSITION, 409);
