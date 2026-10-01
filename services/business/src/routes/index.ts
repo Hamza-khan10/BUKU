@@ -17,7 +17,8 @@ import type { Redis } from 'ioredis';
 import type { AdminService } from '../businesses/admin-service.js';
 import type { BusinessService } from '../businesses/business-service.js';
 import type { LegalService } from '../legal/legal-service.js';
-import type { MediaService } from '../media/media-service.js';
+import type { DocumentService } from '../media/document-service.js';
+import type { PictureService } from '../media/picture-service.js';
 import { verificationChecklist } from '../verification/checklist.js';
 import { requestContext } from '../http/context.js';
 import {
@@ -29,6 +30,11 @@ import {
   LegalProfileBody,
   PhotoParams,
   PhotoUploadBody,
+  PictureUploadBody,
+  StaffParams,
+  StaffPhotoUploadBody,
+  StaffUploadParams,
+  UploadParams,
   ReviewDocumentBody,
   IdOrSlugParams,
   IdParams,
@@ -43,7 +49,8 @@ import {
 export interface RouteDeps {
   businesses: BusinessService;
   legal: LegalService;
-  media: MediaService;
+  documents: DocumentService;
+  pictures: PictureService;
   admin: AdminService;
   db: Database;
   verifier: JwtVerifier;
@@ -178,7 +185,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: DocumentUploadBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.media.requestDocumentUpload(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.documents.requestDocumentUpload(
+          params.id,
+          requireAuth(req).userId,
+          body,
+          requestContext(req),
+        ),
       );
     }),
   );
@@ -189,7 +201,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: DocumentParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await deps.media.completeDocumentUpload(
+        await deps.documents.completeDocumentUpload(
           params.id,
           params.documentId,
           requireAuth(req).userId,
@@ -202,7 +214,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/documents',
     auth,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.media.listDocuments(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.documents.listDocuments(params.id, requireAuth(req).userId));
     }),
   );
   r.delete(
@@ -210,7 +222,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ params: DocumentParams }, async ({ params }, req, res) => {
-      await deps.media.deleteDocument(
+      await deps.documents.deleteDocument(
         params.id,
         params.documentId,
         requireAuth(req).userId,
@@ -220,27 +232,25 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     }),
   );
 
+  // ── Pictures: gallery, logo, employee photos (cleaned before publishing) ──
   r.post(
     '/:id/photos/uploads',
     auth,
     uploadLimit,
     validated({ params: IdParams, body: PhotoUploadBody }, async ({ params, body }, req, res) => {
-      sendCreated(
-        res,
-        await deps.media.requestPhotoUpload(params.id, requireAuth(req).userId, body, requestContext(req)),
-      );
+      sendCreated(res, await deps.pictures.requestPhotoUpload(params.id, requireAuth(req).userId, body));
     }),
   );
   r.post(
-    '/:id/photos/:photoId/complete',
+    '/:id/photos/uploads/:uploadId/complete',
     auth,
     writeLimit,
-    validated({ params: PhotoParams }, async ({ params }, req, res) => {
+    validated({ params: UploadParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await deps.media.completePhotoUpload(
+        await deps.pictures.completePhotoUpload(
           params.id,
-          params.photoId,
+          params.uploadId,
           requireAuth(req).userId,
           requestContext(req),
         ),
@@ -252,7 +262,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ params: PhotoParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.media.setPrimaryPhoto(params.id, params.photoId, requireAuth(req).userId));
+      sendSuccess(
+        res,
+        await deps.pictures.setPrimaryPhoto(params.id, params.photoId, requireAuth(req).userId),
+      );
     }),
   );
   r.delete(
@@ -262,8 +275,90 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: PhotoParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await deps.media.deletePhoto(params.id, params.photoId, requireAuth(req).userId, requestContext(req)),
+        await deps.pictures.deletePhoto(
+          params.id,
+          params.photoId,
+          requireAuth(req).userId,
+          requestContext(req),
+        ),
       );
+    }),
+  );
+
+  r.post(
+    '/:id/logo/uploads',
+    auth,
+    uploadLimit,
+    validated({ params: IdParams, body: PictureUploadBody }, async ({ params, body }, req, res) => {
+      sendCreated(res, await deps.pictures.requestLogoUpload(params.id, requireAuth(req).userId, body));
+    }),
+  );
+  r.post(
+    '/:id/logo/uploads/:uploadId/complete',
+    auth,
+    writeLimit,
+    validated({ params: UploadParams }, async ({ params }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.pictures.completeLogoUpload(
+          params.id,
+          params.uploadId,
+          requireAuth(req).userId,
+          requestContext(req),
+        ),
+      );
+    }),
+  );
+  r.delete(
+    '/:id/logo',
+    auth,
+    writeLimit,
+    validated({ params: IdParams }, async ({ params }, req, res) => {
+      await deps.pictures.deleteLogo(params.id, requireAuth(req).userId, requestContext(req));
+      res.status(204).end();
+    }),
+  );
+
+  r.post(
+    '/:id/staff/:staffId/photo/uploads',
+    auth,
+    uploadLimit,
+    validated({ params: StaffParams, body: StaffPhotoUploadBody }, async ({ params, body }, req, res) => {
+      sendCreated(
+        res,
+        await deps.pictures.requestStaffPhotoUpload(params.id, params.staffId, requireAuth(req).userId, body),
+      );
+    }),
+  );
+  r.post(
+    '/:id/staff/:staffId/photo/uploads/:uploadId/complete',
+    auth,
+    writeLimit,
+    validated({ params: StaffUploadParams }, async ({ params }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.pictures.completeStaffPhotoUpload(
+          params.id,
+          params.staffId,
+          params.uploadId,
+          requireAuth(req).userId,
+          requestContext(req),
+        ),
+      );
+    }),
+  );
+  r.delete(
+    '/:id/staff/:staffId/photo',
+    auth,
+    writeLimit,
+    validated({ params: StaffParams }, async ({ params }, req, res) => {
+      await deps.pictures.deleteStaffPhoto(
+        params.id,
+        params.staffId,
+        requireAuth(req).userId,
+        requestContext(req),
+      );
+      res.status(204).end();
     }),
   );
 
@@ -271,9 +366,14 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   r.get(
     '/:idOrSlug',
     validated({ params: IdOrSlugParams }, async ({ params }, _req, res) => {
-      const business = await deps.businesses.getPublic(params.idOrSlug);
+      const { logoStorageKey, ...business } = await deps.businesses.getPublic(params.idOrSlug);
+      const [logoUrl, photos, team] = await Promise.all([
+        deps.pictures.logoUrl(logoStorageKey),
+        deps.pictures.listPhotos(business.id),
+        deps.pictures.team(business.id),
+      ]);
       res.setHeader('Cache-Control', 'public, max-age=60');
-      sendSuccess(res, { ...business, photos: await deps.media.listPhotos(business.id) });
+      sendSuccess(res, { ...business, logoUrl, photos, team });
     }),
   );
 
@@ -328,7 +428,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       const [checklist, legal, documents] = await Promise.all([
         verificationChecklist(deps.db, params.id),
         deps.legal.getForAdmin(params.id, userId, ctx),
-        deps.media.documentsForAdmin(params.id, userId, ctx),
+        deps.documents.documentsForAdmin(params.id, userId, ctx),
       ]);
       sendSuccess(res, { checklist, legal, documents });
     }),
@@ -338,7 +438,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: ReviewDocumentBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.media.reviewDocument(
+        await deps.documents.reviewDocument(
           params.id,
           requireAuth(req).userId,
           body.decision,

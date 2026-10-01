@@ -12,10 +12,18 @@ import {
   type ShutdownHook,
 } from '@buku/common';
 import { createDatabaseClient, pingDatabase } from '@buku/database';
-import { createKafka, EventProducer, kafkaConnectionFromEnv, OutboxRelay } from '@buku/kafka';
+import {
+  consumerGroupId,
+  createKafka,
+  EventProducer,
+  kafkaConnectionFromEnv,
+  OutboxRelay,
+  startConsumer,
+} from '@buku/kafka';
+import { PictureUploads, storageFromEnv } from '@buku/media';
 import { buildBusinessApp } from './app.js';
 import { Env } from './config.js';
-import { createS3Storage } from './storage/object-storage.js';
+import { businessEventHandler, CONSUMED_TOPICS } from './events/handlers.js';
 
 const env = loadConfig(Env);
 
@@ -26,16 +34,10 @@ const db = createDatabaseClient({
   applicationName: env.SERVICE_NAME,
 });
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
-const producer = new EventProducer(createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env)));
+const kafka = createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env));
+const producer = new EventProducer(kafka);
 const verifier = await createJwtVerifierFromEnv(env);
-const storage = createS3Storage({
-  endpoint: env.S3_ENDPOINT,
-  publicEndpoint: env.S3_PUBLIC_ENDPOINT,
-  region: env.S3_REGION,
-  accessKeyId: env.S3_ACCESS_KEY_ID,
-  secretAccessKey: env.S3_SECRET_ACCESS_KEY,
-  forcePathStyle: env.S3_FORCE_PATH_STYLE,
-});
+const { storage, links } = storageFromEnv(env);
 await producer.connect();
 // Publishes committed outbox events (businesses.*). Only one relay across all
 // services is active at a time (advisory lock), so running one here is safe.
@@ -46,12 +48,14 @@ relay.start();
 const readiness = new Readiness()
   .add('postgres', () => pingDatabase(db))
   .add('valkey', () => redis.ping())
-  .add('object-storage', () => storage.ping([env.S3_BUCKET_DOCUMENTS, env.S3_BUCKET_MEDIA]))
+  .add('object-storage', () =>
+    storage.ping([env.S3_BUCKET_DOCUMENTS, env.S3_BUCKET_MEDIA, env.S3_BUCKET_PRIVATE]),
+  )
   .add('kafka', () =>
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const app = buildBusinessApp({
+const { app, pictures } = buildBusinessApp({
   db,
   redis,
   verifier,
@@ -59,10 +63,10 @@ const app = buildBusinessApp({
   cipher: createFieldCipher(parseKeyring(env.PII_ENCRYPTION_KEYS, env.PII_ENCRYPTION_ACTIVE_KEY_ID)),
   indexer: createBlindIndexer(Buffer.from(env.PII_BLIND_INDEX_KEY, 'base64')),
   storage,
+  pictureUploads: new PictureUploads(storage, redis, { privateBucket: env.S3_BUCKET_PRIVATE }),
+  mediaLinks: links,
   settings: {
     documentsBucket: env.S3_BUCKET_DOCUMENTS,
-    mediaBucket: env.S3_BUCKET_MEDIA,
-    mediaPublicBaseUrl: env.MEDIA_PUBLIC_BASE_URL,
     businessTermsVersion: env.BUSINESS_TERMS_VERSION,
     maxBusinessesPerOwner: env.MAX_BUSINESSES_PER_OWNER,
   },
@@ -73,6 +77,15 @@ const app = buildBusinessApp({
     trustProxyHops: env.TRUST_PROXY_HOPS,
     bodyLimit: env.HTTP_BODY_LIMIT,
   },
+});
+
+// Reacts to other services' events (e.g. an employee left → remove their photo).
+const consumer = await startConsumer({
+  kafka,
+  groupId: consumerGroupId(env.SERVICE_NAME),
+  topics: CONSUMED_TOPICS,
+  handler: businessEventHandler({ pictures }),
+  producer,
 });
 
 // Hooks run in REVERSE order on shutdown.
@@ -86,6 +99,7 @@ const hooks: ShutdownHook[] = [
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
   { name: 'outbox-relay', fn: () => relay.stop() },
+  { name: 'kafka-consumer', fn: () => consumer.stop() },
 ];
 
 await runService({ app, port: env.PORT, logger, readiness, shutdownDelayMs: env.SHUTDOWN_DELAY_MS, hooks });

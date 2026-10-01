@@ -10,7 +10,7 @@ import {
   zUuid,
 } from '@buku/common';
 import { z } from 'zod';
-import { DOCUMENT_TYPES, MAX_DOCUMENT_BYTES, MAX_PHOTO_BYTES, PHOTO_TYPES } from '../storage/file-types.js';
+import { DOCUMENT_TYPES, MAX_DOCUMENT_BYTES, MAX_PHOTO_BYTES, PHOTO_TYPES } from '@buku/media';
 
 /** Request contracts for business-service (source for docs/API_REFERENCE.md). */
 
@@ -153,14 +153,29 @@ export const DocumentUploadBody = zBody({
   sizeBytes: z.number().int().min(1).max(MAX_DOCUMENT_BYTES),
 });
 
-export const PhotoUploadBody = zBody({
+const pictureFile = {
   contentType: z.enum(PHOTO_TYPES),
   sizeBytes: z.number().int().min(1).max(MAX_PHOTO_BYTES),
+};
+
+export const PictureUploadBody = zBody(pictureFile);
+
+export const PhotoUploadBody = zBody({
+  ...pictureFile,
   altText: zSafeText({ max: 300 }).optional(),
+});
+
+export const StaffPhotoUploadBody = zBody({
+  ...pictureFile,
+  /** The uploader confirms the employee agreed to have their photo shown (D-051). */
+  consentConfirmed: z.literal(true, 'confirm that the employee agreed to have their photo shown'),
 });
 
 export const DocumentParams = z.object({ id: zUuid, documentId: zUuid });
 export const PhotoParams = z.object({ id: zUuid, photoId: zUuid });
+export const UploadParams = z.object({ id: zUuid, uploadId: zUuid });
+export const StaffParams = z.object({ id: zUuid, staffId: zUuid });
+export const StaffUploadParams = z.object({ id: zUuid, staffId: zUuid, uploadId: zUuid });
 
 // ── Admin ──────────────────────────────────────────────────────────────────
 

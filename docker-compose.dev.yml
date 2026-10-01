@@ -90,6 +90,18 @@ x-service-env: &service-env
   DATABASE_URL: postgresql://buku_app:${BUKU_APP_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku
   DATABASE_POOL_SIZE: '5'
 
+# Object storage, for services that store files (business, auth).
+x-s3-env: &s3-env
+  S3_ENDPOINT: http://s3:9000
+  # Presigned links must point at an address the BROWSER can reach.
+  S3_PUBLIC_ENDPOINT: http://localhost:9100
+  S3_REGION: us-east-1
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+  S3_FORCE_PATH_STYLE: 'true'
+  S3_BUCKET_MEDIA: buku-media-dev
+  S3_BUCKET_PRIVATE: buku-private-dev
+
 x-node-healthcheck: &node-healthcheck
   interval: 10s
   timeout: 5s
@@ -358,7 +370,7 @@ services:
     working_dir: /app/services/auth
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
-      <<: *service-env
+      <<: [*service-env, *s3-env]
       SERVICE_NAME: auth-service
       PORT: '3001'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
@@ -376,10 +388,12 @@ services:
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
+      - ./packages/media/src:/app/packages/media/src:ro
       - ./services/auth/src:/app/services/auth/src:ro
     depends_on:
       <<: *needs-core
       valkey: { condition: service_healthy }
+      s3-init: { condition: service_completed_successfully }
     healthcheck:
       <<: *node-healthcheck
       test:
@@ -498,7 +512,7 @@ services:
     working_dir: /app/services/business
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
-      <<: *service-env
+      <<: [*service-env, *s3-env]
       SERVICE_NAME: business-service
       PORT: '3008'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
@@ -507,20 +521,13 @@ services:
       PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS}
       PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
-      S3_ENDPOINT: http://s3:9000
-      # Presigned links must point at an address the BROWSER can reach.
-      S3_PUBLIC_ENDPOINT: http://localhost:9100
-      S3_REGION: us-east-1
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
-      S3_FORCE_PATH_STYLE: 'true'
       S3_BUCKET_DOCUMENTS: buku-documents-dev
-      S3_BUCKET_MEDIA: buku-media-dev
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
+      - ./packages/media/src:/app/packages/media/src:ro
       - ./services/business/src:/app/services/business/src:ro
     depends_on:
       <<: *needs-core

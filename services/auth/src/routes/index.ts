@@ -16,9 +16,11 @@ import type { OidcVerifier } from '../identity/oidc.js';
 import type { MemberService } from '../members/member-service.js';
 import type { PasswordAuthService } from '../members/password-auth.js';
 import type { SessionService } from '../sessions/session-service.js';
+import type { AvatarService } from '../users/avatar-service.js';
 import type { DataRightsService } from '../users/data-rights.js';
 import type { SignInResult, UserService } from '../users/user-service.js';
 import {
+  AvatarUploadBody,
   BusinessParams,
   BusinessSignInBody,
   ChangePasswordBody,
@@ -32,6 +34,7 @@ import {
   RefreshTokenBody,
   SessionIdParams,
   SetPhoneBody,
+  UploadIdParams,
   UpdateMeBody,
   UpdateMemberBody,
 } from './schemas.js';
@@ -43,6 +46,7 @@ export interface RouteDeps {
   rights: DataRightsService;
   passwords: PasswordAuthService;
   members: MemberService;
+  avatars: AvatarService;
   verifier: JwtVerifier;
   revocations: RevocationStore;
   redis: Redis;
@@ -189,6 +193,30 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(res, await deps.users.setPhone(requireAuth(req).userId, body, requestContext(req)));
     }),
   );
+
+  // Profile picture: private, only ever shown to the user themself (D-051).
+  r.post(
+    '/me/avatar/uploads',
+    auth,
+    writeLimit,
+    validated({ body: AvatarUploadBody }, async ({ body }, req, res) => {
+      sendSuccess(res, await deps.avatars.requestUpload(requireAuth(req).userId, body), 201);
+    }),
+  );
+  r.post(
+    '/me/avatar/uploads/:uploadId/complete',
+    auth,
+    writeLimit,
+    validated({ params: UploadIdParams }, async ({ params }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.avatars.completeUpload(requireAuth(req).userId, params.uploadId, requestContext(req)),
+      );
+    }),
+  );
+  r.delete('/me/avatar', auth, writeLimit, async (req, res) => {
+    sendSuccess(res, await deps.avatars.remove(requireAuth(req).userId, requestContext(req)));
+  });
 
   r.post(
     '/push-tokens',

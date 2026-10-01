@@ -100,7 +100,7 @@ Status: built and covered by 31 integration tests (`services/auth/test/auth.int.
 gateway checks in `pnpm verify`. Password sign-in and password change arrive with business
 sub-accounts in 2.2, reusing the "end all sessions" mechanism built here.
 
-### 2.2 Business service (new) — 🚧 parts 1–3 done (onboarding, verification, legal details, documents, photos, employee accounts)
+### 2.2 Business service (new) — ✅ (onboarding, verification, legal details, documents, employee accounts, pictures)
 
 Business onboarding with a **country-flexible legal profile (KYB)**: legal name, registration
 type and number per country, tax id (encrypted), registered address, responsible person,
@@ -130,18 +130,22 @@ tablets. Roles:
 | Front desk | All appointments and the live queue (shared tablets); no settings        |
 | Staff      | Own schedule, own working hours/time off, own appointments; check-in/out |
 
-**Part 4 — pictures of people (planned, requested 2026-09-30):** reuses the upload pipeline
-from part 2 (presigned link bound to type and exact size, file signature check, metadata
-stripped before anything is shown).
+**Part 4 — pictures (built):** every picture goes through one pipeline (`@buku/media`): the
+original is uploaded straight to a private bucket, checked (size, real file type), then cleaned
+(turned upright, all metadata such as GPS removed, resized, saved as WebP, decompression bombs
+refused). Only the cleaned copy is published; the original is deleted (or expires in a day).
 
 - **Business logo** next to the cover photo on the public profile.
 - **Employee photos**, optional and entirely the business's choice, uploaded by an owner or
   manager and shown on the booking page next to the employee's name, so a customer who forgot
   the name can recognise the person. The business confirms it has the employee's consent; the
-  employee can see their photo and ask for it to be removed; the photo is deleted when they
-  leave the team. Replaces the current `staff.photo_url` text field.
+  employee can remove their own photo; it is deleted when they leave the team (auth-service
+  publishes `businesses.member_removed`; business-service is the first event consumer).
+  Shown in the public profile's `team` list now, and on the booking pages in 2.3.
 - **Customer profile picture**, private: visible only to that customer (never to other
-  customers or on public pages), removed with the account, included in "my data" export.
+  customers, businesses or public pages), deleted when the account is purged, included in
+  "my data" export.
+- Still open: may the business a customer booked with see their picture? Default: no.
 
 ### 2.3 Booking service
 

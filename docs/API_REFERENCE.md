@@ -40,23 +40,25 @@ The request/response contracts are defined in each service's `src/routes/schemas
 
 ## Auth service — `/v1/auth`
 
-| Method & path                | Auth | Rate limit | Purpose                                                         |
-| ---------------------------- | ---- | ---------- | --------------------------------------------------------------- |
-| `POST /oauth/google`         | —    | 10/min/IP  | Sign in or sign up with a Google ID token                       |
-| `POST /oauth/apple`          | —    | 10/min/IP  | Sign in with Apple — **locked**: `403 FEATURE_DISABLED`         |
-| `POST /dev/login`            | —    | 10/min/IP  | **Development only** (404 elsewhere): sign in as any email/role |
-| `POST /business-login`       | —    | 10/min/IP  | Employee account sign-in: business + username + password        |
-| `POST /password`             | ✔    | 30/min     | Change my password → every device signs out, this one included  |
-| `POST /refresh`              | —    | 60/min/IP  | Rotate the refresh token, get a new access token                |
-| `POST /logout`               | —    | 60/min/IP  | End this device's session → `204`                               |
-| `POST /logout-all`           | ✔    | 30/min     | End every session on every device → `204`                       |
-| `GET /sessions`              | ✔    | —          | My signed-in devices                                            |
-| `DELETE /sessions/:id`       | ✔    | 30/min     | Sign out one of my devices → `204` (`404` if not mine)          |
-| `GET /me`                    | ✔    | —          | My account                                                      |
-| `PATCH /me`                  | ✔    | 30/min     | Update name / timezone / locale                                 |
-| `PUT /me/phone`              | ✔    | 30/min     | Set my phone number + WhatsApp consent                          |
-| `POST /push-tokens`          | ✔    | 30/min     | Register this device for push → `204`                           |
-| `DELETE /push-tokens/:token` | ✔    | 30/min     | Unregister a device → `204` (`404` if not mine)                 |
+| Method & path                                                            | Auth | Rate limit | Purpose                                                         |
+| ------------------------------------------------------------------------ | ---- | ---------- | --------------------------------------------------------------- |
+| `POST /oauth/google`                                                     | —    | 10/min/IP  | Sign in or sign up with a Google ID token                       |
+| `POST /oauth/apple`                                                      | —    | 10/min/IP  | Sign in with Apple — **locked**: `403 FEATURE_DISABLED`         |
+| `POST /dev/login`                                                        | —    | 10/min/IP  | **Development only** (404 elsewhere): sign in as any email/role |
+| `POST /business-login`                                                   | —    | 10/min/IP  | Employee account sign-in: business + username + password        |
+| `POST /password`                                                         | ✔    | 30/min     | Change my password → every device signs out, this one included  |
+| `POST /refresh`                                                          | —    | 60/min/IP  | Rotate the refresh token, get a new access token                |
+| `POST /logout`                                                           | —    | 60/min/IP  | End this device's session → `204`                               |
+| `POST /logout-all`                                                       | ✔    | 30/min     | End every session on every device → `204`                       |
+| `GET /sessions`                                                          | ✔    | —          | My signed-in devices                                            |
+| `DELETE /sessions/:id`                                                   | ✔    | 30/min     | Sign out one of my devices → `204` (`404` if not mine)          |
+| `GET /me`                                                                | ✔    | —          | My account                                                      |
+| `PATCH /me`                                                              | ✔    | 30/min     | Update name / timezone / locale                                 |
+| `PUT /me/phone`                                                          | ✔    | 30/min     | Set my phone number + WhatsApp consent                          |
+| `POST /me/avatar/uploads` → `POST /me/avatar/uploads/:uploadId/complete` | ✔    | 30/min     | My profile picture (private: only I see it)                     |
+| `DELETE /me/avatar`                                                      | ✔    | 30/min     | Remove my profile picture (also the one from Google)            |
+| `POST /push-tokens`                                                      | ✔    | 30/min     | Register this device for push → `204`                           |
+| `DELETE /push-tokens/:token`                                             | ✔    | 30/min     | Unregister a device → `204` (`404` if not mine)                 |
 
 ### `POST /v1/auth/oauth/google`
 
@@ -215,18 +217,30 @@ Roles inside a business: **owner** (whoever registered it) and members with **ma
 `packages/common/src/authz.ts`. Someone with no role in a business gets `404` for its private
 endpoints (we don't confirm what they can't manage); a role without the permission gets `403`.
 
-| Method & path                                                                    | Auth | Who                                        | Purpose                                                         |
-| -------------------------------------------------------------------------------- | ---- | ------------------------------------------ | --------------------------------------------------------------- |
-| `POST /v1/businesses`                                                            | ✔    | anyone signed in (5/hour, max 5 per owner) | Register a business → `201`, status `pending`, **not verified** |
-| `GET /v1/businesses/mine`                                                        | ✔    | —                                          | Businesses I own or work at, with `myRole`                      |
-| `GET /v1/businesses/:idOrSlug`                                                   | —    | public                                     | Public profile (pending + verified only)                        |
-| `GET /v1/businesses/:id/manage`                                                  | ✔    | any team role                              | Private view: status, rejection reason, settings                |
-| `PATCH /v1/businesses/:id`                                                       | ✔    | owner, manager                             | Edit profile                                                    |
-| `PUT /v1/businesses/:id/hours`                                                   | ✔    | owner, manager                             | Replace weekly opening hours                                    |
-| `POST /v1/businesses/:id/reports`                                                | ✔    | anyone but the owner (once)                | Report a business                                               |
-| `GET /v1/admin/businesses?status=`                                               | ✔    | super_admin                                | Review queue (oldest first)                                     |
-| `POST /v1/admin/businesses/:id/verify` · `/reject` · `/suspend` · `/reinstate`   | ✔    | super_admin                                | Moderation (reject/suspend need `{ "reason" }`)                 |
-| `GET /v1/admin/business-reports` · `POST /v1/admin/business-reports/:id/resolve` | ✔    | super_admin                                | Handle reports                                                  |
+| Method & path                                                                                       | Auth | Who                                        | Purpose                                                               |
+| --------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------ | --------------------------------------------------------------------- |
+| `POST /v1/businesses`                                                                               | ✔    | anyone signed in (5/hour, max 5 per owner) | Register a business → `201`, status `pending`, **not verified**       |
+| `GET /v1/businesses/mine`                                                                           | ✔    | —                                          | Businesses I own or work at, with `myRole`                            |
+| `GET /v1/businesses/:idOrSlug`                                                                      | —    | public                                     | Public profile (pending + verified only)                              |
+| `GET /v1/businesses/:id/manage`                                                                     | ✔    | any team role                              | Private view: status, rejection reason, settings                      |
+| `PATCH /v1/businesses/:id`                                                                          | ✔    | owner, manager                             | Edit profile                                                          |
+| `PUT /v1/businesses/:id/hours`                                                                      | ✔    | owner, manager                             | Replace weekly opening hours                                          |
+| `POST /v1/businesses/:id/reports`                                                                   | ✔    | anyone but the owner (once)                | Report a business                                                     |
+| `GET /v1/admin/businesses?status=`                                                                  | ✔    | super_admin                                | Review queue (oldest first)                                           |
+| `POST /v1/admin/businesses/:id/verify` · `/reject` · `/suspend` · `/reinstate`                      | ✔    | super_admin                                | Moderation (reject/suspend need `{ "reason" }`)                       |
+| `GET /v1/admin/business-reports` · `POST /v1/admin/business-reports/:id/resolve`                    | ✔    | super_admin                                | Handle reports                                                        |
+| `GET /v1/businesses/:id/verification`                                                               | ✔    | any team role                              | Verification checklist: what's still missing                          |
+| `GET` · `PUT /v1/businesses/:id/legal-profile`                                                      | ✔    | owner                                      | Legal/registration details (identifiers masked in responses)          |
+| `POST /v1/businesses/:id/documents/uploads` → `POST …/documents/:docId/complete`                    | ✔    | owner                                      | Upload a verification document (private)                              |
+| `GET /v1/businesses/:id/documents` · `DELETE …/documents/:docId`                                    | ✔    | owner                                      | List / remove (approved ones are kept)                                |
+| `POST /v1/businesses/:id/photos/uploads` → `POST …/photos/uploads/:uploadId/complete`               | ✔    | owner, manager                             | Add a gallery photo (cleaned; the first is the cover)                 |
+| `POST …/photos/:photoId/primary` · `DELETE …/photos/:photoId`                                       | ✔    | owner, manager                             | Choose the cover / remove                                             |
+| `POST /v1/businesses/:id/logo/uploads` → `POST …/logo/uploads/:uploadId/complete` · `DELETE …/logo` | ✔    | owner, manager                             | Business logo                                                         |
+| `POST /v1/businesses/:id/staff/:staffId/photo/uploads` → `…/uploads/:uploadId/complete`             | ✔    | owner, manager                             | Employee photo; needs `"consentConfirmed": true`                      |
+| `DELETE /v1/businesses/:id/staff/:staffId/photo`                                                    | ✔    | owner, manager, **or that employee**       | Remove an employee photo                                              |
+| `GET /v1/admin/businesses/:id/review`                                                               | ✔    | super_admin                                | Checklist + decrypted legal details + documents with 5-min view links |
+| `POST /v1/admin/business-documents/:id/review`                                                      | ✔    | super_admin                                | `{ "decision": "approved" \| "rejected", "note"? }`                   |
+| `POST /v1/admin/business-exports`                                                                   | ✔    | super_admin (10/day)                       | Lawful per-country export (see below)                                 |
 
 ### `POST /v1/businesses`
 
@@ -274,9 +288,15 @@ from the public and read-only for their team (`403 BUSINESS_SUSPENDED`).
   "currency": "PKR",
   "verification": { "status": "not_verified", "label": "Not verified by BUKU", "verifiedAt": null },
   "rating": { "average": 4.5, "count": 12 },
-  "hours": [{ "dayOfWeek": 1, "openTime": "09:00", "closeTime": "13:00" }]
+  "hours": [{ "dayOfWeek": 1, "openTime": "09:00", "closeTime": "13:00" }],
+  "logoUrl": "https://…/businesses/…/logo/….webp",
+  "photos": [{ "id": "…", "url": "https://…", "altText": "Front of the shop", "isPrimary": true }],
+  "team": [{ "id": "…", "displayName": "Ali Raza", "photoUrl": "https://…" }]
 }
 ```
+
+`team` lists active employees; `photoUrl` is `null` unless the business added a photo. Picture
+links are permanent CDN links in production and 1-hour signed links in development.
 
 Apps must show the `verification.label` badge on unverified businesses (D-032).
 
@@ -322,7 +342,7 @@ House", "EIN", "Trade licence"…). Identifiers are stored encrypted and returne
 (`••••5678`). Changing the legal name, number or country of a verified business sends it back
 to review (`reverificationRequired: true`).
 
-### Uploading a document or photo (3 steps)
+### Uploading a document (3 steps)
 
 1. `POST …/documents/uploads` `{ "type": "business_license", "contentType": "application/pdf", "sizeBytes": 183201 }`
    → `201 { "documentId", "upload": { "method": "PUT", "url", "headers", "expiresAt" } }`
@@ -332,8 +352,27 @@ to review (`reverificationRequired: true`).
    declared size and is genuinely a PDF/JPEG/PNG (file signature), then marks it `pending` review.
    Anything else is deleted and refused (`400 FILE_TYPE_NOT_ALLOWED`, `409 UPLOAD_NOT_FOUND`).
 
-Documents: PDF, JPEG, PNG up to 25 MB, max 20 per business. Photos: JPEG, PNG, WebP up to
-10 MB, max 20; the first becomes the cover. Photos appear in the public profile as `photos[]`.
+Documents: PDF, JPEG, PNG up to 25 MB, max 20 per business. Kept exactly as uploaded (evidence).
+
+### Uploading a picture (gallery photo, logo, employee photo, profile picture)
+
+Same three steps, with an `uploadId`:
+
+1. `POST …/uploads` `{ "contentType": "image/jpeg", "sizeBytes": 2483011 }` (plus `altText` for
+   gallery photos, `"consentConfirmed": true` for employee photos)
+   → `201 { "uploadId", "upload": { "method": "PUT", "url", "headers", "expiresAt" } }`
+2. `PUT` the file to `upload.url` with exactly `upload.headers` (10 minutes, this file only).
+3. `POST …/uploads/:uploadId/complete` → the picture is checked (size, real file type), then
+   **cleaned**: turned upright, every hidden detail removed (GPS position, camera, names),
+   resized and saved as WebP. Only the cleaned copy is ever shown; the original is deleted.
+
+JPEG, PNG or WebP up to 10 MB and 40 megapixels. An `uploadId` works once, only for the
+business (or person) it was requested for, and for 30 minutes. Completing before the file has
+arrived returns `409 UPLOAD_NOT_FOUND` and can be retried. Gallery: max 20 photos.
+
+**Employee photos** are optional and the business's choice. The uploader confirms the employee
+agreed (`consentConfirmed`); the employee can remove their own photo, and it is deleted
+automatically when they leave the team.
 
 ### `POST /v1/admin/business-exports`
 

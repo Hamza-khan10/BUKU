@@ -32,6 +32,9 @@ export interface ObjectStorage {
   head(bucket: string, key: string): Promise<{ sizeBytes: number; contentType: string | undefined } | null>;
   /** First `bytes` bytes of an object (to check its real file signature). */
   readPrefix(bucket: string, key: string, bytes: number): Promise<Buffer>;
+  /** A whole (small) object. Callers check its size with `head` first. */
+  read(bucket: string, key: string): Promise<Buffer>;
+  put(bucket: string, key: string, body: Buffer, contentType: string, cacheControl?: string): Promise<void>;
   delete(bucket: string, key: string): Promise<void>;
   ping(buckets: string[]): Promise<void>;
 }
@@ -87,6 +90,22 @@ export function createS3Storage(settings: S3Settings): ObjectStorage {
         new GetObjectCommand({ Bucket: bucket, Key: key, Range: `bytes=0-${bytes - 1}` }),
       );
       return Buffer.from(await res.Body!.transformToByteArray());
+    },
+    async read(bucket, key) {
+      const res = await internal.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      return Buffer.from(await res.Body!.transformToByteArray());
+    },
+    async put(bucket, key, body, contentType, cacheControl) {
+      await internal.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          ContentLength: body.length,
+          ...(cacheControl && { CacheControl: cacheControl }),
+        }),
+      );
     },
     async delete(bucket, key) {
       await internal.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));

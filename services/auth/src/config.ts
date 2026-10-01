@@ -1,4 +1,5 @@
 import { baseServiceEnv, databaseEnv, envBool, envPem, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
+import { s3Env } from '@buku/media';
 import { z } from 'zod';
 
 const csv = z
@@ -21,6 +22,7 @@ export const Env = baseServiceEnv
     ...kafkaEnv.shape,
     ...databaseEnv.shape,
     ...redisEnv.shape,
+    ...s3Env.shape,
     /** Signing key — auth-service is the ONLY service that receives it. */
     JWT_PRIVATE_KEY: envPem('PRIVATE KEY'),
     JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),

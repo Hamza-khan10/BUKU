@@ -35,6 +35,8 @@ export function publicView(b: WithRelations) {
       .sort((x, y) => x.dayOfWeek - y.dayOfWeek || x.openTime.localeCompare(y.openTime))
       .map((h) => ({ dayOfWeek: h.dayOfWeek, openTime: h.openTime, closeTime: h.closeTime })),
     createdAt: b.createdAt.toISOString(),
+    /** Turned into `logoUrl` by the route (links depend on storage settings). */
+    logoStorageKey: b.logoStorageKey,
   };
 }
 

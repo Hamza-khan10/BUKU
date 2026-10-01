@@ -7,7 +7,8 @@
  */
 export const DOCUMENT_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const;
 export const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
-export type AllowedContentType = (typeof DOCUMENT_TYPES)[number] | (typeof PHOTO_TYPES)[number];
+export type PhotoType = (typeof PHOTO_TYPES)[number];
+export type AllowedContentType = (typeof DOCUMENT_TYPES)[number] | PhotoType;
 
 export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 export const MAX_PHOTO_BYTES = 10 * 1024 * 1024;

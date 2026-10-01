@@ -40,18 +40,22 @@ Status legend: ✅ in place and tested (Phase 1) · 🔜 built in the phase show
 
 ## 3. Data protection
 
-| Control                                                                                                                                                             | Status      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| User email/phone encrypted (AES-256-GCM, random IV, column-bound AAD, key ring with rotation) + HMAC blind index for lookup/uniqueness                              | ✅          |
-| Webhook signing secrets encrypted (must be recoverable to sign)                                                                                                     | ✅ schema   |
-| Logs: redaction of auth headers, cookies, passwords, tokens, OTPs, emails, phones; query strings never logged                                                       | ✅          |
-| Least-privilege DB roles: services connect as `buku_app` (no DDL, no TRUNCATE) — proven by tests                                                                    | ✅          |
-| `statement_timeout`, `lock_timeout`, idle-transaction timeout on the app role                                                                                       | ✅          |
-| Private buckets; verification documents viewed by admins only through 5-minute links, every view audited                                                            | ✅ tested   |
-| Upload links bound to one key, content type and exact size (storage refuses anything else); on completion the real file signature is checked and mismatches deleted | ✅ tested   |
-| KYB identifiers and responsible-person contacts encrypted, masked for owners; same registration under a different owner flagged to admins                           | ✅ tested   |
-| Per-country business export: admin-only, needs reference + legal basis, rate-limited, audited                                                                       | ✅ tested   |
-| Retention: ClickHouse TTLs (13–25 months), monthly partitions for audit/notifications, GDPR export + erasure                                                        | ✅ / 🔜 2.1 |
+| Control                                                                                                                                                                                                  | Status                             |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| User email/phone encrypted (AES-256-GCM, random IV, column-bound AAD, key ring with rotation) + HMAC blind index for lookup/uniqueness                                                                   | ✅                                 |
+| Webhook signing secrets encrypted (must be recoverable to sign)                                                                                                                                          | ✅ schema                          |
+| Logs: redaction of auth headers, cookies, passwords, tokens, OTPs, emails, phones; query strings never logged                                                                                            | ✅                                 |
+| Least-privilege DB roles: services connect as `buku_app` (no DDL, no TRUNCATE) — proven by tests                                                                                                         | ✅                                 |
+| `statement_timeout`, `lock_timeout`, idle-transaction timeout on the app role                                                                                                                            | ✅                                 |
+| Private buckets; verification documents viewed by admins only through 5-minute links, every view audited                                                                                                 | ✅ tested                          |
+| Pictures are re-encoded before anyone sees them: upright, every metadata block removed (GPS, camera, names), resized, WebP; > 40 MP refused before decoding (decompression bombs); corrupt files refused | ✅ tested (incl. production image) |
+| Picture originals only ever in the private bucket (`incoming/`), deleted after cleaning, expire within a day otherwise; upload ids single-use, bound to purpose and owner                                | ✅ tested                          |
+| Customer profile pictures private: only via `/me` as 1-hour signed links; anonymous access refused; deleted on purge                                                                                     | ✅ tested                          |
+| Employee photos need confirmed consent; the employee can remove theirs; removed automatically when they leave the team                                                                                   | ✅ tested                          |
+| Upload links bound to one key, content type and exact size (storage refuses anything else); on completion the real file signature is checked and mismatches deleted                                      | ✅ tested                          |
+| KYB identifiers and responsible-person contacts encrypted, masked for owners; same registration under a different owner flagged to admins                                                                | ✅ tested                          |
+| Per-country business export: admin-only, needs reference + legal basis, rate-limited, audited                                                                                                            | ✅ tested                          |
+| Retention: ClickHouse TTLs (13–25 months), monthly partitions for audit/notifications, GDPR export + erasure                                                                                             | ✅ / 🔜 2.1                        |
 
 ## 4. Infrastructure
 
@@ -84,8 +88,6 @@ Email security@buku.app (to be created before launch). Do not open a public issu
 
 ## Known limitations (tracked)
 
-- Photo metadata (EXIF, e.g. GPS) is not stripped yet: business photos are stored as uploaded.
-  An image-processing step (resize + strip metadata) is planned before launch.
 - Employee lockout can be triggered by anyone who knows a business handle and a username (a
   15-minute nuisance, not a takeover); the business can unlock by resetting the password.
 - Gateway 401 responses use Kong's `{"message"}` body instead of the BUKU envelope (documented for clients).

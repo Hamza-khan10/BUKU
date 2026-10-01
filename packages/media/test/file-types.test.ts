@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesSignature } from '../src/storage/file-types.js';
+import { matchesSignature } from '../src/file-types.js';
 
 describe('file signatures', () => {
   const pdf = Buffer.from('%PDF-1.7\n%\xe2\xe3', 'latin1');

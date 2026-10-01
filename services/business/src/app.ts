@@ -13,9 +13,10 @@ import type { Redis } from 'ioredis';
 import { AdminService } from './businesses/admin-service.js';
 import { BusinessService, type BusinessServiceSettings } from './businesses/business-service.js';
 import { LegalService } from './legal/legal-service.js';
-import { MediaService, type MediaSettings } from './media/media-service.js';
+import type { MediaLinks, ObjectStorage, PictureUploads } from '@buku/media';
+import { DocumentService, type DocumentSettings } from './media/document-service.js';
+import { PictureService } from './media/picture-service.js';
 import { registerRoutes } from './routes/index.js';
-import type { ObjectStorage } from './storage/object-storage.js';
 
 /** All dependencies injected: index.ts builds real ones, tests build test ones. */
 export interface BusinessAppDeps {
@@ -26,22 +27,32 @@ export interface BusinessAppDeps {
   cipher: FieldCipher;
   indexer: BlindIndexer;
   storage: ObjectStorage;
-  settings: BusinessServiceSettings & MediaSettings;
+  pictureUploads: PictureUploads;
+  mediaLinks: MediaLinks;
+  settings: BusinessServiceSettings & DocumentSettings;
   http: { service: string; logger: Logger; readiness: Readiness; trustProxyHops: number; bodyLimit?: string };
 }
 
-export function buildBusinessApp(deps: BusinessAppDeps): Express {
+export interface BusinessApp {
+  app: Express;
+  /** Exposed for the event consumer (index.ts) and tests. */
+  pictures: PictureService;
+}
+
+export function buildBusinessApp(deps: BusinessAppDeps): BusinessApp {
   const businesses = new BusinessService(deps.db, deps.settings);
   const legal = new LegalService(deps.db, deps.cipher, deps.indexer);
-  const media = new MediaService(deps.db, deps.storage, deps.settings);
+  const documents = new DocumentService(deps.db, deps.storage, deps.settings);
+  const pictures = new PictureService(deps.db, deps.storage, deps.pictureUploads, deps.mediaLinks);
   const admin = new AdminService(deps.db, legal);
-  return createHttpApp({
+  const app = createHttpApp({
     ...deps.http,
     routes: (app) =>
       registerRoutes(app, {
         businesses,
         legal,
-        media,
+        documents,
+        pictures,
         admin,
         db: deps.db,
         verifier: deps.verifier,
@@ -49,4 +60,5 @@ export function buildBusinessApp(deps: BusinessAppDeps): Express {
         redis: deps.redis,
       }),
   });
+  return { app, pictures };
 }

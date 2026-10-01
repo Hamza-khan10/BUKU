@@ -32,5 +32,6 @@ export const testEnv = {
     secretAccessKey: required('S3_SECRET_ACCESS_KEY'),
     documentsBucket: 'buku-documents-dev',
     mediaBucket: 'buku-media-dev',
+    privateBucket: 'buku-private-dev',
   },
 };

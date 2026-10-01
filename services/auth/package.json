@@ -13,12 +13,14 @@
     "@buku/common": "workspace:*",
     "@buku/database": "workspace:*",
     "@buku/kafka": "workspace:*",
+    "@buku/media": "workspace:*",
     "express": "5.2.1",
     "ioredis": "6.0.0",
     "jose": "6.2.12",
     "zod": "4.6.5"
   },
   "devDependencies": {
-    "@types/express": "5.0.6"
+    "@types/express": "5.0.6",
+    "sharp": "0.35.5"
   }
 }
