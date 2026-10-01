@@ -69,6 +69,26 @@ describe('validation primitives', () => {
   it('strips HTML/scripts and control characters from free text', () => {
     expect(sanitizeText('<script>alert(1)</script>Hello <b>world</b>\u0000')).toBe('Hello world');
     expect(sanitizeText('<img src=x onerror=alert(1)>Nice cut')).toBe('Nice cut');
+  });
+
+  it('keeps plain text exactly as typed (no HTML escaping stored)', () => {
+    expect(sanitizeText('Salt & Pepper')).toBe('Salt & Pepper');
+    expect(sanitizeText('Fades & beards, 5 < 10 > 2, "best" cut')).toBe(
+      'Fades & beards, 5 < 10 > 2, "best" cut',
+    );
+    expect(sanitizeText("Ali's & Sons")).toBe("Ali's & Sons");
+  });
+
+  it('removes tags hidden as entities, even when encoded twice', () => {
+    expect(sanitizeText('&lt;script&gt;alert(1)&lt;/script&gt;Hi')).toBe('Hi');
+    expect(sanitizeText('&amp;lt;img src=x onerror=alert(1)&amp;gt;Hi')).toBe('Hi');
+    expect(sanitizeText('Hi <b onclick="x()">there</b>')).toBe('Hi there');
+  });
+
+  it('is idempotent: cleaning a cleaned value changes nothing', () => {
+    for (const s of ['Salt & Pepper', 'a < b', '&lt;b&gt;x', 'plain']) {
+      expect(sanitizeText(sanitizeText(s))).toBe(sanitizeText(s));
+    }
     const s = zSafeText({ max: 5 });
     expect(s.safeParse('<p>abc</p>').success).toBe(true);
     expect(s.safeParse('<p>abcdef</p>').success).toBe(false);

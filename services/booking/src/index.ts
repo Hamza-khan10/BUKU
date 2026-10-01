@@ -1,7 +1,7 @@
 import {
-  createHttpApp,
   createJwtVerifierFromEnv,
   createRedisClient,
+  createRevocationStore,
   loadConfig,
   logger,
   Readiness,
@@ -9,9 +9,17 @@ import {
   type ShutdownHook,
 } from '@buku/common';
 import { createDatabaseClient, pingDatabase } from '@buku/database';
-import { createKafka, EventProducer, kafkaConnectionFromEnv } from '@buku/kafka';
+import {
+  consumerGroupId,
+  createKafka,
+  EventProducer,
+  kafkaConnectionFromEnv,
+  startConsumer,
+} from '@buku/kafka';
+import { storageFromEnv } from '@buku/media';
+import { buildBookingApp } from './app.js';
 import { Env } from './config.js';
-import { registerRoutes } from './routes.js';
+import { bookingEventHandler, CONSUMED_TOPICS } from './events/handlers.js';
 
 const env = loadConfig(Env);
 
@@ -22,8 +30,10 @@ const db = createDatabaseClient({
   applicationName: env.SERVICE_NAME,
 });
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
-const producer = new EventProducer(createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env)));
+const kafka = createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env));
+const producer = new EventProducer(kafka);
 const verifier = await createJwtVerifierFromEnv(env);
+const { links } = storageFromEnv(env);
 await producer.connect();
 
 // ── Readiness: every dependency must answer before traffic is routed here ──
@@ -34,13 +44,28 @@ const readiness = new Readiness()
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const app = createHttpApp({
-  service: env.SERVICE_NAME,
-  logger,
-  readiness,
-  trustProxyHops: env.TRUST_PROXY_HOPS,
-  bodyLimit: env.HTTP_BODY_LIMIT,
-  routes: (router) => registerRoutes(router, { db, redis, producer, verifier }),
+const { app, staff } = buildBookingApp({
+  db,
+  redis,
+  verifier,
+  revocations: createRevocationStore(redis),
+  mediaLinks: links,
+  http: {
+    service: env.SERVICE_NAME,
+    logger,
+    readiness,
+    trustProxyHops: env.TRUST_PROXY_HOPS,
+    bodyLimit: env.HTTP_BODY_LIMIT,
+  },
+});
+
+// Reacts to other services' events (e.g. an employee left → no longer bookable).
+const consumer = await startConsumer({
+  kafka,
+  groupId: consumerGroupId(env.SERVICE_NAME),
+  topics: CONSUMED_TOPICS,
+  handler: bookingEventHandler({ staff }),
+  producer,
 });
 
 // Hooks run in REVERSE order on shutdown: stop producing before closing stores.
@@ -53,6 +78,7 @@ const hooks: ShutdownHook[] = [
     },
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
+  { name: 'kafka-consumer', fn: () => consumer.stop() },
 ];
 
 await runService({

@@ -52,14 +52,30 @@ const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
  * Strip all HTML and control characters from user-supplied text before it is
  * stored. BUKU never renders user HTML, so nothing is allowed through. This is
  * defense in depth; the frontend still escapes on output.
+ *
+ * The result is PLAIN text: "Salt & Pepper" stays exactly that (not
+ * "Salt &amp; Pepper", which apps would display literally). Tags hidden as
+ * entities ("&lt;script&gt;") are decoded and stripped too: we repeat until the
+ * text no longer changes, so the stored value never contains a tag.
  */
 export function sanitizeText(input: string): string {
-  const withoutTags = sanitizeHtml(input, {
-    allowedTags: [],
-    allowedAttributes: {},
-    disallowedTagsMode: 'discard',
-  });
-  return withoutTags.replace(CONTROL_CHARS, '').normalize('NFC').trim();
+  let text = input;
+  for (let pass = 0; pass < 5; pass++) {
+    const next = stripTags(text);
+    if (next === text) break;
+    text = next;
+  }
+  // Still changing after several passes: adversarial nesting. Drop angle brackets entirely.
+  if (stripTags(text) !== text) text = text.replace(/[<>]/g, '');
+  return text.replace(CONTROL_CHARS, '').normalize('NFC').trim();
+}
+
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", apos: "'" };
+
+/** Remove tags, then turn the escaping sanitize-html adds back into plain characters. */
+function stripTags(input: string): string {
+  const html = sanitizeHtml(input, { allowedTags: [], allowedAttributes: {}, disallowedTagsMode: 'discard' });
+  return html.replace(/&(amp|lt|gt|quot|#39|apos);/g, (_, name: string) => ENTITIES[name]!);
 }
 
 /** Free text field: trimmed, sanitized, length-bounded (bounds apply after sanitizing). */

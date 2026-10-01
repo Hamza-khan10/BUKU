@@ -415,6 +415,9 @@ importers:
       '@buku/kafka':
         specifier: workspace:*
         version: link:../../packages/kafka
+      '@buku/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       express:
         specifier: 5.2.1
         version: 5.2.1

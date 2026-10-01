@@ -24,6 +24,12 @@ export const BUSINESS_PERMISSIONS = {
   'business.media': ['owner', 'manager'],
   /** Create and manage employee accounts (managers: front desk and staff only). */
   'members.manage': ['owner', 'manager'],
+  /** Service menu: categories, services, prices, durations. */
+  'services.manage': ['owner', 'manager'],
+  /** Staff profiles (who can be booked) and which services each person does. */
+  'staff.manage': ['owner', 'manager'],
+  /** Booking settings: confirmation mode, horizon, limits, cancellation window. */
+  'booking.settings': ['owner', 'manager'],
   'appointments.manage_all': ['owner', 'manager', 'front_desk'],
   'queue.operate': ['owner', 'manager', 'front_desk'],
   'schedule.manage_all': ['owner', 'manager'],

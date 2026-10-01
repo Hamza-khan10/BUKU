@@ -1,5 +1,6 @@
 import { baseServiceEnv, databaseEnv, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
-import { z } from 'zod';
+import { s3Env } from '@buku/media';
+import { type z } from 'zod';
 
 /**
  * booking-service environment. Validated once at startup: the process refuses
@@ -10,7 +11,8 @@ export const Env = baseServiceEnv.extend({
   ...kafkaEnv.shape,
   ...databaseEnv.shape,
   ...redisEnv.shape,
-  BOOKING_SLOT_LOCK_TTL_SECONDS: z.coerce.number().int().min(5).max(120).default(30),
+  /** Only to link staff photos (stored by business-service); booking-service stores no files. */
+  ...s3Env.shape,
 });
 
 export type Env = z.infer<typeof Env>;

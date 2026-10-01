@@ -410,16 +410,16 @@ services:
     working_dir: /app/services/booking
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
-      <<: *service-env
+      <<: [*service-env, *s3-env]
       SERVICE_NAME: booking-service
       PORT: '3002'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
-      BOOKING_SLOT_LOCK_TTL_SECONDS: '30'
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
+      - ./packages/media/src:/app/packages/media/src:ro
       - ./services/booking/src:/app/services/booking/src:ro
     depends_on:
       <<: *needs-core

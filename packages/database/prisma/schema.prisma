@@ -81,10 +81,9 @@ enum DocumentStatus {
   rejected
 }
 
-enum StaffRole {
-  owner
-  manager
-  staff
+enum ConfirmationMode {
+  automatic
+  manual
 }
 
 /// Access roles inside a business (the owner is businesses.owner_id, not a member row).
@@ -453,6 +452,8 @@ model Business {
   category               Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   photos                 BusinessPhoto[]
   staffPhotos            StaffPhoto[]
+  serviceCategories      ServiceCategory[]
+  bookingSettings        BookingSettings?
   documents              BusinessDocument[]
   hours                  BusinessHours[]
   services               Service[]
@@ -587,37 +588,72 @@ model Service {
   currency        String   @default("USD") @db.Char(3)
   depositRequired Boolean  @default(false) @map("deposit_required")
   depositAmount   Decimal? @map("deposit_amount") @db.Decimal(10, 2)
-  groupName       String?  @map("group_name") @db.VarChar(100)
+  /// Optional category within the business ("Haircuts", "Colour", ...).
+  categoryId      String?  @map("category_id") @db.Uuid
   sortOrder       Int      @default(0) @map("sort_order")
   isActive        Boolean  @default(true) @map("is_active")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  business     Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  business     Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// Composite key: a service can only be in a category of its own business.
+  category     ServiceCategory? @relation(fields: [categoryId, businessId], references: [id, businessId], onDelete: Restrict)
   staff        StaffService[]
   appointments Appointment[]
 
   @@index([businessId, isActive, sortOrder])
+  @@index([categoryId])
   @@map("services")
+}
+
+/// A business groups its services into categories (product decision: several per business).
+model ServiceCategory {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  name       String   @db.VarChar(100)
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services Service[]
+
+  @@unique([businessId, name])
+  @@unique([id, businessId])
+  @@map("service_categories")
+}
+
+/// How a business takes bookings (owned by booking-service). No row → the defaults below.
+model BookingSettings {
+  businessId                   String           @id @map("business_id") @db.Uuid
+  /// automatic: bookings are confirmed at once; manual: the business approves each one.
+  confirmationMode             ConfirmationMode @default(automatic) @map("confirmation_mode")
+  /// How far ahead customers may book (D-037).
+  bookingHorizonDays           Int              @default(365) @map("booking_horizon_days")
+  /// Future bookings one customer may hold at this business (anti-hoarding, D-037).
+  maxFutureBookingsPerCustomer Int              @default(3) @map("max_future_bookings_per_customer")
+  /// Cancelling less than this many hours before the start counts as a late cancel (D-035).
+  cancellationWindowHours      Int              @default(12) @map("cancellation_window_hours")
+  /// Earliest a booking may start, from now.
+  minNoticeMinutes             Int              @default(60) @map("min_notice_minutes")
+  /// Slot start times are multiples of this.
+  slotStepMinutes              Int              @default(15) @map("slot_step_minutes")
+  updatedAt                    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("booking_settings")
 }
 
 /// A member of a business's team. `userId` is set once the invite is accepted.
 model Staff {
-  id                   String    @id @default(uuid(7)) @db.Uuid
-  businessId           String    @map("business_id") @db.Uuid
-  userId               String?   @map("user_id") @db.Uuid
-  displayName          String    @map("display_name") @db.VarChar(100)
-  bio                  String?
-  specializations      String[]  @default([])
-  role                 StaffRole @default(staff)
-  isActive             Boolean   @default(true) @map("is_active")
-  /// Encrypted (context "staff.invite_email").
-  inviteEmailEncrypted String?   @map("invite_email_encrypted")
-  /// SHA-256 of the one-time invite token.
-  inviteTokenHash      String?   @unique @map("invite_token_hash") @db.Char(64)
-  inviteAccepted       Boolean   @default(false) @map("invite_accepted")
-  inviteExpiresAt      DateTime? @map("invite_expires_at") @db.Timestamptz(6)
-  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id              String   @id @default(uuid(7)) @db.Uuid
+  businessId      String   @map("business_id") @db.Uuid
+  userId          String?  @map("user_id") @db.Uuid
+  displayName     String   @map("display_name") @db.VarChar(100)
+  bio             String?
+  specializations String[] @default([])
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   business          Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
   user              User?                   @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -678,7 +714,7 @@ model AvailabilityRule {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  staff    Staff?    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staff    Staff?    @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
   resource Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
   @@index([businessId, dayOfWeek])
@@ -700,7 +736,7 @@ model AvailabilityException {
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
   business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  staff    Staff?    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staff    Staff?    @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
   resource Resource? @relation(fields: [resourceId], references: [id], onDelete: Cascade)
 
   @@index([businessId, exceptionDate])

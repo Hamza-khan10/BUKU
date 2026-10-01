@@ -263,3 +263,18 @@ customer without a phone from its own list. Receipts are views of the appointmen
 rendered on request; the QR is drawn by the app from the code, so no PDF, image or file is ever
 generated or stored. A screenshot can't be forged into a booking: the business checks against
 its own list. The QR carries only the code, never personal data.
+
+**D-058 · Booking settings in their own table; staff profiles without e-mail invites.**
+Settings (confirmation mode, horizon, per-customer limit, cancellation window, notice, slot step)
+are columns of `booking_settings`, owned by booking-service, with ranges enforced by the database;
+no row means the defaults. The Phase 1 staff invite-by-e-mail columns are dropped: employee
+accounts (D-034) replace them. A staff profile links to a team account (owner or member, also
+before their first sign-in), lets that person manage their own hours, and is deactivated when
+they leave the team (`businesses.member_removed`). Working hours and time off can only point at
+a staff member of the same business (composite keys). Services and profiles are archived, never
+deleted: past appointments point at them.
+
+**D-059 · Free text is stored as plain text.** `sanitizeText` used to keep sanitize-html's
+escaping, so "Salt & Pepper" was stored as "Salt &amp; Pepper" and apps (which escape on output)
+would show it literally. It now strips tags, decodes the escaping, and repeats until nothing
+changes, so stored text contains no tags (also none hidden as `&lt;script&gt;`) and reads as typed.
