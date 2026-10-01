@@ -185,10 +185,13 @@ describe('transactional outbox', () => {
       })
       .catch(() => undefined);
 
+    // Other test files leave events in the shared test outbox too, and the relay
+    // publishes the oldest first (100 per round): run it until OUR event is out.
     const relay = new OutboxRelay({ db, producer, pollIntervalMs: 100 });
-    let published = 0;
-    for (let i = 0; i < 20 && published === 0; i++) published += await relay.runOnce();
-    expect(published).toBeGreaterThanOrEqual(1);
+    const isPublished = async () =>
+      (await db.outboxEvent.findFirst({ where: { aggregateId: committed.subject } }))?.publishedAt != null;
+    for (let i = 0; i < 50 && !(await isPublished()); i++) await relay.runOnce();
+    expect(await isPublished()).toBe(true);
 
     const got = await inbox.until((items) => items.some((e) => e.id === committed.id));
     expect(got.some((e) => e.id === committed.id)).toBe(true);

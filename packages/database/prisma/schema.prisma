@@ -241,7 +241,10 @@ model User {
   /// Argon2id PHC string. Null for OTP-only / social-login accounts.
   passwordHash             String?    @map("password_hash") @db.VarChar(255)
   name                     String     @db.VarChar(200)
+  /// Picture from the sign-in provider (e.g. Google), shown only to the user themself.
   avatarUrl                String?    @map("avatar_url")
+  /// Uploaded profile picture (cleaned, PRIVATE bucket): visible only to the user themself (D-051).
+  avatarStorageKey         String?    @unique @map("avatar_storage_key") @db.VarChar(300)
   timezone                 String     @default("UTC") @db.VarChar(60)
   locale                   String     @default("en") @db.VarChar(10)
   role                     UserRole   @default(user)
@@ -272,25 +275,26 @@ model User {
   createdAt                DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  oauthAccounts     OAuthAccount[]
-  refreshTokens     RefreshToken[]
-  pushTokens        PushToken[]
-  notificationPrefs NotificationPreference?
-  ownedBusinesses   Business[]              @relation("BusinessOwner")
-  staffProfiles     Staff[]
-  appointments      Appointment[]
-  payments          Payment[]
-  reviews           Review[]
-  favourites        Favourite[]
-  queueEntries      QueueEntry[]
-  notifications     Notification[]
-  auditLogs         AuditLog[]
-  reviewedDocuments BusinessDocument[]      @relation("DocumentReviewer")
-  memberships       BusinessMember[]        @relation("MemberUser")
-  createdMembers    BusinessMember[]        @relation("MemberCreatedBy")
-  businessReports   BusinessReport[]        @relation("Reporter")
-  reviewedReports   BusinessReport[]        @relation("ReportReviewer")
-  managedByBusiness Business?               @relation("ManagedAccounts", fields: [managedByBusinessId], references: [id], onDelete: Restrict)
+  oauthAccounts      OAuthAccount[]
+  refreshTokens      RefreshToken[]
+  pushTokens         PushToken[]
+  notificationPrefs  NotificationPreference?
+  ownedBusinesses    Business[]              @relation("BusinessOwner")
+  staffProfiles      Staff[]
+  appointments       Appointment[]
+  payments           Payment[]
+  reviews            Review[]
+  favourites         Favourite[]
+  queueEntries       QueueEntry[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  reviewedDocuments  BusinessDocument[]      @relation("DocumentReviewer")
+  memberships        BusinessMember[]        @relation("MemberUser")
+  createdMembers     BusinessMember[]        @relation("MemberCreatedBy")
+  businessReports    BusinessReport[]        @relation("Reporter")
+  reviewedReports    BusinessReport[]        @relation("ReportReviewer")
+  staffPhotoConsents StaffPhoto[]            @relation("StaffPhotoConsent")
+  managedByBusiness  Business?               @relation("ManagedAccounts", fields: [managedByBusinessId], references: [id], onDelete: Restrict)
 
   @@unique([managedByBusinessId, username])
   @@index([status])
@@ -408,6 +412,8 @@ model Business {
   name                    String                                @db.VarChar(200)
   slug                    String                                @unique @db.VarChar(200)
   description             String?
+  /// Cleaned logo in the media bucket (shown next to the cover photo).
+  logoStorageKey          String?                               @unique @map("logo_storage_key") @db.VarChar(300)
   phone                   String?                               @db.VarChar(20)
   email                   String?                               @db.VarChar(255)
   website                 String?                               @db.VarChar(500)
@@ -446,6 +452,7 @@ model Business {
   owner                  User                    @relation("BusinessOwner", fields: [ownerId], references: [id], onDelete: Restrict)
   category               Category                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   photos                 BusinessPhoto[]
+  staffPhotos            StaffPhoto[]
   documents              BusinessDocument[]
   hours                  BusinessHours[]
   services               Service[]
@@ -499,6 +506,32 @@ model BusinessPhoto {
 
   @@index([businessId, sortOrder])
   @@map("business_photos")
+}
+
+/// An employee's photo, shown next to their name so customers recognise them (D-051).
+/// Optional and the business's choice, with the employee's consent; owned by business-service
+/// (all business media), keyed by the staff profile (booking-service).
+model StaffPhoto {
+  id                   String   @id @default(uuid(7)) @db.Uuid
+  businessId           String   @map("business_id") @db.Uuid
+  staffId              String   @map("staff_id") @db.Uuid
+  /// Cleaned picture in the media bucket.
+  storageKey           String   @unique @map("storage_key") @db.VarChar(300)
+  sizeBytes            Int      @map("size_bytes")
+  /// Who confirmed the employee agreed to have their photo shown, and when.
+  consentConfirmedById String?  @map("consent_confirmed_by_id") @db.Uuid
+  consentConfirmedAt   DateTime @map("consent_confirmed_at") @db.Timestamptz(6)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business           Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// Composite key: the staff member must belong to the same business.
+  staff              Staff    @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
+  consentConfirmedBy User?    @relation("StaffPhotoConsent", fields: [consentConfirmedById], references: [id], onDelete: SetNull)
+
+  /// One photo per staff member (a staff id belongs to exactly one business).
+  @@unique([staffId, businessId])
+  @@index([businessId])
+  @@map("staff_photos")
 }
 
 /// Verification documents in the PRIVATE documents bucket (`businesses/<id>/documents/<docId>`);
@@ -575,7 +608,6 @@ model Staff {
   userId               String?   @map("user_id") @db.Uuid
   displayName          String    @map("display_name") @db.VarChar(100)
   bio                  String?
-  photoUrl             String?   @map("photo_url")
   specializations      String[]  @default([])
   role                 StaffRole @default(staff)
   isActive             Boolean   @default(true) @map("is_active")
@@ -593,8 +625,10 @@ model Staff {
   availabilityRules AvailabilityRule[]
   exceptions        AvailabilityException[]
   appointments      Appointment[]
+  photo             StaffPhoto?
 
   @@unique([businessId, userId])
+  @@unique([id, businessId])
   @@index([businessId, isActive])
   @@index([userId])
   @@map("staff")

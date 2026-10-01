@@ -53,6 +53,8 @@ export const TOPIC_SPECS = {
   'businesses.verified': { partitions: 3, retentionMs: 30 * DAY },
   'businesses.updated': { partitions: 6, retentionMs: 7 * DAY },
   'businesses.suspended': { partitions: 3, retentionMs: 30 * DAY },
+  /** Someone left a business's team (auth-service); their employee photo is removed. */
+  'businesses.member_removed': { partitions: 3, retentionMs: 30 * DAY },
 
   // ── Payments ──
   'payments.initiated': { partitions: 6, retentionMs: 90 * DAY },

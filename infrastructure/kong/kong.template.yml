@@ -175,8 +175,17 @@ services:
         plugins: [*jwt]
       - name: business-manage
         paths:
-          ['~/v1/businesses/[^/]+/(manage|hours|reports|verification|legal-profile|documents|photos)($|/)']
+          [
+            '~/v1/businesses/[^/]+/(manage|hours|reports|verification|legal-profile|documents|photos|logo)($|/)',
+          ]
         regex_priority: 10
+        strip_path: false
+        plugins: [*jwt]
+      # Employee photos are business media (D-055): this outranks booking-service's
+      # `/staff` routes, which would otherwise match the same path.
+      - name: business-staff-photo
+        paths: ['~/v1/businesses/[^/]+/staff/[^/]+/photo($|/)']
+        regex_priority: 30
         strip_path: false
         plugins: [*jwt]
       - name: business-admin

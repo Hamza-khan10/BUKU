@@ -1,6 +1,7 @@
 import { AppError, ErrorCodes } from '@buku/common';
 import { recordAudit, type Database } from '@buku/database';
 import { createEvent, enqueueEvent, TOPICS } from '@buku/kafka';
+import type { MediaLinks, ObjectStorage } from '@buku/media';
 import type { RequestContext } from '../http/context.js';
 import { auditCtx, type SessionService } from '../sessions/session-service.js';
 import type { UserService } from './user-service.js';
@@ -36,6 +37,9 @@ export class DataRightsService {
       db: Database;
       users: UserService;
       sessions: SessionService;
+      /** To delete the private profile picture on purge. */
+      storage: ObjectStorage;
+      links: MediaLinks;
       settings: DataRightsSettings;
     },
   ) {}
@@ -242,10 +246,13 @@ export class DataRightsService {
         if (!lock?.locked) return 0;
         const due = await tx.user.findMany({
           where: { deletedAt: { lt: cutoff }, purgedAt: null },
-          select: { id: true },
+          select: { id: true, avatarStorageKey: true },
           take: limit,
         });
-        for (const { id } of due) {
+        for (const { id, avatarStorageKey } of due) {
+          // The file first: if anything below fails, the next run deletes again (idempotent).
+          if (avatarStorageKey)
+            await this.deps.storage.delete(this.deps.links.privateBucket, avatarStorageKey);
           await tx.oAuthAccount.deleteMany({ where: { userId: id } });
           await tx.refreshToken.deleteMany({ where: { userId: id } });
           await tx.pushToken.deleteMany({ where: { userId: id } });
@@ -272,6 +279,7 @@ export class DataRightsService {
               passwordHash: NIL,
               username: NIL,
               avatarUrl: NIL,
+              avatarStorageKey: NIL,
               purgedAt: new Date(),
             },
           });

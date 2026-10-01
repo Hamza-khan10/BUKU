@@ -4,15 +4,14 @@ import { auditCtx, type RequestContext } from '../http/context.js';
 import {
   matchesSignature,
   MAX_DOCUMENT_BYTES,
-  MAX_PHOTO_BYTES,
   SIGNATURE_BYTES,
   type AllowedContentType,
-} from '../storage/file-types.js';
-import type { ObjectStorage } from '../storage/object-storage.js';
+  type ObjectStorage,
+} from '@buku/media';
 
 /**
- * Verification documents (PRIVATE) and profile photos (PUBLIC), uploaded
- * directly to object storage in three steps:
+ * Verification documents (PRIVATE), uploaded directly to object storage in
+ * three steps (pictures have their own pipeline: picture-service.ts):
  *
  *   1. request   → we create a row and return a presigned PUT link valid for
  *                  10 minutes, for exactly this key, type and size
@@ -20,30 +19,25 @@ import type { ObjectStorage } from '../storage/object-storage.js';
  *   3. complete  → we check what actually arrived (exists, exact size, real
  *                  file signature). Anything wrong is deleted and refused.
  *
- * Documents: owner only ('business.legal'); viewed by admins through 5-minute
- * links. Photos: owner or manager ('business.media'); shown on the profile.
+ * Owner only ('business.legal'); viewed by admins through 5-minute links.
+ * Documents are kept exactly as uploaded: they are evidence.
  */
 
 const UPLOAD_LINK_SECONDS = 10 * 60;
 const ADMIN_VIEW_LINK_SECONDS = 5 * 60;
-const PUBLIC_PHOTO_LINK_SECONDS = 60 * 60;
 const MAX_DOCUMENTS = 20;
-const MAX_PHOTOS = 20;
 /** Unfinished uploads older than this don't count toward limits. */
 const STALE_UPLOAD_MS = 60 * 60 * 1000;
 
-export interface MediaSettings {
+export interface DocumentSettings {
   documentsBucket: string;
-  mediaBucket: string;
-  /** If set (CDN / public bucket in production), photo URLs are permanent; else presigned. */
-  mediaPublicBaseUrl?: string | undefined;
 }
 
-export class MediaService {
+export class DocumentService {
   constructor(
     private readonly db: Database,
     private readonly storage: ObjectStorage,
-    private readonly settings: MediaSettings,
+    private readonly settings: DocumentSettings,
   ) {}
 
   // ── Documents ────────────────────────────────────────────────────────────
@@ -193,144 +187,7 @@ export class MediaService {
     return { id: documentId, status: decision };
   }
 
-  // ── Photos ───────────────────────────────────────────────────────────────
-
-  async requestPhotoUpload(
-    businessId: string,
-    userId: string,
-    input: { contentType: AllowedContentType; sizeBytes: number; altText?: string | undefined },
-    ctx: RequestContext,
-  ) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.media');
-    await this.assertNotSuspended(businessId);
-    if (input.sizeBytes > MAX_PHOTO_BYTES) throw tooLarge(MAX_PHOTO_BYTES);
-    const count = await this.db.businessPhoto.count({ where: { businessId, ...livePhotos() } });
-    if (count >= MAX_PHOTOS) throw limit(`A business can have at most ${MAX_PHOTOS} photos`);
-
-    const id = uuidv7();
-    const storageKey = `businesses/${businessId}/photos/${id}`;
-    const last = await this.db.businessPhoto.aggregate({ where: { businessId }, _max: { sortOrder: true } });
-    await this.db.businessPhoto.create({
-      data: {
-        id,
-        businessId,
-        storageKey,
-        contentType: input.contentType,
-        sizeBytes: input.sizeBytes,
-        altText: input.altText ?? null,
-        sortOrder: (last._max.sortOrder ?? -1) + 1,
-      },
-    });
-    const url = await this.storage.presignPut(
-      this.settings.mediaBucket,
-      storageKey,
-      input.contentType,
-      input.sizeBytes,
-      UPLOAD_LINK_SECONDS,
-    );
-    await recordAudit(this.db, {
-      userId,
-      action: 'business.photo_upload_requested',
-      resourceType: 'business_photo',
-      resourceId: id,
-      ...auditCtx(ctx),
-    });
-    return { photoId: id, upload: uploadInstructions(url, input.contentType, input.sizeBytes) };
-  }
-
-  async completePhotoUpload(businessId: string, photoId: string, userId: string, ctx: RequestContext) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.media');
-    const photo = await this.db.businessPhoto.findFirst({ where: { id: photoId, businessId } });
-    if (!photo) throw AppError.notFound('Photo');
-    if (!photo.uploadedAt) {
-      await this.inspect(
-        this.settings.mediaBucket,
-        photo.storageKey,
-        photo.contentType as AllowedContentType,
-        photo.sizeBytes,
-        async () => {
-          await this.db.businessPhoto.delete({ where: { id: photo.id } });
-        },
-      );
-      const hasPrimary = await this.db.businessPhoto.count({ where: { businessId, isPrimary: true } });
-      await this.db.businessPhoto.update({
-        where: { id: photo.id },
-        data: { uploadedAt: new Date(), ...(hasPrimary === 0 && { isPrimary: true }) }, // first photo becomes the cover
-      });
-      await recordAudit(this.db, {
-        userId,
-        action: 'business.photo_uploaded',
-        resourceType: 'business_photo',
-        resourceId: photo.id,
-        ...auditCtx(ctx),
-      });
-    }
-    return this.listPhotos(businessId);
-  }
-
-  async setPrimaryPhoto(businessId: string, photoId: string, userId: string) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.media');
-    const photo = await this.db.businessPhoto.findFirst({
-      where: { id: photoId, businessId, uploadedAt: { not: null } },
-    });
-    if (!photo) throw AppError.notFound('Photo');
-    await this.db.$transaction([
-      this.db.businessPhoto.updateMany({
-        where: { businessId, isPrimary: true },
-        data: { isPrimary: false },
-      }),
-      this.db.businessPhoto.update({ where: { id: photoId }, data: { isPrimary: true } }),
-    ]);
-    return this.listPhotos(businessId);
-  }
-
-  async deletePhoto(businessId: string, photoId: string, userId: string, ctx: RequestContext) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.media');
-    const photo = await this.db.businessPhoto.findFirst({ where: { id: photoId, businessId } });
-    if (!photo) throw AppError.notFound('Photo');
-    await this.storage.delete(this.settings.mediaBucket, photo.storageKey);
-    await this.db.businessPhoto.delete({ where: { id: photo.id } });
-    if (photo.isPrimary) {
-      const next = await this.db.businessPhoto.findFirst({
-        where: { businessId, uploadedAt: { not: null } },
-        orderBy: { sortOrder: 'asc' },
-      });
-      if (next) await this.db.businessPhoto.update({ where: { id: next.id }, data: { isPrimary: true } });
-    }
-    await recordAudit(this.db, {
-      userId,
-      action: 'business.photo_deleted',
-      resourceType: 'business_photo',
-      resourceId: photo.id,
-      ...auditCtx(ctx),
-    });
-    return this.listPhotos(businessId);
-  }
-
-  /** Public photo list (uploaded + verified only), cover first. */
-  async listPhotos(businessId: string) {
-    const photos = await this.db.businessPhoto.findMany({
-      where: { businessId, uploadedAt: { not: null } },
-      orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
-    });
-    return Promise.all(
-      photos.map(async (p) => ({
-        id: p.id,
-        url: await this.photoUrl(p.storageKey),
-        altText: p.altText,
-        isPrimary: p.isPrimary,
-      })),
-    );
-  }
-
   // ── helpers ──────────────────────────────────────────────────────────────
-
-  private photoUrl(key: string): Promise<string> {
-    const base = this.settings.mediaPublicBaseUrl;
-    return base
-      ? Promise.resolve(`${base.replace(/\/$/, '')}/${key}`)
-      : this.storage.presignGet(this.settings.mediaBucket, key, PUBLIC_PHOTO_LINK_SECONDS);
-  }
 
   /** Verify an upload landed as declared; otherwise delete it (and its row) and refuse. */
   private async inspect(
@@ -398,9 +255,6 @@ const liveUploads = () => ({
     { status: { not: 'awaiting_upload' as const } },
     { createdAt: { gt: new Date(Date.now() - STALE_UPLOAD_MS) } },
   ],
-});
-const livePhotos = () => ({
-  OR: [{ uploadedAt: { not: null } }, { createdAt: { gt: new Date(Date.now() - STALE_UPLOAD_MS) } }],
 });
 
 function uploadInstructions(url: string, contentType: string, sizeBytes: number) {

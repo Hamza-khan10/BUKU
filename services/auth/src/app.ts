@@ -10,6 +10,7 @@ import {
   type Role,
 } from '@buku/common';
 import type { Database } from '@buku/database';
+import type { MediaLinks, ObjectStorage, PictureUploads } from '@buku/media';
 import type { Express } from 'express';
 import type { Redis } from 'ioredis';
 import type { OidcVerifier } from './identity/oidc.js';
@@ -18,6 +19,7 @@ import { MemberService } from './members/member-service.js';
 import { PasswordAuthService } from './members/password-auth.js';
 import { SessionService } from './sessions/session-service.js';
 import { DataRightsService } from './users/data-rights.js';
+import { AvatarService } from './users/avatar-service.js';
 import { UserService } from './users/user-service.js';
 
 /**
@@ -33,6 +35,9 @@ export interface AuthAppDeps {
   cipher: FieldCipher;
   indexer: BlindIndexer;
   revocations: RevocationStore;
+  storage: ObjectStorage;
+  pictureUploads: PictureUploads;
+  mediaLinks: MediaLinks;
   identity: { google: OidcVerifier | null; apple: OidcVerifier | null };
   settings: {
     termsVersion: string;
@@ -68,6 +73,7 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
     cipher: deps.cipher,
     indexer: deps.indexer,
     sessions,
+    links: deps.mediaLinks,
     termsVersion: settings.termsVersion,
     deletionGraceDays: settings.deletionGraceDays,
   });
@@ -75,9 +81,18 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
     db: deps.db,
     users,
     sessions,
+    storage: deps.storage,
+    links: deps.mediaLinks,
     settings: { graceDays: settings.deletionGraceDays, reauthWindowMinutes: settings.reauthWindowMinutes },
   });
 
+  const avatars = new AvatarService({
+    db: deps.db,
+    storage: deps.storage,
+    uploads: deps.pictureUploads,
+    links: deps.mediaLinks,
+    users,
+  });
   const passwords = new PasswordAuthService({
     db: deps.db,
     users,
@@ -99,6 +114,7 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
         rights,
         passwords,
         members,
+        avatars,
         verifier: deps.verifier,
         revocations: deps.revocations,
         redis: deps.redis,

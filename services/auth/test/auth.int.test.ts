@@ -23,6 +23,8 @@ import { buildAuthApp } from '../src/app.js';
 import type { DataRightsService } from '../src/users/data-rights.js';
 import { appointmentData, createBusinessFixture } from '../../../packages/database/test/fixtures.js';
 import { createOidcVerifierWithKeys } from '../src/identity/oidc.js';
+import { createS3Storage, MediaLinks, PictureUploads, type ObjectStorage } from '@buku/media';
+import sharp from 'sharp';
 
 /**
  * auth-service against the real test database and Valkey. A locally
@@ -40,6 +42,7 @@ let googleKey: CryptoKey;
 let foreignKey: CryptoKey;
 let cipher: FieldCipher;
 let indexer: BlindIndexer;
+let storage: ObjectStorage;
 
 async function googleIdToken(
   claims: Record<string, unknown> = {},
@@ -103,6 +106,14 @@ beforeAll(async () => {
 
   cipher = createFieldCipher(parseKeyring(`k1:${randomBytes(32).toString('base64')}`, 'k1'));
   indexer = createBlindIndexer(randomBytes(32));
+  storage = createS3Storage({
+    endpoint: testEnv.s3.endpoint,
+    publicEndpoint: testEnv.s3.endpoint,
+    region: 'us-east-1',
+    accessKeyId: testEnv.s3.accessKeyId,
+    secretAccessKey: testEnv.s3.secretAccessKey,
+    forcePathStyle: true,
+  });
   ({ app, rights } = buildAuthApp({
     db,
     redis,
@@ -111,6 +122,12 @@ beforeAll(async () => {
     cipher,
     indexer,
     revocations: createRevocationStore(redis),
+    storage,
+    pictureUploads: new PictureUploads(storage, redis, { privateBucket: testEnv.s3.privateBucket }),
+    mediaLinks: new MediaLinks(storage, {
+      mediaBucket: testEnv.s3.mediaBucket,
+      privateBucket: testEnv.s3.privateBucket,
+    }),
     identity: {
       google: createOidcVerifierWithKeys({
         provider: 'google',
@@ -971,6 +988,12 @@ describe('Business team: employee accounts', () => {
       ).status,
     ).toBe(204);
 
+    // Other services are told, so they can clean up (business-service deletes the employee's photo).
+    const outbox = await db.outboxEvent.findFirstOrThrow({
+      where: { topic: 'businesses.member_removed', aggregateId: o.business.id },
+    });
+    expect(outbox.payload).toMatchObject({ data: { businessId: o.business.id, userId: e.userId } });
+
     expect((await login(o.business.slug, 'farah', NEW_PASSWORD)).status).toBe(401);
     expect((await request(app).get('/v1/auth/me').set(bearer(e.accessToken))).status).toBe(401);
     const row = await db.user.findFirstOrThrow({ where: { id: e.userId, deletedAt: { not: null } } });
@@ -1044,5 +1067,99 @@ describe('Business team: employee accounts', () => {
       .set(bearer(o.accessToken))
       .send({ currentPassword: pw(), newPassword: pw() });
     expect(change.status).toBe(409);
+  });
+});
+
+describe('Profile picture (private)', () => {
+  async function upload(token: string, file: Buffer, contentType = 'image/jpeg') {
+    const req = await post('/v1/auth/me/avatar/uploads')
+      .set(bearer(token))
+      .send({ contentType, sizeBytes: file.length });
+    expect(req.status).toBe(201);
+    const put = await fetch(req.body.data.upload.url, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: file,
+    });
+    expect(put.status).toBe(200);
+    return post(`/v1/auth/me/avatar/uploads/${req.body.data.uploadId}/complete`).set(bearer(token));
+  }
+  const selfie = () =>
+    sharp({ create: { width: 1600, height: 1200, channels: 3, background: '#f5b041' } })
+      .jpeg()
+      .withMetadata({ orientation: 6 })
+      .withExifMerge({
+        IFD0: { Make: 'PhoneMaker' },
+        IFD3: { GPSLatitudeRef: 'N', GPSLatitude: '31/1 31/1 1200/100' },
+      })
+      .toBuffer();
+  const keyOf = (url: string) => decodeURIComponent(new URL(url).pathname.split('/').slice(2).join('/'));
+
+  it('is cleaned, stored privately, and shown only to me through a short-lived link', async () => {
+    const me = await signUp();
+    const done = await upload(me.accessToken, await selfie());
+    expect(done.status).toBe(200);
+    const url: string = done.body.data.avatarUrl;
+    expect(url).toContain(`/${testEnv.s3.privateBucket}/users/${me.user.id}/avatar/`);
+    expect(url).toMatch(/X-Amz-Expires=3600/);
+
+    const picture = Buffer.from(await (await fetch(url)).arrayBuffer());
+    const meta = await sharp(picture).metadata();
+    expect([meta.format, meta.exif, meta.width, meta.height]).toEqual(['webp', undefined, 384, 512]);
+
+    // Without the signature, storage refuses it: nobody can just guess the address.
+    const bare = new URL(url);
+    bare.search = '';
+    expect((await fetch(bare)).status).toBe(403);
+    // /me is the only way to it.
+    expect((await request(app).get('/v1/auth/me').set(bearer(me.accessToken))).body.data.avatarUrl).toContain(
+      keyOf(url),
+    );
+  });
+
+  it('replacing deletes the old file; removing clears it (and the sign-in provider picture)', async () => {
+    const me = await signUp();
+    await db.user.update({
+      where: { id: me.user.id },
+      data: { avatarUrl: 'https://lh3.googleusercontent.com/a/x' },
+    });
+    const first = await upload(me.accessToken, await selfie());
+    const second = await upload(me.accessToken, await selfie());
+    expect(await storage.head(testEnv.s3.privateBucket, keyOf(first.body.data.avatarUrl))).toBeNull();
+
+    const removed = await request(app).delete('/v1/auth/me/avatar').set(bearer(me.accessToken));
+    expect(removed.body.data.avatarUrl).toBeNull();
+    expect(await storage.head(testEnv.s3.privateBucket, keyOf(second.body.data.avatarUrl))).toBeNull();
+  });
+
+  it("an upload id can't be completed by someone else", async () => {
+    const [a, b] = [await signUp(), await signUp()];
+    const file = await selfie();
+    const req = await post('/v1/auth/me/avatar/uploads')
+      .set(bearer(a.accessToken))
+      .send({ contentType: 'image/jpeg', sizeBytes: file.length });
+    await fetch(req.body.data.upload.url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: file,
+    });
+    const steal = await post(`/v1/auth/me/avatar/uploads/${req.body.data.uploadId}/complete`).set(
+      bearer(b.accessToken),
+    );
+    expect(steal.status).toBe(404);
+  });
+
+  it('is deleted for good when the account is purged', async () => {
+    const me = await signUp();
+    const done = await upload(me.accessToken, await selfie());
+    const key = keyOf(done.body.data.avatarUrl);
+    await db.user.update({
+      where: { id: me.user.id },
+      data: { deletedAt: new Date(Date.now() - 31 * 86_400_000) },
+    });
+    await rights.purgeDue();
+    expect(await storage.head(testEnv.s3.privateBucket, key)).toBeNull();
+    const row = await db.user.findFirstOrThrow({ where: { id: me.user.id, deletedAt: { not: null } } });
+    expect(row.avatarStorageKey).toBeNull();
   });
 });

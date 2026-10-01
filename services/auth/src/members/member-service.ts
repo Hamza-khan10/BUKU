@@ -13,6 +13,7 @@ import {
   type Database,
   type Transaction,
 } from '@buku/database';
+import { createEvent, enqueueEvent, TOPICS } from '@buku/kafka';
 import type { RequestContext } from '../http/context.js';
 import { auditCtx, type SessionService } from '../sessions/session-service.js';
 import { generateTemporaryPassword } from './password-auth.js';
@@ -247,6 +248,18 @@ export class MemberService {
         });
         await tx.pushToken.deleteMany({ where: { userId: member.userId } });
       }
+      // Other services clean up what belonged to this person in the business (e.g. their photo).
+      await enqueueEvent(
+        tx,
+        createEvent({
+          type: TOPICS.BUSINESSES_MEMBER_REMOVED,
+          source: 'auth-service',
+          subject: businessId,
+          data: { businessId, userId: member.userId, memberId: member.id },
+          ...(ctx.requestId && { correlationId: ctx.requestId }),
+        }),
+        'business',
+      );
       await recordAudit(tx, {
         userId: actorId,
         action: 'business.member_removed',

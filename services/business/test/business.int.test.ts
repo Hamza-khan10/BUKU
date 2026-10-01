@@ -19,9 +19,15 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
 import { buildBusinessApp } from '../src/app.js';
-import { createS3Storage } from '../src/storage/object-storage.js';
+import { createS3Storage, MediaLinks, PictureUploads, type ObjectStorage } from '@buku/media';
+import sharp from 'sharp';
+import { createEvent, TOPICS } from '@buku/kafka';
+import { businessEventHandler } from '../src/events/handlers.js';
+import type { PictureService } from '../src/media/picture-service.js';
 
 let app: Express;
+let pictures: PictureService;
+let storage: ObjectStorage;
 let db: Database;
 let redis: Redis;
 let signer: JwtSigner;
@@ -86,26 +92,31 @@ beforeAll(async () => {
     await db.category.create({ data: { name: `Barbershop ${suffix}`, slug: `barbershop-${suffix}` } })
   ).id;
 
-  app = buildBusinessApp({
+  storage = createS3Storage({
+    endpoint: testEnv.s3.endpoint,
+    publicEndpoint: testEnv.s3.endpoint,
+    region: 'us-east-1',
+    accessKeyId: testEnv.s3.accessKeyId,
+    secretAccessKey: testEnv.s3.secretAccessKey,
+    forcePathStyle: true,
+  });
+  ({ app, pictures } = buildBusinessApp({
     db,
     redis,
     verifier,
     revocations: createRevocationStore(redis),
     cipher: createFieldCipher(parseKeyring(`k1:${randomBytes(32).toString('base64')}`, 'k1')),
     indexer: createBlindIndexer(randomBytes(32)),
-    storage: createS3Storage({
-      endpoint: testEnv.s3.endpoint,
-      publicEndpoint: testEnv.s3.endpoint,
-      region: 'us-east-1',
-      accessKeyId: testEnv.s3.accessKeyId,
-      secretAccessKey: testEnv.s3.secretAccessKey,
-      forcePathStyle: true,
+    storage,
+    pictureUploads: new PictureUploads(storage, redis, { privateBucket: testEnv.s3.privateBucket }),
+    mediaLinks: new MediaLinks(storage, {
+      mediaBucket: testEnv.s3.mediaBucket,
+      privateBucket: testEnv.s3.privateBucket,
     }),
     settings: {
       businessTermsVersion: '1.0',
       maxBusinessesPerOwner: 3,
       documentsBucket: testEnv.s3.documentsBucket,
-      mediaBucket: testEnv.s3.mediaBucket,
     },
     http: {
       service: 'business-test',
@@ -113,7 +124,7 @@ beforeAll(async () => {
       readiness: new Readiness(),
       trustProxyHops: 1,
     },
-  });
+  }));
 });
 
 afterAll(async () => {
@@ -484,7 +495,6 @@ describe('Platform admin moderation', () => {
 // ── Legal details, documents, photos ────────────────────────────────────────
 
 const PDF = Buffer.from('%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\n%%EOF\n');
-const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), randomBytes(64)]);
 const legalProfile = (overrides: Record<string, unknown> = {}) => ({
   legalName: 'Fade Masters (Private) Limited',
   registrationCountry: 'PK',
@@ -749,8 +759,54 @@ describe('Documents (private)', () => {
   });
 });
 
-describe('Photos (public)', () => {
-  it('manager uploads; first photo is the cover; public profile shows working links; staff cannot upload', async () => {
+/** A real picture, like a phone takes: optionally sideways (EXIF orientation 6) with GPS and camera data. */
+async function picture(
+  opts: { width?: number; height?: number; gps?: boolean; format?: 'jpeg' | 'png' } = {},
+) {
+  const { width = 1200, height = 800, gps = false, format = 'jpeg' } = opts;
+  let img = sharp({ create: { width, height, channels: 3, background: '#2e86c1' } });
+  img = format === 'png' ? img.png() : img.jpeg();
+  if (gps) {
+    img = img.withMetadata({ orientation: 6 }).withExifMerge({
+      IFD0: { Make: 'PhoneMaker', Artist: 'Ayesha Khan' },
+      IFD3: {
+        GPSLatitudeRef: 'N',
+        GPSLatitude: '31/1 31/1 1200/100',
+        GPSLongitudeRef: 'E',
+        GPSLongitude: '74/1 21/1 3000/100',
+      },
+    });
+  }
+  return img.toBuffer();
+}
+
+/** Request → PUT to storage like a browser → complete. Returns both responses. */
+async function uploadPicture(
+  who: Person,
+  base: string,
+  file: Buffer,
+  extra: Record<string, unknown> = {},
+  contentType = 'image/jpeg',
+) {
+  const req = await request(app)
+    .post(`${base}/uploads`)
+    .set(who.auth)
+    .send({ contentType, sizeBytes: file.length, ...extra });
+  if (req.status !== 201) return { req, done: req };
+  const put = await fetch(req.body.data.upload.url, {
+    method: 'PUT',
+    headers: { 'Content-Type': contentType },
+    body: file,
+  });
+  expect(put.status).toBe(200);
+  const done = await request(app).post(`${base}/uploads/${req.body.data.uploadId}/complete`).set(who.auth);
+  return { req, done };
+}
+
+const keyOf = (url: string) => decodeURIComponent(new URL(url).pathname.split('/').slice(2).join('/'));
+
+describe('Pictures: gallery', () => {
+  it('manager uploads; first photo is the cover; links work; staff cannot upload', async () => {
     const owner = await person();
     const b = await createBusiness(owner);
     const [manager, staff] = [await person(), await person()];
@@ -760,62 +816,196 @@ describe('Photos (public)', () => {
         { businessId: b.id, userId: staff.id, role: 'staff' },
       ],
     });
-    expect(
-      (
-        await request(app)
-          .post(`/v1/businesses/${b.id}/photos/uploads`)
-          .set(staff.auth)
-          .send({ contentType: 'image/png', sizeBytes: PNG.length })
-      ).status,
-    ).toBe(403);
+    const base = `/v1/businesses/${b.id}/photos`;
+    expect((await uploadPicture(staff, base, await picture())).req.status).toBe(403);
 
-    const ids: string[] = [];
-    for (let i = 0; i < 2; i++) {
-      const req = await request(app)
-        .post(`/v1/businesses/${b.id}/photos/uploads`)
-        .set(manager.auth)
-        .send({ contentType: 'image/png', sizeBytes: PNG.length, altText: `Photo ${i}` });
-      await fetch(req.body.data.upload.url, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'image/png' },
-        body: PNG,
-      });
-      const done = await request(app)
-        .post(`/v1/businesses/${b.id}/photos/${req.body.data.photoId}/complete`)
-        .set(manager.auth);
+    for (const i of [0, 1]) {
+      const { done } = await uploadPicture(manager, base, await picture(), { altText: `Photo ${i}` });
       expect(done.status).toBe(200);
-      ids.push(req.body.data.photoId);
     }
     const pub = await request(app).get(`/v1/businesses/${b.slug}`);
-    expect(pub.body.data.photos.map((p: { id: string; isPrimary: boolean }) => [p.id, p.isPrimary])).toEqual([
-      [ids[0], true],
-      [ids[1], false],
-    ]);
-    expect((await fetch(pub.body.data.photos[0].url)).status).toBe(200);
+    const photos = pub.body.data.photos as { id: string; url: string; isPrimary: boolean }[];
+    expect(photos.map((p) => p.isPrimary)).toEqual([true, false]);
+    const served = await fetch(photos[0]!.url);
+    expect(served.status).toBe(200);
+    expect(served.headers.get('content-type')).toBe('image/webp');
 
-    // Deleting the cover promotes the next photo.
-    const after = await request(app).delete(`/v1/businesses/${b.id}/photos/${ids[0]}`).set(owner.auth);
-    expect(after.body.data).toEqual([expect.objectContaining({ id: ids[1], isPrimary: true })]);
+    // Deleting the cover promotes the next photo, and removes the file.
+    const after = await request(app).delete(`${base}/${photos[0]!.id}`).set(owner.auth);
+    expect(after.body.data).toEqual([expect.objectContaining({ id: photos[1]!.id, isPrimary: true })]);
+    expect(await storage.head(testEnv.s3.mediaBucket, keyOf(photos[0]!.url))).toBeNull();
   });
 
-  it('a photo that is not really an image is refused', async () => {
+  it('strips GPS and camera data, turns the photo upright, and never publishes the original', async () => {
     const owner = await person();
     const b = await createBusiness(owner);
-    const fake = Buffer.from('GIF89a but actually text');
+    const original = await picture({ gps: true });
+    const { req, done } = await uploadPicture(owner, `/v1/businesses/${b.id}/photos`, original);
+    expect(done.status).toBe(200);
+
+    // The original went to the PRIVATE bucket, under incoming/ — and is gone now.
+    const incomingKey = keyOf(req.body.data.upload.url);
+    expect(req.body.data.upload.url).toContain(`/${testEnv.s3.privateBucket}/incoming/business_photo/`);
+    expect(await storage.head(testEnv.s3.privateBucket, incomingKey)).toBeNull();
+
+    const published = Buffer.from(await (await fetch(done.body.data[0].url)).arrayBuffer());
+    const meta = await sharp(published).metadata();
+    expect(meta.format).toBe('webp');
+    expect(meta.exif).toBeUndefined();
+    expect([meta.width, meta.height]).toEqual([800, 1200]); // was stored sideways
+    expect(published.includes(Buffer.from('PhoneMaker'))).toBe(false);
+    expect(published.includes(Buffer.from('Ayesha'))).toBe(false);
+  });
+
+  it('refuses files that are not real images and deletes them', async () => {
+    const owner = await person();
+    const b = await createBusiness(owner);
+    // Starts like a JPEG (passes the signature check) but is not a decodable image.
+    const fake = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), randomBytes(2000)]);
+    const { req, done } = await uploadPicture(owner, `/v1/businesses/${b.id}/photos`, fake);
+    expect(done.status).toBe(400);
+    expect(done.body.error.code).toBe('FILE_TYPE_NOT_ALLOWED');
+    expect(await storage.head(testEnv.s3.privateBucket, keyOf(req.body.data.upload.url))).toBeNull();
+    expect((await request(app).get(`/v1/businesses/${b.slug}`)).body.data.photos).toEqual([]);
+  });
+
+  it('an upload completes once, only for the business it was requested for, and only after the file arrived', async () => {
+    const owner = await person();
+    const [b, other] = [await createBusiness(owner), await createBusiness(owner)];
+    const file = await picture({ format: 'png' });
     const req = await request(app)
       .post(`/v1/businesses/${b.id}/photos/uploads`)
       .set(owner.auth)
-      .send({ contentType: 'image/jpeg', sizeBytes: fake.length });
+      .send({ contentType: 'image/png', sizeBytes: file.length });
+    const complete = (businessId: string) =>
+      request(app)
+        .post(`/v1/businesses/${businessId}/photos/uploads/${req.body.data.uploadId}/complete`)
+        .set(owner.auth);
+
+    const early = await complete(b.id);
+    expect([early.status, early.body.error.code]).toEqual([409, 'UPLOAD_NOT_FOUND']);
     await fetch(req.body.data.upload.url, {
       method: 'PUT',
-      headers: { 'Content-Type': 'image/jpeg' },
-      body: fake,
+      headers: { 'Content-Type': 'image/png' },
+      body: file,
     });
-    const done = await request(app)
-      .post(`/v1/businesses/${b.id}/photos/${req.body.data.photoId}/complete`)
-      .set(owner.auth);
-    expect(done.status).toBe(400);
-    expect((await request(app).get(`/v1/businesses/${b.slug}`)).body.data.photos).toEqual([]);
+    expect((await complete(other.id)).status).toBe(404); // someone else's business
+    expect((await complete(b.id)).status).toBe(200);
+    expect((await complete(b.id)).status).toBe(404); // single use
+    expect((await request(app).get(`/v1/businesses/${b.slug}`)).body.data.photos).toHaveLength(1);
+  });
+});
+
+describe('Pictures: logo', () => {
+  it('shows on the public profile; replacing deletes the old file; can be removed', async () => {
+    const owner = await person();
+    const b = await createBusiness(owner);
+    const base = `/v1/businesses/${b.id}/logo`;
+    expect((await request(app).get(`/v1/businesses/${b.slug}`)).body.data.logoUrl).toBeNull();
+
+    const first = await uploadPicture(
+      owner,
+      base,
+      await picture({ width: 2000, height: 2000, format: 'png' }),
+      {},
+      'image/png',
+    );
+    expect(first.done.status).toBe(200);
+    const logo = await sharp(
+      Buffer.from(await (await fetch(first.done.body.data.logoUrl)).arrayBuffer()),
+    ).metadata();
+    expect([logo.format, logo.width, logo.height]).toEqual(['webp', 512, 512]);
+
+    const second = await uploadPicture(owner, base, await picture());
+    const profile = await request(app).get(`/v1/businesses/${b.slug}`);
+    expect(keyOf(profile.body.data.logoUrl)).toBe(keyOf(second.done.body.data.logoUrl));
+    expect(profile.body.data).not.toHaveProperty('logoStorageKey');
+    expect(await storage.head(testEnv.s3.mediaBucket, keyOf(first.done.body.data.logoUrl))).toBeNull();
+
+    expect((await request(app).delete(base).set(owner.auth)).status).toBe(204);
+    expect((await request(app).get(`/v1/businesses/${b.slug}`)).body.data.logoUrl).toBeNull();
+  });
+});
+
+describe('Pictures: employee photos', () => {
+  async function teamWithEmployee() {
+    const owner = await person();
+    const b = await createBusiness(owner);
+    const employee = await person();
+    await db.businessMember.create({ data: { businessId: b.id, userId: employee.id, role: 'staff' } });
+    const staff = await db.staff.create({
+      data: { businessId: b.id, userId: employee.id, displayName: 'Ali Raza' },
+    });
+    return { owner, b, employee, staff, base: `/v1/businesses/${b.id}/staff/${staff.id}/photo` };
+  }
+
+  it('needs the employee’s consent; then shows next to their name on the public profile', async () => {
+    const { owner, b, staff, base } = await teamWithEmployee();
+    const noConsent = await uploadPicture(owner, base, await picture());
+    expect(noConsent.req.status).toBe(400);
+
+    const { done } = await uploadPicture(owner, base, await picture({ gps: true }), {
+      consentConfirmed: true,
+    });
+    expect(done.status).toBe(200);
+    const team = (await request(app).get(`/v1/businesses/${b.slug}`)).body.data.team;
+    expect(team).toEqual([{ id: staff.id, displayName: 'Ali Raza', photoUrl: expect.any(String) }]);
+    const meta = await sharp(Buffer.from(await (await fetch(team[0].photoUrl)).arrayBuffer())).metadata();
+    expect(meta.exif).toBeUndefined();
+
+    const row = await db.staffPhoto.findFirstOrThrow({ where: { staffId: staff.id } });
+    expect(row.consentConfirmedById).toBe(owner.id);
+  });
+
+  it('the employee can remove their own photo; other staff cannot; outsiders get 404', async () => {
+    const { owner, b, employee, base } = await teamWithEmployee();
+    await uploadPicture(owner, base, await picture(), { consentConfirmed: true });
+    const colleague = await person();
+    await db.businessMember.create({ data: { businessId: b.id, userId: colleague.id, role: 'staff' } });
+
+    expect((await request(app).delete(base).set(colleague.auth)).status).toBe(403);
+    expect(
+      (
+        await request(app)
+          .delete(base)
+          .set((await person()).auth)
+      ).status,
+    ).toBe(404);
+    expect((await request(app).delete(base).set(employee.auth)).status).toBe(204);
+    expect((await request(app).get(`/v1/businesses/${b.slug}`)).body.data.team[0].photoUrl).toBeNull();
+  });
+
+  it('cannot attach a photo to another business’s employee', async () => {
+    const { staff } = await teamWithEmployee();
+    const stranger = await person();
+    const other = await createBusiness(stranger);
+    const { req } = await uploadPicture(
+      stranger,
+      `/v1/businesses/${other.id}/staff/${staff.id}/photo`,
+      await picture(),
+      { consentConfirmed: true },
+    );
+    expect(req.status).toBe(404);
+  });
+
+  it('when the employee leaves the team, their photo is deleted (event from auth-service), once or twice', async () => {
+    const { owner, b, employee, staff, base } = await teamWithEmployee();
+    const { done } = await uploadPicture(owner, base, await picture(), { consentConfirmed: true });
+    const key = keyOf(done.body.data.photoUrl);
+
+    const handle = businessEventHandler({ pictures });
+    const event = createEvent({
+      type: TOPICS.BUSINESSES_MEMBER_REMOVED,
+      source: 'auth-service',
+      subject: b.id,
+      data: { businessId: b.id, userId: employee.id, memberId: randomUUID() },
+    });
+    const ctx = { topic: event.type, partition: 0, offset: '0', key: null, attempt: 1 };
+    await handle(event, ctx);
+    await handle(event, ctx); // redelivery is harmless
+
+    expect(await db.staffPhoto.count({ where: { staffId: staff.id } })).toBe(0);
+    expect(await storage.head(testEnv.s3.mediaBucket, key)).toBeNull();
   });
 });
 

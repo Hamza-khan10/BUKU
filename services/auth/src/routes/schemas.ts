@@ -1,4 +1,5 @@
 import { MEMBER_ROLES, zBody, zEmail, zPassword, zPhone, zSafeText, zTimezone } from '@buku/common';
+import { MAX_PHOTO_BYTES, PHOTO_TYPES } from '@buku/media';
 import { z } from 'zod';
 
 /** Request/response contracts for auth-service. Also the source for docs/API_REFERENCE.md. */
@@ -95,3 +96,12 @@ export const UpdateMemberBody = zBody({
   role: z.enum(MEMBER_ROLES).optional(),
   status: z.enum(['active', 'disabled']).optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');
+
+// ── Profile picture ──────────────────────────────────────────────────────
+
+export const AvatarUploadBody = zBody({
+  contentType: z.enum(PHOTO_TYPES),
+  sizeBytes: z.number().int().min(1).max(MAX_PHOTO_BYTES),
+});
+
+export const UploadIdParams = z.object({ uploadId: z.uuid() });

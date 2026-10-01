@@ -1,4 +1,5 @@
-import { baseServiceEnv, databaseEnv, envBool, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
+import { baseServiceEnv, databaseEnv, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
+import { s3Env } from '@buku/media';
 import { z } from 'zod';
 
 /**
@@ -10,6 +11,7 @@ export const Env = baseServiceEnv.extend({
   ...kafkaEnv.shape,
   ...databaseEnv.shape,
   ...redisEnv.shape,
+  ...s3Env.shape,
   /** Version of the Business Terms an owner must accept to register a business. */
   BUSINESS_TERMS_VERSION: z.string().min(1).max(20).default('1.0'),
   /** Anti-abuse cap until business plans exist. */
@@ -22,18 +24,8 @@ export const Env = baseServiceEnv.extend({
     .base64()
     .refine((v) => Buffer.from(v, 'base64').length >= 32, 'must decode to >= 32 bytes'),
 
-  // Object storage (RustFS locally, DigitalOcean Spaces in production).
-  S3_ENDPOINT: z.url(),
-  /** Endpoint BROWSERS use for presigned links (differs from the internal one in dev). */
-  S3_PUBLIC_ENDPOINT: z.url(),
-  S3_REGION: z.string().min(1).default('us-east-1'),
-  S3_ACCESS_KEY_ID: z.string().min(1),
-  S3_SECRET_ACCESS_KEY: z.string().min(1),
-  S3_FORCE_PATH_STYLE: envBool.default(true),
+  /** Verification documents (private, kept as uploaded). Other storage settings: s3Env. */
   S3_BUCKET_DOCUMENTS: z.string().min(3),
-  S3_BUCKET_MEDIA: z.string().min(3),
-  /** CDN / public base URL for photos in production. Empty → presigned links. */
-  MEDIA_PUBLIC_BASE_URL: z.url().optional(),
 });
 
 export type Env = z.infer<typeof Env>;

@@ -14,6 +14,7 @@ import {
 } from '@buku/common';
 import { createDatabaseClient, pingDatabase } from '@buku/database';
 import { createKafka, EventProducer, kafkaConnectionFromEnv, OutboxRelay } from '@buku/kafka';
+import { PictureUploads, storageFromEnv } from '@buku/media';
 import { buildAuthApp } from './app.js';
 import { AccountPurger } from './users/data-rights.js';
 import { Env } from './config.js';
@@ -30,6 +31,7 @@ const db = createDatabaseClient({
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
 const producer = new EventProducer(createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env)));
 const verifier = await createJwtVerifierFromEnv(env);
+const { storage, links } = storageFromEnv(env);
 const signer = await createJwtSigner({
   privateKeyPem: env.JWT_PRIVATE_KEY,
   keyId: env.JWT_KEY_ID,
@@ -56,6 +58,7 @@ relay.start();
 const readiness = new Readiness()
   .add('postgres', () => pingDatabase(db))
   .add('valkey', () => redis.ping())
+  .add('object-storage', () => storage.ping([env.S3_BUCKET_PRIVATE]))
   .add('kafka', () =>
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
@@ -68,6 +71,9 @@ const { app, rights } = buildAuthApp({
   cipher: createFieldCipher(parseKeyring(env.PII_ENCRYPTION_KEYS, env.PII_ENCRYPTION_ACTIVE_KEY_ID)),
   indexer: createBlindIndexer(Buffer.from(env.PII_BLIND_INDEX_KEY, 'base64')),
   revocations: createRevocationStore(redis, env.JWT_ACCESS_TTL_SECONDS),
+  storage,
+  pictureUploads: new PictureUploads(storage, redis, { privateBucket: env.S3_BUCKET_PRIVATE }),
+  mediaLinks: links,
   identity: {
     google: env.GOOGLE_CLIENT_IDS.length ? createOidcVerifier('google', env.GOOGLE_CLIENT_IDS) : null,
     apple: env.APPLE_SIGN_IN_ENABLED ? createOidcVerifier('apple', env.APPLE_CLIENT_IDS) : null,

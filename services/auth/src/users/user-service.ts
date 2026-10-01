@@ -9,6 +9,7 @@ import {
 } from '@buku/common';
 import { isUniqueViolation, recordAudit, type Database, type User } from '@buku/database';
 import { createEvent, enqueueEvent, TOPICS } from '@buku/kafka';
+import type { MediaLinks } from '@buku/media';
 import type { VerifiedIdentity } from '../identity/oidc.js';
 import type { RequestContext } from '../http/context.js';
 import {
@@ -50,6 +51,8 @@ export interface UserServiceDeps {
   cipher: FieldCipher;
   indexer: BlindIndexer;
   sessions: SessionService;
+  /** Signed links to private pictures. */
+  links: MediaLinks;
   termsVersion: string;
   deletionGraceDays: number;
 }
@@ -148,7 +151,7 @@ export class UserService {
         newValues: { provider: identity.provider },
         ...auditCtx(ctx),
       });
-      return { user: this.toMe(updated), isNewUser: false, session };
+      return { user: await this.toMe(updated), isNewUser: false, session };
     }
 
     // ── New account ──
@@ -218,7 +221,7 @@ export class UserService {
       return { created, session };
     });
 
-    return { user: this.toMe(created), isNewUser: true, session };
+    return { user: await this.toMe(created), isNewUser: true, session };
   }
 
   /**
@@ -259,13 +262,13 @@ export class UserService {
       resourceId: user.id,
       ...auditCtx(ctx),
     });
-    return { user: this.toMe(user), isNewUser: !existing, session };
+    return { user: await this.toMe(user), isNewUser: !existing, session };
   }
 
   async getMe(userId: string): Promise<MeView> {
     const user = await this.deps.db.user.findUnique({ where: { id: userId } });
     if (!user) throw AppError.notFound('User', ErrorCodes.USER_NOT_FOUND);
-    return this.toMe(user);
+    return await this.toMe(user);
   }
 
   async updateProfile(
@@ -286,7 +289,7 @@ export class UserService {
       });
       return updated;
     });
-    return this.toMe(user);
+    return await this.toMe(user);
   }
 
   /**
@@ -331,7 +334,7 @@ export class UserService {
       });
       return updated;
     });
-    return this.toMe(user);
+    return await this.toMe(user);
   }
 
   /** Register a device for push notifications. A token moving to a new account follows the device. */
@@ -349,8 +352,12 @@ export class UserService {
     return count > 0;
   }
 
-  /** The signed-in user's own view of their account (the ONLY place contact details are decrypted). */
-  toMe(user: User): MeView {
+  /**
+   * The signed-in user's own view of their account: the ONLY place contact
+   * details are decrypted and the only way to the profile picture (D-051),
+   * through a 1-hour signed link to the private bucket.
+   */
+  async toMe(user: User): Promise<MeView> {
     const { cipher } = this.deps;
     // The most recently entered number wins: an unverified number exists only
     // if the user entered one different from their verified number.
@@ -365,7 +372,9 @@ export class UserService {
       email: user.emailEncrypted ? cipher.decrypt(user.emailEncrypted, CONTEXT.email) : null,
       phone,
       whatsappOptIn: user.whatsappOptInAt !== null,
-      avatarUrl: user.avatarUrl,
+      avatarUrl: user.avatarStorageKey
+        ? await this.deps.links.privateUrl(user.avatarStorageKey)
+        : user.avatarUrl,
       timezone: user.timezone,
       locale: user.locale,
       role: user.role,
@@ -407,6 +416,7 @@ export interface MeView {
   email: string | null;
   phone: { number: string; verified: boolean } | null;
   whatsappOptIn: boolean;
+  /** Uploaded picture (signed link, valid 1 hour) or the sign-in provider's; only ever shown to the user. */
   avatarUrl: string | null;
   timezone: string;
   locale: string;

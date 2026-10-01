@@ -239,3 +239,18 @@ PostgreSQL apt repository stopped serving it on 2026-10-01 and the image could n
 built. PostGIS and pgvector now come from that repository for Debian 12, which ships PostGIS
 3.6 (was 3.5). Existing databases upgrade in place: `ALTER EXTENSION postgis UPDATE`. Text is
 sorted by code point (`C.UTF-8`), so changing the operating system does not reorder indexes.
+
+**D-055 · Business-service owns all business media, employee photos included.**
+Staff profiles belong to booking-service, but their photos live in business-service's
+`staff_photos` (with the gallery and logo), keyed by staff id with a composite foreign key so a
+photo can't be attached to another business's employee. Removal when someone leaves the team is
+event-driven: auth-service publishes `businesses.member_removed`; business-service consumes it
+(its first consumer) and deletes the photo, idempotently.
+
+**D-056 · One picture pipeline: private original → checked → cleaned → published.**
+Originals go to a private bucket under `incoming/` (expiry rule: 1 day) and are deleted after
+cleaning; pending uploads live in Valkey (30 minutes, single use, bound to purpose and owner), so
+no table or sweeper is needed. Cleaning with sharp/libvips (Apache-2.0 / LGPL, prebuilt, no
+install scripts): auto-orient, strip all metadata, sRGB, resize per use, WebP, 40 MP input
+limit, one image at a time per process. Public pictures get a new key on every change so CDNs
+can cache them forever. Adds ~55 MB to the auth and business images.

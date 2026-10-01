@@ -103,7 +103,7 @@ export class PasswordAuthService {
       newValues: { businessId: business.id },
       ...auditCtx(ctx),
     });
-    return { user: this.deps.users.toMe(user), isNewUser: false, session };
+    return { user: await this.deps.users.toMe(user), isNewUser: false, session };
   }
 
   /** Change one's own password. Every session of the account ends, this one included. */
