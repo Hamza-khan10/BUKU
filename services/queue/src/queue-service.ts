@@ -1,3 +1,4 @@
+import { assertBusinessFeature, assertVisitAllowed } from '@buku/billing';
 import { AppError, ErrorCodes, type Role } from '@buku/common';
 import {
   constraintNameOf,
@@ -143,6 +144,8 @@ export class QueueService {
     try {
       const id = await this.change(session!.id, async (tx, fresh) => {
         this.assertOpenForJoining(fresh);
+        // The customer's plan: Free includes one visit; Plus, a trial or billing off: unlimited.
+        await assertVisitAllowed(tx, userId);
         return this.addEntry(tx, fresh, { userId, joinedRemotely: true }, ctx);
       });
       return this.ticketView(id);
@@ -251,6 +254,8 @@ export class QueueService {
       where: { businessId_sessionDate: { businessId, sessionDate } },
     });
     if (existing?.status !== 'open') {
+      // The virtual queue is part of the business's plan (Starter: not included).
+      await assertBusinessFeature(this.db, businessId, 'queue');
       await this.db.$transaction(async (tx) => {
         const session = existing
           ? await tx.queueSession.update({

@@ -211,7 +211,7 @@ session) shown large in the app/web with a QR, plus live position. The business'
 lists every ticket; front desk calls, serves or marks no-show from there, including walk-ins
 and customers without a phone. Nothing beyond the queue entry itself is stored.
 
-### 2.5 Billing service — 🚧 part 1 done (catalog, switches, calculator)
+### 2.5 Billing service — 🚧 parts 1–2 done (catalog, trials, requests, limits enforced)
 
 Everything about pricing is **data that platform admins change at any time** (D-065): plans,
 prices per channel (web / Android / iPhone), limits, features, pricing-page benefits, an on/off
@@ -237,9 +237,13 @@ Also built: a **free trial** each customer and each business can start once, whe
 the normal plan); **any plan for any account free of charge** (admin grants, optionally until a
 date, replacing a grant or trial); and **plan requests** — a business asks for a plan (e.g.
 Enterprise), an admin approves (→ a grant) or declines. Ended trials and grants expire on their own.
-Next: part 2 — limits enforced across the services (free visit, team logins, staff, services,
-photos, queue, staff photos, manual approval); part 3 — Paddle checkout and webhooks (web),
-then billing is switched on. Google Play and App Store purchases come with the mobile app.
+Part 2 (built): every limit and feature is enforced where things are created — the free visit
+(booking and queue join), team logins (active accounts; re-enabling counts), bookable staff and
+services (restoring counts), photos, the virtual queue, staff photos and manual approval. Checks
+run inside the creating transaction behind a per-account lock, so parallel requests can't slip
+past a limit. Nothing existing is ever removed by a downgrade.
+Next: part 3 — Paddle checkout and webhooks (web), then billing is switched on. Google Play and
+App Store purchases come with the mobile app.
 
 ### 2.6 Notification service
 

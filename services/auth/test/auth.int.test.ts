@@ -19,6 +19,7 @@ import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
+import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
 import { buildAuthApp } from '../src/app.js';
 import type { DataRightsService } from '../src/users/data-rights.js';
 import { appointmentData, createBusinessFixture } from '../../../packages/database/test/fixtures.js';
@@ -1005,6 +1006,34 @@ describe('Business team: employee accounts', () => {
       role: 'staff',
     });
     expect(reused.status).toBe(201);
+  });
+
+  it('team logins follow the plan: Starter 1; turned-off accounts free a place; Enterprise unlimited', async () => {
+    await withBilling(db, 'business', async () => {
+      const o = await owner();
+      const add = (username: string) =>
+        addMember(o.accessToken, o.business.id, { name: 'Emp', username, role: 'staff' });
+      const first = await add('first');
+      expect(first.status).toBe(201);
+      const second = await add('second');
+      expect([second.status, second.body.error.code, second.body.error.details]).toEqual([
+        409,
+        'PLAN_LIMIT_REACHED',
+        { limit: 'team_accounts', max: 1, used: 1, plan: 'business_free' },
+      ]);
+      const path = `${team(o.business.id)}/${first.body.data.member.id}`;
+      await request(app).patch(path).set(bearer(o.accessToken)).send({ status: 'disabled' });
+      expect((await add('second')).status).toBe(201);
+      expect(
+        (await request(app).patch(path).set(bearer(o.accessToken)).send({ status: 'active' })).status,
+      ).toBe(409);
+
+      await givePlan(db, { businessId: o.business.id }, 'business_enterprise');
+      expect(
+        (await request(app).patch(path).set(bearer(o.accessToken)).send({ status: 'active' })).status,
+      ).toBe(200);
+      for (const name of ['third', 'fourth', 'fifth']) expect((await add(name)).status).toBe(201);
+    });
   });
 
   it('usernames are unique within a business, not across businesses', async () => {

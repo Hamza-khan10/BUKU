@@ -13,21 +13,32 @@ export type Audience = 'user' | 'business';
 export interface KeyInfo {
   label: string;
   description: string;
+  /** Singular, for messages like "includes 1 team login". */
+  one?: string;
 }
 
 export const LIMIT_KEYS = {
   user: {
     visits: {
       label: 'Bookings and queue joins',
+      one: 'booking or queue join',
       description:
         'Appointments and queue tickets in total (live, completed or missed; cancelled ones don’t count).',
     },
   },
   business: {
-    team_accounts: { label: 'Team logins', description: 'Employee accounts and other team members.' },
-    staff_profiles: { label: 'Bookable staff', description: 'Active staff profiles customers can book.' },
-    services: { label: 'Services', description: 'Active services on the menu.' },
-    photos: { label: 'Photos', description: 'Gallery photos on the business profile.' },
+    team_accounts: {
+      label: 'Team logins',
+      one: 'team login',
+      description: 'Active employee accounts and other team members.',
+    },
+    staff_profiles: {
+      label: 'Bookable staff',
+      one: 'bookable staff member',
+      description: 'Active staff profiles customers can book.',
+    },
+    services: { label: 'Services', one: 'service', description: 'Active services on the menu.' },
+    photos: { label: 'Photos', one: 'photo', description: 'Gallery photos on the business profile.' },
   },
 } as const satisfies Record<Audience, Record<string, KeyInfo>>;
 

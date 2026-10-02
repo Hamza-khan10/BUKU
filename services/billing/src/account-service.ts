@@ -60,7 +60,7 @@ export class AccountService {
     const account = { businessId };
     const [e, team, staff, services, photos, trial, request] = await Promise.all([
       entitlementsOf(this.db, account),
-      this.db.businessMember.count({ where: { businessId } }),
+      this.db.businessMember.count({ where: { businessId, status: 'active' } }),
       this.db.staff.count({ where: { businessId, isActive: true } }),
       this.db.service.count({ where: { businessId, isActive: true } }),
       this.db.businessPhoto.count({ where: { businessId } }),

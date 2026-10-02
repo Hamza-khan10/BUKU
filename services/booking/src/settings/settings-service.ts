@@ -1,3 +1,4 @@
+import { assertBusinessFeature } from '@buku/billing';
 import { recordAudit, requireBusinessPermission, type Database } from '@buku/database';
 import { auditCtx, type RequestContext } from '../http/context.js';
 import { assertNotSuspended } from '../businesses.js';
@@ -57,6 +58,8 @@ export class SettingsService {
   ): Promise<BookingSettingsView> {
     await requireBusinessPermission(this.db, businessId, actorId, 'booking.settings');
     await assertNotSuspended(this.db, businessId);
+    if (changes.confirmationMode === 'manual')
+      await assertBusinessFeature(this.db, businessId, 'manual_approval');
     const data = Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined));
     await this.db.$transaction(async (tx) => {
       await tx.bookingSettings.upsert({

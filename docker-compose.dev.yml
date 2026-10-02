@@ -389,6 +389,7 @@ services:
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
       - ./packages/media/src:/app/packages/media/src:ro
+      - ./packages/billing/src:/app/packages/billing/src:ro
       - ./services/auth/src:/app/services/auth/src:ro
     depends_on:
       <<: *needs-core
@@ -420,6 +421,7 @@ services:
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
       - ./packages/media/src:/app/packages/media/src:ro
+      - ./packages/billing/src:/app/packages/billing/src:ro
       - ./services/booking/src:/app/services/booking/src:ro
     depends_on:
       <<: *needs-core
@@ -449,6 +451,7 @@ services:
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
+      - ./packages/billing/src:/app/packages/billing/src:ro
       - ./services/queue/src:/app/services/queue/src:ro
     depends_on:
       <<: *needs-core
@@ -526,6 +529,7 @@ services:
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
       - ./packages/media/src:/app/packages/media/src:ro
+      - ./packages/billing/src:/app/packages/billing/src:ro
       - ./services/business/src:/app/services/business/src:ro
     depends_on:
       <<: *needs-core

@@ -1,3 +1,4 @@
+import { assertBusinessFeature, assertBusinessLimit, assertWithinLimit, entitlementsOf } from '@buku/billing';
 import { AppError, can, ErrorCodes, uuidv7 } from '@buku/common';
 import {
   businessRoleOf,
@@ -30,7 +31,8 @@ import { auditCtx, type RequestContext } from '../http/context.js';
  * Owner or manager (`business.media`) manage them.
  */
 
-const MAX_PHOTOS = 20;
+/** Platform safety cap; the business's plan decides the real number. */
+const PLATFORM_MAX_PHOTOS = 100;
 
 export class PictureService {
   constructor(
@@ -64,6 +66,9 @@ export class PictureService {
     const id = uuidv7();
     await this.publish(`businesses/${businessId}/photos/${id}.webp`, image, async (storageKey) => {
       await this.db.$transaction(async (tx) => {
+        await assertBusinessLimit(tx, businessId, 'photos', () =>
+          tx.businessPhoto.count({ where: { businessId } }),
+        );
         const last = await tx.businessPhoto.aggregate({ where: { businessId }, _max: { sortOrder: true } });
         const hasCover = await tx.businessPhoto.count({ where: { businessId, isPrimary: true } });
         await tx.businessPhoto.create({
@@ -191,6 +196,7 @@ export class PictureService {
   ) {
     await this.authorize(businessId, userId);
     await this.findStaff(businessId, staffId);
+    await assertBusinessFeature(this.db, businessId, 'staff_photos');
     return this.uploads.request('staff_photo', businessId, input, {
       staffId,
       consentConfirmedById: userId,
@@ -312,11 +318,18 @@ export class PictureService {
     return staff;
   }
 
+  /** Early check before an upload starts (the locked check runs when the photo is saved). */
   private async assertPhotoRoom(businessId: string) {
     const count = await this.db.businessPhoto.count({ where: { businessId } });
-    if (count >= MAX_PHOTOS) {
-      throw new AppError(`A business can have at most ${MAX_PHOTOS} photos`, ErrorCodes.LIMIT_REACHED, 409);
+    if (count >= PLATFORM_MAX_PHOTOS) {
+      throw new AppError(
+        `A business can have at most ${PLATFORM_MAX_PHOTOS} photos`,
+        ErrorCodes.LIMIT_REACHED,
+        409,
+      );
     }
+    const e = await entitlementsOf(this.db, { businessId });
+    assertWithinLimit(e, 'photos', count);
   }
 
   /** `business.media` in a business that is not suspended. */

@@ -7,6 +7,8 @@ import {
   limitKeysOf,
   readPlanValues,
   type Audience,
+  type BusinessFeature,
+  type BusinessLimit,
   type KeyInfo,
 } from './registry.js';
 
@@ -88,11 +90,12 @@ export async function entitlementsOf(
 }
 
 /** Refuse creating one more of `key` when `used` already reaches the plan's limit. */
-export function assertWithinLimit(e: Entitlements, key: string, used: number): void {
+export function assertWithinLimit(e: Entitlements, key: string, used: number, message?: string): void {
   const max = e.limits[key];
   if (max === null || max === undefined || used < max) return;
   throw new AppError(
-    `Your ${e.plan.name} plan includes ${max} ${labelOf(e.audience, key).toLowerCase()}; upgrade to add more`,
+    message ??
+      `Your ${e.plan.name} plan includes ${max} ${max === 1 ? oneOf(e.audience, key) : labelOf(e.audience, key).toLowerCase()}; upgrade to add more`,
     ErrorCodes.PLAN_LIMIT_REACHED,
     409,
     { details: { limit: key, max, used, plan: e.plan.code } },
@@ -157,8 +160,60 @@ function unlimited(audience: Audience): Entitlements {
   };
 }
 
+function oneOf(audience: Audience, key: string): string {
+  const info = (LIMIT_KEYS[audience] as Record<string, KeyInfo>)[key];
+  return info?.one ?? labelOf(audience, key).toLowerCase();
+}
+
 function labelOf(audience: Audience, key: string): string {
   const limits = LIMIT_KEYS[audience] as Record<string, KeyInfo>;
   const features = FEATURE_KEYS[audience] as Record<string, KeyInfo>;
   return (limits[key] ?? features[key])?.label ?? key;
+}
+
+/**
+ * Serialize limit checks for one account and one thing inside a transaction:
+ * two parallel requests can't both see "one left" and both create. Released
+ * when the transaction ends.
+ */
+export async function lockForLimit(tx: Transaction, scope: string, id: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`limit:${scope}:${id}`}, 0))`;
+}
+
+/**
+ * Before a customer books or joins a queue (inside that transaction): may
+ * they have one more visit on their plan? Free: 1 in total; Plus or a trial:
+ * unlimited; billing off: unlimited.
+ */
+export async function assertVisitAllowed(tx: Transaction, userId: string): Promise<void> {
+  await lockForLimit(tx, 'visits', userId);
+  const e = await entitlementsOf(tx, { userId });
+  if (e.limits.visits === null || e.limits.visits === undefined) return;
+  assertWithinLimit(
+    e,
+    'visits',
+    await countVisits(tx, userId),
+    'You’ve used your free booking. Start your free trial or subscribe to BUKU Plus to keep booking',
+  );
+}
+
+/** Business limit check inside the creating transaction (locked per business and limit). */
+export async function assertBusinessLimit(
+  tx: Transaction,
+  businessId: string,
+  key: BusinessLimit,
+  count: () => Promise<number>,
+): Promise<void> {
+  await lockForLimit(tx, key, businessId);
+  const e = await entitlementsOf(tx, { businessId });
+  if (e.limits[key] === null || e.limits[key] === undefined) return;
+  assertWithinLimit(e, key, await count());
+}
+
+export async function assertBusinessFeature(
+  db: Database | Transaction,
+  businessId: string,
+  key: BusinessFeature,
+): Promise<void> {
+  assertFeature(await entitlementsOf(db, { businessId }), key);
 }

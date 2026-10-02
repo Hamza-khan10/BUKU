@@ -55,7 +55,8 @@ export const Env = baseServiceEnv
     MEMBER_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(3).max(20).default(5),
     /** ...for this long. The business can unlock earlier by resetting the password. */
     MEMBER_LOCKOUT_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
-    MAX_MEMBERS_PER_BUSINESS: z.coerce.number().int().min(1).max(1000).default(50),
+    /** Platform safety cap; the business's PLAN decides the real number (Enterprise: unlimited). */
+    MAX_MEMBERS_PER_BUSINESS: z.coerce.number().int().min(1).max(10_000).default(1000),
 
     /** Version of the Terms/Privacy Policy new users must accept. */
     TERMS_VERSION: z.string().min(1).max(20).default('1.0'),
