@@ -10,6 +10,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@buku/billing": "workspace:*",
     "@buku/common": "workspace:*",
     "@buku/database": "workspace:*",
     "@buku/kafka": "workspace:*",

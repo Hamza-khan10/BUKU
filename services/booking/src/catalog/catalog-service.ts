@@ -1,4 +1,5 @@
 import { AppError } from '@buku/common';
+import { assertBusinessLimit } from '@buku/billing';
 import {
   isUniqueViolation,
   type Prisma,
@@ -153,6 +154,9 @@ export class CatalogService {
       select: { currency: true },
     });
     const service = await this.db.$transaction(async (tx) => {
+      await assertBusinessLimit(tx, businessId, 'services', () =>
+        tx.service.count({ where: { businessId, isActive: true } }),
+      );
       const created = await tx.service.create({
         data: {
           businessId,
@@ -182,11 +186,17 @@ export class CatalogService {
     ctx: RequestContext,
   ) {
     await this.authorize(businessId, actorId);
-    await this.findService(businessId, serviceId);
+    const current = await this.findService(businessId, serviceId);
     if (patch.categoryId) await this.findCategory(businessId, patch.categoryId);
     const { staffIds, ...fields } = patch;
     const data = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
     const service = await this.db.$transaction(async (tx) => {
+      // Bringing an archived service back counts against the plan like a new one.
+      if (patch.isActive === true && !current.isActive) {
+        await assertBusinessLimit(tx, businessId, 'services', () =>
+          tx.service.count({ where: { businessId, isActive: true } }),
+        );
+      }
       await tx.service.update({ where: { id: serviceId }, data });
       if (staffIds) await this.setStaff(tx, businessId, serviceId, staffIds);
       await this.audit(tx, actorId, 'booking.service_updated', serviceId, ctx, {

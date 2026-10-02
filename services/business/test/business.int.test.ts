@@ -18,6 +18,7 @@ import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
+import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
 import { buildBusinessApp } from '../src/app.js';
 import { createS3Storage, MediaLinks, PictureUploads, type ObjectStorage } from '@buku/media';
 import sharp from 'sharp';
@@ -1052,5 +1053,54 @@ describe('Lawful per-country export', () => {
       orderBy: { createdAt: 'desc' },
     });
     expect(audit.newValues).toMatchObject({ country: 'AE', reference: 'DED-2026-0042' });
+  });
+});
+
+describe('Plans (billing on)', () => {
+  it('Starter: 5 gallery photos and no staff photos; Essential lifts both', async () => {
+    await withBilling(db, 'business', async () => {
+      const owner = await person();
+      const b = await createBusiness(owner);
+      await db.businessPhoto.createMany({
+        data: Array.from({ length: 5 }, (_, i) => ({
+          businessId: b.id,
+          storageKey: `businesses/${b.id}/photos/test-${i}-${randomUUID()}.webp`,
+          contentType: 'image/webp',
+          sizeBytes: 1000,
+          uploadedAt: new Date(),
+          isPrimary: i === 0,
+          sortOrder: i,
+        })),
+      });
+      const photo = { contentType: 'image/jpeg', sizeBytes: 1000 };
+      const over = await request(app)
+        .post(`/v1/businesses/${b.id}/photos/uploads`)
+        .set(owner.auth)
+        .send(photo);
+      expect([over.status, over.body.error.code, over.body.error.details]).toEqual([
+        409,
+        'PLAN_LIMIT_REACHED',
+        { limit: 'photos', max: 5, used: 5, plan: 'business_free' },
+      ]);
+      const staff = await db.staff.create({ data: { businessId: b.id, displayName: 'Ali' } });
+      const staffPhoto = await request(app)
+        .post(`/v1/businesses/${b.id}/staff/${staff.id}/photo/uploads`)
+        .set(owner.auth)
+        .send({ ...photo, consentConfirmed: true });
+      expect([staffPhoto.status, staffPhoto.body.error.code]).toEqual([403, 'PLAN_FEATURE_UNAVAILABLE']);
+
+      await givePlan(db, { businessId: b.id }, 'business_essential');
+      expect(
+        (await request(app).post(`/v1/businesses/${b.id}/photos/uploads`).set(owner.auth).send(photo)).status,
+      ).toBe(201);
+      expect(
+        (
+          await request(app)
+            .post(`/v1/businesses/${b.id}/staff/${staff.id}/photo/uploads`)
+            .set(owner.auth)
+            .send({ ...photo, consentConfirmed: true })
+        ).status,
+      ).toBe(201);
+    });
   });
 });

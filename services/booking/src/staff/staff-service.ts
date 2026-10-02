@@ -1,4 +1,5 @@
 import { AppError } from '@buku/common';
+import { assertBusinessLimit } from '@buku/billing';
 import {
   isUniqueViolation,
   recordAudit,
@@ -80,6 +81,9 @@ export class StaffService {
     if (input.userId) await this.assertTeamAccount(businessId, input.userId);
     try {
       const staff = await this.db.$transaction(async (tx) => {
+        await assertBusinessLimit(tx, businessId, 'staff_profiles', () =>
+          tx.staff.count({ where: { businessId, isActive: true } }),
+        );
         const created = await tx.staff.create({
           data: {
             businessId,
@@ -107,12 +111,18 @@ export class StaffService {
     ctx: RequestContext,
   ) {
     await this.authorize(businessId, actorId);
-    await this.find(businessId, staffId);
+    const current = await this.find(businessId, staffId);
     if (patch.userId) await this.assertTeamAccount(businessId, patch.userId);
+    const reactivating = patch.isActive === true && !current.isActive;
     const { serviceIds, ...fields } = patch;
     const data = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
     try {
       const staff = await this.db.$transaction(async (tx) => {
+        if (reactivating) {
+          await assertBusinessLimit(tx, businessId, 'staff_profiles', () =>
+            tx.staff.count({ where: { businessId, isActive: true } }),
+          );
+        }
         await tx.staff.update({ where: { id: staffId }, data });
         if (serviceIds) await this.setServices(tx, businessId, staffId, serviceIds);
         await this.audit(tx, actorId, 'booking.staff_updated', staffId, ctx, {

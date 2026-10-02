@@ -16,6 +16,7 @@ import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
+import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
 import { buildBookingApp } from '../src/app.js';
 import { addDays, toInstant, wallClock } from '../src/availability/time.js';
 
@@ -490,5 +491,48 @@ describe('The business’s list (serve customers with or without a phone)', () =
       reasonCode: 'business_unavailable',
       late: false,
     });
+  });
+});
+
+describe('Plans: the free visit (billing on)', () => {
+  it('Free: one booking; cancelled ones don’t count; Plus is unlimited', async () => {
+    await withBilling(db, 'user', async () => {
+      const [a, b] = [await salon(), await salon()];
+      const me = await person();
+      const first = await book(me, a, at(DAY(), '10:00'));
+      expect(first.status).toBe(201);
+      const second = await book(me, b, at(DAY(), '12:00'));
+      expect([second.status, second.body.error.code]).toEqual([409, 'PLAN_LIMIT_REACHED']);
+      expect(second.body.error).toMatchObject({
+        message: expect.stringContaining('free booking'),
+        details: { limit: 'visits', max: 1, used: 1, plan: 'user_free' },
+      });
+
+      await request(app)
+        .post(`/v1/appointments/${first.body.data.id}/cancel`)
+        .set(me.auth)
+        .send({ reasonCode: 'other' });
+      expect((await book(me, b, at(DAY(), '12:00'))).status).toBe(201);
+
+      await givePlan(db, { userId: me.id }, 'user_plus');
+      expect((await book(me, a, at(DAY(), '14:00'))).status).toBe(201);
+      expect((await book(me, b, at(DAY(), '15:00'))).status).toBe(201);
+    });
+  });
+
+  it('two bookings at once at different businesses: only one free visit is used', async () => {
+    await withBilling(db, 'user', async () => {
+      const [a, b] = [await salon(), await salon()];
+      const me = await person();
+      const results = await Promise.all([book(me, a, at(DAY(), '10:00')), book(me, b, at(DAY(), '13:00'))]);
+      expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    });
+  });
+
+  it('billing off: everyone books freely (as in every other test)', async () => {
+    const s = await salon({ staffCount: 2 });
+    const me = await person();
+    expect((await book(me, s, at(DAY(), '10:00'))).status).toBe(201);
+    expect((await book(me, s, at(DAY(), '11:00'))).status).toBe(201);
   });
 });

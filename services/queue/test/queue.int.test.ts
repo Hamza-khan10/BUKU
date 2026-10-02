@@ -15,6 +15,7 @@ import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
+import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
 import { buildQueueApp } from '../src/app.js';
 
 /** The virtual queue against the real database (incl. PostGIS distances and the one-ticket rule). */
@@ -335,5 +336,37 @@ describe('Front desk access and settings', () => {
     ).toBe(403);
     await desk(s, '/open');
     expect((await join(await person(), s)).body.data.ticket).toBe('P-001');
+  });
+});
+
+describe('Plans (billing on)', () => {
+  it('the virtual queue needs a plan that includes it (Starter doesn’t)', async () => {
+    await withBilling(db, 'business', async () => {
+      const s = await shop({ open: false });
+      const refused = await desk(s, '/open');
+      expect([refused.status, refused.body.error.code]).toEqual([403, 'PLAN_FEATURE_UNAVAILABLE']);
+      await givePlan(db, { businessId: s.b.id }, 'business_essential');
+      expect((await desk(s, '/open')).status).toBe(200);
+    });
+  });
+
+  it('a queue join is a visit: Free customers get one; leaving before being served gives it back', async () => {
+    await withBilling(db, 'user', async () => {
+      const s = await shop();
+      const me = await person();
+      const first = await join(me, s);
+      expect(
+        (await request(app).post(`/v1/queue/tickets/${first.body.data.id}/leave`).set(me.auth)).status,
+      ).toBe(200);
+      const second = await join(me, s);
+      expect(second.status).toBe(201);
+      await desk(s, '/call-next');
+      await desk(s, `/entries/${second.body.data.id}/serve`);
+      await desk(s, `/entries/${second.body.data.id}/complete`);
+      const third = await join(me, s);
+      expect([third.status, third.body.error.code]).toEqual([409, 'PLAN_LIMIT_REACHED']);
+      await givePlan(db, { userId: me.id }, 'user_plus');
+      expect((await join(me, s)).status).toBe(201);
+    });
   });
 });

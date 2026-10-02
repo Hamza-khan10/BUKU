@@ -16,6 +16,7 @@ import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
+import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
 import { buildBookingApp } from '../src/app.js';
 import { bookingEventHandler } from '../src/events/handlers.js';
 import { todayIn } from '../src/schedules/schedule-service.js';
@@ -505,5 +506,59 @@ describe('Booking settings', () => {
     expect(
       (await put(`${base}/booking-settings`, await member('staff'), { bookingHorizonDays: 30 })).status,
     ).toBe(403);
+  });
+});
+
+describe('Plans: business limits (billing on)', () => {
+  it('Starter: 10 services; archiving frees a place; bringing one back counts again', async () => {
+    await withBilling(db, 'business', async () => {
+      const { owner, b, base } = await business();
+      const ids: string[] = [];
+      for (let i = 0; i < 10; i++)
+        ids.push((await post(`${base}/services`, owner, haircut({ name: `S${i}` }))).body.data.id);
+      const over = await post(`${base}/services`, owner, haircut({ name: 'Eleventh' }));
+      expect([over.status, over.body.error.code, over.body.error.details]).toEqual([
+        409,
+        'PLAN_LIMIT_REACHED',
+        { limit: 'services', max: 10, used: 10, plan: 'business_free' },
+      ]);
+      await del(`${base}/services/${ids[0]}`, owner);
+      expect((await post(`${base}/services`, owner, haircut({ name: 'Replacement' }))).status).toBe(201);
+      const back = await request(app)
+        .patch(`${base}/services/${ids[0]}`)
+        .set(owner.auth)
+        .send({ isActive: true });
+      expect(back.status).toBe(409);
+
+      await givePlan(db, { businessId: b.id }, 'business_essential');
+      expect(
+        (await request(app).patch(`${base}/services/${ids[0]}`).set(owner.auth).send({ isActive: true }))
+          .status,
+      ).toBe(200);
+    });
+  });
+
+  it('Starter: 2 bookable staff; manual approval is a paid feature', async () => {
+    await withBilling(db, 'business', async () => {
+      const { owner, b, base } = await business();
+      await post(`${base}/staff`, owner, { displayName: 'One' });
+      await post(`${base}/staff`, owner, { displayName: 'Two' });
+      expect((await post(`${base}/staff`, owner, { displayName: 'Three' })).body.error.details).toMatchObject(
+        { limit: 'staff_profiles', max: 2 },
+      );
+
+      const manual = await put(`${base}/booking-settings`, owner, { confirmationMode: 'manual' });
+      expect([manual.status, manual.body.error.code, manual.body.error.details]).toEqual([
+        403,
+        'PLAN_FEATURE_UNAVAILABLE',
+        { feature: 'manual_approval', plan: 'business_free' },
+      ]);
+      // Other settings are always allowed.
+      expect((await put(`${base}/booking-settings`, owner, { bookingHorizonDays: 60 })).status).toBe(200);
+
+      await givePlan(db, { businessId: b.id }, 'business_essential');
+      expect((await put(`${base}/booking-settings`, owner, { confirmationMode: 'manual' })).status).toBe(200);
+      expect((await post(`${base}/staff`, owner, { displayName: 'Three' })).status).toBe(201);
+    });
   });
 });

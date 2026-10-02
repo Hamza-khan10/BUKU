@@ -1,3 +1,4 @@
+import { assertBusinessLimit } from '@buku/billing';
 import {
   AppError,
   canManageRole,
@@ -111,6 +112,8 @@ export class MemberService {
     const passwordHash = await hashPassword(temporaryPassword);
     try {
       const member = await db.$transaction(async (tx) => {
+        // The business's plan decides how many team logins it has (Enterprise: unlimited).
+        await assertBusinessLimit(tx, businessId, 'team_accounts', () => activeMembers(tx, businessId));
         const user = await tx.user.create({
           data: {
             name: input.name,
@@ -164,6 +167,10 @@ export class MemberService {
     }
 
     const updated = await db.$transaction(async (tx) => {
+      // Turning an account back on counts against the plan like a new one.
+      if (changes.status === 'active' && member.status === 'disabled') {
+        await assertBusinessLimit(tx, businessId, 'team_accounts', () => activeMembers(tx, businessId));
+      }
       if (changes.name !== undefined) {
         await tx.user.update({ where: { id: member.userId }, data: { name: changes.name } });
       }
@@ -304,6 +311,10 @@ export class MemberService {
     if (managed) await this.deps.sessions.endAllSessions(userId, reason, ctx, tx);
   }
 }
+
+/** Team logins in use: active members (turned-off accounts don't count). */
+const activeMembers = (tx: Transaction, businessId: string) =>
+  tx.businessMember.count({ where: { businessId, status: 'active' } });
 
 function assertCanManage(actor: BusinessRole, target: MemberRole): void {
   if (!canManageRole(actor, target)) {

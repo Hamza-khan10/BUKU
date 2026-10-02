@@ -347,3 +347,11 @@ optionally until a date, optionally replacing a grant or trial — never a store
 is cancelled in the store). Businesses can request a plan; approval creates the grant. Plan names
 are professional: Starter (default), Essential, Professional, Enterprise — editable like
 everything else.
+
+**D-068 · How plan limits are enforced.** Each service checks right where it creates the thing,
+inside the same transaction, after taking an advisory lock for that account and limit
+(`@buku/billing` `assertVisitAllowed`, `assertBusinessLimit`, `assertBusinessFeature`), so two
+parallel requests can't both use the last place (verified: removing the lock makes the race test
+fail). Counts are of ACTIVE things (turned-off logins, archived services and inactive staff don't
+count; re-activating counts like creating). Platform safety caps remain as abuse guards above any
+plan (1,000 team logins, 100 photos). A downgrade never deletes or disables anything.

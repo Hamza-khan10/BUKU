@@ -381,6 +381,9 @@ importers:
 
   services/auth:
     dependencies:
+      '@buku/billing':
+        specifier: workspace:*
+        version: link:../../packages/billing
       '@buku/common':
         specifier: workspace:*
         version: link:../../packages/common
@@ -440,6 +443,9 @@ importers:
 
   services/booking:
     dependencies:
+      '@buku/billing':
+        specifier: workspace:*
+        version: link:../../packages/billing
       '@buku/common':
         specifier: workspace:*
         version: link:../../packages/common
@@ -468,6 +474,9 @@ importers:
 
   services/business:
     dependencies:
+      '@buku/billing':
+        specifier: workspace:*
+        version: link:../../packages/billing
       '@buku/common':
         specifier: workspace:*
         version: link:../../packages/common
@@ -524,6 +533,9 @@ importers:
 
   services/queue:
     dependencies:
+      '@buku/billing':
+        specifier: workspace:*
+        version: link:../../packages/billing
       '@buku/common':
         specifier: workspace:*
         version: link:../../packages/common

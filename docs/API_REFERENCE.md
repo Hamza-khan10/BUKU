@@ -208,7 +208,7 @@ Served by auth-service. Requires `members.manage` (owner, manager). Managers cre
 
 The temporary password is returned **once** and never stored in clear: hand it to the employee
 in person. Usernames: 3–40 characters (letters, digits, `.`, `_`, `-`), case-insensitive,
-unique within the business (`409 USERNAME_TAKEN`). Up to 50 team accounts per business.
+unique within the business (`409 USERNAME_TAKEN`). How many active team logins a business has depends on its plan (`409 PLAN_LIMIT_REACHED`); turning an account off frees its place, turning it back on uses one.
 
 ## Business service — `/v1/businesses`, `/v1/admin`
 
@@ -700,7 +700,7 @@ GET /v1/businesses/:id/billing
 
 `source`: `subscription`, `default` (no subscription: the Free / Starter plan) or `billing_off`.
 Over a limit (e.g. after a downgrade), nothing is removed — only adding more is refused
-(`409 PLAN_LIMIT_REACHED`, from part 2).
+(`409 PLAN_LIMIT_REACHED`).
 
 ### Free trial (once per account)
 
@@ -728,3 +728,34 @@ POST /v1/businesses/:id/billing/plan-requests
 One open request per business. The admin approves — optionally free `until` a date, or with a
 different `planCode` — which creates a grant (replacing a trial or grant the business has) and
 links it to the request; or declines with a `note`.
+
+### Plan limits in every service (2.5 part 2)
+
+While billing is on, creating something a plan limits is checked against the account's plan:
+
+| What               | Where                                                   | Refusal                                         |
+| ------------------ | ------------------------------------------------------- | ----------------------------------------------- |
+| A visit (customer) | `POST /v1/appointments`, `POST /v1/queue/join`          | `409 PLAN_LIMIT_REACHED` `limit: visits`        |
+| Team logins        | `POST /v1/businesses/:id/members`, re-enabling a member | `limit: team_accounts`                          |
+| Bookable staff     | `POST …/staff`, re-activating a profile                 | `limit: staff_profiles`                         |
+| Services           | `POST …/services`, restoring an archived one            | `limit: services`                               |
+| Gallery photos     | `POST …/photos/uploads` (and when saved)                | `limit: photos` (platform cap 100)              |
+| Virtual queue      | `POST …/queue/open`                                     | `403 PLAN_FEATURE_UNAVAILABLE` `feature: queue` |
+| Staff photos       | `POST …/staff/:staffId/photo/uploads`                   | `feature: staff_photos`                         |
+| Manual approval    | `PUT …/booking-settings { confirmationMode: "manual" }` | `feature: manual_approval`                      |
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "PLAN_LIMIT_REACHED",
+    "message": "Your Starter plan includes 1 team login; upgrade to add more",
+    "details": { "limit": "team_accounts", "max": 1, "used": 1, "plan": "business_free" }
+  }
+}
+```
+
+Apps show the message and offer the trial or an upgrade (`GET …/billing` says which). A
+customer's visits are bookings and queue tickets that are live, completed or missed — cancelled,
+declined and left ones don't count. Over a limit after a downgrade, everything already there
+keeps working; only adding more is refused.
