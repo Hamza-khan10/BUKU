@@ -132,3 +132,6 @@ export const ApproveBody = zBody({
 });
 
 export const DeclineBody = zBody({ note: zSafeText({ min: 3, max: 500 }) });
+
+export const CheckoutBody = zBody({ planCode: zPlanCode });
+export const ChangePlanBody = zBody({ planCode: zPlanCode });

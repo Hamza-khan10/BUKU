@@ -759,3 +759,52 @@ Apps show the message and offer the trial or an upgrade (`GET …/billing` says 
 customer's visits are bookings and queue tickets that are live, completed or missed — cancelled,
 declined and left ones don't count. Over a limit after a downgrade, everything already there
 keeps working; only adding more is refused.
+
+## Paying online — Paddle (2.5 part 3)
+
+| Method & path                                           | Auth      | Who                  | Purpose                                                  |
+| ------------------------------------------------------- | --------- | -------------------- | -------------------------------------------------------- |
+| `POST /v1/billing/checkout { planCode }`                | ✔         | a customer           | Start paying for a plan → Paddle checkout                |
+| `POST /v1/businesses/:id/billing/checkout { planCode }` | ✔         | owner                | Same for the business                                    |
+| `POST …/subscription/cancel` · `/undo-cancel`           | ✔         | the customer / owner | Cancel at the end of the paid period · keep it after all |
+| `POST …/subscription/change { planCode }`               | ✔         | the customer / owner | Switch plan now (difference charged or credited)         |
+| `GET …/subscription/portal`                             | ✔         | the customer / owner | Links to update the card and see invoices (Paddle)       |
+| `POST /v1/billing/webhooks/paddle`                      | signature | Paddle               | Subscription events (signed; no sign-in)                 |
+| `POST /v1/admin/billing/prices/:id/sync-paddle`         | ✔         | super_admin          | Create the plan's product and this web price in Paddle   |
+
+`…` = `/v1/billing/me` for customers, `/v1/businesses/:id/billing` for businesses.
+
+### Checkout in the app
+
+```json
+POST /v1/businesses/:id/billing/checkout { "planCode": "business_essential" }
+→ 201 { "transactionId": "txn_…", "checkoutUrl": "https://…?_ptxn=txn_…", "clientToken": "test_…",
+        "environment": "sandbox", "plan": { "code": "business_essential", "name": "Essential" },
+        "price": { "amount": "24.99", "currency": "USD", "interval": "month" } }
+```
+
+```js
+Paddle.Environment.set('sandbox'); // only in sandbox
+Paddle.Initialize({ token: clientToken });
+Paddle.Checkout.open({ transactionId });
+```
+
+Paddle shows the payment form, collects the card and the sales tax/VAT, and charges monthly. The
+plan starts when Paddle's webhook arrives (seconds): poll `GET …/billing` until `source` is
+`subscription`. The BUKU account is attached to the transaction by the server — the browser can't
+point a payment at another account.
+
+| Refusal                   | When                                                                               |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| `409 CONFLICT`            | Billing is off (everything included), or a paid plan already exists (use `change`) |
+| `409 FEATURE_DISABLED`    | The plan's web price isn't linked to Paddle yet (sync it)                          |
+| `503 FEATURE_DISABLED`    | Paddle isn't configured on this server                                             |
+| `502 SERVICE_UNAVAILABLE` | Paddle didn't answer; try again                                                    |
+
+### Webhooks
+
+Paddle signs every notification (`Paddle-Signature: ts=…;h1=…`, HMAC-SHA256 of `ts:body` with the
+destination's secret). Refused with `401` when unsigned, wrongly signed or older than 5 minutes;
+each `event_id` is processed once (duplicates answer `{ processed: false }`); updates older than
+the last one applied are ignored (Paddle can deliver out of order). Events BUKU can't use (unknown
+price, no BUKU account) are acknowledged and logged so Paddle stops retrying.

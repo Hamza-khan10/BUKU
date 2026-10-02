@@ -115,6 +115,11 @@ services:
         paths: ['/v1/billing/plans']
         methods: [GET, OPTIONS]
         strip_path: false
+      # Paddle's notifications: no token, the signature is checked by billing-service.
+      - name: billing-paddle-webhook
+        paths: ['/v1/billing/webhooks/paddle']
+        methods: [POST]
+        strip_path: false
       - name: billing-private
         paths: ['/v1/billing', '/v1/admin/billing']
         strip_path: false

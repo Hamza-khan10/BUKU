@@ -555,6 +555,11 @@ services:
       SERVICE_NAME: billing-service
       PORT: '3009'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      # Online checkout (Paddle sandbox). Empty → checkout unavailable, everything else works.
+      PADDLE_ENVIRONMENT: ${PADDLE_ENVIRONMENT:-sandbox}
+      PADDLE_API_KEY: ${PADDLE_API_KEY:-}
+      PADDLE_CLIENT_TOKEN: ${PADDLE_CLIENT_TOKEN:-}
+      PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/database/src:/app/packages/database/src:ro

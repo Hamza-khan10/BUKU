@@ -355,3 +355,19 @@ parallel requests can't both use the last place (verified: removing the lock mak
 fail). Counts are of ACTIVE things (turned-off logins, archived services and inactive staff don't
 count; re-activating counts like creating). Platform safety caps remain as abuse guards above any
 plan (1,000 team logins, 100 photos). A downgrade never deletes or disables anything.
+
+**D-069 · Web payments through Paddle, by API and signed webhooks.** No Paddle SDK: a small fetch
+client (timeouts, no customer data in logs). Checkout is a transaction created server-side with
+the BUKU account in `custom_data`, opened by Paddle.js with the public client token. Webhooks are
+the source of truth: HMAC-SHA256 over `ts:raw body` (constant-time, any of several signatures for
+rotation, 5-minute tolerance), each `event_id` once (`processed_events`, released again if
+processing fails so Paddle retries), and ordered by the subscription's `updated_at`. Cancelling
+is at the end of the paid period; plan changes are prorated immediately; admins end at once.
+Prices are created in Paddle from BUKU's catalog ("sync"), so BUKU stays the place prices change.
+Paddle is optional configuration: without its three keys, checkout says so and nothing else is
+affected.
+
+**D-070 · `.env` lines never carry an inline comment after an empty value.** Docker Compose
+reads `KEY=   # note` as the value `# note`, which made empty optional keys look set (found when
+the Paddle all-or-none check refused to start). The template puts such comments on their own
+line, and `pnpm bootstrap` rewrites existing `.env` files the same way.

@@ -214,6 +214,15 @@ export class AccountService {
     return subscriptionView(await this.load(sub.id));
   }
 
+  /** Who bills a subscription: manual, trial, paddle… (null if unknown). */
+  async providerOf(subscriptionId: string): Promise<string | null> {
+    const sub = await this.db.subscription.findUnique({
+      where: { id: subscriptionId },
+      select: { provider: true },
+    });
+    return sub?.provider ?? null;
+  }
+
   /** End a grant or trial now. Store subscriptions are cancelled in the store. */
   async end(subscriptionId: string, adminId: string, reason: string, ctx: RequestContext) {
     const sub = await this.db.subscription.findUnique({ where: { id: subscriptionId } });
