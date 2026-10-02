@@ -21,16 +21,18 @@ export interface BillingAppDeps {
   http: { service: string; logger: Logger; readiness: Readiness; trustProxyHops: number; bodyLimit?: string };
 }
 
-export function buildBillingApp(deps: BillingAppDeps): Express {
-  return createHttpApp({
+export function buildBillingApp(deps: BillingAppDeps): { app: Express; accounts: AccountService } {
+  const accounts = new AccountService(deps.db);
+  const app = createHttpApp({
     ...deps.http,
     routes: (app) =>
       registerRoutes(app, {
         catalog: new CatalogService(deps.db),
-        accounts: new AccountService(deps.db),
+        accounts,
         verifier: deps.verifier,
         revocations: deps.revocations,
         redis: deps.redis,
       }),
   });
+  return { app, accounts };
 }

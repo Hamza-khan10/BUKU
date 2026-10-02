@@ -121,7 +121,7 @@ services:
         plugins: [*jwt]
       # A business's plan and usage.
       - name: business-billing
-        paths: ['~/v1/businesses/[^/]+/billing$']
+        paths: ['~/v1/businesses/[^/]+/billing($|/)']
         regex_priority: 20
         strip_path: false
         plugins: [*jwt]

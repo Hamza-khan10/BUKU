@@ -328,7 +328,7 @@ what they agreed to (grandfathering) until deliberately moved. Plans are archive
 the plans an audience falls back to can't be archived. One resolver (`@buku/billing`
 `entitlementsOf`) decides what an account may do: billing off → the "billing off" plan; a live
 subscription → its plan; otherwise the default plan; settings missing → unlimited. Limits only
-block creating MORE; downgrades never delete anything. Business tiers (Local $24.99, Mid-size
+block creating MORE; downgrades never delete anything. Business tiers (Essential $24.99, Professional
 $49.99, Enterprise $99.99) differ by team logins, staff, services, photos and features; customers
 have Free (1 visit) and BUKU Plus ($1.99 web/Android, $4.99 iPhone to absorb the App Store's cut).
 Billing launches switched off until checkout exists (part 3). A billing-service owns it all;
@@ -337,3 +337,13 @@ Paddle is the merchant of record on the web (collects and remits sales tax/VAT).
 **D-066 · Unbuilt products are recorded as limits/features first.** Ads (Enterprise only) and
 priority support exist as plan features now, so the pricing page and entitlements are right from
 the start; each is enforced when its product is built.
+
+**D-067 · Free trials, grants and plan requests.** A trial is a subscription with provider
+`trial`: one per account ever (partial unique index), started by the account whenever it likes,
+ending on its own date (it stops counting at once; a sweeper marks it `expired`). Trial length,
+plan and on/off are settings per audience (default 30 days of BUKU Plus / Professional); switching
+trials off only stops new ones. Any plan can be given to any account free of charge (admin grant,
+optionally until a date, optionally replacing a grant or trial — never a store-billed plan, which
+is cancelled in the store). Businesses can request a plan; approval creates the grant. Plan names
+are professional: Starter (default), Essential, Professional, Enterprise — editable like
+everything else.

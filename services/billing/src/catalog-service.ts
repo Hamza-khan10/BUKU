@@ -64,7 +64,10 @@ export class CatalogService {
    */
   async pricing(audience: Audience, channel: Channel, currency: string) {
     const [settings, plans] = await Promise.all([
-      this.db.billingSettings.findUnique({ where: { audience }, include: { defaultPlan: true } }),
+      this.db.billingSettings.findUnique({
+        where: { audience },
+        include: { defaultPlan: true, trialPlan: true },
+      }),
       this.db.plan.findMany({
         where: { audience, isPublic: true, archivedAt: null },
         orderBy: { sortOrder: 'asc' },
@@ -78,6 +81,14 @@ export class CatalogService {
       /** False while billing is off: everyone has everything, and the page can say so. */
       billingEnabled: settings?.enabled ?? false,
       defaultPlan: settings ? settings.defaultPlan.code : null,
+      /** "Try <plan> free for <days> days" — once per account, started whenever they like. */
+      trial:
+        settings?.trialEnabled && settings.trialPlan && !settings.trialPlan.archivedAt
+          ? {
+              days: settings.trialDays,
+              plan: { code: settings.trialPlan.code, name: settings.trialPlan.name },
+            }
+          : null,
       comparison: describeKeys(audience),
       plans: plans
         // A paid plan without a price on this channel isn't for sale here; free plans always show.
@@ -121,6 +132,7 @@ export class CatalogService {
         .flatMap((s) => [
           s.defaultPlanId === p.id ? `default for ${s.audience}s` : null,
           s.planWhenDisabledId === p.id ? `plan for ${s.audience}s while billing is off` : null,
+          s.trialPlanId === p.id ? `free trial for ${s.audience}s` : null,
         ])
         .filter(Boolean),
     }));
@@ -195,11 +207,12 @@ export class CatalogService {
   async archivePlan(code: string, adminId: string, ctx: RequestContext) {
     const plan = await this.findPlan(code);
     const usedBy = await this.db.billingSettings.findFirst({
-      where: { OR: [{ defaultPlanId: plan.id }, { planWhenDisabledId: plan.id }] },
+      where: { OR: [{ defaultPlanId: plan.id }, { planWhenDisabledId: plan.id }, { trialPlanId: plan.id }] },
     });
     if (usedBy) {
+      const role = usedBy.trialPlanId === plan.id ? 'free-trial' : 'fallback';
       throw AppError.conflict(
-        `"${code}" is the ${usedBy.audience}s’ fallback plan; choose another one in the billing settings first`,
+        `"${code}" is the ${usedBy.audience}s’ ${role} plan; choose another one in the billing settings first`,
       );
     }
     const updated = await this.db.$transaction(async (tx) => {
@@ -335,15 +348,17 @@ export class CatalogService {
 
   async getSettings() {
     const rows = await this.db.billingSettings.findMany({
-      include: { defaultPlan: true, planWhenDisabled: true },
+      include: settingsInclude,
     });
     return rows.map(settingsView);
   }
 
   /**
-   * Turn charging on or off for users or businesses, and choose the plans
-   * they fall back to. Off → everyone gets `planWhenDisabled` at once; nothing
-   * else changes (subscriptions stay recorded and apply again when back on).
+   * Turn charging on or off for users or businesses, choose the plans they
+   * fall back to, and set up the free trial (on/off, length, which plan; a
+   * null plan removes trials). Off → everyone gets `planWhenDisabled` at once;
+   * nothing else changes (subscriptions stay recorded and apply again when
+   * back on). Switching trials off stops NEW trials; running ones finish.
    */
   async updateSettings(
     audience: Audience,
@@ -351,6 +366,9 @@ export class CatalogService {
       enabled?: boolean | undefined;
       defaultPlanCode?: string | undefined;
       planWhenDisabledCode?: string | undefined;
+      trialEnabled?: boolean | undefined;
+      trialDays?: number | undefined;
+      trialPlanCode?: string | null | undefined;
     },
     adminId: string,
     ctx: RequestContext,
@@ -369,13 +387,18 @@ export class CatalogService {
       ...(changes.planWhenDisabledCode && {
         planWhenDisabledId: await planFor(changes.planWhenDisabledCode),
       }),
+      ...(changes.trialEnabled !== undefined && { trialEnabled: changes.trialEnabled }),
+      ...(changes.trialDays !== undefined && { trialDays: changes.trialDays }),
+      ...(changes.trialPlanCode !== undefined && {
+        trialPlanId: changes.trialPlanCode === null ? null : await planFor(changes.trialPlanCode),
+      }),
       updatedById: adminId,
     };
     const updated = await this.db.$transaction(async (tx) => {
       const updated = await tx.billingSettings.update({
         where: { audience },
         data,
-        include: { defaultPlan: true, planWhenDisabled: true },
+        include: settingsInclude,
       });
       await this.audit(tx, adminId, 'billing.settings_updated', 'billing_settings', null, ctx, {
         audience,
@@ -622,11 +645,16 @@ function priceView(p: {
   };
 }
 
+const settingsInclude = { defaultPlan: true, planWhenDisabled: true, trialPlan: true } as const;
+
 function settingsView(s: {
   audience: string;
   enabled: boolean;
   defaultPlan: { code: string; name: string };
   planWhenDisabled: { code: string; name: string };
+  trialEnabled: boolean;
+  trialDays: number;
+  trialPlan: { code: string; name: string } | null;
   updatedAt: Date;
 }) {
   return {
@@ -634,6 +662,11 @@ function settingsView(s: {
     enabled: s.enabled,
     defaultPlan: { code: s.defaultPlan.code, name: s.defaultPlan.name },
     planWhenDisabled: { code: s.planWhenDisabled.code, name: s.planWhenDisabled.name },
+    trial: {
+      enabled: s.trialEnabled,
+      days: s.trialDays,
+      plan: s.trialPlan ? { code: s.trialPlan.code, name: s.trialPlan.name } : null,
+    },
     updatedAt: s.updatedAt.toISOString(),
   };
 }
