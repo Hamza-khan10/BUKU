@@ -29,6 +29,7 @@ import type { QueueSettingsService } from './settings.js';
  */
 
 const LIVE = ['waiting', 'called', 'serving'] as const;
+const PUBLIC_LINE_LENGTH = 300;
 type EntryStatus = 'waiting' | 'called' | 'serving' | 'completed' | 'left' | 'no_show';
 type SessionRow = Awaited<ReturnType<Database['queueSession']['findUniqueOrThrow']>>;
 
@@ -52,6 +53,8 @@ export class QueueService {
   constructor(
     private readonly db: Database,
     private readonly settings: QueueSettingsService,
+    /** Told after every committed change, so live screens update (live/live-hub.ts). */
+    private readonly onChange: (businessId: string) => void = () => undefined,
   ) {}
 
   // ── Public: is there a queue, and how long is it? ────────────────────────
@@ -81,6 +84,11 @@ export class QueueService {
       status: session.status,
       remoteJoinRadiusMeters: settings.remoteJoinRadiusMeters,
       waiting: waiting.length,
+      /**
+       * The waiting tickets in calling order (first PUBLIC_LINE_LENGTH). A phone finds its own
+       * position here — ahead = index of its ticket — without a personal stream or login.
+       */
+      line: waiting.slice(0, PUBLIC_LINE_LENGTH).map((e) => ticketLabel(e.ticketPrefix, e.ticketNumber)),
       /** Ticket numbers only — never names. */
       called: entries
         .filter((e) => e.status === 'called')
@@ -90,7 +98,15 @@ export class QueueService {
         .map((e) => ticketLabel(e.ticketPrefix, e.ticketNumber)),
       /** For someone joining now. */
       estimatedWaitMinutes: estimateWaitMinutes(waiting.length, session.avgServiceSeconds, onShift),
+      /** To estimate any position: ceil(ahead / max(1, staffOnShift)) × avgServiceSeconds. */
+      avgServiceSeconds: session.avgServiceSeconds,
+      staffOnShift: onShift,
     };
+  }
+
+  /** The id of a public business (by id or slug), for opening its live stream. */
+  async businessIdOf(idOrSlug: string): Promise<string> {
+    return (await this.findBusiness(idOrSlug)).id;
   }
 
   // ── Customers ────────────────────────────────────────────────────────────
@@ -256,6 +272,7 @@ export class QueueService {
         await this.publishSession(tx, TOPICS.QUEUE_SESSION_OPENED, session, ctx);
       });
     }
+    this.onChange(businessId);
     return this.board(businessId, actorId);
   }
 
@@ -419,12 +436,16 @@ export class QueueService {
     sessionId: string,
     fn: (tx: Transaction, session: SessionRow) => Promise<T>,
   ): Promise<T> {
-    return this.db.$transaction(async (tx) => {
+    let businessId: string | undefined;
+    const result = await this.db.$transaction(async (tx) => {
       const session = await this.lock(tx, sessionId);
+      businessId = session.businessId;
       const result = await fn(tx, session);
       await this.alertPositions(tx, session);
       return result;
     });
+    this.onChange(businessId!); // after the commit: screens never show a change that rolled back
+    return result;
   }
 
   private async lock(tx: Transaction, sessionId: string): Promise<SessionRow> {

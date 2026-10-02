@@ -304,3 +304,18 @@ counter. The priority lane goes first; "last called" is the ticket most recently
 highest number). Wait estimates divide the people ahead among the staff clocked in and learn the
 day's real average service time. Alerts (10, 5, then every step) are events, sent once per count
 and only when moving closer. Queue settings live in `queue_settings` (owned by queue-service).
+
+**D-063 · Live queue screens: one public Server-Sent Events stream per business.**
+SSE instead of WebSockets: updates only flow one way, it passes through the gateway as plain
+HTTP (route with response buffering off), and browsers reconnect by themselves. The stream holds
+ticket numbers and the line order only, so it needs no sign-in (tokens are never accepted in
+URLs, D-042) and no per-person streams exist: each phone computes its own position. Every
+committed change is announced on one Valkey channel; each replica re-reads the queue from the
+database (coalesced to one read per 100 ms per watched business), so a late or duplicate
+announcement can never show an old state. Heartbeats every 15 s; per-replica and per-address
+connection limits; streams are closed before the server stops on shutdown (`beforeClose`),
+measured at 0.4 s instead of waiting out the 25 s deadline.
+
+**D-064 · SOC 2 compliance review closes Phase 2.** Requested by the product owner: a review of
+the whole system against the SOC 2 Trust Services Criteria with gaps fixed before Phase 3
+(BUILD_GUIDE 2.10). Certification itself is done by an independent auditor.

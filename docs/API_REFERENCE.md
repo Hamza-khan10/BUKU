@@ -610,3 +610,29 @@ accounts can't join.
 **Alerts:** `queue.position.updated` events (ids, ticket and `ahead`, never names) when a customer
 reaches 10 ahead, 5 ahead, then every step — delivered as push notifications in 2.6.
 `queue.entry.called` tells them it's their turn.
+
+### Live queue screens (2.4 part 2)
+
+`GET /v1/queue/public/:idOrSlug/stream` — no sign-in. A **Server-Sent Events** stream of the same
+public state as `GET /v1/queue/public/:idOrSlug`, sent on connect and after every change:
+
+```
+retry: 5000
+
+id: 41
+event: state
+data: {"businessId":"…","status":"open","waiting":3,"line":["A-007","A-004","A-005"],"called":["A-003"],"serving":["A-002"],"estimatedWaitMinutes":15,"avgServiceSeconds":300,"staffOnShift":1,"remoteJoinRadiusMeters":5000}
+
+: ping
+```
+
+- **Ticket numbers only, never names.** `line` is the waiting order (priority lane first, up to
+  300). A phone finds its position from its own ticket: `ahead = line.indexOf(myTicket)`, wait ≈
+  `ceil(ahead / max(1, staffOnShift)) × avgServiceSeconds`. If the ticket appears in `called`, it's
+  their turn. Not in `line` with many waiting → use `GET /v1/queue/my-ticket`.
+- Browsers: `new EventSource(url)` reconnects on its own (`retry`), and each connection starts
+  with the full state, so nothing is missed. `: ping` comments every 15 s keep it open.
+- `event: unavailable` → the queue is no longer public (e.g. business suspended); stop listening.
+- Limits: 30 new streams per minute per address; 50 open per address (mobile networks share
+  addresses); `429`/`503` with `Retry-After` beyond that. Unknown business → normal `404` JSON.
+- Phones in the background don't keep streams open: alerts reach them as push notifications (2.6).

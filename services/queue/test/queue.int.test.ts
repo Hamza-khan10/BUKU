@@ -22,6 +22,7 @@ import { buildQueueApp } from '../src/app.js';
 let app: Express;
 let db: Database;
 let redis: Redis;
+let subscriber: Redis;
 let signer: JwtSigner;
 
 // A shop in Gulberg, Lahore; a customer 1.3 km away; someone in Karachi.
@@ -91,9 +92,11 @@ beforeAll(async () => {
     ...jwt,
     keys: [{ keyId: 'k1', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }],
   });
+  subscriber = createRedisClient({ url: testEnv.redisUrl, connectionName: 'queue-int-test-live' });
   ({ app } = buildQueueApp({
     db,
     redis,
+    subscriber,
     verifier,
     revocations: createRevocationStore(redis),
     http: {
@@ -108,6 +111,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.$disconnect();
   await redis.quit();
+  await subscriber.quit();
 });
 
 describe('Joining', () => {
