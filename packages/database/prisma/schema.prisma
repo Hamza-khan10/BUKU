@@ -191,6 +191,7 @@ enum NotificationChannel {
   sms
   email
   in_app
+  whatsapp
 }
 
 enum NotificationStatus {
@@ -404,6 +405,10 @@ model NotificationPreference {
   pushBookingConfirmation  Boolean   @default(true) @map("push_booking_confirmation")
   pushReminders            Boolean   @default(true) @map("push_reminders")
   pushQueueUpdates         Boolean   @default(true) @map("push_queue_updates")
+  /// Team members: new booking requests, bookings and cancellations at their business.
+  pushBusinessAlerts       Boolean   @default(true) @map("push_business_alerts")
+  /// Key messages by WhatsApp (also needs the WhatsApp consent recorded on the account).
+  whatsappUpdates          Boolean   @default(true) @map("whatsapp_updates")
   smsReminders             Boolean   @default(true) @map("sms_reminders")
   emailBookingConfirmation Boolean   @default(true) @map("email_booking_confirmation")
   /// GDPR: marketing requires explicit opt-in; consent timestamp recorded.
@@ -1137,6 +1142,8 @@ model Notification {
   data          Json?
   status        NotificationStatus  @default(pending)
   externalId    String?             @map("external_id") @db.VarChar(500)
+  /// The device a push went to (to switch it off if the push service says it no longer exists).
+  pushTokenId   String?             @map("push_token_id") @db.Uuid
   failureReason String?             @map("failure_reason")
   sentAt        DateTime?           @map("sent_at") @db.Timestamptz(6)
   deliveredAt   DateTime?           @map("delivered_at") @db.Timestamptz(6)

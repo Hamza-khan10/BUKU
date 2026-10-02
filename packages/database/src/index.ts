@@ -155,3 +155,29 @@ export function isRetryableTransactionError(err: unknown): boolean {
 export async function ensurePartitions(db: Database, monthsAhead = 3): Promise<void> {
   await db.$executeRaw`SELECT ensure_monthly_partitions(${monthsAhead}::int)`;
 }
+
+/**
+ * The scheduled partition job: create months ahead (one replica at a time),
+ * and report rows that fell into the catch-all DEFAULT partitions — those mean
+ * a month was missing, and they block creating that month later.
+ */
+export async function maintainPartitions(
+  db: Database,
+  monthsAhead = 6,
+): Promise<{ ran: boolean; strayRows: Record<string, number> }> {
+  return db.$transaction(async (tx) => {
+    const [lock] = await tx.$queryRaw<
+      { locked: boolean }[]
+    >`SELECT pg_try_advisory_xact_lock(271_828_182) AS locked`;
+    if (!lock?.locked) return { ran: false, strayRows: {} };
+    await tx.$executeRaw`SELECT ensure_monthly_partitions(${monthsAhead}::int)`;
+    const rows = await tx.$queryRaw<{ table: string; n: bigint }[]>`
+      SELECT 'audit_logs' AS "table", count(*) AS n FROM partitions.audit_logs_default
+      UNION ALL SELECT 'notifications', count(*) FROM partitions.notifications_default
+      UNION ALL SELECT 'ad_events', count(*) FROM partitions.ad_events_default`;
+    return {
+      ran: true,
+      strayRows: Object.fromEntries(rows.filter((r) => r.n > 0n).map((r) => [r.table, Number(r.n)])),
+    };
+  });
+}

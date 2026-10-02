@@ -808,3 +808,48 @@ destination's secret). Refused with `401` when unsigned, wrongly signed or older
 each `event_id` is processed once (duplicates answer `{ processed: false }`); updates older than
 the last one applied are ignored (Paddle can deliver out of order). Events BUKU can't use (unknown
 price, no BUKU account) are acknowledged and logged so Paddle stops retrying.
+
+## Notification service — inbox and preferences (2.6 part 1)
+
+| Method & path                                                         | Auth | Purpose                                     |
+| --------------------------------------------------------------------- | ---- | ------------------------------------------- |
+| `GET /v1/notifications?unread=true&page=&limit=`                      | ✔    | My inbox, newest first; `meta.unread`       |
+| `GET /v1/notifications/unread-count`                                  | ✔    | `{ unread }` for the badge                  |
+| `POST /v1/notifications/:id/read` · `POST /v1/notifications/read-all` | ✔    | Mark read                                   |
+| `DELETE /v1/notifications/:id`                                        | ✔    | Remove from my inbox                        |
+| `GET`/`PUT /v1/users/me/notification-prefs`                           | ✔    | Which messages also come as push / WhatsApp |
+| `POST /v1/auth/push-tokens` `{ token, platform }` (auth-service)      | ✔    | Register this device (Expo push token)      |
+
+```json
+GET /v1/notifications
+{ "data": [{ "id": "…", "type": "booking_confirmed", "title": "Booking confirmed",
+             "body": "Facial at Glow Skin Clinic, Mon 5 Oct, 10:30 with Dr. Sana. Your code: BK-ZZ5UDB",
+             "data": { "screen": "appointment", "appointmentId": "…" }, "readAt": null, "createdAt": "…" }],
+  "meta": { "page": 1, "limit": 20, "total": 1, "unread": 1 } }
+```
+
+`data.screen` tells the app where to go: `appointment`, `business-appointment` (team),
+`queue-ticket`. The same title, text and `data` arrive as a push.
+
+**What is sent, to whom**
+
+| Event                     | Customer                                                | Business                                                           |
+| ------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------ |
+| Booked (automatic)        | "Booking confirmed" + code                              | the employee doing it (or the owner): "New booking"                |
+| Booked (needs approval)   | "Request sent"                                          | owner, managers, front desk: "New booking request"                 |
+| Approved / declined       | "Booking confirmed" / "Booking not accepted" (+ reason) | —                                                                  |
+| Cancelled by the customer | —                                                       | the employee (or owner): "Booking cancelled" / "Late cancellation" |
+| Cancelled by the business | "Booking cancelled" (+ reason)                          | —                                                                  |
+| Moved                     | "Booking moved" + new code                              | the employee (or owner): "Booking moved"                           |
+| No-show                   | "We missed you"                                         | —                                                                  |
+| Queue: 10 / 5 / … ahead   | "N people ahead of you" / "You're next"                 | —                                                                  |
+| Queue: called             | "It's your turn — A-023" (always pushed)                | —                                                                  |
+| Queue closed early        | "The queue has closed"                                  | —                                                                  |
+
+Businesses see customers as "Ayesha K." (first name and initial).
+
+**Preferences** (`PUT …/notification-prefs`, any subset): `pushBookingConfirmation`,
+`pushReminders`, `pushQueueUpdates`, `pushBusinessAlerts`, `whatsappUpdates`, `smsReminders`,
+`emailBookingConfirmation`, `marketingEmails` (explicit opt-in; the time of consent is recorded
+and cleared on opt-out). Switching off a push keeps the message in the inbox. Being called in a
+queue is always pushed.
