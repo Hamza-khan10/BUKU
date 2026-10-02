@@ -80,6 +80,8 @@ export const ErrorCodes = {
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
   LIMIT_REACHED: 'LIMIT_REACHED',
   PLAN_LIMIT_REACHED: 'PLAN_LIMIT_REACHED',
+  /** The account's plan doesn't include this feature (details.feature). */
+  PLAN_FEATURE_UNAVAILABLE: 'PLAN_FEATURE_UNAVAILABLE',
 
   // Integrations
   WEBHOOK_SIGNATURE_INVALID: 'WEBHOOK_SIGNATURE_INVALID',

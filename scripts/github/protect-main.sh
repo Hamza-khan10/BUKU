@@ -18,7 +18,7 @@ checks=(
   "Secret scan (gitleaks)"
   "Integration tests · Migration drift"
 )
-for svc in auth business booking queue notification search ads analytics; do checks+=("Production image ($svc)"); done
+for svc in auth business billing booking queue notification search ads analytics; do checks+=("Production image ($svc)"); done
 contexts=$(printf '%s\n' "${checks[@]}" | python3 -c 'import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')
 
 gh api -X PUT "repos/${REPO}/branches/main/protection" --input - <<JSON

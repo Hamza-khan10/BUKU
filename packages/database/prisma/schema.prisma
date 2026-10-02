@@ -58,10 +58,22 @@ enum BusinessStatus {
   rejected
 }
 
-enum SubscriptionTier {
-  free
-  professional
-  enterprise
+/// Who a plan is for.
+enum PlanAudience {
+  user
+  business
+}
+
+/// Where a subscription is bought: web (Paddle), Android (Google Play), iPhone (App Store).
+enum BillingChannel {
+  web
+  android
+  ios
+}
+
+enum BillingInterval {
+  month
+  year
 }
 
 enum DocumentType {
@@ -305,6 +317,8 @@ model User {
   reviewedReports    BusinessReport[]        @relation("ReportReviewer")
   staffPhotoConsents StaffPhoto[]            @relation("StaffPhotoConsent")
   checkIns           Appointment[]           @relation("AppointmentCheckIn")
+  subscriptions      Subscription[]          @relation("UserSubscriptions")
+  subscriptionGrants Subscription[]          @relation("SubscriptionGrantedBy")
   shiftsRecorded     StaffAttendance[]       @relation("AttendanceRecordedBy")
   managedByBusiness  Business?               @relation("ManagedAccounts", fields: [managedByBusinessId], references: [id], onDelete: Restrict)
 
@@ -450,8 +464,6 @@ model Business {
   rejectionReason         String?                               @map("rejection_reason")
   /// Validated by a Zod schema in the service layer (autoConfirm, cancellationHours, ...).
   settings                Json                                  @default("{}")
-  subscriptionTier        SubscriptionTier                      @default(free) @map("subscription_tier")
-  subscriptionExpiresAt   DateTime?                             @map("subscription_expires_at") @db.Timestamptz(6)
   avgRating               Decimal                               @default(0) @map("avg_rating") @db.Decimal(3, 2)
   reviewCount             Int                                   @default(0) @map("review_count")
   /// Business Terms version accepted by the owner at registration, and when.
@@ -1273,25 +1285,148 @@ model WebhookDelivery {
   @@map("webhook_deliveries")
 }
 
-/// Paddle subscriptions (BUKU → business billing).
+// ═════════════════════════════ BILLING (billing-service) ═════════════════════════════
+// Everything here is DATA edited by platform admins at any time (D-065): plans, prices,
+// limits, benefits, the on/off switch per audience, costs and fees.
+
+/// A plan users or businesses can be on.
+model Plan {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  /// Stable identifier used by code and admins, e.g. "user_plus", "business_local".
+  code       String       @unique @db.VarChar(50)
+  audience   PlanAudience
+  name       String       @db.VarChar(100)
+  tagline    String?      @db.VarChar(200)
+  /// Pricing-page bullet points, in order (string[]).
+  benefits   Json         @default("[]")
+  /// { limitKey: number | null } — null or a missing key means unlimited.
+  limits     Json         @default("{}")
+  /// { featureKey: boolean } — a missing key means off.
+  features   Json         @default("{}")
+  /// Shown on the pricing page and can be bought (internal plans like "unlimited" are not).
+  isPublic   Boolean      @default(true) @map("is_public")
+  sortOrder  Int          @default(0) @map("sort_order")
+  /// Archived: hidden and can't be bought; current subscribers keep it until moved.
+  archivedAt DateTime?    @map("archived_at") @db.Timestamptz(6)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  prices          PlanPrice[]
+  subscriptions   Subscription[]
+  defaultFor      BillingSettings[] @relation("DefaultPlan")
+  whenDisabledFor BillingSettings[] @relation("PlanWhenDisabled")
+
+  @@index([audience, archivedAt])
+  @@map("plans")
+}
+
+/// What a plan costs on one channel, in one currency. Never edited: a new price replaces it
+/// (the old one is archived), so subscribers keep the price they agreed to until moved.
+model PlanPrice {
+  id              String          @id @default(uuid(7)) @db.Uuid
+  planId          String          @map("plan_id") @db.Uuid
+  channel         BillingChannel
+  currency        String          @db.Char(3)
+  amount          Decimal         @db.Decimal(10, 2)
+  interval        BillingInterval @default(month)
+  /// The amount already includes sales tax / VAT (otherwise tax is added at checkout).
+  taxInclusive    Boolean         @default(false) @map("tax_inclusive")
+  trialDays       Int             @default(0) @map("trial_days")
+  /// The store's id for this price (Paddle price, Play product, App Store product), once set up.
+  externalPriceId String?         @unique @map("external_price_id") @db.VarChar(200)
+  archivedAt      DateTime?       @map("archived_at") @db.Timestamptz(6)
+  createdById     String?         @map("created_by_id") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  plan          Plan           @relation(fields: [planId], references: [id], onDelete: Restrict)
+  subscriptions Subscription[]
+
+  @@index([planId, archivedAt])
+  @@map("plan_prices")
+}
+
+/// Billing per audience. Switched off → everyone gets `planWhenDisabled` and nothing breaks.
+model BillingSettings {
+  audience           PlanAudience @id
+  /// Charging is on for this audience.
+  enabled            Boolean      @default(false)
+  /// Plan for accounts without an active subscription (e.g. Free).
+  defaultPlanId      String       @map("default_plan_id") @db.Uuid
+  /// Plan everyone gets while billing is off (normally an unlimited internal plan).
+  planWhenDisabledId String       @map("plan_when_disabled_id") @db.Uuid
+  updatedById        String?      @map("updated_by_id") @db.Uuid
+  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  defaultPlan      Plan @relation("DefaultPlan", fields: [defaultPlanId], references: [id], onDelete: Restrict)
+  planWhenDisabled Plan @relation("PlanWhenDisabled", fields: [planWhenDisabledId], references: [id], onDelete: Restrict)
+
+  @@map("billing_settings")
+}
+
+/// A user's or a business's subscription — bought in a store, or granted by an admin.
 model Subscription {
-  id                   String             @id @default(uuid(7)) @db.Uuid
-  businessId           String             @map("business_id") @db.Uuid
-  paddleSubscriptionId String             @unique @map("paddle_subscription_id") @db.VarChar(200)
-  paddleCustomerId     String             @map("paddle_customer_id") @db.VarChar(200)
-  plan                 SubscriptionTier
-  status               SubscriptionStatus
-  currentPeriodStart   DateTime?          @map("current_period_start") @db.Timestamptz(6)
-  currentPeriodEnd     DateTime?          @map("current_period_end") @db.Timestamptz(6)
-  cancelAtPeriodEnd    Boolean            @default(false) @map("cancel_at_period_end")
-  cancelledAt          DateTime?          @map("cancelled_at") @db.Timestamptz(6)
-  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                     String             @id @default(uuid(7)) @db.Uuid
+  planId                 String             @map("plan_id") @db.Uuid
+  /// The price being paid (null for admin grants).
+  priceId                String?            @map("price_id") @db.Uuid
+  /// Exactly one of userId / businessId (database rule).
+  userId                 String?            @map("user_id") @db.Uuid
+  businessId             String?            @map("business_id") @db.Uuid
+  channel                BillingChannel?
+  /// paddle | google_play | app_store | manual
+  provider               String             @db.VarChar(20)
+  externalSubscriptionId String?            @unique @map("external_subscription_id") @db.VarChar(200)
+  externalCustomerId     String?            @map("external_customer_id") @db.VarChar(200)
+  status                 SubscriptionStatus
+  currentPeriodStart     DateTime?          @map("current_period_start") @db.Timestamptz(6)
+  /// Paid (or granted) until. Null for an open-ended grant.
+  currentPeriodEnd       DateTime?          @map("current_period_end") @db.Timestamptz(6)
+  cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
+  cancelledAt            DateTime?          @map("cancelled_at") @db.Timestamptz(6)
+  grantedById            String?            @map("granted_by_id") @db.Uuid
+  grantNote              String?            @map("grant_note") @db.VarChar(300)
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  plan      Plan       @relation(fields: [planId], references: [id], onDelete: Restrict)
+  price     PlanPrice? @relation(fields: [priceId], references: [id], onDelete: Restrict)
+  user      User?      @relation("UserSubscriptions", fields: [userId], references: [id], onDelete: Restrict)
+  business  Business?  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  grantedBy User?      @relation("SubscriptionGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
 
+  @@index([userId, status])
   @@index([businessId, status])
+  @@index([planId, status])
   @@map("subscriptions")
+}
+
+/// What running BUKU costs per month (servers, database, messaging…): for the profit calculator.
+model BillingCostItem {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  name          String    @db.VarChar(100)
+  /// infrastructure | messaging | software | other
+  category      String    @db.VarChar(30)
+  monthlyAmount Decimal   @map("monthly_amount") @db.Decimal(12, 2)
+  /// Costs are kept in USD, the currency of the plans' main prices.
+  currency      String    @default("USD") @db.Char(3)
+  notes         String?   @db.VarChar(300)
+  archivedAt    DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("billing_cost_items")
+}
+
+/// What each sales channel keeps per payment (Paddle %+fixed, store commissions).
+model BillingChannelFee {
+  channel     BillingChannel @id
+  percent     Decimal        @db.Decimal(5, 2)
+  fixedAmount Decimal        @default(0) @map("fixed_amount") @db.Decimal(10, 2)
+  currency    String         @default("USD") @db.Char(3)
+  notes       String?        @db.VarChar(300)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("billing_channel_fees")
 }
 
 // ═════════════════════════════ PLATFORM ═════════════════════════════

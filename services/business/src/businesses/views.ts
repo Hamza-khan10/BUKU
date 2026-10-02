@@ -47,7 +47,6 @@ export function privateView(b: WithRelations, myRole: BusinessRole) {
     status: b.status,
     rejectionReason: b.rejectionReason,
     settings: b.settings,
-    subscriptionTier: b.subscriptionTier,
     businessTermsVersion: b.businessTermsVersion,
     updatedAt: b.updatedAt.toISOString(),
   };

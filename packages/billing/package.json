@@ -1,0 +1,14 @@
+{
+  "name": "@buku/billing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Plans and entitlements: what a user or business may do, the limit/feature registry, and the profit calculator.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@buku/common": "workspace:*",
+    "@buku/database": "workspace:*"
+  }
+}

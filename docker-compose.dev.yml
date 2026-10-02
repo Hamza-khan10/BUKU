@@ -542,6 +542,35 @@ services:
         ]
     deploy: { resources: { limits: { memory: 384m } } }
 
+  billing-service:
+    <<: [*infra, *node-image, *node-hardening]
+    working_dir: /app/services/billing
+    command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
+    environment:
+      <<: *service-env
+      SERVICE_NAME: billing-service
+      PORT: '3009'
+      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+    volumes:
+      - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/database/src:/app/packages/database/src:ro
+      - ./packages/database/prisma:/app/packages/database/prisma:ro
+      - ./packages/billing/src:/app/packages/billing/src:ro
+      - ./services/billing/src:/app/services/billing/src:ro
+    depends_on:
+      <<: *needs-core
+      valkey: { condition: service_healthy }
+    healthcheck:
+      <<: *node-healthcheck
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3009/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+    deploy: { resources: { limits: { memory: 256m } } }
+
   search-service:
     <<: [*infra, *node-image, *node-hardening]
     working_dir: /app/services/search
@@ -677,6 +706,7 @@ services:
       auth-service: { condition: service_healthy }
       booking-service: { condition: service_healthy }
       business-service: { condition: service_healthy }
+      billing-service: { condition: service_healthy }
       queue-service: { condition: service_healthy }
       notification-service: { condition: service_healthy }
       search-service: { condition: service_healthy }

@@ -103,6 +103,29 @@ services:
         strip_path: false
         plugins: [*jwt]
 
+  - name: billing-service
+    url: http://billing-service:3009
+    connect_timeout: 5000
+    read_timeout: 30000
+    write_timeout: 30000
+    retries: 0
+    routes:
+      # Public: the pricing page.
+      - name: billing-plans
+        paths: ['/v1/billing/plans']
+        methods: [GET, OPTIONS]
+        strip_path: false
+      - name: billing-private
+        paths: ['/v1/billing', '/v1/admin/billing']
+        strip_path: false
+        plugins: [*jwt]
+      # A business's plan and usage.
+      - name: business-billing
+        paths: ['~/v1/businesses/[^/]+/billing$']
+        regex_priority: 20
+        strip_path: false
+        plugins: [*jwt]
+
   - name: queue-service
     url: http://queue-service:3003
     retries: 0

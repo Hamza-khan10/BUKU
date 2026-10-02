@@ -1,8 +1,8 @@
 {
-  "name": "@buku/queue-service",
+  "name": "@buku/billing-service",
   "version": "0.1.0",
   "private": true,
-  "description": "Virtual queues: sessions, tickets, call-next, live screens (Server-Sent Events).",
+  "description": "Plans, prices, subscriptions and entitlements; admin catalog and profit calculator.",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --clear-screen=false src/index.ts",
@@ -10,9 +10,9 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@buku/billing": "workspace:*",
     "@buku/common": "workspace:*",
     "@buku/database": "workspace:*",
-    "@buku/kafka": "workspace:*",
     "express": "5.2.1",
     "ioredis": "6.0.0",
     "zod": "4.6.5"

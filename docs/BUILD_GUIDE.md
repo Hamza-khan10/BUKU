@@ -211,12 +211,29 @@ session) shown large in the app/web with a QR, plus live position. The business'
 lists every ticket; front desk calls, serves or marks no-show from there, including walk-ins
 and customers without a phone. Nothing beyond the queue entry itself is stored.
 
-### 2.5 Billing service (Paddle, sandbox during development)
+### 2.5 Billing service — 🚧 part 1 done (catalog, switches, calculator)
 
-Customer entitlement: **1 free appointment or queue join, then a monthly subscription**
-(price is configuration, not code — $1.99 today, likely $2.99–3.99 after tax review).
-Paddle checkout, signature-verified idempotent webhooks, entitlement checks used by booking
-and queue. Business plans come later.
+Everything about pricing is **data that platform admins change at any time** (D-065): plans,
+prices per channel (web / Android / iPhone), limits, features, pricing-page benefits, an on/off
+switch per audience, running costs and channel fees. Starting catalog:
+
+| Audience   | Plan                        | Price / month                     | Highlights                                                     |
+| ---------- | --------------------------- | --------------------------------- | -------------------------------------------------------------- |
+| Customers  | Free (default)              | —                                 | 1 booking or queue join                                        |
+| Customers  | BUKU Plus                   | $1.99 web & Android, $4.99 iPhone | Unlimited bookings and queue joins                             |
+| Businesses | Starter (default, not sold) | —                                 | 1 team login, 2 staff, 10 services, 5 photos, no queue         |
+| Businesses | Local                       | $24.99                            | 3 logins, 5 staff, 30 services, 10 photos, queue, staff photos |
+| Businesses | Mid-size                    | $49.99                            | 15 logins, 25 staff, 100 services, 30 photos, priority support |
+| Businesses | Enterprise                  | $99.99                            | Unlimited logins, staff, services, photos; ads                 |
+
+Part 1 (built): the catalog, the pricing-page API, admin management (new prices replace old ones
+for new customers while subscribers keep theirs; plans and channel prices archived, never
+deleted), the switches (billing off → everyone unlimited, nothing breaks), admin grants, plan and
+usage for customers and businesses, and the profit calculator (tax, channel fees, running costs,
+break-even). Billing starts **switched off** for both audiences.
+Next: part 2 — limits enforced across the services (free visit, team logins, staff, services,
+photos, queue, staff photos, manual approval); part 3 — Paddle checkout and webhooks (web),
+then billing is switched on. Google Play and App Store purchases come with the mobile app.
 
 ### 2.6 Notification service
 
@@ -298,24 +315,24 @@ load tests (k6) → security review & penetration test → runbooks → go-live 
 
 Recorded from the product owner; rationale for each is in DECISIONS.md.
 
-| Topic        | Decision                                                                                                                                                                                       |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Services     | Add `business-service` and `billing-service`; outgoing webhooks (later) live in notification-service                                                                                           |
-| Sign-in      | Google now; Apple built but locked until the Apple Developer account; business sub-accounts use username + password; SMS/Twilio later                                                          |
-| Sessions     | Signed in until logout; password change logs out every device with a clear "sign in again" message                                                                                             |
-| Guests       | No guest bookings                                                                                                                                                                              |
-| Monetisation | Customers: 1 free booking or queue join, then a monthly subscription (price configurable; $1.99 → likely $2.99–3.99). Businesses: pricing later. Appointments themselves are paid at the venue |
-| Market       | Pakistan first, built for worldwide from day one                                                                                                                                               |
-| Language     | English first; more languages by user majority                                                                                                                                                 |
-| Verification | Unverified businesses may take bookings, clearly badged; detailed country-flexible business details                                                                                            |
-| Teams        | AWS-style sub-accounts with Owner / Manager / Front desk / Staff roles                                                                                                                         |
-| Reputation   | Two-way: customer reliability (no-shows, last-minute cancels) and business reliability (business cancellations)                                                                                |
-| Scheduling   | No overlapping appointments per customer across businesses; business-set booking horizon; 3 future bookings per customer per business                                                          |
-| Queue        | Remote join within a business-set distance (default 5 km); one active queue per customer; alerts at 10, 5, then every step                                                                     |
-| Data rights  | Self-service section for customers and businesses to export or delete their data                                                                                                               |
-| Hosting      | Web app on Vercel (thebuku.vercel.app) until a domain is bought; backend on DigitalOcean (lean: droplet + managed Postgres/Valkey)                                                             |
-| Search       | Postgres first; Elasticsearch kept, not running                                                                                                                                                |
-| Pictures     | Business cover + logo; optional employee photos chosen by the business; customer profile picture visible only to that customer; ad images and videos only on the Enterprise business plan      |
+| Topic        | Decision                                                                                                                                                                                                                                                                                                       |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Services     | Add `business-service` and `billing-service`; outgoing webhooks (later) live in notification-service                                                                                                                                                                                                           |
+| Sign-in      | Google now; Apple built but locked until the Apple Developer account; business sub-accounts use username + password; SMS/Twilio later                                                                                                                                                                          |
+| Sessions     | Signed in until logout; password change logs out every device with a clear "sign in again" message                                                                                                                                                                                                             |
+| Guests       | No guest bookings                                                                                                                                                                                                                                                                                              |
+| Monetisation | Customers: 1 free booking or queue join, then BUKU Plus ($1.99 web/Android, $4.99 iPhone). Businesses: Local $24.99, Mid-size $49.99, Enterprise $99.99 (employee logins and other limits by tier). Every price, limit and plan is editable at any time (D-065). Appointments themselves are paid at the venue |
+| Market       | Pakistan first, built for worldwide from day one                                                                                                                                                                                                                                                               |
+| Language     | English first; more languages by user majority                                                                                                                                                                                                                                                                 |
+| Verification | Unverified businesses may take bookings, clearly badged; detailed country-flexible business details                                                                                                                                                                                                            |
+| Teams        | AWS-style sub-accounts with Owner / Manager / Front desk / Staff roles                                                                                                                                                                                                                                         |
+| Reputation   | Two-way: customer reliability (no-shows, last-minute cancels) and business reliability (business cancellations)                                                                                                                                                                                                |
+| Scheduling   | No overlapping appointments per customer across businesses; business-set booking horizon; 3 future bookings per customer per business                                                                                                                                                                          |
+| Queue        | Remote join within a business-set distance (default 5 km); one active queue per customer; alerts at 10, 5, then every step                                                                                                                                                                                     |
+| Data rights  | Self-service section for customers and businesses to export or delete their data                                                                                                                                                                                                                               |
+| Hosting      | Web app on Vercel (thebuku.vercel.app) until a domain is bought; backend on DigitalOcean (lean: droplet + managed Postgres/Valkey)                                                                                                                                                                             |
+| Search       | Postgres first; Elasticsearch kept, not running                                                                                                                                                                                                                                                                |
+| Pictures     | Business cover + logo; optional employee photos chosen by the business; customer profile picture visible only to that customer; ad images and videos only on the Enterprise business plan                                                                                                                      |
 
 **Still open:** whether the business a customer booked with may see the customer's profile
 picture (default: no) · Enterprise plan contents and price · SMS/WhatsApp provider choice and cost (before launch) · AI receptionist

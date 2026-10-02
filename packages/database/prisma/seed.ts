@@ -375,7 +375,6 @@ async function main(): Promise<void> {
         status: i < 17 ? 'verified' : 'pending',
         verified: i < 17,
         verifiedAt: i < 17 ? now : null,
-        subscriptionTier: i % 5 === 0 ? 'professional' : 'free',
       },
     });
 
