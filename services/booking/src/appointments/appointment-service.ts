@@ -136,7 +136,8 @@ export class AppointmentService {
           currency: service.currency,
         });
         await this.history(tx, created.id, null, status, { type: 'user', id: userId });
-        await this.publish(tx, TOPICS.BOOKINGS_CREATED, created, ctx);
+        // The status tells notifications whether this is a booking or a request awaiting approval.
+        await this.publish(tx, TOPICS.BOOKINGS_CREATED, created, ctx, { status });
         if (status === 'confirmed') await this.publish(tx, TOPICS.BOOKINGS_CONFIRMED, created, ctx);
         return created.id;
       }),

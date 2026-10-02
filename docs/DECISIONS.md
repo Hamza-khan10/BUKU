@@ -371,3 +371,19 @@ affected.
 reads `KEY=   # note` as the value `# note`, which made empty optional keys look set (found when
 the Paddle all-or-none check refused to start). The template puts such comments on their own
 line, and `pnpm bootstrap` rewrites existing `.env` files the same way.
+
+**D-071 · Notifications: inbox always, push as preferred, built from events.** Events carry ids;
+notification-service reads names and times (read-only) when it builds a message, so personal data
+never travels through Kafka. Each event is handled once: its inbox rows commit with the
+idempotency record; pushes go out after the commit (a push failure never causes a redelivery).
+Push goes through Expo's push service (free; iPhone and Android from the Expo app; no server
+credentials, an access token once push security is on), with a log sender in development.
+Each push is recorded per device with its ticket; receipts 15 minutes later mark it delivered or
+failed and switch off devices that no longer exist. Messages to businesses go to whoever acts:
+the employee doing the service (or the owner), or owner/managers/front desk for approvals.
+
+**D-072 · Partition upkeep is a daily job.** The init migration made 12 months of partitions and
+a catch-all DEFAULT partition, but nothing created future months — after a year every audit-log
+and inbox row would have landed in the catch-all, which then blocks creating that month.
+notification-service runs `maintainPartitions` daily (6 months ahead, one replica at a time) and
+warns if a catch-all ever holds rows.

@@ -251,11 +251,19 @@ synced to Paddle in one call. A paid plan replaces a running trial or grant.
 the web prices, then switch billing on per audience. Google Play and App Store purchases come with
 the mobile app (Phase 4).
 
-### 2.6 Notification service
+### 2.6 Notification service — 🚧 part 1 done (inbox, push, booking and queue messages)
 
 Push (free) for every alert; WhatsApp for important transactional messages once the provider
 is connected; email for receipts. Preferences, in-app inbox, templates, provider switch
 (dev: logged only).
+
+Part 1 (built): every booking and queue event becomes a message — to the customer (confirmed,
+request sent, not accepted, cancelled, moved, missed; people ahead, your turn, queue closed), to
+the employee doing the service (new booking, cancelled, moved) and to owner/managers/front desk
+(requests to approve). The in-app inbox always gets it; push goes to the person's devices as their
+preferences allow ("your turn" can't be switched off). Push through Expo (log sender in
+development); receipts switch off devices that no longer exist. Daily partition upkeep.
+Next: part 2 — timed reminders (24 h and 2 h before, "book again", trial ending) and WhatsApp.
 
 ### 2.7 Search service (Postgres)
 

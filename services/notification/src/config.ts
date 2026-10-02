@@ -15,6 +15,11 @@ export const Env = baseServiceEnv.extend({
   EMAIL_FROM: z.string().min(3).default('BUKU <noreply@buku.app>'),
   PII_ENCRYPTION_KEYS: z.string().min(1),
   PII_ENCRYPTION_ACTIVE_KEY_ID: z.string().min(1),
+
+  /** Push notifications: `log` (development: written to the log) or `expo` (the Expo app). */
+  PUSH_PROVIDER: z.enum(['log', 'expo']).default('log'),
+  /** Optional; required once "push security" is enabled in the Expo project (recommended in production). */
+  EXPO_ACCESS_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof Env>;
