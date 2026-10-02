@@ -636,3 +636,64 @@ data: {"businessId":"…","status":"open","waiting":3,"line":["A-007","A-004","A
 - Limits: 30 new streams per minute per address; 50 open per address (mobile networks share
   addresses); `429`/`503` with `Retry-After` beyond that. Unknown business → normal `404` JSON.
 - Phones in the background don't keep streams open: alerts reach them as push notifications (2.6).
+
+## Billing service — plans, prices and entitlements (2.5 part 1)
+
+| Method & path                                                                          | Auth | Who           | Purpose                                                              |
+| -------------------------------------------------------------------------------------- | ---- | ------------- | -------------------------------------------------------------------- |
+| `GET /v1/billing/plans?audience=user\|business&channel=web\|android\|ios&currency=USD` | —    | anyone        | The pricing page (cached 5 min)                                      |
+| `GET /v1/billing/me`                                                                   | ✔    | a customer    | My plan and how many bookings/queue joins I have left                |
+| `GET /v1/businesses/:id/billing`                                                       | ✔    | any team role | The business's plan, features, and usage against each limit          |
+| `GET`/`POST /v1/admin/billing/plans` · `PATCH …/plans/:code`                           | ✔    | super_admin   | Plans: name, tagline, benefits, limits, features, on the page or not |
+| `POST …/plans/:code/archive` · `/restore`                                              | ✔    | super_admin   | Stop / resume selling a plan (fallback plans are protected)          |
+| `POST …/plans/:code/prices`                                                            | ✔    | super_admin   | New price for a channel; replaces the one in force for new customers |
+| `POST …/prices/:id/archive` · `PUT …/prices/:id/external-id`                           | ✔    | super_admin   | Stop selling on one channel · link the store's price id              |
+| `GET …/settings` · `PUT …/settings/:audience`                                          | ✔    | super_admin   | `{ enabled, defaultPlanCode, planWhenDisabledCode }`                 |
+| `GET`/`POST …/costs` · `PATCH`/`DELETE …/costs/:id`                                    | ✔    | super_admin   | Monthly running costs (USD)                                          |
+| `GET …/fees` · `PUT …/fees/:channel`                                                   | ✔    | super_admin   | What each channel keeps: `{ percent, fixedAmount }`                  |
+| `POST …/economics` `{ taxPercent?, subscribers? }`                                     | ✔    | super_admin   | Profit per price and in total; break-even                            |
+| `GET …/subscriptions` · `POST …/grants` · `POST …/subscriptions/:id/end`               | ✔    | super_admin   | List · give a plan for free · end a grant                            |
+
+### The pricing page
+
+```json
+GET /v1/billing/plans?audience=business&channel=web
+{ "billingEnabled": false, "defaultPlan": "business_free",
+  "comparison": { "limits": [{ "key": "team_accounts", "label": "Team logins", "description": "…" }, …],
+                  "features": [{ "key": "queue", "label": "Virtual queue", … }, …] },
+  "plans": [{ "code": "business_local", "name": "Local", "tagline": "For barbers, clinics and local shops",
+              "benefits": ["Online bookings and receipts", "Virtual queue with live display", …],
+              "limits": { "team_accounts": 3, "staff_profiles": 5, "services": 30, "photos": 10 },
+              "features": { "queue": true, "manual_approval": true, "staff_photos": true, "ads": false, "priority_support": false },
+              "prices": [{ "id": "…", "amount": "24.99", "currency": "USD", "interval": "month", "taxInclusive": false, "trialDays": 0 }],
+              "free": false }, …] }
+```
+
+`limits` values: a number, or `null` for unlimited. `benefits` are the marketing bullets;
+`comparison` labels the limit and feature rows of a plan comparison table. Plans without a
+price on the asked channel aren't listed (except the free default plan).
+
+### Changing prices and plans
+
+`POST /v1/admin/billing/plans/user_plus/prices { "channel": "web", "amount": 2.49 }` →
+`{ price, replaced, subscribersOnPreviousPrice }`. The old price is archived, never edited:
+**new** customers pay $2.49; subscribers keep the price they agreed to until moved (and in many
+countries must be told before an increase). Plan edits merge `limits`/`features` (keys given are
+set, `null` = unlimited); unknown keys are refused with the list of known ones.
+
+**Switching billing off** for an audience (`PUT …/settings/user { "enabled": false }`) puts
+everyone on the "billing off" plan at once (unlimited); subscriptions stay recorded and apply again
+when switched back on. If the settings were ever missing, everyone is treated as unlimited.
+
+### Plan and usage
+
+```json
+GET /v1/businesses/:id/billing
+{ "plan": { "code": "business_local", "name": "Local" }, "source": "subscription", "billingEnabled": true,
+  "features": { "queue": true, … },
+  "usage": { "team_accounts": { "used": 2, "limit": 3, "remaining": 1 }, "photos": { "used": 4, "limit": 10, "remaining": 6 }, … } }
+```
+
+`source`: `subscription`, `default` (no subscription: the Free / Starter plan) or `billing_off`.
+Over a limit (e.g. after a downgrade), nothing is removed — only adding more is refused
+(`409 PLAN_LIMIT_REACHED`, from part 2).

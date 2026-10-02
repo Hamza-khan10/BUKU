@@ -319,3 +319,21 @@ measured at 0.4 s instead of waiting out the 25 s deadline.
 **D-064 · SOC 2 compliance review closes Phase 2.** Requested by the product owner: a review of
 the whole system against the SOC 2 Trust Services Criteria with gaps fixed before Phase 3
 (BUILD_GUIDE 2.10). Certification itself is done by an independent auditor.
+
+**D-065 · Billing is data, not code.** Plans (with pricing-page benefits, limits and features),
+prices per channel and currency, the on/off switch and fallback plans per audience, running costs
+and channel fees all live in tables edited by platform admins at any time, every change audited.
+Prices are versioned: a change creates a new price and archives the old one, so subscribers keep
+what they agreed to (grandfathering) until deliberately moved. Plans are archived, never deleted;
+the plans an audience falls back to can't be archived. One resolver (`@buku/billing`
+`entitlementsOf`) decides what an account may do: billing off → the "billing off" plan; a live
+subscription → its plan; otherwise the default plan; settings missing → unlimited. Limits only
+block creating MORE; downgrades never delete anything. Business tiers (Local $24.99, Mid-size
+$49.99, Enterprise $99.99) differ by team logins, staff, services, photos and features; customers
+have Free (1 visit) and BUKU Plus ($1.99 web/Android, $4.99 iPhone to absorb the App Store's cut).
+Billing launches switched off until checkout exists (part 3). A billing-service owns it all;
+Paddle is the merchant of record on the web (collects and remits sales tax/VAT).
+
+**D-066 · Unbuilt products are recorded as limits/features first.** Ads (Enterprise only) and
+priority support exist as plan features now, so the pricing page and entitlements are right from
+the start; each is enforced when its product is built.
