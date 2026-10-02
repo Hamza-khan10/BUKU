@@ -34,9 +34,12 @@ const readiness = new Readiness()
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const { app } = buildQueueApp({
+// A subscribed Valkey connection can't run other commands: live updates get their own.
+const subscriber = createRedisClient({ url: env.REDIS_URL, connectionName: `${env.SERVICE_NAME}-live` });
+const { app, live } = buildQueueApp({
   db,
   redis,
+  subscriber,
   verifier,
   revocations: createRevocationStore(redis),
   http: {
@@ -48,6 +51,8 @@ const { app } = buildQueueApp({
   },
 });
 
+await live.start();
+
 // Hooks run in REVERSE order on shutdown: stop producing before closing stores.
 const hooks: ShutdownHook[] = [
   { name: 'postgres', fn: () => db.$disconnect() },
@@ -58,6 +63,12 @@ const hooks: ShutdownHook[] = [
     },
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
+  {
+    name: 'valkey-live',
+    fn: async () => {
+      await subscriber.quit();
+    },
+  },
 ];
 
 await runService({
@@ -66,5 +77,7 @@ await runService({
   logger,
   readiness,
   shutdownDelayMs: env.SHUTDOWN_DELAY_MS,
+  // Live streams never end on their own: close them first, viewers reconnect elsewhere.
+  beforeClose: () => live.close(),
   hooks,
 });

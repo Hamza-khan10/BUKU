@@ -106,12 +106,17 @@ services:
   - name: queue-service
     url: http://queue-service:3003
     retries: 0
+    read_timeout: 60000 # > 15s live-stream heartbeat
     routes:
-      # Public: whether a business has a queue and how long it is (ticket numbers only).
+      # Public: whether a business has a queue and how long it is (ticket numbers only),
+      # also as a live stream (Server-Sent Events): responses must pass through at once,
+      # not be buffered by the gateway. Streams send a heartbeat every 15s, well inside
+      # this service's read timeout.
       - name: queue-public
         paths: ['/v1/queue/public']
         methods: [GET, OPTIONS]
         strip_path: false
+        response_buffering: false
       - name: queue
         paths: ['/v1/queue']
         strip_path: false

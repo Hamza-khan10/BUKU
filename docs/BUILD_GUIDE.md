@@ -12,7 +12,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | Phase | Scope                                                                                          | Status                              |
 | ----- | ---------------------------------------------------------------------------------------------- | ----------------------------------- |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34 |
-| 2     | Backend services (MVP core first)                                                              | 🚧 In progress                      |
+| 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                      |
 | 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | Planned                             |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                             |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                             |
@@ -189,13 +189,18 @@ come from working hours). Booking rules:
   from the list — so a customer without a phone is served just the same. Built from the
   appointment on request: no PDF or image is generated or stored; the QR is drawn by the app.
 
-### 2.4 Queue service — 🚧 part 1 done (the queue itself)
+### 2.4 Queue service — ✅ (the queue, live screens)
 
 Part 1 (built): open/pause/close the day's queue, remote joining within the distance (PostGIS)
 with one live ticket per customer anywhere (database rule), walk-ins and a priority lane, call
 next / serve / complete / no-show after the grace period, wait estimates from the day's real
 service times and the staff on shift, alerts as events, per-business queue settings.
-Next: part 2 — live updates for phones and the shop's display screen.
+
+Part 2 (built): live screens over Server-Sent Events — one public stream per business (ticket
+numbers and the line order only, so phones work out their own position without a login),
+changes fanned out to every replica through Valkey, bursts coalesced, heartbeats, connection
+limits, streams closed first on shutdown. The shop's display page itself comes with the web
+app (Phase 3); notifications to phones in the background come in 2.6.
 
 Remote (virtual) queue joining, allowed only **within a distance set by the business
 (default 5 km)** and **one active queue per customer**. Live positions pushed to the app.
@@ -234,6 +239,32 @@ Customer reliability score (visible to the customer; businesses see a simple sum
 End-to-end: sign in → add phone → trial booking → confirm → reminder → complete → review;
 subscribe → second booking; queue join (distance + one-queue rule) → called → served.
 Concurrency tests; authorization tests on every route.
+
+### 2.10 SOC 2 compliance review (requested 2026-10-02)
+
+Once Phase 2 is complete: a full review of the system, start to end, against the SOC 2 Trust
+Services Criteria — security (common criteria), availability, confidentiality, processing
+integrity and privacy. For each criterion: the controls in place, the evidence an auditor would
+ask for, the gaps, and the fixes (code, infrastructure or written policy). Expected areas:
+
+- **Access:** least privilege everywhere (database roles, cloud, GitHub), MFA for admins and
+  infrastructure, joiner/leaver process, periodic access reviews, admin actions audited.
+- **Change management:** PRs, required checks and branch protection (already enforced), review
+  of changes, deployment records, emergency-change procedure.
+- **Monitoring and incidents:** centralized logs and alerts, audit-log retention and integrity,
+  an incident response plan and its rehearsal, breach notification duties.
+- **Availability:** backups with tested restores, recovery objectives (RPO/RTO), capacity and
+  dependency monitoring, status page.
+- **Confidentiality and privacy:** data classification, encryption in transit and at rest (incl.
+  backups), retention and deletion schedules, data subject requests (built), privacy notice,
+  sub-processors list (DigitalOcean, Google, Paddle, messaging providers).
+- **Vendor and risk management:** risk register, vendor reviews, dependency and supply-chain
+  controls (partly built: pinned actions, audit, secret scanning).
+- **Policies** a small company needs written down: information security, acceptable use, access
+  control, change management, incident response, business continuity, data retention.
+
+Outcome: a readiness report and the fixes merged. The certification itself (Type I, then Type II
+over a period) is performed by an independent CPA firm; this review prepares for it.
 
 **Deferred (built later on the same foundation):** ads (image and video creatives for
 businesses on the Enterprise plan only), ClickHouse analytics, outgoing

@@ -29,6 +29,12 @@ export interface RunServiceOptions {
   /** Hard deadline for the whole shutdown sequence. */
   shutdownTimeoutMs?: number;
   hooks?: ShutdownHook[];
+  /**
+   * Runs when shutdown starts, BEFORE the server stops accepting and waits for
+   * open connections — e.g. to end long-lived streams (Server-Sent Events),
+   * which would otherwise keep the server open until the shutdown deadline.
+   */
+  beforeClose?: () => void | Promise<void>;
 }
 
 export interface RunningService {
@@ -64,6 +70,7 @@ export function runService(options: RunServiceOptions): Promise<RunningService> 
 
         readiness.markShuttingDown();
         if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+        await options.beforeClose?.();
 
         await new Promise<void>((done) => {
           server.close(() => done());

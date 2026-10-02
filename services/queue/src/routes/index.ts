@@ -11,6 +11,7 @@ import {
 import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
 import { requestContext } from '../http/context.js';
+import type { LiveHub } from '../live/live-hub.js';
 import type { QueueService } from '../queue-service.js';
 import type { QueueSettingsService } from '../settings.js';
 import {
@@ -27,6 +28,7 @@ import {
 export interface RouteDeps {
   queue: QueueService;
   settings: QueueSettingsService;
+  live: LiveHub;
   verifier: JwtVerifier;
   revocations: RevocationStore;
   redis: Redis;
@@ -55,6 +57,22 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdOrSlugParams }, async ({ params }, _req, res) => {
       res.setHeader('Cache-Control', 'no-store');
       sendSuccess(res, await deps.queue.publicState(params.idOrSlug));
+    }),
+  );
+  // Live: the same public state, pushed on every change (Server-Sent Events, D-063).
+  // Opening a stream is limited; reconnects after a drop are normal and cheap.
+  const streamLimit = rateLimit({
+    keyPrefix: 'rl:queue:stream',
+    points: 30,
+    durationSeconds: 60,
+    redis: deps.redis,
+  });
+  q.get(
+    '/public/:idOrSlug/stream',
+    streamLimit,
+    validated({ params: IdOrSlugParams }, async ({ params }, req, res) => {
+      const businessId = await deps.queue.businessIdOf(params.idOrSlug);
+      await deps.live.watch(businessId, res, req.ip ?? 'unknown');
     }),
   );
   q.post(
