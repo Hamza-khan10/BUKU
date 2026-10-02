@@ -21,6 +21,8 @@ declare global {
     interface Request {
       /** Set by `authenticate`; undefined on public routes. */
       auth?: AuthContext;
+      /** The exact JSON body bytes, when the app keeps them (`keepRawBody`, for webhook signatures). */
+      rawBody?: Buffer;
     }
   }
 }

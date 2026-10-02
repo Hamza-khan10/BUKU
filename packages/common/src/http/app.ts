@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
@@ -25,6 +26,11 @@ export interface HttpAppOptions {
   trustProxyHops: number;
   /** Max JSON body size, e.g. "100kb". */
   bodyLimit?: string;
+  /**
+   * Keep the exact bytes of JSON bodies on `req.rawBody` — needed to verify
+   * webhook signatures, which are computed over the raw body.
+   */
+  keepRawBody?: boolean;
   routes: (app: Express) => void;
 }
 
@@ -99,7 +105,18 @@ export function createHttpApp(options: HttpAppOptions): Express {
     res.send(await metrics.registry.metrics());
   });
 
-  app.use(express.json({ limit: options.bodyLimit ?? '100kb', strict: true, type: 'application/json' }));
+  app.use(
+    express.json({
+      limit: options.bodyLimit ?? '100kb',
+      strict: true,
+      type: 'application/json',
+      ...(options.keepRawBody && {
+        verify: (req: IncomingMessage, _res: ServerResponse, buf: Buffer) => {
+          (req as express.Request).rawBody = buf;
+        },
+      }),
+    }),
+  );
 
   options.routes(app);
 

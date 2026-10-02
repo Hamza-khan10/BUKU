@@ -94,6 +94,25 @@ router.post(
 );
 ```
 
+### Set up Paddle (online payments, sandbox)
+
+Billing works without Paddle (checkout answers "online payments aren't set up"). To try real
+checkouts:
+
+1. Create a free account at **sandbox-vendors.paddle.com** (sandbox = test cards, no real money).
+2. _Developer tools → Authentication_: create an **API key** and copy the **client-side token**.
+3. _Developer tools → Notifications_: add a destination for `subscription.*` events pointing at
+   `https://<public address>/v1/billing/webhooks/paddle`, and copy its **secret key**. Locally,
+   expose the gateway with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8000`).
+4. Put the three values in `.env` (`PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`;
+   all three or none) and restart billing: `docker compose -f docker-compose.dev.yml up -d billing-service`.
+5. As a super admin, link each web price: `POST /v1/admin/billing/prices/:id/sync-paddle` (creates
+   the product and price in Paddle). Repeat after every price change.
+6. Switch billing on: `PUT /v1/admin/billing/settings/user { "enabled": true }` (and `business`).
+7. Pay with Paddle's test card `4242 4242 4242 4242`, any future date, any CVC.
+
+Never put the API key or webhook secret in the web or mobile app — only the client-side token.
+
 ## Git workflow
 
 - **Trunk-based:** `main` is always deployable. Work on short-lived branches:

@@ -211,7 +211,7 @@ session) shown large in the app/web with a QR, plus live position. The business'
 lists every ticket; front desk calls, serves or marks no-show from there, including walk-ins
 and customers without a phone. Nothing beyond the queue entry itself is stored.
 
-### 2.5 Billing service — 🚧 parts 1–2 done (catalog, trials, requests, limits enforced)
+### 2.5 Billing service — ✅ (catalog, trials, requests, limits, Paddle checkout)
 
 Everything about pricing is **data that platform admins change at any time** (D-065): plans,
 prices per channel (web / Android / iPhone), limits, features, pricing-page benefits, an on/off
@@ -242,8 +242,14 @@ Part 2 (built): every limit and feature is enforced where things are created —
 services (restoring counts), photos, the virtual queue, staff photos and manual approval. Checks
 run inside the creating transaction behind a per-account lock, so parallel requests can't slip
 past a limit. Nothing existing is ever removed by a downgrade.
-Next: part 3 — Paddle checkout and webhooks (web), then billing is switched on. Google Play and
-App Store purchases come with the mobile app.
+Part 3 (built): paying on the web with Paddle (merchant of record: it collects the payment and
+the sales tax/VAT). Checkout created server-side with the BUKU account bound to it; signed
+webhooks verified, processed once and applied in order; cancel at period end and undo; switch
+plan (prorated); card and invoices in Paddle's portal; admins end a paid plan at once; prices
+synced to Paddle in one call. A paid plan replaces a running trial or grant.
+**To go live:** connect a Paddle sandbox account (docs/DEVELOPMENT.md → "Set up Paddle"), sync
+the web prices, then switch billing on per audience. Google Play and App Store purchases come with
+the mobile app (Phase 4).
 
 ### 2.6 Notification service
 

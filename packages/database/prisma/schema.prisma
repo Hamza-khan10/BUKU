@@ -1303,25 +1303,27 @@ model WebhookDelivery {
 
 /// A plan users or businesses can be on.
 model Plan {
-  id         String       @id @default(uuid(7)) @db.Uuid
+  id                String       @id @default(uuid(7)) @db.Uuid
   /// Stable identifier used by code and admins, e.g. "user_plus", "business_local".
-  code       String       @unique @db.VarChar(50)
-  audience   PlanAudience
-  name       String       @db.VarChar(100)
-  tagline    String?      @db.VarChar(200)
+  code              String       @unique @db.VarChar(50)
+  audience          PlanAudience
+  name              String       @db.VarChar(100)
+  tagline           String?      @db.VarChar(200)
   /// Pricing-page bullet points, in order (string[]).
-  benefits   Json         @default("[]")
+  benefits          Json         @default("[]")
   /// { limitKey: number | null } — null or a missing key means unlimited.
-  limits     Json         @default("{}")
+  limits            Json         @default("{}")
   /// { featureKey: boolean } — a missing key means off.
-  features   Json         @default("{}")
+  features          Json         @default("{}")
   /// Shown on the pricing page and can be bought (internal plans like "unlimited" are not).
-  isPublic   Boolean      @default(true) @map("is_public")
-  sortOrder  Int          @default(0) @map("sort_order")
+  isPublic          Boolean      @default(true) @map("is_public")
+  sortOrder         Int          @default(0) @map("sort_order")
   /// Archived: hidden and can't be bought; current subscribers keep it until moved.
-  archivedAt DateTime?    @map("archived_at") @db.Timestamptz(6)
-  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt        DateTime?    @map("archived_at") @db.Timestamptz(6)
+  /// The plan as a product in Paddle (created when a price is first synced there).
+  externalProductId String?      @unique @map("external_product_id") @db.VarChar(200)
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   prices          PlanPrice[]
   subscriptions   Subscription[]
@@ -1397,6 +1399,9 @@ model Subscription {
   provider               String             @db.VarChar(20)
   externalSubscriptionId String?            @unique @map("external_subscription_id") @db.VarChar(200)
   externalCustomerId     String?            @map("external_customer_id") @db.VarChar(200)
+  /// When the store last changed this subscription (as the store reported it). Store events can
+  /// arrive out of order: an older change than this one is ignored.
+  providerUpdatedAt      DateTime?          @map("provider_updated_at") @db.Timestamptz(6)
   status                 SubscriptionStatus
   currentPeriodStart     DateTime?          @map("current_period_start") @db.Timestamptz(6)
   /// Paid (or granted) until. Null for an open-ended grant.

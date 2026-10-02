@@ -40,6 +40,10 @@ if [[ ! -f .env ]]; then
   ok "created .env from .env.example (mode 600)"
 fi
 
+# An empty value followed by an inline comment ("KEY=   # note") is read by
+# Docker Compose as the COMMENT TEXT. Move such comments onto their own line.
+sed -E -i 's/^([A-Z0-9_]+)=[[:space:]]+(#.*)$/\2\n\1=/' .env
+
 # Effective value of KEY in .env (inline "# comment" and whitespace stripped).
 get_value() {
   grep -E "^$1=" .env | head -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' || true

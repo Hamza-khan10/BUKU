@@ -81,6 +81,7 @@ beforeAll(async () => {
   });
   ({ app } = buildBillingApp({
     db,
+    paddle: null,
     redis,
     verifier,
     revocations: createRevocationStore(redis),
@@ -419,7 +420,7 @@ describe('Grants and subscriptions', () => {
     expect(
       (await send('post', `/v1/admin/billing/subscriptions/${store.id}/end`, admin, { reason: 'Test' }))
         .status,
-    ).toBe(409);
+    ).toBe(503); // Paddle subscriptions are ended in Paddle (not configured in this test; see paddle.int.test.ts)
     expect(
       (
         await send('post', '/v1/admin/billing/grants', admin, {

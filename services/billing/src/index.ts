@@ -11,6 +11,7 @@ import {
 import { createDatabaseClient, pingDatabase } from '@buku/database';
 import { buildBillingApp } from './app.js';
 import { Env } from './config.js';
+import { PaddleClient } from './paddle/client.js';
 
 const env = loadConfig(Env);
 
@@ -26,8 +27,32 @@ const verifier = await createJwtVerifierFromEnv(env);
 // ── Readiness: every dependency must answer before traffic is routed here ──
 const readiness = new Readiness().add('postgres', () => pingDatabase(db)).add('valkey', () => redis.ping());
 
+// Online checkout runs only when Paddle is configured (all three keys).
+const paddle =
+  env.PADDLE_API_KEY && env.PADDLE_CLIENT_TOKEN && env.PADDLE_WEBHOOK_SECRET
+    ? {
+        client: new PaddleClient({
+          apiUrl:
+            env.PADDLE_API_URL ??
+            (env.PADDLE_ENVIRONMENT === 'production'
+              ? 'https://api.paddle.com'
+              : 'https://sandbox-api.paddle.com'),
+          apiKey: env.PADDLE_API_KEY,
+        }),
+        config: {
+          environment: env.PADDLE_ENVIRONMENT,
+          clientToken: env.PADDLE_CLIENT_TOKEN,
+          webhookSecret: env.PADDLE_WEBHOOK_SECRET,
+          webhookToleranceSeconds: env.PADDLE_WEBHOOK_TOLERANCE_SECONDS,
+          taxCategory: env.PADDLE_TAX_CATEGORY,
+        },
+      }
+    : null;
+if (!paddle) logger.warn('Paddle is not configured: online checkout is unavailable');
+
 const { app, accounts } = buildBillingApp({
   db,
+  paddle,
   redis,
   verifier,
   revocations: createRevocationStore(redis),
