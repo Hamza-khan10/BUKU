@@ -639,20 +639,24 @@ data: {"businessId":"…","status":"open","waiting":3,"line":["A-007","A-004","A
 
 ## Billing service — plans, prices and entitlements (2.5 part 1)
 
-| Method & path                                                                          | Auth | Who           | Purpose                                                              |
-| -------------------------------------------------------------------------------------- | ---- | ------------- | -------------------------------------------------------------------- |
-| `GET /v1/billing/plans?audience=user\|business&channel=web\|android\|ios&currency=USD` | —    | anyone        | The pricing page (cached 5 min)                                      |
-| `GET /v1/billing/me`                                                                   | ✔    | a customer    | My plan and how many bookings/queue joins I have left                |
-| `GET /v1/businesses/:id/billing`                                                       | ✔    | any team role | The business's plan, features, and usage against each limit          |
-| `GET`/`POST /v1/admin/billing/plans` · `PATCH …/plans/:code`                           | ✔    | super_admin   | Plans: name, tagline, benefits, limits, features, on the page or not |
-| `POST …/plans/:code/archive` · `/restore`                                              | ✔    | super_admin   | Stop / resume selling a plan (fallback plans are protected)          |
-| `POST …/plans/:code/prices`                                                            | ✔    | super_admin   | New price for a channel; replaces the one in force for new customers |
-| `POST …/prices/:id/archive` · `PUT …/prices/:id/external-id`                           | ✔    | super_admin   | Stop selling on one channel · link the store's price id              |
-| `GET …/settings` · `PUT …/settings/:audience`                                          | ✔    | super_admin   | `{ enabled, defaultPlanCode, planWhenDisabledCode }`                 |
-| `GET`/`POST …/costs` · `PATCH`/`DELETE …/costs/:id`                                    | ✔    | super_admin   | Monthly running costs (USD)                                          |
-| `GET …/fees` · `PUT …/fees/:channel`                                                   | ✔    | super_admin   | What each channel keeps: `{ percent, fixedAmount }`                  |
-| `POST …/economics` `{ taxPercent?, subscribers? }`                                     | ✔    | super_admin   | Profit per price and in total; break-even                            |
-| `GET …/subscriptions` · `POST …/grants` · `POST …/subscriptions/:id/end`               | ✔    | super_admin   | List · give a plan for free · end a grant                            |
+| Method & path                                                                          | Auth | Who                | Purpose                                                                                |
+| -------------------------------------------------------------------------------------- | ---- | ------------------ | -------------------------------------------------------------------------------------- |
+| `GET /v1/billing/plans?audience=user\|business&channel=web\|android\|ios&currency=USD` | —    | anyone             | The pricing page (cached 5 min)                                                        |
+| `GET /v1/billing/me`                                                                   | ✔    | a customer         | My plan and how many bookings/queue joins I have left                                  |
+| `GET /v1/businesses/:id/billing`                                                       | ✔    | any team role      | The business's plan, features, and usage against each limit                            |
+| `GET`/`POST /v1/admin/billing/plans` · `PATCH …/plans/:code`                           | ✔    | super_admin        | Plans: name, tagline, benefits, limits, features, on the page or not                   |
+| `POST …/plans/:code/archive` · `/restore`                                              | ✔    | super_admin        | Stop / resume selling a plan (fallback plans are protected)                            |
+| `POST …/plans/:code/prices`                                                            | ✔    | super_admin        | New price for a channel; replaces the one in force for new customers                   |
+| `POST …/prices/:id/archive` · `PUT …/prices/:id/external-id`                           | ✔    | super_admin        | Stop selling on one channel · link the store's price id                                |
+| `GET …/settings` · `PUT …/settings/:audience`                                          | ✔    | super_admin        | `{ enabled, defaultPlanCode, planWhenDisabledCode }`                                   |
+| `GET`/`POST …/costs` · `PATCH`/`DELETE …/costs/:id`                                    | ✔    | super_admin        | Monthly running costs (USD)                                                            |
+| `GET …/fees` · `PUT …/fees/:channel`                                                   | ✔    | super_admin        | What each channel keeps: `{ percent, fixedAmount }`                                    |
+| `POST …/economics` `{ taxPercent?, subscribers? }`                                     | ✔    | super_admin        | Profit per price and in total; break-even                                              |
+| `GET …/subscriptions` · `POST …/grants` · `POST …/subscriptions/:id/end`               | ✔    | super_admin        | List · give any plan free (`replace: true` swaps a grant/trial) · end a grant or trial |
+| `POST /v1/billing/me/trial`                                                            | ✔    | a customer         | Start my free trial (once)                                                             |
+| `POST /v1/businesses/:id/billing/trial`                                                | ✔    | owner              | Start the business's free trial (once)                                                 |
+| `GET`/`POST /v1/businesses/:id/billing/plan-requests` · `POST …/:requestId/withdraw`   | ✔    | owner (list: team) | Ask for a plan, e.g. Enterprise free of charge                                         |
+| `GET /v1/admin/billing/plan-requests?status=` · `POST …/:id/approve` · `/decline`      | ✔    | super_admin        | Approve (→ grant, optional `until`, other `planCode`) or decline (`note`)              |
 
 ### The pricing page
 
@@ -661,7 +665,7 @@ GET /v1/billing/plans?audience=business&channel=web
 { "billingEnabled": false, "defaultPlan": "business_free",
   "comparison": { "limits": [{ "key": "team_accounts", "label": "Team logins", "description": "…" }, …],
                   "features": [{ "key": "queue", "label": "Virtual queue", … }, …] },
-  "plans": [{ "code": "business_local", "name": "Local", "tagline": "For barbers, clinics and local shops",
+  "plans": [{ "code": "business_essential", "name": "Essential", "tagline": "For barbers, clinics and local shops",
               "benefits": ["Online bookings and receipts", "Virtual queue with live display", …],
               "limits": { "team_accounts": 3, "staff_profiles": 5, "services": 30, "photos": 10 },
               "features": { "queue": true, "manual_approval": true, "staff_photos": true, "ads": false, "priority_support": false },
@@ -689,7 +693,7 @@ when switched back on. If the settings were ever missing, everyone is treated as
 
 ```json
 GET /v1/businesses/:id/billing
-{ "plan": { "code": "business_local", "name": "Local" }, "source": "subscription", "billingEnabled": true,
+{ "plan": { "code": "business_essential", "name": "Essential" }, "source": "subscription", "billingEnabled": true,
   "features": { "queue": true, … },
   "usage": { "team_accounts": { "used": 2, "limit": 3, "remaining": 1 }, "photos": { "used": 4, "limit": 10, "remaining": 6 }, … } }
 ```
@@ -697,3 +701,30 @@ GET /v1/businesses/:id/billing
 `source`: `subscription`, `default` (no subscription: the Free / Starter plan) or `billing_off`.
 Over a limit (e.g. after a downgrade), nothing is removed — only adding more is refused
 (`409 PLAN_LIMIT_REACHED`, from part 2).
+
+### Free trial (once per account)
+
+Settings per audience: `PUT /v1/admin/billing/settings/user { "trialEnabled": true, "trialDays": 30, "trialPlanCode": "user_plus" }`
+(`trialPlanCode: null` or `trialEnabled: false` → no new trials; running ones finish). The
+pricing page shows `trial: { days, plan }` while trials are offered. `GET /v1/billing/me` and
+`GET /v1/businesses/:id/billing` include:
+
+```json
+"trial": { "available": false, "reason": "already_used", "days": 30, "plan": { "code": "user_plus", "name": "BUKU Plus" }, "endsAt": "2026-11-01T…" }
+```
+
+`reason`: `null` (can start) · `billing_off` · `trials_off` · `in_trial` · `already_used` ·
+`has_subscription`. Starting is `POST …/trial` → the plan and `source: "trial"`; refused with
+`409` and the same `reason`. Two taps at once start one trial (database rule). When it ends, the
+account is back on the default plan (Free / Starter) — nothing is deleted.
+
+### Plan requests
+
+```json
+POST /v1/businesses/:id/billing/plan-requests
+{ "planCode": "business_enterprise", "message": "Hospital group, 14 branches, 300 staff" }
+```
+
+One open request per business. The admin approves — optionally free `until` a date, or with a
+different `planCode` — which creates a grant (replacing a trial or grant the business has) and
+links it to the request; or declines with a `note`.

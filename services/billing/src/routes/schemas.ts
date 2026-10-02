@@ -59,6 +59,10 @@ export const SettingsBody = zBody({
   enabled: z.boolean().optional(),
   defaultPlanCode: zPlanCode.optional(),
   planWhenDisabledCode: zPlanCode.optional(),
+  /** Free trial: on/off, length, and which plan it gives (null → no trials). */
+  trialEnabled: z.boolean().optional(),
+  trialDays: z.number().int().min(1).max(365).optional(),
+  trialPlanCode: zPlanCode.nullable().optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');
 
 const zMoney = z.number().min(0).max(10_000_000).multipleOf(0.01);
@@ -96,6 +100,8 @@ export const GrantBody = zBody({
   /** Until when (ISO date-time); leave out for open-ended. */
   until: z.iso.datetime({ offset: true }).optional(),
   note: zSafeText({ min: 3, max: 300 }),
+  /** End the account's current grant or trial and give this plan instead. */
+  replace: z.boolean().optional(),
 }).refine((b) => Boolean(b.userId) !== Boolean(b.businessId), 'give exactly one of userId or businessId');
 
 export const EndBody = zBody({ reason: zSafeText({ min: 3, max: 300 }) });
@@ -104,3 +110,25 @@ export const SubscriptionsQuery = zPagination.extend({
   planCode: zPlanCode.optional(),
   status: z.enum(['active', 'trialing', 'past_due', 'paused', 'cancelled']).optional(),
 });
+
+export const BusinessRequestParams = z.object({ id: zUuid, requestId: zUuid });
+
+export const PlanRequestBody = zBody({
+  planCode: zPlanCode,
+  /** Who they are and why — e.g. "Hospital group, 14 branches, 300 staff". */
+  message: zSafeText({ min: 10, max: 1000 }),
+});
+
+export const RequestsQuery = z.object({
+  status: z.enum(['pending', 'approved', 'declined', 'withdrawn']).optional(),
+});
+
+export const ApproveBody = zBody({
+  /** Free until (leave out for open-ended). */
+  until: z.iso.datetime({ offset: true }).optional(),
+  note: zSafeText({ min: 3, max: 500 }).optional(),
+  /** Give a different plan than the one asked for. */
+  planCode: zPlanCode.optional(),
+});
+
+export const DeclineBody = zBody({ note: zSafeText({ min: 3, max: 500 }) });

@@ -79,7 +79,7 @@ beforeAll(async () => {
     ...jwt,
     keys: [{ keyId: 'k1', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }],
   });
-  app = buildBillingApp({
+  ({ app } = buildBillingApp({
     db,
     redis,
     verifier,
@@ -90,7 +90,7 @@ beforeAll(async () => {
       readiness: new Readiness(),
       trustProxyHops: 1,
     },
-  });
+  }));
   admin = await person('super_admin');
 });
 
@@ -98,6 +98,16 @@ afterAll(async () => {
   // Leave billing as the migration starts it: switched off for everyone.
   await setBilling('user', false);
   await setBilling('business', false);
+  for (const [audience, plan] of [
+    ['user', 'user_plus'],
+    ['business', 'business_professional'],
+  ] as const) {
+    await send('put', `/v1/admin/billing/settings/${audience}`, admin, {
+      trialEnabled: true,
+      trialDays: 30,
+      trialPlanCode: plan,
+    });
+  }
   await db.$disconnect();
   await redis.quit();
 });
@@ -130,7 +140,7 @@ describe('The pricing page', () => {
     ).toBe('4.99');
   });
 
-  it('businesses: Local, Mid-size and Enterprise with their limits and features to compare', async () => {
+  it('businesses: Essential, Professional and Enterprise with their limits and features to compare', async () => {
     const res = await get('/v1/billing/plans?audience=business');
     const plans = res.body.data.plans as {
       code: string;
@@ -139,8 +149,8 @@ describe('The pricing page', () => {
       features: Record<string, boolean>;
     }[];
     expect(plans.map((p) => [p.code, p.prices[0]?.amount])).toEqual([
-      ['business_local', '24.99'],
-      ['business_mid', '49.99'],
+      ['business_essential', '24.99'],
+      ['business_professional', '49.99'],
       ['business_enterprise', '99.99'],
     ]);
     expect(plans.map((p) => p.limits.team_accounts)).toEqual([3, 15, null]);
@@ -207,20 +217,20 @@ describe('Changing prices and plans at any time', () => {
 
   it('archiving hides a plan and stops sales; restoring brings it back; fallback plans are protected', async () => {
     expect(
-      (await send('post', '/v1/admin/billing/plans/business_mid/archive', admin)).body.data.archivedAt,
+      (await send('post', '/v1/admin/billing/plans/business_essential/archive', admin)).body.data.archivedAt,
     ).not.toBeNull();
     expect(
       (await get('/v1/billing/plans?audience=business')).body.data.plans.map((p: { code: string }) => p.code),
-    ).toEqual(['business_local', 'business_enterprise']);
+    ).toEqual(['business_professional', 'business_enterprise']);
     expect(
       (
-        await send('post', '/v1/admin/billing/plans/business_mid/prices', admin, {
+        await send('post', '/v1/admin/billing/plans/business_essential/prices', admin, {
           channel: 'web',
           amount: 39.99,
         })
       ).status,
     ).toBe(409);
-    await send('post', '/v1/admin/billing/plans/business_mid/restore', admin);
+    await send('post', '/v1/admin/billing/plans/business_essential/restore', admin);
     expect((await get('/v1/billing/plans?audience=business')).body.data.plans).toHaveLength(3);
 
     const protectedPlan = await send('post', '/v1/admin/billing/plans/user_free/archive', admin);
@@ -248,23 +258,23 @@ describe('Changing prices and plans at any time', () => {
   });
 
   it('edits limits, features and benefits; only known keys; admins only', async () => {
-    const res = await send('patch', '/v1/admin/billing/plans/business_local', admin, {
+    const res = await send('patch', '/v1/admin/billing/plans/business_essential', admin, {
       limits: { team_accounts: 4 },
       benefits: ['Online bookings', 'Virtual queue', 'Up to 4 team logins'],
     });
     expect(res.body.data.limits).toMatchObject({ team_accounts: 4, staff_profiles: 5 }); // merged
-    const bad = await send('patch', '/v1/admin/billing/plans/business_local', admin, {
+    const bad = await send('patch', '/v1/admin/billing/plans/business_essential', admin, {
       limits: { team_acounts: 9 },
     });
     expect([bad.status, bad.body.error.details.unknownLimits]).toEqual([400, ['team_acounts']]);
     expect(
-      (await send('patch', '/v1/admin/billing/plans/business_local', await person(), { name: 'Hacked' }))
+      (await send('patch', '/v1/admin/billing/plans/business_essential', await person(), { name: 'Hacked' }))
         .status,
     ).toBe(403);
     expect(
-      (await send('patch', '/v1/admin/billing/plans/business_local', admin, { name: 'Local' })).status,
+      (await send('patch', '/v1/admin/billing/plans/business_essential', admin, { name: 'Local' })).status,
     ).toBe(200);
-    await send('patch', '/v1/admin/billing/plans/business_local', admin, {
+    await send('patch', '/v1/admin/billing/plans/business_essential', admin, {
       limits: { team_accounts: 3 },
       benefits: [
         'Online bookings and receipts',
@@ -341,7 +351,7 @@ describe('Switching billing on and off', () => {
 
   it('settings can only point at plans of the right audience that are on sale', async () => {
     expect(
-      (await send('put', '/v1/admin/billing/settings/user', admin, { defaultPlanCode: 'business_local' }))
+      (await send('put', '/v1/admin/billing/settings/user', admin, { defaultPlanCode: 'business_essential' }))
         .status,
     ).toBe(400);
     expect(
@@ -413,7 +423,7 @@ describe('Grants and subscriptions', () => {
     expect(
       (
         await send('post', '/v1/admin/billing/grants', admin, {
-          planCode: 'business_local',
+          planCode: 'business_essential',
           userId: u.id,
           note: 'Wrong',
         })
@@ -438,7 +448,7 @@ describe('Costs, fees and the profit calculator', () => {
         p.prices.filter((x) => x.active).map((x) => ({ ...x, plan: p.code })),
     ) as { id: string; plan: string; channel: string }[];
     const plusWeb = prices.find((p) => p.plan === 'user_plus' && p.channel === 'web')!;
-    const local = prices.find((p) => p.plan === 'business_local')!;
+    const local = prices.find((p) => p.plan === 'business_essential')!;
     const r = await send('post', '/v1/admin/billing/economics', admin, {
       subscribers: { [plusWeb.id]: 100, [local.id]: 10 },
     });
@@ -459,5 +469,301 @@ describe('Costs, fees and the profit calculator', () => {
     await send('put', '/v1/admin/billing/fees/web', admin, { percent: 5, fixedAmount: 0.5 });
     expect((await send('delete', `/v1/admin/billing/costs/${added.body.data.id}`, admin)).status).toBe(204);
     expect((await send('post', '/v1/admin/billing/economics', await person())).status).toBe(403);
+  });
+});
+
+describe('Free trial: once per account, started whenever they like', () => {
+  it('a customer starts a month of BUKU Plus; it ends by itself and can’t be used twice', async () => {
+    const me = await person();
+    expect((await get('/v1/billing/me', me)).body.data.trial).toMatchObject({
+      available: false,
+      reason: 'billing_off',
+    });
+    expect((await send('post', '/v1/billing/me/trial', me)).status).toBe(409);
+
+    await setBilling('user', true);
+    expect((await get('/v1/billing/me', me)).body.data.trial).toEqual({
+      available: true,
+      reason: null,
+      days: 30,
+      plan: { code: 'user_plus', name: 'BUKU Plus' },
+      endsAt: null,
+    });
+    const started = await send('post', '/v1/billing/me/trial', me);
+    expect(started.status).toBe(200);
+    expect(started.body.data).toMatchObject({
+      plan: { code: 'user_plus' },
+      source: 'trial',
+      usage: { visits: { limit: null } },
+    });
+    const ends = new Date(started.body.data.subscription.currentPeriodEnd).getTime();
+    expect(Math.abs(ends - (Date.now() + 30 * 86_400_000))).toBeLessThan(60_000);
+    expect((await send('post', '/v1/billing/me/trial', me)).body.error.details.reason).toBe('in_trial');
+
+    // A month later: back on Free, and the trial is used up.
+    await db.subscription.updateMany({
+      where: { userId: me.id, provider: 'trial' },
+      data: {
+        currentPeriodStart: new Date(Date.now() - 31 * 86_400_000),
+        currentPeriodEnd: new Date(Date.now() - 1000),
+      },
+    });
+    const after = (await get('/v1/billing/me', me)).body.data;
+    expect(after).toMatchObject({
+      plan: { code: 'user_free' },
+      source: 'default',
+      trial: { available: false, reason: 'already_used' },
+    });
+    expect((await send('post', '/v1/billing/me/trial', me)).body.error.details.reason).toBe('already_used');
+    await setBilling('user', false);
+  });
+
+  it('two taps at once start exactly one trial', async () => {
+    await setBilling('user', true);
+    const me = await person();
+    const results = await Promise.all([
+      send('post', '/v1/billing/me/trial', me),
+      send('post', '/v1/billing/me/trial', me),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(await db.subscription.count({ where: { userId: me.id, provider: 'trial' } })).toBe(1);
+    await setBilling('user', false);
+  });
+
+  it('admins switch trials off (Free is then the normal plan), change the length or the plan', async () => {
+    await setBilling('user', true);
+    const off = await send('put', '/v1/admin/billing/settings/user', admin, { trialEnabled: false });
+    expect(off.body.data.trial).toEqual({
+      enabled: false,
+      days: 30,
+      plan: { code: 'user_plus', name: 'BUKU Plus' },
+    });
+    const me = await person();
+    expect((await get('/v1/billing/me', me)).body.data).toMatchObject({
+      plan: { code: 'user_free' },
+      trial: { available: false, reason: 'trials_off' },
+    });
+    expect((await get('/v1/billing/plans?audience=user')).body.data.trial).toBeNull();
+
+    await send('put', '/v1/admin/billing/settings/user', admin, { trialEnabled: true, trialDays: 14 });
+    expect((await get('/v1/billing/plans?audience=user')).body.data.trial).toEqual({
+      days: 14,
+      plan: { code: 'user_plus', name: 'BUKU Plus' },
+    });
+    expect(
+      (await send('put', '/v1/admin/billing/settings/user', admin, { trialPlanCode: 'business_enterprise' }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await send('put', '/v1/admin/billing/settings/user', admin, { trialPlanCode: null })).body.data.trial
+        .plan,
+    ).toBeNull();
+    const protectedPlan = await send('post', '/v1/admin/billing/plans/business_professional/archive', admin);
+    expect(protectedPlan.body.error.message).toContain('free-trial plan');
+    await send('put', '/v1/admin/billing/settings/user', admin, {
+      trialEnabled: true,
+      trialDays: 30,
+      trialPlanCode: 'user_plus',
+    });
+    await setBilling('user', false);
+  });
+
+  it('a business owner starts a month of Professional; managers can’t', async () => {
+    const owner = await person();
+    const b = await business(owner);
+    const manager = await person();
+    await db.businessMember.create({ data: { businessId: b.id, userId: manager.id, role: 'manager' } });
+    await setBilling('business', true);
+    expect((await get('/v1/billing/plans?audience=business')).body.data.trial).toEqual({
+      days: 30,
+      plan: { code: 'business_professional', name: 'Professional' },
+    });
+    expect((await send('post', `/v1/businesses/${b.id}/billing/trial`, manager)).status).toBe(403);
+    const started = await send('post', `/v1/businesses/${b.id}/billing/trial`, owner);
+    expect(started.body.data).toMatchObject({
+      plan: { code: 'business_professional' },
+      source: 'trial',
+      usage: { team_accounts: { limit: 15 } },
+    });
+    await setBilling('business', false);
+  });
+});
+
+describe('Any plan for any business: requests and grants', () => {
+  it('a large business asks for Enterprise; the admin approves it free until a date', async () => {
+    const owner = await person();
+    const b = await business(owner);
+    await setBilling('business', true);
+    const path = `/v1/businesses/${b.id}/billing/plan-requests`;
+    const asked = await send('post', path, owner, {
+      planCode: 'business_enterprise',
+      message: 'Hospital group, 14 branches, 300 staff',
+    });
+    expect(asked.status).toBe(201);
+    expect(
+      (await send('post', path, owner, { planCode: 'business_enterprise', message: 'Asking again please' }))
+        .status,
+    ).toBe(409);
+    const staff = await person();
+    await db.businessMember.create({ data: { businessId: b.id, userId: staff.id, role: 'staff' } });
+    expect(
+      (await send('post', path, staff, { planCode: 'business_enterprise', message: 'Not my call though' }))
+        .status,
+    ).toBe(403);
+    expect(
+      (
+        await send('post', path, await person(), {
+          planCode: 'business_enterprise',
+          message: 'Strangers asking',
+        })
+      ).status,
+    ).toBe(404);
+    expect((await get(`/v1/businesses/${b.id}/billing`, owner)).body.data.pendingPlanRequest).toMatchObject({
+      plan: { code: 'business_enterprise' },
+    });
+
+    const queue = (await get('/v1/admin/billing/plan-requests?status=pending', admin)).body.data as {
+      id: string;
+      business: { name: string };
+    }[];
+    expect(queue.find((r) => r.id === asked.body.data.id)?.business.name).toBe(b.name);
+    const until = new Date(Date.now() + 365 * 86_400_000).toISOString();
+    const approved = await send(
+      'post',
+      `/v1/admin/billing/plan-requests/${asked.body.data.id}/approve`,
+      admin,
+      { until, note: 'Launch partner, first year free' },
+    );
+    expect(approved.body.data).toMatchObject({
+      status: 'approved',
+      decisionNote: 'Launch partner, first year free',
+      subscriptionId: expect.any(String),
+    });
+    expect((await get(`/v1/businesses/${b.id}/billing`, owner)).body.data).toMatchObject({
+      plan: { code: 'business_enterprise' },
+      source: 'subscription',
+      subscription: {
+        provider: 'manual',
+        currentPeriodEnd: until,
+      },
+      pendingPlanRequest: null,
+    });
+    await setBilling('business', false);
+  });
+
+  it('approving replaces a running trial; declined and withdrawn requests leave the plan alone', async () => {
+    const owner = await person();
+    const b = await business(owner);
+    await setBilling('business', true);
+    await send('post', `/v1/businesses/${b.id}/billing/trial`, owner);
+    const path = `/v1/businesses/${b.id}/billing/plan-requests`;
+
+    const first = await send('post', path, owner, {
+      planCode: 'business_enterprise',
+      message: 'We are a large chain of clinics',
+    });
+    const declined = await send(
+      'post',
+      `/v1/admin/billing/plan-requests/${first.body.data.id}/decline`,
+      admin,
+      { note: 'Not eligible yet' },
+    );
+    expect(declined.body.data.status).toBe('declined');
+    const second = await send('post', path, owner, {
+      planCode: 'business_enterprise',
+      message: 'Changed my mind about this',
+    });
+    expect((await send('post', `${path}/${second.body.data.id}/withdraw`, owner)).body.data.status).toBe(
+      'withdrawn',
+    );
+    expect((await get(`/v1/businesses/${b.id}/billing`, owner)).body.data.source).toBe('trial');
+
+    const third = await send('post', path, owner, {
+      planCode: 'business_essential',
+      message: 'Please give us Enterprise instead',
+    });
+    await send('post', `/v1/admin/billing/plan-requests/${third.body.data.id}/approve`, admin, {
+      planCode: 'business_enterprise',
+    });
+    const now = (await get(`/v1/businesses/${b.id}/billing`, owner)).body.data;
+    expect(now).toMatchObject({
+      plan: { code: 'business_enterprise' },
+      source: 'subscription',
+      subscription: { currentPeriodEnd: null },
+    });
+    const trial = await db.subscription.findFirstOrThrow({ where: { businessId: b.id, provider: 'trial' } });
+    expect(trial.status).toBe('cancelled');
+    await setBilling('business', false);
+  });
+
+  it('admins can replace a grant directly, but never a plan paid in a store', async () => {
+    const u = await person();
+    await send('post', '/v1/admin/billing/grants', admin, {
+      planCode: 'user_plus',
+      userId: u.id,
+      note: 'First grant',
+    });
+    expect(
+      (
+        await send('post', '/v1/admin/billing/grants', admin, {
+          planCode: 'user_plus',
+          userId: u.id,
+          note: 'Second grant',
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await send('post', '/v1/admin/billing/grants', admin, {
+          planCode: 'user_plus',
+          userId: u.id,
+          note: 'Second grant',
+          replace: true,
+        })
+      ).status,
+    ).toBe(201);
+
+    const payer = await person();
+    await db.subscription.create({
+      data: {
+        planId: (await db.plan.findUniqueOrThrow({ where: { code: 'user_plus' } })).id,
+        userId: payer.id,
+        provider: 'paddle',
+        channel: 'web',
+        status: 'active',
+      },
+    });
+    const refused = await send('post', '/v1/admin/billing/grants', admin, {
+      planCode: 'user_plus',
+      userId: payer.id,
+      note: 'Swap',
+      replace: true,
+    });
+    expect([refused.status, refused.body.error.message]).toEqual([
+      409,
+      expect.stringContaining('billed by paddle'),
+    ]);
+  });
+
+  it('ended trials and grants are marked expired by the sweeper', async () => {
+    const u = await person();
+    const g = await send('post', '/v1/admin/billing/grants', admin, {
+      planCode: 'user_plus',
+      userId: u.id,
+      note: 'Short gesture',
+      until: new Date(Date.now() + 60_000).toISOString(),
+    });
+    await db.subscription.update({
+      where: { id: g.body.data.id },
+      data: {
+        currentPeriodStart: new Date(Date.now() - 31 * 86_400_000),
+        currentPeriodEnd: new Date(Date.now() - 1000),
+      },
+    });
+    const { AccountService } = await import('../src/account-service.js');
+    expect(await new AccountService(db).expireEnded()).toBeGreaterThanOrEqual(1);
+    expect((await db.subscription.findUniqueOrThrow({ where: { id: g.body.data.id } })).status).toBe(
+      'expired',
+    );
   });
 });

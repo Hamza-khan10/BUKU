@@ -26,7 +26,7 @@ const verifier = await createJwtVerifierFromEnv(env);
 // ── Readiness: every dependency must answer before traffic is routed here ──
 const readiness = new Readiness().add('postgres', () => pingDatabase(db)).add('valkey', () => redis.ping());
 
-const app = buildBillingApp({
+const { app, accounts } = buildBillingApp({
   db,
   redis,
   verifier,
@@ -40,8 +40,28 @@ const app = buildBillingApp({
   },
 });
 
+// Trials and time-limited grants that ended are marked `expired` (they already stopped
+// counting at their end date; this frees the account for a new plan). Idempotent.
+const expiry = setInterval(
+  () => {
+    accounts
+      .expireEnded()
+      .then((n) => n > 0 && logger.info({ expired: n }, 'trials and grants expired'))
+      .catch((err: unknown) => logger.error({ err }, 'expiring trials failed'));
+  },
+  10 * 60 * 1000,
+);
+expiry.unref();
+
 // Hooks run in REVERSE order on shutdown.
 const hooks: ShutdownHook[] = [
+  {
+    name: 'expiry',
+    fn: () => {
+      clearInterval(expiry);
+      return Promise.resolve();
+    },
+  },
   { name: 'postgres', fn: () => db.$disconnect() },
   {
     name: 'valkey',

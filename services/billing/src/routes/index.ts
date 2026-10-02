@@ -16,7 +16,12 @@ import type { AccountService } from '../account-service.js';
 import type { CatalogService } from '../catalog-service.js';
 import { requestContext } from '../http/context.js';
 import {
+  ApproveBody,
   AudienceParams,
+  BusinessRequestParams,
+  DeclineBody,
+  PlanRequestBody,
+  RequestsQuery,
   ChannelParams,
   CodeParams,
   CostBody,
@@ -45,6 +50,12 @@ export interface RouteDeps {
 
 export function registerRoutes(app: Express, deps: RouteDeps): void {
   const auth = authenticate({ verifier: deps.verifier, isRevoked: (t) => deps.revocations.isRevoked(t) });
+  const writeLimit = rateLimit({
+    keyPrefix: 'rl:billing:write',
+    points: 20,
+    durationSeconds: 60,
+    redis: deps.redis,
+  });
   const adminLimit = rateLimit({
     keyPrefix: 'rl:billing:admin',
     points: 120,
@@ -65,15 +76,63 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   b.get('/me', auth, async (req, res) => {
     sendSuccess(res, await deps.accounts.mine(requireAuth(req).userId));
   });
+  // Start my free trial (once per account, whenever I like).
+  b.post('/me/trial', auth, writeLimit, async (req, res) => {
+    sendSuccess(res, await deps.accounts.startMyTrial(requireAuth(req).userId, requestContext(req)));
+  });
   app.use('/v1/billing', b);
 
-  app.get(
-    '/v1/businesses/:id/billing',
-    auth,
+  // ── A business's plan, trial and plan requests ───────────────────────────
+  const biz = Router({ mergeParams: true });
+  biz.use(auth);
+  biz.get(
+    '/',
     validated({ params: IdParams }, async ({ params }, req, res) => {
       sendSuccess(res, await deps.accounts.business(params.id, requireAuth(req).userId));
     }),
   );
+  biz.post(
+    '/trial',
+    writeLimit,
+    validated({ params: IdParams }, async ({ params }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.accounts.startBusinessTrial(params.id, requireAuth(req).userId, requestContext(req)),
+      );
+    }),
+  );
+  biz.get(
+    '/plan-requests',
+    validated({ params: IdParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.accounts.businessRequests(params.id, requireAuth(req).userId));
+    }),
+  );
+  biz.post(
+    '/plan-requests',
+    writeLimit,
+    validated({ params: IdParams, body: PlanRequestBody }, async ({ params, body }, req, res) => {
+      sendCreated(
+        res,
+        await deps.accounts.requestPlan(params.id, requireAuth(req).userId, body, requestContext(req)),
+      );
+    }),
+  );
+  biz.post(
+    '/plan-requests/:requestId/withdraw',
+    writeLimit,
+    validated({ params: BusinessRequestParams }, async ({ params }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.accounts.withdrawRequest(
+          params.id,
+          params.requestId,
+          requireAuth(req).userId,
+          requestContext(req),
+        ),
+      );
+    }),
+  );
+  app.use('/v1/businesses/:id/billing', biz);
 
   // ── Platform admins: the whole catalog is editable at any time ───────────
   const a = Router();
@@ -202,6 +261,27 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/subscriptions/:id/end',
     validated({ params: IdParams, body: EndBody }, async ({ params, body }, req, res) => {
       sendSuccess(res, await deps.accounts.end(params.id, admin(req), body.reason, requestContext(req)));
+    }),
+  );
+  a.get(
+    '/plan-requests',
+    validated({ query: RequestsQuery }, async ({ query }, _req, res) => {
+      sendSuccess(res, await deps.accounts.listRequests(query.status));
+    }),
+  );
+  a.post(
+    '/plan-requests/:id/approve',
+    validated({ params: IdParams, body: ApproveBody }, async ({ params, body }, req, res) => {
+      sendSuccess(res, await deps.accounts.approveRequest(params.id, admin(req), body, requestContext(req)));
+    }),
+  );
+  a.post(
+    '/plan-requests/:id/decline',
+    validated({ params: IdParams, body: DeclineBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.accounts.declineRequest(params.id, admin(req), body.note, requestContext(req)),
+      );
     }),
   );
   app.use('/v1/admin/billing', a);

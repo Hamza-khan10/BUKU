@@ -238,6 +238,15 @@ enum SubscriptionStatus {
   cancelled
   paused
   trialing
+  /// A trial or a time-limited grant whose end date passed.
+  expired
+}
+
+enum PlanRequestStatus {
+  pending
+  approved
+  declined
+  withdrawn
 }
 
 // ═════════════════════════════ IDENTITY ═════════════════════════════
@@ -319,6 +328,8 @@ model User {
   checkIns           Appointment[]           @relation("AppointmentCheckIn")
   subscriptions      Subscription[]          @relation("UserSubscriptions")
   subscriptionGrants Subscription[]          @relation("SubscriptionGrantedBy")
+  planRequests       PlanRequest[]           @relation("PlanRequestedBy")
+  planDecisions      PlanRequest[]           @relation("PlanRequestDecidedBy")
   shiftsRecorded     StaffAttendance[]       @relation("AttendanceRecordedBy")
   managedByBusiness  Business?               @relation("ManagedAccounts", fields: [managedByBusinessId], references: [id], onDelete: Restrict)
 
@@ -480,6 +491,7 @@ model Business {
   serviceCategories      ServiceCategory[]
   staffAttendance        StaffAttendance[]
   queueSettings          QueueSettings?
+  planRequests           PlanRequest[]
   bookingSettings        BookingSettings?
   documents              BusinessDocument[]
   hours                  BusinessHours[]
@@ -1315,6 +1327,8 @@ model Plan {
   subscriptions   Subscription[]
   defaultFor      BillingSettings[] @relation("DefaultPlan")
   whenDisabledFor BillingSettings[] @relation("PlanWhenDisabled")
+  trialFor        BillingSettings[] @relation("TrialPlan")
+  requests        PlanRequest[]
 
   @@index([audience, archivedAt])
   @@map("plans")
@@ -1354,11 +1368,17 @@ model BillingSettings {
   defaultPlanId      String       @map("default_plan_id") @db.Uuid
   /// Plan everyone gets while billing is off (normally an unlimited internal plan).
   planWhenDisabledId String       @map("plan_when_disabled_id") @db.Uuid
+  /// A free trial each account can start once, whenever it likes (switch off → no new trials).
+  trialEnabled       Boolean      @default(true) @map("trial_enabled")
+  trialDays          Int          @default(30) @map("trial_days")
+  /// The plan a trial gives (null → no trials).
+  trialPlanId        String?      @map("trial_plan_id") @db.Uuid
   updatedById        String?      @map("updated_by_id") @db.Uuid
   updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  defaultPlan      Plan @relation("DefaultPlan", fields: [defaultPlanId], references: [id], onDelete: Restrict)
-  planWhenDisabled Plan @relation("PlanWhenDisabled", fields: [planWhenDisabledId], references: [id], onDelete: Restrict)
+  defaultPlan      Plan  @relation("DefaultPlan", fields: [defaultPlanId], references: [id], onDelete: Restrict)
+  planWhenDisabled Plan  @relation("PlanWhenDisabled", fields: [planWhenDisabledId], references: [id], onDelete: Restrict)
+  trialPlan        Plan? @relation("TrialPlan", fields: [trialPlanId], references: [id], onDelete: Restrict)
 
   @@map("billing_settings")
 }
@@ -1373,7 +1393,7 @@ model Subscription {
   userId                 String?            @map("user_id") @db.Uuid
   businessId             String?            @map("business_id") @db.Uuid
   channel                BillingChannel?
-  /// paddle | google_play | app_store | manual
+  /// paddle | google_play | app_store | manual (admin grant) | trial (free trial, once per account)
   provider               String             @db.VarChar(20)
   externalSubscriptionId String?            @unique @map("external_subscription_id") @db.VarChar(200)
   externalCustomerId     String?            @map("external_customer_id") @db.VarChar(200)
@@ -1388,16 +1408,45 @@ model Subscription {
   createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  plan      Plan       @relation(fields: [planId], references: [id], onDelete: Restrict)
-  price     PlanPrice? @relation(fields: [priceId], references: [id], onDelete: Restrict)
-  user      User?      @relation("UserSubscriptions", fields: [userId], references: [id], onDelete: Restrict)
-  business  Business?  @relation(fields: [businessId], references: [id], onDelete: Restrict)
-  grantedBy User?      @relation("SubscriptionGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  plan        Plan         @relation(fields: [planId], references: [id], onDelete: Restrict)
+  price       PlanPrice?   @relation(fields: [priceId], references: [id], onDelete: Restrict)
+  user        User?        @relation("UserSubscriptions", fields: [userId], references: [id], onDelete: Restrict)
+  business    Business?    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  grantedBy   User?        @relation("SubscriptionGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+  planRequest PlanRequest?
 
   @@index([userId, status])
   @@index([businessId, status])
   @@index([planId, status])
   @@map("subscriptions")
+}
+
+/// A business asking for a plan — e.g. a large organisation asking for Enterprise free of
+/// charge. Platform admins approve (→ a grant) or decline. One open request per business.
+model PlanRequest {
+  id             String            @id @default(uuid(7)) @db.Uuid
+  businessId     String            @map("business_id") @db.Uuid
+  planId         String            @map("plan_id") @db.Uuid
+  requestedById  String            @map("requested_by_id") @db.Uuid
+  message        String            @db.VarChar(1000)
+  status         PlanRequestStatus @default(pending)
+  decidedById    String?           @map("decided_by_id") @db.Uuid
+  decidedAt      DateTime?         @map("decided_at") @db.Timestamptz(6)
+  decisionNote   String?           @map("decision_note") @db.VarChar(500)
+  /// The grant created when approved.
+  subscriptionId String?           @unique @map("subscription_id") @db.Uuid
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan         Plan          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  requestedBy  User          @relation("PlanRequestedBy", fields: [requestedById], references: [id], onDelete: Restrict)
+  decidedBy    User?         @relation("PlanRequestDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([businessId, createdAt])
+  @@map("plan_requests")
 }
 
 /// What running BUKU costs per month (servers, database, messaging…): for the profit calculator.

@@ -15,7 +15,7 @@ import {
  * here before creating something a plan limits; nothing else decides.
  *
  *   billing switched off for the audience  → the "billing off" plan (unlimited)
- *   a live subscription                    → its plan (even if since archived)
+ *   a live subscription or free trial      → its plan (even if since archived)
  *   otherwise                              → the audience's default plan (Free)
  *   billing settings missing or broken     → unlimited, and a warning in the logs
  *
@@ -29,7 +29,8 @@ export type Account = { userId: string } | { businessId: string };
 export interface Entitlements {
   audience: Audience;
   plan: { id: string | null; code: string; name: string };
-  source: 'subscription' | 'default' | 'billing_off' | 'fallback';
+  /** trial: a free trial of a paid plan; subscription: paid or granted by an admin. */
+  source: 'subscription' | 'trial' | 'default' | 'billing_off' | 'fallback';
   billingEnabled: boolean;
   /** null = unlimited */
   limits: Record<string, number | null>;
@@ -74,7 +75,7 @@ export async function entitlementsOf(
     orderBy: { createdAt: 'desc' },
   });
   if (sub && sub.plan.audience === audience) {
-    return fromPlan(audience, sub.plan, 'subscription', true, {
+    return fromPlan(audience, sub.plan, sub.provider === 'trial' ? 'trial' : 'subscription', true, {
       id: sub.id,
       status: sub.status,
       provider: sub.provider,
