@@ -36,7 +36,8 @@ password `buku-dev-password-2026`.
 | `pnpm test` / `pnpm test:watch`                | Unit tests                                                            |
 | `pnpm test:int`                                | Integration tests against the running stack (uses the `buku_test` DB) |
 | `pnpm typecheck` · `pnpm lint` · `pnpm format` | Code quality                                                          |
-| `pnpm verify`                                  | Full Phase 1 acceptance (34 checks)                                   |
+| `pnpm verify`                                  | Stack and quality checks (43)                                         |
+| `pnpm acceptance`                              | Phase 2 acceptance through the gateway (journeys, races, every route) |
 | `pnpm db:studio`                               | Browse the database in Prisma Studio                                  |
 
 Services hot-reload: edit anything under `packages/*/src` or `services/*/src` and the affected
@@ -73,6 +74,8 @@ Every route behind the gateway requires a valid access token by default. To make
 add it as its own route WITHOUT the `jwt` plugin in `infrastructure/kong/kong.template.yml`
 (restrict `methods` where possible, e.g. `[GET, OPTIONS]`), then `docker compose -f
 docker-compose.dev.yml up -d --force-recreate kong`. The service must still not trust the caller.
+Finally add it to `PUBLIC` in `scripts/acceptance/run.ts`: `pnpm acceptance` fails for any route
+that answers without a token unless it is listed there (on purpose, with a reason).
 
 ### Add an environment variable
 

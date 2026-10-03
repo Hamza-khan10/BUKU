@@ -485,3 +485,15 @@ every service shows the same figure. The cancellation insights (`/v1/businesses/
 cancellations`, owner and managers; `/reports` already meant reporting a business) give totals and
 rates, reasons, weekday and hour in the business's timezone, per service and employee, a weekly
 trend, and how many "remind me later" cancellations booked again.
+
+**D-079 · Acceptance runs the real thing, and every route is checked, not sampled.**
+`pnpm acceptance` drives the development stack through the gateway like the apps do, creating
+its own businesses and people per run (suspended at the end). Routes are read from each
+service's real route setup (stand-in dependencies, nothing called), so new routes are checked
+automatically — including ones registered in loops. Without a token every route must answer 401
+both through the gateway and straight to the service (the gateway must never be the only lock),
+except an explicit `PUBLIC` list where each entry is deliberate; team routes refuse a customer of
+another business; admin routes refuse customers. Time is simulated in two places only (moving an
+appointment in the database, as the app role) so a reminder and a visit can happen within a run;
+the test shops use a timezone where it is daytime, because night-time quiet hours correctly hold
+reminders back. Not in CI yet: it needs the full stack with the gateway (Phase 5 staging).

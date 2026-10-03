@@ -57,9 +57,10 @@ export class StoreService {
   // ── Customers and business owners ────────────────────────────────────────
 
   async checkout(account: Account, planCode: string, actorId: string, ctx: RequestContext) {
+    // Who may do this first: an outsider learns nothing, not even whether payments are set up.
+    await this.authorize(account, actorId);
     const { paddle, config } = this.require();
     const audience = audienceOf(account);
-    await this.authorize(account, actorId);
     const settings = await this.db.billingSettings.findUnique({ where: { audience } });
     if (!settings?.enabled) throw new AppError('Everything is included right now', ErrorCodes.CONFLICT, 409);
     const plan = await this.db.plan.findUnique({
@@ -101,16 +102,18 @@ export class StoreService {
 
   /** Cancel at the end of the paid period (access continues until then). */
   async cancel(account: Account, actorId: string, ctx: RequestContext) {
+    await this.authorize(account, actorId);
     const { paddle } = this.require();
-    const sub = await this.ownStoreSubscription(account, actorId);
+    const sub = await this.ownStoreSubscription(account);
     await this.apply(await paddle.cancelSubscription(sub.externalSubscriptionId!, 'next_billing_period'));
     await this.audit(actorId, 'billing.subscription_cancel_scheduled', sub.id, ctx);
     return this.view(sub.id);
   }
 
   async undoCancel(account: Account, actorId: string, ctx: RequestContext) {
+    await this.authorize(account, actorId);
     const { paddle } = this.require();
-    const sub = await this.ownStoreSubscription(account, actorId);
+    const sub = await this.ownStoreSubscription(account);
     if (!sub.cancelAtPeriodEnd) return this.view(sub.id);
     await this.apply(await paddle.removeScheduledChange(sub.externalSubscriptionId!));
     await this.audit(actorId, 'billing.subscription_cancel_undone', sub.id, ctx);
@@ -119,8 +122,9 @@ export class StoreService {
 
   /** Switch to another plan now (prorated). */
   async changePlan(account: Account, planCode: string, actorId: string, ctx: RequestContext) {
+    await this.authorize(account, actorId);
     const { paddle } = this.require();
-    const sub = await this.ownStoreSubscription(account, actorId);
+    const sub = await this.ownStoreSubscription(account);
     const plan = await this.db.plan.findUnique({
       where: { code: planCode },
       include: { prices: { where: { channel: 'web', archivedAt: null, externalPriceId: { not: null } } } },
@@ -138,8 +142,9 @@ export class StoreService {
 
   /** Links into Paddle's portal: update the card, see invoices. */
   async portal(account: Account, actorId: string) {
+    await this.authorize(account, actorId);
     const { paddle } = this.require();
-    const sub = await this.ownStoreSubscription(account, actorId);
+    const sub = await this.ownStoreSubscription(account);
     return paddle.portalLinks(sub.externalCustomerId!, sub.externalSubscriptionId!);
   }
 
@@ -321,8 +326,8 @@ export class StoreService {
     });
   }
 
-  private async ownStoreSubscription(account: Account, actorId: string) {
-    await this.authorize(account, actorId);
+  /** Call after `authorize`. */
+  private async ownStoreSubscription(account: Account) {
     const sub = await this.liveStoreSubscription(account);
     if (!sub?.externalSubscriptionId) throw AppError.notFound('Paid subscription');
     return sub;

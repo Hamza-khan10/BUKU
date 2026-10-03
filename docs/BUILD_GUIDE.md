@@ -308,11 +308,20 @@ half, ordinary cancellations never) — the customer sees the detail, businesses
 or "New customer" on appointments and the queue board; optional approval for customers below a
 chosen percentage (new customers never held back); cancellation insights for owners and managers.
 
-### 2.9 Phase 2 acceptance
+### 2.9 Phase 2 acceptance — ✅ done
 
 End-to-end: sign in → add phone → trial booking → confirm → reminder → complete → review;
 subscribe → second booking; queue join (distance + one-queue rule) → called → served.
 Concurrency tests; authorization tests on every route.
+
+Built (D-079): `pnpm acceptance` runs it all against the running stack through the gateway in
+about three minutes — three journeys with the messages people receive at each step, four races
+(8 people for one slot, 5 taps on "review", two tablets calling next, cancel vs check-in), and
+every route the services expose (203, read from the real route setup): without a token through
+the gateway and straight to each service, as a customer outside the business on its 88 team
+routes, and as a customer on the 40 admin routes. Public routes are an explicit, reasoned list.
+Found and fixed: business billing routes told outsiders "payments aren't set up" before checking
+who they were.
 
 ### 2.10 SOC 2 compliance review (requested 2026-10-02)
 
