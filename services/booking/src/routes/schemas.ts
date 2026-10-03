@@ -175,3 +175,35 @@ export const CorrectShiftBody = zBody({
   checkOutAt: z.iso.datetime({ offset: true }).optional(),
   note: zSafeText({ max: 300 }).optional(),
 }).refine(atLeastOne, 'at least one field is required');
+
+// ── Reviews ──
+const star = z.number().int().min(1).max(5);
+export const ReviewBody = zBody({
+  overall: star,
+  waitTime: star.optional(),
+  staff: star.optional(),
+  cleanliness: star.optional(),
+  value: star.optional(),
+  comment: zSafeText({ max: 2000 }).optional(),
+});
+export const BusinessReviewsQuery = zPagination.extend({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  sort: z.enum(['recent', 'highest', 'lowest']).default('recent'),
+  rating: z.coerce.number().int().min(1).max(5).optional(),
+  withComment: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+});
+export const ReviewParams = z.object({ id: zUuid, reviewId: zUuid });
+export const AdminReviewParams = z.object({ reviewId: zUuid });
+export const ReviewResponseBody = zBody({ text: zSafeText({ min: 2, max: 1000 }) });
+export const ReportReviewBody = zBody({
+  reason: z.enum(['offensive', 'fake', 'not_a_customer', 'personal_info', 'other']),
+  note: zSafeText({ max: 150 }).optional(),
+});
+export const ModerateReviewBody = z.discriminatedUnion('action', [
+  zBody({ action: z.literal('hide'), reason: zSafeText({ min: 3, max: 300 }) }),
+  zBody({ action: z.literal('keep') }),
+  zBody({ action: z.literal('restore') }),
+]);

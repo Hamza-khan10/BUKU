@@ -214,6 +214,40 @@ export class Scheduler {
     return sent;
   }
 
+  // ── "How was your visit?" (every 5 minutes) ───────────────────────────────
+
+  /**
+   * From 30 minutes after a visit ends, for up to 3 days: visits that happened
+   * (completed, or checked in) and aren't reviewed yet. Once each; not at night.
+   */
+  async reviewRequests(now = new Date()): Promise<number> {
+    const settings = await this.deps.settings.get();
+    const rows = await this.deps.db.appointment.findMany({
+      where: {
+        endAt: { lte: new Date(now.getTime() - 30 * 60_000), gte: new Date(now.getTime() - 3 * 86_400_000) },
+        OR: [{ status: 'completed' }, { status: 'confirmed', checkedInAt: { not: null } }],
+        review: null,
+      },
+      select: { id: true, userId: true, business: { select: { timezone: true } } },
+      take: PAGE,
+    });
+    const done = await this.sentKeys(rows.map((r) => `appt:${r.id}:review`));
+    let sent = 0;
+    for (const r of rows) {
+      const key = `appt:${r.id}:review`;
+      if (done.has(key)) continue;
+      if (isQuietHour(now, r.business.timezone, settings.quietStartHour, settings.quietEndHour)) continue;
+      const loaded = await loadVisit(this.deps.db, r.id);
+      if (!loaded) continue;
+      const message = toCustomer.reviewRequest(loaded.visit);
+      if (
+        await this.once(key, 'review_request', r.userId, [{ userId: r.userId, message, appointmentId: r.id }])
+      )
+        sent++;
+    }
+    return sent;
+  }
+
   // ── Plan notices (every 15 minutes) ───────────────────────────────────────
 
   async planNotices(now = new Date()): Promise<number> {

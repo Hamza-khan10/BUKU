@@ -175,7 +175,7 @@ describe('derived data maintained by triggers', () => {
     expect(biz.reviewCount).toBe(1);
     expect(biz.avgRating.toString()).toBe('4');
 
-    await db.review.update({ where: { id: review.id }, data: { isVisible: false } });
+    await db.review.update({ where: { id: review.id }, data: { isVisible: false, hiddenAt: new Date() } });
     biz = await db.business.findUniqueOrThrow({ where: { id: f.business.id } });
     expect(biz.reviewCount).toBe(0);
   });

@@ -1,4 +1,4 @@
-import { AppError } from '@buku/common';
+import { AppError, businessReliability, MIN_DECIDED_FOR_RELIABILITY } from '@buku/common';
 import { Prisma, type Database } from '@buku/database';
 import type { MediaLinks } from '@buku/media';
 import type { Categories } from './categories.js';
@@ -26,9 +26,9 @@ export const WEIGHTS = {
   /** Rating pulled towards 4.0 as if from 5 reviews (Bayesian average). */
   priorRating: 4.0,
   priorReviews: 5,
-  /** Until 10 decided bookings, reliability is assumed to be this. */
+  /** Until there are enough decided bookings, reliability is assumed to be this. */
   priorReliability: 0.9,
-  minDecidedForReliability: 10,
+  minDecidedForReliability: MIN_DECIDED_FOR_RELIABILITY,
   quality: 0.5,
   proximity: 0.5,
   /** Distance at which closeness counts half. */
@@ -274,7 +274,6 @@ export class SearchService {
 
   /** One result as the apps show it. Built field by field (nothing leaks by accident). */
   private async view(r: Row) {
-    const decided = (r.kept ?? 0) + (r.business_cancels ?? 0);
     return {
       id: r.id,
       slug: r.slug,
@@ -287,10 +286,7 @@ export class SearchService {
       rating: { average: r.avg_rating, count: r.review_count },
       verified: r.verified,
       /** Share of bookings the business kept (didn't cancel), once there are enough to say. */
-      reliability:
-        decided >= WEIGHTS.minDecidedForReliability
-          ? { keptPercent: Math.round(((r.kept ?? 0) / decided) * 100), basedOn: decided }
-          : null,
+      reliability: businessReliability(r.kept ?? 0, r.business_cancels ?? 0),
       priceFrom: r.min_price === null ? null : { amount: r.min_price, currency: r.currency },
       openNow: r.open_now,
       queue: r.queue_open ? { open: true, waiting: r.waiting ?? 0 } : null,

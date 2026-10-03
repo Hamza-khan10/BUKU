@@ -144,6 +144,21 @@ export const toCustomer = {
     data: visitLink(v),
     vars: visitVars(v),
   }),
+  /** After the visit: ask how it went (once; deep link to the review screen). */
+  reviewRequest: (v: Visit): Message => ({
+    type: 'review_request',
+    category: 'reminder',
+    title: `How was your ${v.serviceName}?`,
+    body: `Tell others about ${v.businessName}${withWhom(v)} — it takes a few seconds and helps them choose.`,
+    data: { screen: 'review', appointmentId: v.appointmentId },
+  }),
+  reviewReplied: (r: { appointmentId: string; businessName: string }): Message => ({
+    type: 'review_replied',
+    category: 'booking',
+    title: `${r.businessName} replied to your review`,
+    body: 'Tap to read their reply.',
+    data: { screen: 'review', appointmentId: r.appointmentId },
+  }),
   /** The customer asked "remind me to book again" (rebook_reminder_at). */
   bookAgain: (b: {
     businessId: string;
@@ -213,6 +228,19 @@ export const toTeam = {
     title: late ? 'Late cancellation' : 'Booking cancelled',
     body: `${shortName(v.customerName)} cancelled ${v.serviceName} on ${when(v)}${withWhom(v)}. The time is free again.`,
     data: teamLink(v),
+  }),
+  newReview: (r: {
+    businessId: string;
+    reviewId: string;
+    reviewer: string;
+    overall: number;
+    serviceName: string;
+  }): Message => ({
+    type: 'team_new_review',
+    category: 'business',
+    title: `New ${r.overall}★ review`,
+    body: `${r.reviewer} reviewed ${r.serviceName}. Reply to show customers you listen.`,
+    data: { screen: 'business-review', businessId: r.businessId, reviewId: r.reviewId },
   }),
   /** A request nobody has answered yet, as its time gets close. */
   stillPending: (v: Visit): Message => ({

@@ -40,6 +40,10 @@ export function webPath(data: Message['data']): string {
       return `/b/${id('businessId')}`;
     case 'explore':
       return '/explore';
+    case 'review':
+      return `/appointments/${id('appointmentId')}/review`;
+    case 'business-review':
+      return `/business/${id('businessId')}/reviews#${id('reviewId')}`;
     default:
       return '/';
   }

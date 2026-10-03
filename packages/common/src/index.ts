@@ -8,6 +8,7 @@ export * from './logger.js';
 
 // Authorization
 export * from './authz.js';
+export * from './reputation.js';
 
 // Identifiers
 export * from './ids.js';

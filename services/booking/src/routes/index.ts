@@ -2,6 +2,7 @@ import {
   authenticate,
   rateLimit,
   requireAuth,
+  requireRole,
   sendCreated,
   sendNoContent,
   sendSuccess,
@@ -15,13 +16,21 @@ import type { AppointmentService } from '../appointments/appointment-service.js'
 import type { AvailabilityService } from '../availability/availability-service.js';
 import type { CatalogService } from '../catalog/catalog-service.js';
 import { requestContext } from '../http/context.js';
+import type { ReviewService } from '../reviews/review-service.js';
 import type { ScheduleService } from '../schedules/schedule-service.js';
 import type { SettingsService } from '../settings/settings-service.js';
 import type { AttendanceService } from '../staff/attendance-service.js';
 import type { StaffService } from '../staff/staff-service.js';
 import {
+  AdminReviewParams,
   AppointmentParams,
   AttendanceQuery,
+  BusinessReviewsQuery,
+  ModerateReviewBody,
+  ReportReviewBody,
+  ReviewBody,
+  ReviewParams,
+  ReviewResponseBody,
   CheckInByCodeBody,
   ClockInBody,
   CorrectShiftBody,
@@ -62,6 +71,7 @@ export interface RouteDeps {
   staff: StaffService;
   schedules: ScheduleService;
   settings: SettingsService;
+  reviews: ReviewService;
   verifier: JwtVerifier;
   revocations: RevocationStore;
   redis: Redis;
@@ -93,6 +103,65 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdOrSlugParams }, async ({ params }, _req, res) => {
       publicCache(res);
       sendSuccess(res, await deps.staff.publicList(params.idOrSlug));
+    }),
+  );
+
+  // ── Reviews: public list (with the rating summary), the team's reply and reports ──
+  r.get(
+    '/:idOrSlug/reviews',
+    validated(
+      { params: IdOrSlugParams, query: BusinessReviewsQuery },
+      async ({ params, query }, _req, res) => {
+        publicCache(res);
+        const { items, meta } = await deps.reviews.forBusiness(params.idOrSlug, query);
+        sendSuccess(res, items, 200, meta);
+      },
+    ),
+  );
+  r.put(
+    '/:id/reviews/:reviewId/response',
+    auth,
+    writeLimit,
+    validated({ params: ReviewParams, body: ReviewResponseBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.reviews.respond(
+          params.id,
+          params.reviewId,
+          requireAuth(req).userId,
+          body.text,
+          requestContext(req),
+        ),
+      );
+    }),
+  );
+  r.delete(
+    '/:id/reviews/:reviewId/response',
+    auth,
+    writeLimit,
+    validated({ params: ReviewParams }, async ({ params }, req, res) => {
+      await deps.reviews.removeResponse(
+        params.id,
+        params.reviewId,
+        requireAuth(req).userId,
+        requestContext(req),
+      );
+      sendNoContent(res);
+    }),
+  );
+  r.post(
+    '/:id/reviews/:reviewId/report',
+    auth,
+    writeLimit,
+    validated({ params: ReviewParams, body: ReportReviewBody }, async ({ params, body }, req, res) => {
+      await deps.reviews.report(
+        params.id,
+        params.reviewId,
+        requireAuth(req).userId,
+        body,
+        requestContext(req),
+      );
+      sendNoContent(res);
     }),
   );
 
@@ -570,6 +639,51 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(res, items, 200, meta);
     }),
   );
+  // My reviews (before /:id so "reviews" isn't read as an id).
+  mine.get(
+    '/reviews',
+    validated(
+      { query: MyAppointmentsQuery.pick({ page: true, limit: true }) },
+      async ({ query }, req, res) => {
+        const { items, meta } = await deps.reviews.mine(requireAuth(req).userId, query.page, query.limit);
+        sendSuccess(res, items, 200, meta);
+      },
+    ),
+  );
+  const reviewLimit = rateLimit({
+    keyPrefix: 'rl:booking:review',
+    points: 20,
+    durationSeconds: 3600,
+    redis: deps.redis,
+  });
+  mine.post(
+    '/:id/review',
+    reviewLimit,
+    validated({ params: AppointmentParams, body: ReviewBody }, async ({ params, body }, req, res) => {
+      sendCreated(
+        res,
+        await deps.reviews.create(requireAuth(req).userId, params.id, body, requestContext(req)),
+      );
+    }),
+  );
+  mine.patch(
+    '/:id/review',
+    reviewLimit,
+    validated({ params: AppointmentParams, body: ReviewBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.reviews.update(requireAuth(req).userId, params.id, body, requestContext(req)),
+      );
+    }),
+  );
+  mine.delete(
+    '/:id/review',
+    writeLimit,
+    validated({ params: AppointmentParams }, async ({ params }, req, res) => {
+      await deps.reviews.remove(requireAuth(req).userId, params.id, requestContext(req));
+      sendNoContent(res);
+    }),
+  );
   mine.get(
     '/:id',
     validated({ params: AppointmentParams }, async ({ params }, req, res) => {
@@ -597,4 +711,26 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     }),
   );
   app.use('/v1/appointments', mine);
+
+  // ── Platform admins: reported reviews ────────────────────────────────────
+  const admin = Router();
+  admin.use(auth, requireRole('super_admin'), writeLimit);
+  admin.get(
+    '/',
+    validated(
+      { query: MyAppointmentsQuery.pick({ page: true, limit: true }) },
+      async ({ query }, _req, res) => {
+        const { items, meta } = await deps.reviews.reported(query.page, query.limit);
+        sendSuccess(res, items, 200, meta);
+      },
+    ),
+  );
+  admin.post(
+    '/:reviewId/decision',
+    validated({ params: AdminReviewParams, body: ModerateReviewBody }, async ({ params, body }, req, res) => {
+      await deps.reviews.moderate(params.reviewId, requireAuth(req).userId, body, requestContext(req));
+      sendNoContent(res);
+    }),
+  );
+  app.use('/v1/admin/reviews', admin);
 }
