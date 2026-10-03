@@ -1212,3 +1212,49 @@ describe('Profile picture (private)', () => {
     expect(row.avatarStorageKey).toBeNull();
   });
 });
+
+describe('Access review (SOC 2)', () => {
+  /** An admin: signed up, promoted in the database, then a fresh token carrying the role. */
+  async function admin() {
+    const s = await signUp();
+    await db.user.update({ where: { id: s.user.id }, data: { role: 'super_admin' } });
+    const r = await post('/v1/auth/refresh').send({ refreshToken: s.refreshToken });
+    expect(r.status).toBe(200);
+    return { ...s, accessToken: r.body.data.accessToken as string };
+  }
+
+  it('lists platform admins with their last activity, flags dormant ones, and is itself audited', async () => {
+    const me = await admin();
+    const idle = await admin();
+    // Idle for 100 days: no sign-in, no session use.
+    await db.user.update({
+      where: { id: idle.user.id },
+      data: { lastLoginAt: new Date(Date.now() - 100 * 86_400_000) },
+    });
+    await db.refreshToken.updateMany({
+      where: { userId: idle.user.id },
+      data: {
+        lastUsedAt: new Date(Date.now() - 100 * 86_400_000),
+        createdAt: new Date(Date.now() - 100 * 86_400_000),
+      },
+    });
+
+    const res = await request(app).get('/v1/admin/access-review').set(bearer(me.accessToken));
+    expect(res.status).toBe(200);
+    const byId = new Map(
+      res.body.data.platformAdmins.map((a: { id: string; dormant: boolean; email: string }) => [a.id, a]),
+    );
+    expect(byId.get(me.user.id)).toMatchObject({ dormant: false, email: me.user.email });
+    expect(byId.get(idle.user.id)).toMatchObject({ dormant: true });
+    expect(res.body.data.businessAccess).toHaveProperty('owners');
+    expect(
+      await db.auditLog.count({ where: { userId: me.user.id, action: 'access_review.generated' } }),
+    ).toBe(1);
+  });
+
+  it('customers can’t see it', async () => {
+    const customer = await signUp();
+    const res = await request(app).get('/v1/admin/access-review').set(bearer(customer.accessToken));
+    expect(res.status).toBe(403);
+  });
+});

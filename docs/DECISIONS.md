@@ -497,3 +497,16 @@ another business; admin routes refuse customers. Time is simulated in two places
 appointment in the database, as the app role) so a reminder and a visit can happen within a run;
 the test shops use a timezone where it is daytime, because night-time quiet hours correctly hold
 reminders back. Not in CI yet: it needs the full stack with the gateway (Phase 5 staging).
+
+**D-080 · Audit log append-only; a retention schedule nobody can shorten; access reviews and
+role changes leave evidence (SOC 2 review).** The app role can insert audit entries but never
+update, delete or truncate them — revoked on the table and on every monthly partition (including
+ones created later), plus a trigger that refuses changes for any role. The retention schedule is
+code: audit log 24 months, notifications and ad events 13 months (whole months dropped by a
+`SECURITY DEFINER` database function whose periods are fixed in the function, so the app can
+run it but not shorten it), processed-event markers 120 days, published outbox events 7 days,
+expired sessions 30 days after expiry; it runs daily and each run is audited. Platform roles
+change only through `pnpm admin:role` (operator, written reason, audited, sessions ended at once;
+never the last admin). `GET /v1/admin/access-review` lists platform admins with their last
+activity (sign-in or session use) and flags anyone inactive for 90 days; generating it is audited,
+so quarterly reviews leave evidence.

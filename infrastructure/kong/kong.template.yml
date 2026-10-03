@@ -62,7 +62,7 @@ services:
       # Everything else under /v1/auth needs a token (longest prefix wins, so
       # /v1/auth/logout-all lands here, not on the public /v1/auth/logout).
       - name: auth-private
-        paths: ['/v1/auth', '/v1/auth/logout-all']
+        paths: ['/v1/auth', '/v1/auth/logout-all', '/v1/admin/access-review']
         strip_path: false
         plugins:
           - &jwt

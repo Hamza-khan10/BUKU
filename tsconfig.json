@@ -11,6 +11,7 @@
     "packages/*/*.config.ts",
     "services/*/src/**/*.ts",
     "services/*/test/**/*.ts",
+    "services/*/scripts/**/*.ts",
     "scripts/**/*.ts",
     "vitest.config.ts",
     "tsup.config.ts"

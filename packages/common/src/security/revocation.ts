@@ -28,7 +28,9 @@ export type RevocationReason =
   | 'reuse_detected'
   | 'revoked_by_user'
   | 'account_suspended'
-  | 'account_deleted';
+  | 'account_deleted'
+  /** Platform role changed (e.g. admin access removed in an access review). */
+  | 'role_changed';
 
 export interface RevocationStore {
   /** Kill every access token of `userId` issued up to now. */
