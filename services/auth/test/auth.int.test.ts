@@ -24,6 +24,7 @@ import { buildAuthApp } from '../src/app.js';
 import type { DataRightsService } from '../src/users/data-rights.js';
 import { appointmentData, createBusinessFixture } from '../../../packages/database/test/fixtures.js';
 import { createOidcVerifierWithKeys } from '../src/identity/oidc.js';
+import { base32Decode, hotp, stepAt } from '../src/mfa/totp.js';
 import { createS3Storage, MediaLinks, PictureUploads, type ObjectStorage } from '@buku/media';
 import sharp from 'sharp';
 
@@ -1213,6 +1214,10 @@ describe('Profile picture (private)', () => {
   });
 });
 
+/** The code an authenticator app would show, `offset` steps from now. */
+const codeFor = (secret: string, offset = 0) =>
+  hotp(base32Decode(secret), stepAt(Date.now()) + BigInt(offset));
+
 describe('Access review (SOC 2)', () => {
   /** An admin: signed up, promoted in the database, then a fresh token carrying the role. */
   async function admin() {
@@ -1220,7 +1225,14 @@ describe('Access review (SOC 2)', () => {
     await db.user.update({ where: { id: s.user.id }, data: { role: 'super_admin' } });
     const r = await post('/v1/auth/refresh').send({ refreshToken: s.refreshToken });
     expect(r.status).toBe(200);
-    return { ...s, accessToken: r.body.data.accessToken as string };
+    // Admin tools need two-step sign-in (D-081).
+    const token = r.body.data.accessToken as string;
+    const setup = await request(app).post('/v1/auth/mfa/setup').set(bearer(token));
+    const confirm = await request(app)
+      .post('/v1/auth/mfa/confirm')
+      .set(bearer(token))
+      .send({ code: codeFor(setup.body.data.secret) });
+    return { ...s, accessToken: confirm.body.data.session.accessToken as string };
   }
 
   it('lists platform admins with their last activity, flags dormant ones, and is itself audited', async () => {
@@ -1256,5 +1268,144 @@ describe('Access review (SOC 2)', () => {
     const customer = await signUp();
     const res = await request(app).get('/v1/admin/access-review').set(bearer(customer.accessToken));
     expect(res.status).toBe(403);
+  });
+});
+
+describe('Two-step sign-in (D-081)', () => {
+  const claimsOf = (token: string) =>
+    JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()) as { mfa?: boolean; role: string };
+
+  /** Signs up (Google) and turns MFA on; returns the secret and recovery codes. */
+  async function withMfa(sub = randomUUID()) {
+    const s = await signUp({ idToken: await googleIdToken({ sub }) });
+    const setup = await request(app).post('/v1/auth/mfa/setup').set(bearer(s.accessToken));
+    expect(setup.status).toBe(200);
+    const secret = setup.body.data.secret as string;
+    expect(setup.body.data.otpauthUri).toMatch(/^otpauth:\/\/totp\/BUKU%3A/);
+    const confirm = await request(app)
+      .post('/v1/auth/mfa/confirm')
+      .set(bearer(s.accessToken))
+      .send({ code: codeFor(secret) });
+    expect(confirm.status).toBe(200);
+    expect(confirm.body.data.recoveryCodes).toHaveLength(10);
+    // The session that set it up now counts as having passed it.
+    expect(claimsOf(confirm.body.data.session.accessToken).mfa).toBe(true);
+    return { ...s, sub, secret, recoveryCodes: confirm.body.data.recoveryCodes as string[] };
+  }
+  const signInAgain = async (sub: string) =>
+    post('/v1/auth/oauth/google').send({
+      idToken: await googleIdToken({ sub }),
+      acceptedTermsVersion: TERMS,
+    });
+
+  it('signing in asks for a code first — nothing about the account until then; a code works once', async () => {
+    const me = await withMfa();
+    const first = await signInAgain(me.sub);
+    expect(first.status).toBe(200);
+    expect(Object.keys(first.body.data).sort()).toEqual(['expiresAt', 'mfaRequired', 'mfaToken']);
+
+    const wrong = await post('/v1/auth/mfa/verify').send({
+      mfaToken: first.body.data.mfaToken,
+      code: '000000',
+    });
+    expect([wrong.status, wrong.body.error.code]).toEqual([401, 'MFA_INVALID_CODE']);
+
+    const code = codeFor(me.secret, 1); // a step after the one used to confirm
+    const ok = await post('/v1/auth/mfa/verify').send({ mfaToken: first.body.data.mfaToken, code });
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.user.id).toBe(me.user.id);
+    expect(claimsOf(ok.body.data.accessToken).mfa).toBe(true);
+    // The challenge can't be used twice, and the same code can't open another sign-in.
+    expect(
+      (await post('/v1/auth/mfa/verify').send({ mfaToken: first.body.data.mfaToken, code })).status,
+    ).toBe(401);
+    const second = await signInAgain(me.sub);
+    const replay = await post('/v1/auth/mfa/verify').send({ mfaToken: second.body.data.mfaToken, code });
+    expect(replay.body.error.code).toBe('MFA_INVALID_CODE');
+
+    // Staying signed in keeps the second factor.
+    const refreshed = await post('/v1/auth/refresh').send({ refreshToken: ok.body.data.refreshToken });
+    expect(claimsOf(refreshed.body.data.accessToken).mfa).toBe(true);
+  });
+
+  it('a recovery code works once; five wrong codes lock it for a while', async () => {
+    const me = await withMfa();
+    const challenge = async () => (await signInAgain(me.sub)).body.data.mfaToken as string;
+    const recovery = me.recoveryCodes[0]!.toLowerCase(); // any case, with or without the dash
+    expect(
+      (await post('/v1/auth/mfa/verify').send({ mfaToken: await challenge(), recoveryCode: recovery }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await post('/v1/auth/mfa/verify').send({ mfaToken: await challenge(), recoveryCode: recovery }))
+        .status,
+    ).toBe(401);
+    const status = await request(app)
+      .get('/v1/auth/mfa')
+      .set(
+        bearer(
+          (
+            await post('/v1/auth/mfa/verify').send({
+              mfaToken: await challenge(),
+              recoveryCode: me.recoveryCodes[1],
+            })
+          ).body.data.accessToken,
+        ),
+      );
+    expect(status.body.data).toMatchObject({ enabled: true, recoveryCodesLeft: 8, required: false });
+
+    const token = await challenge();
+    for (let i = 0; i < 5; i++) await post('/v1/auth/mfa/verify').send({ mfaToken: token, code: '111111' });
+    const locked = await post('/v1/auth/mfa/verify').send({ mfaToken: token, code: codeFor(me.secret, 1) });
+    expect([locked.status, locked.body.error.code]).toEqual([429, 'MFA_LOCKED']);
+    expect(
+      await db.auditLog.count({ where: { userId: me.user.id, action: 'auth.mfa_failed' } }),
+    ).toBeGreaterThanOrEqual(5);
+  });
+
+  it('platform admins: admin tools refuse a session without it; with it they work; they can’t switch it off', async () => {
+    const s = await signUp();
+    await db.user.update({ where: { id: s.user.id }, data: { role: 'super_admin' } });
+    const adminToken = (await post('/v1/auth/refresh').send({ refreshToken: s.refreshToken })).body.data
+      .accessToken;
+    const denied = await request(app).get('/v1/admin/access-review').set(bearer(adminToken));
+    expect([denied.status, denied.body.error.code]).toEqual([403, 'MFA_REQUIRED']);
+    expect((await request(app).get('/v1/auth/mfa').set(bearer(adminToken))).body.data.required).toBe(true);
+
+    const setup = await request(app).post('/v1/auth/mfa/setup').set(bearer(adminToken));
+    const confirm = await request(app)
+      .post('/v1/auth/mfa/confirm')
+      .set(bearer(adminToken))
+      .send({ code: codeFor(setup.body.data.secret) });
+    const upgraded = confirm.body.data.session.accessToken as string;
+    const review = await request(app).get('/v1/admin/access-review').set(bearer(upgraded));
+    expect(review.status).toBe(200);
+    expect(review.body.data.platformAdmins.find((a: { id: string }) => a.id === s.user.id)).toMatchObject({
+      mfa: true,
+    });
+
+    const off = await request(app)
+      .delete('/v1/auth/mfa')
+      .set(bearer(upgraded))
+      .send({ code: codeFor(setup.body.data.secret, 1) });
+    expect(off.status).toBe(403);
+  });
+
+  it('a customer can switch it off with a code (audited); signing in is one step again', async () => {
+    const me = await withMfa();
+    const res = await request(app)
+      .delete('/v1/auth/mfa')
+      .set(bearer(me.accessToken))
+      .send({ code: codeFor(me.secret, 1) });
+    expect(res.status).toBe(204);
+    const again = await signInAgain(me.sub);
+    expect(again.body.data.accessToken).toBeTruthy();
+    expect(
+      await db.auditLog.count({
+        where: { userId: me.user.id, action: { in: ['mfa.enabled', 'mfa.disabled'] } },
+      }),
+    ).toBe(2);
+    const secret = await db.userMfa.findUnique({ where: { userId: me.user.id } });
+    expect(secret).toBeNull();
   });
 });

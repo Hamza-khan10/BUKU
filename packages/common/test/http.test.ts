@@ -246,9 +246,20 @@ describe('authentication and RBAC', () => {
 
   it('403 when the role is insufficient, 200 when it is', async () => {
     const user = (await signer.sign({ sub: 'u', role: 'user' })).token;
-    const admin = (await signer.sign({ sub: 'a', role: 'super_admin' })).token;
+    const admin = (await signer.sign({ sub: 'a', role: 'super_admin', mfa: true })).token;
     expect((await request(app).get('/admin').set('Authorization', `Bearer ${user}`)).status).toBe(403);
     expect((await request(app).get('/admin').set('Authorization', `Bearer ${admin}`)).status).toBe(200);
+  });
+
+  it('an admin session without two-step sign-in is refused (D-081); the claim survives verification', async () => {
+    const noMfa = (await signer.sign({ sub: 'a', role: 'super_admin' })).token;
+    const res = await request(app).get('/admin').set('Authorization', `Bearer ${noMfa}`);
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('MFA_REQUIRED');
+    const me = await request(app)
+      .get('/me')
+      .set('Authorization', `Bearer ${(await signer.sign({ sub: 'u', role: 'user', mfa: true })).token}`);
+    expect(me.body.data).toMatchObject({ mfa: true });
   });
 
   it('honors the revocation hook and tells the client why', async () => {

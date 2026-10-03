@@ -13,6 +13,8 @@ export interface AuthContext {
   tokenId: string;
   sessionId?: string;
   expiresAt: number;
+  /** The session passed a second factor (D-081). */
+  mfa: boolean;
 }
 
 declare global {
@@ -124,6 +126,7 @@ export function authenticate(options: AuthenticateOptions): RequestHandler {
       role: claims.role,
       tokenId: claims.jti,
       expiresAt: claims.exp,
+      mfa: claims.mfa === true,
       ...(claims.sid ? { sessionId: claims.sid } : {}),
     };
     next();
@@ -131,10 +134,22 @@ export function authenticate(options: AuthenticateOptions): RequestHandler {
 }
 
 /** Role-based access control. Use after `authenticate`. */
+/**
+ * Only these platform roles. Platform admin access also needs a session that
+ * passed a second factor (D-081): an admin signed in with just Google (or a
+ * stolen password-less token) can't use admin routes.
+ */
 export function requireRole(...roles: Role[]): RequestHandler {
   return (req, _res, next) => {
     if (!req.auth) throw AppError.unauthorized();
     if (!roles.includes(req.auth.role)) throw AppError.forbidden();
+    if (req.auth.role === 'super_admin' && !req.auth.mfa) {
+      throw new AppError(
+        'Admin access needs two-step sign-in: set up an authenticator app, then sign in again',
+        ErrorCodes.MFA_REQUIRED,
+        403,
+      );
+    }
     next();
   };
 }

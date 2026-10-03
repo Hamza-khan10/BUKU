@@ -57,7 +57,14 @@ services:
       # Public: signing in and refreshing happen BEFORE the client has a valid access token.
       - name: auth-public
         paths:
-          ['/v1/auth/oauth', '/v1/auth/business-login', '/v1/auth/dev', '/v1/auth/refresh', '/v1/auth/logout']
+          [
+            '/v1/auth/oauth',
+            '/v1/auth/business-login',
+            '/v1/auth/dev',
+            '/v1/auth/refresh',
+            '/v1/auth/logout',
+            '/v1/auth/mfa/verify',
+          ]
         strip_path: false
       # Everything else under /v1/auth needs a token (longest prefix wins, so
       # /v1/auth/logout-all lands here, not on the public /v1/auth/logout).

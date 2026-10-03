@@ -105,3 +105,15 @@ export const AvatarUploadBody = zBody({
 });
 
 export const UploadIdParams = z.object({ uploadId: z.uuid() });
+
+// ── Two-step sign-in (D-081) ──
+const zCode = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, 'a 6-digit code');
+export const MfaCodeBody = zBody({ code: zCode });
+export const MfaVerifyBody = zBody({
+  mfaToken: z.string().min(20).max(200),
+  code: zCode.optional(),
+  recoveryCode: z.string().trim().min(8).max(20).optional(),
+}).refine((b) => Boolean(b.code) !== Boolean(b.recoveryCode), 'give either `code` or `recoveryCode`');

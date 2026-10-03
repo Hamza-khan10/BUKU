@@ -1,3 +1,4 @@
+import { MfaService } from './mfa/mfa-service.js';
 import { AccessReview } from './admin/access-review.js';
 import {
   createHttpApp,
@@ -69,7 +70,9 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
       reuseGraceMs: settings.refreshReuseGraceSeconds * 1000,
     },
   });
+  const mfa = new MfaService({ db: deps.db, redis: deps.redis, cipher: deps.cipher, sessions });
   const users = new UserService({
+    mfa,
     db: deps.db,
     cipher: deps.cipher,
     indexer: deps.indexer,
@@ -99,6 +102,7 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
     db: deps.db,
     users,
     sessions,
+    mfa,
     settings: { maxAttempts: settings.memberLoginMaxAttempts, lockoutMinutes: settings.memberLockoutMinutes },
   });
   const members = new MemberService({
@@ -123,6 +127,7 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
         identity: deps.identity,
         devLoginEnabled: settings.devLoginEnabled,
         accessReview: new AccessReview({ db: deps.db, cipher: deps.cipher }),
+        mfa,
       }),
   });
   return { app, rights };

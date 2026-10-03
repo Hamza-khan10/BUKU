@@ -12,6 +12,7 @@ import { createEvent, enqueueEvent, TOPICS } from '@buku/kafka';
 import type { MediaLinks } from '@buku/media';
 import type { VerifiedIdentity } from '../identity/oidc.js';
 import type { RequestContext } from '../http/context.js';
+import type { MfaChallenge, MfaService } from '../mfa/mfa-service.js';
 import {
   auditCtx,
   type DeviceInfo,
@@ -43,7 +44,8 @@ export interface SignInInput {
 export interface SignInResult {
   user: MeView;
   isNewUser: boolean;
-  session: SessionTokens;
+  /** A session — or, for someone with two-step sign-in, a challenge to answer first (D-081). */
+  session: SessionTokens | MfaChallenge;
 }
 
 export interface UserServiceDeps {
@@ -51,6 +53,8 @@ export interface UserServiceDeps {
   cipher: FieldCipher;
   indexer: BlindIndexer;
   sessions: SessionService;
+  /** Starts sessions for returning people: a challenge first if they use two-step sign-in. */
+  mfa: Pick<MfaService, 'beginSession'>;
   /** Signed links to private pictures. */
   links: MediaLinks;
   termsVersion: string;
@@ -91,7 +95,7 @@ export class UserService {
     input: SignInInput,
     ctx: RequestContext,
   ): Promise<SignInResult> {
-    const { db, sessions } = this.deps;
+    const { db } = this.deps;
     const emailHash =
       identity.email && identity.emailVerified
         ? this.deps.indexer.hash(CONTEXT.email, normalizeEmail(identity.email))
@@ -142,7 +146,7 @@ export class UserService {
           ...auditCtx(ctx),
         });
       }
-      const session = await sessions.start(updated, input.device ?? {}, ctx);
+      const session = await this.deps.mfa.beginSession(updated, input.device ?? {}, ctx);
       await recordAudit(db, {
         userId: user.id,
         action: 'auth.signed_in',
@@ -256,7 +260,9 @@ export class UserService {
       }));
     this.assertNotBlocked(user, {});
     if (existing) await this.deps.db.user.update({ where: { id: user.id }, data: { lastLoginAt: now } });
-    const session = await this.deps.sessions.start(user, device, ctx);
+    // Development only (refused in production): counts as having passed two-step sign-in,
+    // so admin tools can be used locally without an authenticator app.
+    const session = await this.deps.sessions.start(user, device, ctx, undefined, { mfa: true });
     await recordAudit(this.deps.db, {
       userId: user.id,
       action: 'auth.dev_signed_in',

@@ -37,7 +37,7 @@ async function person(role: Role = 'user') {
   const user = await db.user.create({
     data: { name: `P ${randomUUID().slice(0, 6)}`, emailHash: randomBytes(32).toString('hex'), role },
   });
-  const { token } = await signer.sign({ sub: user.id, role, sid: randomUUID() });
+  const { token } = await signer.sign({ sub: user.id, role, sid: randomUUID(), mfa: role === 'super_admin' });
   return { id: user.id, auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() } };
 }
 

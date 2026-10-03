@@ -238,7 +238,7 @@ export function helpers(h: Harness) {
     inbox: (userId: string) =>
       db.notification.findMany({ where: { userId, channel: 'in_app' }, orderBy: { createdAt: 'asc' } }),
     authFor: async (userId: string, role: 'user' | 'super_admin' | 'business_owner' = 'user') => ({
-      Authorization: `Bearer ${(await h.signer.sign({ sub: userId, role, sid: randomUUID() })).token}`,
+      Authorization: `Bearer ${(await h.signer.sign({ sub: userId, role, sid: randomUUID(), mfa: role === 'super_admin' })).token}`,
     }),
     /** Give the person a verified email address; returns it. */
     verifiedEmail: async (userId: string, verified = true) => {

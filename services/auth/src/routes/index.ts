@@ -11,6 +11,7 @@ import {
   type RevocationStore,
 } from '@buku/common';
 import type { AccessReview } from '../admin/access-review.js';
+import type { MfaService } from '../mfa/mfa-service.js';
 import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
 import { requestContext } from '../http/context.js';
@@ -39,6 +40,8 @@ import {
   UploadIdParams,
   UpdateMeBody,
   UpdateMemberBody,
+  MfaCodeBody,
+  MfaVerifyBody,
 } from './schemas.js';
 import type { JwtVerifier } from '@buku/common';
 
@@ -55,9 +58,15 @@ export interface RouteDeps {
   identity: { google: OidcVerifier | null; apple: OidcVerifier | null };
   devLoginEnabled: boolean;
   accessReview: AccessReview;
+  mfa: MfaService;
 }
 
+/**
+ * A session — or, for someone with two-step sign-in, only the challenge: nothing about
+ * the account is returned until the second factor is in (D-081).
+ */
 function signInResponse(result: SignInResult) {
+  if ('mfaRequired' in result.session) return result.session;
   return { user: result.user, isNewUser: result.isNewUser, ...result.session };
 }
 
@@ -355,4 +364,70 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   app.get('/v1/admin/access-review', auth, requireRole('super_admin'), async (req, res) => {
     sendSuccess(res, await deps.accessReview.generate(requireAuth(req).userId, requestContext(req)));
   });
+
+  // ── Two-step sign-in (D-081) ─────────────────────────────────────────────
+  const mfaLimit = rateLimit({
+    keyPrefix: 'rl:auth:mfa',
+    points: 10,
+    durationSeconds: 60,
+    redis: deps.redis,
+  });
+  // Answers the challenge from sign-in: no access token yet (the mfaToken is the proof).
+  app.post(
+    '/v1/auth/mfa/verify',
+    mfaLimit,
+    validated({ body: MfaVerifyBody }, async ({ body }, req, res) => {
+      const { userId, session } = await deps.mfa.verifyChallenge(body, requestContext(req));
+      sendSuccess(res, { user: await deps.users.getMe(userId), isNewUser: false, ...session });
+    }),
+  );
+  const mfa = Router();
+  mfa.use(auth, mfaLimit);
+  mfa.get('/', async (req, res) => {
+    const { userId, role } = requireAuth(req);
+    sendSuccess(res, await deps.mfa.status(userId, role));
+  });
+  mfa.post('/setup', async (req, res) => {
+    const { userId } = requireAuth(req);
+    const me = await deps.users.getMe(userId);
+    sendSuccess(res, await deps.mfa.setup(userId, me.email ?? me.name, requestContext(req)));
+  });
+  mfa.post(
+    '/confirm',
+    validated({ body: MfaCodeBody }, async ({ body }, req, res) => {
+      const a = requireAuth(req);
+      sendSuccess(
+        res,
+        await deps.mfa.confirm({ id: a.userId, role: a.role }, a.sessionId, body.code, requestContext(req)),
+      );
+    }),
+  );
+  mfa.post(
+    '/step-up',
+    validated({ body: MfaCodeBody }, async ({ body }, req, res) => {
+      const a = requireAuth(req);
+      sendSuccess(
+        res,
+        await deps.mfa.stepUp({ id: a.userId, role: a.role }, a.sessionId, body.code, requestContext(req)),
+      );
+    }),
+  );
+  mfa.post(
+    '/recovery-codes',
+    validated({ body: MfaCodeBody }, async ({ body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.mfa.newRecoveryCodes(requireAuth(req).userId, body.code, requestContext(req)),
+      );
+    }),
+  );
+  mfa.delete(
+    '/',
+    validated({ body: MfaCodeBody }, async ({ body }, req, res) => {
+      const a = requireAuth(req);
+      await deps.mfa.disable({ id: a.userId, role: a.role }, body.code, requestContext(req));
+      sendNoContent(res);
+    }),
+  );
+  app.use('/v1/auth/mfa', mfa);
 }

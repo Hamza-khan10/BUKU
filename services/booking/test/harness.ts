@@ -117,7 +117,12 @@ export function useBookingHarness(): Harness {
 
   h.person = async (role: Role = 'user', name = `Customer ${randomUUID().slice(0, 6)}`) => {
     const user = await h.db.user.create({ data: { name, emailHash: hex64(), role } });
-    const { token } = await h.signer.sign({ sub: user.id, role, sid: randomUUID() });
+    const { token } = await h.signer.sign({
+      sub: user.id,
+      role,
+      sid: randomUUID(),
+      mfa: role === 'super_admin',
+    });
     return { id: user.id, name, auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() } };
   };
   h.salon = (opts: SalonOptions = {}) => makeSalon(h, opts);

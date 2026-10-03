@@ -64,21 +64,42 @@ interface RefreshRow {
   expires_at: Date;
   revoked_at: Date | null;
   revoked_reason: string | null;
+  mfa: boolean;
 }
 
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
 
-  /** Start a new session (sign-in). Pass `tx` to create it atomically with a new user. */
+  /**
+   * Start a new session (sign-in). Pass `tx` to create it atomically with a new user;
+   * `mfa` when the person passed a second factor (D-081) — the session keeps it.
+   */
   async start(
     user: { id: string; role: Role },
     device: DeviceInfo,
     ctx: RequestContext,
     tx?: Transaction,
+    opts: { mfa?: boolean } = {},
   ): Promise<SessionTokens> {
     const familyId = uuidv7();
-    const refresh = await this.insertRefreshToken(tx ?? this.deps.db, user, familyId, device, ctx);
-    return this.tokens(user, familyId, refresh);
+    const mfa = opts.mfa === true;
+    const refresh = await this.insertRefreshToken(tx ?? this.deps.db, user, familyId, device, ctx, mfa);
+    return this.tokens(user, familyId, refresh, mfa);
+  }
+
+  /** The current session passed a second factor just now (step-up): mark it and issue a new access token. */
+  async markMfa(
+    user: { id: string; role: Role },
+    familyId: string,
+  ): Promise<{ accessToken: string; accessTokenExpiresAt: string }> {
+    const { count } = await this.deps.db.refreshToken.updateMany({
+      where: { familyId, userId: user.id, revokedAt: null },
+      data: { mfa: true },
+    });
+    if (count === 0)
+      throw new AppError('Your session has ended, please sign in again', ErrorCodes.SESSION_REVOKED, 401);
+    const access = await this.deps.signer.sign({ sub: user.id, role: user.role, sid: familyId, mfa: true });
+    return { accessToken: access.token, accessTokenExpiresAt: access.expiresAt.toISOString() };
   }
 
   /** Exchange a refresh token for a new pair (rotation). */
@@ -87,7 +108,7 @@ export class SessionService {
     const outcome = await this.deps.db.$transaction(async (tx) => {
       // FOR UPDATE serialises concurrent refreshes of the same token.
       const [row] = await tx.$queryRaw<RefreshRow[]>`
-        SELECT id, user_id, family_id, expires_at, revoked_at, revoked_reason
+        SELECT id, user_id, family_id, expires_at, revoked_at, revoked_reason, mfa
         FROM refresh_tokens WHERE token_hash = ${tokenHash} FOR UPDATE`;
       if (!row) return { kind: 'invalid' as const };
 
@@ -129,7 +150,7 @@ export class SessionService {
         };
       }
 
-      const next = await this.insertRefreshToken(tx, user, row.family_id, undefined, ctx);
+      const next = await this.insertRefreshToken(tx, user, row.family_id, undefined, ctx, row.mfa);
       await tx.refreshToken.update({
         where: { id: row.id },
         data: {
@@ -139,12 +160,12 @@ export class SessionService {
           lastUsedAt: new Date(),
         },
       });
-      return { kind: 'ok' as const, user, familyId: row.family_id, next };
+      return { kind: 'ok' as const, user, familyId: row.family_id, next, mfa: row.mfa };
     });
 
     switch (outcome.kind) {
       case 'ok':
-        return this.tokens(outcome.user, outcome.familyId, outcome.next);
+        return this.tokens(outcome.user, outcome.familyId, outcome.next, outcome.mfa);
       case 'race':
         throw new AppError(
           'Refresh token already used; use the newest token',
@@ -276,6 +297,7 @@ export class SessionService {
     familyId: string,
     device: DeviceInfo | undefined,
     ctx: RequestContext,
+    mfa: boolean,
   ) {
     const token = generateSecureToken();
     const expiresAt = new Date(Date.now() + this.deps.policy.idleTimeoutMs(user.role));
@@ -295,6 +317,7 @@ export class SessionService {
         ipAddress: ctx.ip,
         userAgent: ctx.userAgent,
         expiresAt,
+        mfa,
       },
       select: { id: true, expiresAt: true },
     });
@@ -318,8 +341,9 @@ export class SessionService {
     user: { id: string; role: Role },
     familyId: string,
     refresh: { token: string; expiresAt: Date },
+    mfa: boolean,
   ): Promise<SessionTokens> {
-    const access = await this.deps.signer.sign({ sub: user.id, role: user.role, sid: familyId });
+    const access = await this.deps.signer.sign({ sub: user.id, role: user.role, sid: familyId, mfa });
     return {
       accessToken: access.token,
       accessTokenExpiresAt: access.expiresAt.toISOString(),
