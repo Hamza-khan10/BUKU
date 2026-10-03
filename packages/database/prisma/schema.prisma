@@ -320,6 +320,7 @@ model User {
   queueEntries       QueueEntry[]
   notifications      Notification[]
   whatsappContact    WhatsappContact?
+  mfa                UserMfa?
   notificationMarks  NotificationMark[]
   auditLogs          AuditLog[]
   reviewedDocuments  BusinessDocument[]      @relation("DocumentReviewer")
@@ -345,6 +346,26 @@ model User {
 }
 
 /// Links a user to an external identity (Google `sub`, Apple `sub`).
+/// Two-step sign-in with an authenticator app (TOTP, RFC 6238; D-081). Required for platform
+/// admins, optional for everyone else.
+model UserMfa {
+  userId             String    @id @map("user_id") @db.Uuid
+  /// AES-256-GCM ciphertext of the base32 secret, context "users.mfa_secret".
+  secretEncrypted    String    @map("secret_encrypted")
+  /// Null until the person proved the app works by entering a code.
+  confirmedAt        DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  /// The last 30-second step a code was accepted for: a code works once.
+  lastUsedStep       BigInt?   @map("last_used_step")
+  /// SHA-256 of the unused single-use recovery codes.
+  recoveryCodeHashes String[]  @map("recovery_code_hashes") @db.Char(64)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_mfa")
+}
+
 model OAuthAccount {
   id             String        @id @default(uuid(7)) @db.Uuid
   userId         String        @map("user_id") @db.Uuid
@@ -374,6 +395,8 @@ model RefreshToken {
   lastUsedAt    DateTime? @map("last_used_at") @db.Timestamptz(6)
   revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
   revokedReason String?   @map("revoked_reason") @db.VarChar(50)
+  /// The session passed a second factor (authenticator code or recovery code) at sign-in.
+  mfa           Boolean   @default(false)
   replacedById  String?   @map("replaced_by_id") @db.Uuid
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 

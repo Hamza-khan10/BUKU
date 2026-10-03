@@ -73,6 +73,11 @@ export const ErrorCodes = {
   BUSINESS_SUSPENDED: 'BUSINESS_SUSPENDED',
   ALREADY_REPORTED: 'ALREADY_REPORTED',
 
+  // Two-step sign-in (D-081)
+  MFA_REQUIRED: 'MFA_REQUIRED',
+  MFA_INVALID_CODE: 'MFA_INVALID_CODE',
+  MFA_LOCKED: 'MFA_LOCKED',
+
   // Reviews
   /** Only for your own visit that happened (completed or checked in), within 30 days. */
   REVIEW_NOT_ALLOWED: 'REVIEW_NOT_ALLOWED',

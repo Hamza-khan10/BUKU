@@ -37,7 +37,7 @@ type Person = Awaited<ReturnType<typeof person>>;
 
 async function person(role: Role = 'user', name = `Customer ${randomUUID().slice(0, 6)}`) {
   const user = await db.user.create({ data: { name, emailHash: hex64(), role } });
-  const { token } = await signer.sign({ sub: user.id, role, sid: randomUUID() });
+  const { token } = await signer.sign({ sub: user.id, role, sid: randomUUID(), mfa: role === 'super_admin' });
   return { id: user.id, name, auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() } };
 }
 

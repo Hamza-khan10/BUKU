@@ -510,3 +510,17 @@ change only through `pnpm admin:role` (operator, written reason, audited, sessio
 never the last admin). `GET /v1/admin/access-review` lists platform admins with their last
 activity (sign-in or session use) and flags anyone inactive for 90 days; generating it is audited,
 so quarterly reviews leave evidence.
+
+**D-081 · Two-step sign-in with an authenticator app; required for platform admins.** TOTP (RFC
+6238: SHA-1, 6 digits, 30 s, one step of clock drift either side), implemented on Node's crypto
+and tested against the RFC vectors — works with Google/Microsoft Authenticator, 1Password and
+the rest. Set up by scanning a QR code and entering a code; ten single-use recovery codes are
+shown once (stored hashed); the secret is encrypted like other personal data. After Google,
+Apple or an employee password, someone with it on gets only a 5-minute challenge (nothing about
+the account) and a session after a code; sessions remember that they passed it (an `mfa` claim
+that refresh keeps). A code works once (replay refused atomically), five wrong codes lock it for
+15 minutes, every step is audited. Platform admin routes refuse any session without it — enforced
+once, in the shared `requireRole`, so every service applies it — and admins can't switch it off;
+everyone else may turn it on. The development sign-in counts as having passed it (it is refused
+in production anyway). Chosen over SMS codes (SIM-swap risk, cost) and over relying on the
+Google account's own 2-step setting (not something BUKU can verify).

@@ -9,6 +9,7 @@ import {
 } from '@buku/common';
 import { recordAudit, type Database } from '@buku/database';
 import type { RequestContext } from '../http/context.js';
+import type { MfaService } from '../mfa/mfa-service.js';
 import { auditCtx, type DeviceInfo, type SessionService } from '../sessions/session-service.js';
 import type { SignInResult, UserService } from '../users/user-service.js';
 
@@ -47,6 +48,7 @@ export class PasswordAuthService {
       db: Database;
       users: UserService;
       sessions: SessionService;
+      mfa: Pick<MfaService, 'beginSession'>;
       settings: PasswordAuthSettings;
     },
   ) {}
@@ -94,7 +96,7 @@ export class PasswordAuthService {
         ...(needsRehash(account.passwordHash) && { passwordHash: await hashPassword(input.password) }),
       },
     });
-    const session = await this.deps.sessions.start(user, input.device ?? {}, ctx);
+    const session = await this.deps.mfa.beginSession(user, input.device ?? {}, ctx);
     await recordAudit(db, {
       userId: user.id,
       action: 'auth.member_signed_in',

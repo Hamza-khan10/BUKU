@@ -1044,3 +1044,22 @@ GET /v1/businesses/:id/insights/cancellations
 
 Visits are counted by when they were (or would have been). Rates have one decimal; the no-show
 rate is of visits that happened or were missed.
+
+## Two-step sign-in (D-081)
+
+| Method & path                                 | Auth               | Purpose                                                                          |
+| --------------------------------------------- | ------------------ | -------------------------------------------------------------------------------- |
+| `GET /v1/auth/mfa`                            | ✔                  | `{ enabled, since, recoveryCodesLeft, required }`                                |
+| `POST /v1/auth/mfa/setup`                     | ✔                  | `{ secret, otpauthUri }` — show `otpauthUri` as a QR code                        |
+| `POST /v1/auth/mfa/confirm` `{ code }`        | ✔                  | Turns it on: `{ recoveryCodes[10], session: { accessToken } }`                   |
+| `POST /v1/auth/mfa/verify`                    | — (the `mfaToken`) | Answer a sign-in challenge: `{ mfaToken, code }` or `{ mfaToken, recoveryCode }` |
+| `POST /v1/auth/mfa/step-up` `{ code }`        | ✔                  | Mark the current session as having passed it (new access token)                  |
+| `POST /v1/auth/mfa/recovery-codes` `{ code }` | ✔                  | Replace the recovery codes                                                       |
+| `DELETE /v1/auth/mfa` `{ code }`              | ✔ (not admins)     | Turn it off                                                                      |
+
+With it on, `POST /v1/auth/oauth/*` and `/business-login` answer
+`{ mfaRequired: true, mfaToken, expiresAt }` (5 minutes) instead of a session; the app asks for
+the code and calls `/mfa/verify`, which returns the usual `{ user, accessToken, refreshToken, … }`.
+Errors: `MFA_INVALID_CODE` (401), `MFA_LOCKED` (429, after 5 wrong codes, 15 minutes),
+`MFA_REQUIRED` (403: a platform admin route with a session that didn't pass it — set it up, or
+`step-up`). Access tokens carry `mfa: true` when the session passed it.

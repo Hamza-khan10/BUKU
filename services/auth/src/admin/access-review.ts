@@ -27,6 +27,7 @@ export class AccessReview {
         status: true,
         createdAt: true,
         lastLoginAt: true,
+        mfa: { select: { confirmedAt: true } },
         // Staying signed in counts as activity, not only signing in again.
         refreshTokens: {
           select: { lastUsedAt: true, createdAt: true },
@@ -61,6 +62,8 @@ export class AccessReview {
           lastSignIn: a.lastLoginAt?.toISOString() ?? null,
           /** Signing in or using a session, whichever is later. */
           lastActive: lastActive?.toISOString() ?? null,
+          /** Two-step sign-in set up (admins can't use admin tools without it). */
+          mfa: Boolean(a.mfa?.confirmedAt),
           /** Not active for 90 days: remove the access unless there's a reason to keep it. */
           dormant: !lastActive || lastActive < dormantBefore,
         };

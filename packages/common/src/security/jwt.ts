@@ -37,6 +37,8 @@ export interface AccessTokenClaims {
   role: Role;
   /** Session id (refresh-token family); lets a logout revoke related access tokens. */
   sid?: string;
+  /** The session passed a second factor at sign-in (D-081). Platform admins need it. */
+  mfa?: boolean;
 }
 
 export interface VerifiedAccessToken extends AccessTokenClaims {
@@ -71,7 +73,11 @@ export async function createJwtSigner(options: SignerOptions): Promise<JwtSigner
       const nowMs = Date.now();
       const jti = uuidv7(nowMs);
       const now = Math.floor(nowMs / 1000);
-      const token = await new SignJWT({ role: claims.role, ...(claims.sid ? { sid: claims.sid } : {}) })
+      const token = await new SignJWT({
+        role: claims.role,
+        ...(claims.sid ? { sid: claims.sid } : {}),
+        ...(claims.mfa ? { mfa: true } : {}),
+      })
         .setProtectedHeader({ alg: ALGORITHM, kid: options.keyId, typ: 'JWT' })
         .setSubject(claims.sub)
         .setIssuer(options.issuer)
@@ -136,6 +142,7 @@ export async function createJwtVerifier(
         iat: payload.iat!,
         exp: payload.exp!,
         ...(typeof payload.sid === 'string' ? { sid: payload.sid } : {}),
+        ...(payload.mfa === true ? { mfa: true } : {}),
       };
     },
   };

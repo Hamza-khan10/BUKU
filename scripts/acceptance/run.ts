@@ -515,6 +515,8 @@ const PUBLIC: [Route['method'], string][] = [
   ['POST', '/v1/auth/refresh'],
   /** Signs out the refresh token sent in the body (works even after the access token expired). */
   ['POST', '/v1/auth/logout'],
+  /** Second step of sign-in: the challenge token from the first step is the proof (D-081). */
+  ['POST', '/v1/auth/mfa/verify'],
   ['GET', '/v1/billing/plans'],
   ['POST', '/v1/billing/webhooks/paddle'],
   ['GET', '/v1/businesses/:idOrSlug'],
