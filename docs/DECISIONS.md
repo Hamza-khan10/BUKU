@@ -556,3 +556,18 @@ refused, so sign-in never fails over it. The web uses the same package for insta
 repository holds itself to the rule too: `pnpm check:hidden` (CI and pre-commit) refuses
 invisible characters in committed files. (Emoji can't corrupt the database — it stores Unicode
 safely — but refusing them keeps names, search, printed tickets and notifications consistent.)
+
+**D-084 · The visitor's real address, also through the web app's server.** The web app keeps
+tokens out of the browser by calling the API from its own server (WEB_PLAN §4), so those
+connections come from the web server, not the visitor. Left alone, every visitor would share
+the web server's address: one sign-in limit (20 a minute at the gateway) for the whole website,
+and audit entries naming the web server instead of the person. The web server now sends the
+visitor's address in `X-BUKU-Client-IP` together with a shared key (`WEB_GATEWAY_KEY`, 64 hex
+characters, also in Kong's environment). A global Kong rule runs first (rewrite phase): only with
+the right key is the address believed — and only if it looks like an IPv4 or IPv6 address —
+otherwise it is replaced by the address that actually connected (honouring Kong's trusted proxies
+in production), and the key never reaches a service. Kong's rate limits count by that header, and
+services take `req.ip` from it (`createHttpApp`, only when a proxy is trusted). Checked by `pnpm
+verify`: a spoofed header without the key is ignored, the key makes it count. Rotation: deploy
+Kong and the web app together. Rewriting `X-Forwarded-For` instead doesn't work: Kong reads the
+request headers before plugins can change them.

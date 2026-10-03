@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
@@ -48,6 +49,18 @@ export function createHttpApp(options: HttpAppOptions): Express {
   // which closes a whole class of prototype-pollution and type-confusion bugs.
   app.set('query parser', 'simple');
   app.set('etag', false);
+
+  // Behind the gateway the visitor's address arrives in X-BUKU-Client-IP, which
+  // Kong always sets itself (D-084) — for calls the web app makes on a visitor's
+  // behalf it is the visitor, not the web server. It becomes req.ip, which rate
+  // limits and audit entries use.
+  if (options.trustProxyHops > 0) {
+    app.use((req, _res, next) => {
+      const ip = req.headers['x-buku-client-ip'];
+      if (typeof ip === 'string' && isIP(ip)) req.headers['x-forwarded-for'] = ip;
+      next();
+    });
+  }
 
   app.use(
     pinoHttp({

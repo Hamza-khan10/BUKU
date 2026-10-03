@@ -707,6 +707,8 @@ services:
       JWT_KEY_ID: ${JWT_KEY_ID}
       JWT_PREVIOUS_PUBLIC_KEY: ${JWT_PREVIOUS_PUBLIC_KEY:-}
       JWT_PREVIOUS_KEY_ID: ${JWT_PREVIOUS_KEY_ID:-}
+      # The web app's server key: lets it pass on its visitors' addresses (D-084).
+      WEB_GATEWAY_KEY: ${WEB_GATEWAY_KEY:-}
       KONG_PROXY_LISTEN: '0.0.0.0:8000'
       # Admin API: dev convenience only, localhost-bound. Disabled in prod.
       KONG_ADMIN_LISTEN: '0.0.0.0:8001'

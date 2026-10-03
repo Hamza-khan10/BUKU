@@ -294,3 +294,37 @@ describe('rate limiting', () => {
     expect(res.body.data.ip).toBe('203.0.113.9');
   });
 });
+
+describe("the visitor's address (D-084)", () => {
+  const app = buildApp(new Readiness(), (a) => a.get('/ip', (req, res) => sendSuccess(res, { ip: req.ip })));
+  const ipOf = async (headers: Record<string, string>) => {
+    let req = request(app).get('/ip');
+    for (const [k, v] of Object.entries(headers)) req = req.set(k, v);
+    return ((await req).body as { data: { ip: string } }).data.ip;
+  };
+
+  it('comes from the header the gateway sets, not from X-Forwarded-For', async () => {
+    expect(await ipOf({ 'X-BUKU-Client-IP': '203.0.113.7', 'X-Forwarded-For': '198.51.100.9' })).toBe(
+      '203.0.113.7',
+    );
+    expect(await ipOf({ 'X-BUKU-Client-IP': '2001:db8::42' })).toBe('2001:db8::42');
+  });
+
+  it('ignores a header that is not an address', async () => {
+    expect(await ipOf({ 'X-BUKU-Client-IP': 'evil; drop', 'X-Forwarded-For': '198.51.100.9' })).toBe(
+      '198.51.100.9',
+    );
+  });
+
+  it('is not believed by a service with no proxy in front of it', async () => {
+    const direct = createHttpApp({
+      service: 'direct',
+      logger,
+      readiness: new Readiness(),
+      trustProxyHops: 0,
+      routes: (a) => a.get('/ip', (req, res) => sendSuccess(res, { ip: req.ip })),
+    });
+    const res = await request(direct).get('/ip').set('X-BUKU-Client-IP', '203.0.113.7');
+    expect((res.body as { data: { ip: string } }).data.ip).not.toBe('203.0.113.7');
+  });
+});
