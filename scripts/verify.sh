@@ -114,6 +114,18 @@ check "Sign-in → /me → log out everywhere works end to end" bash -c '
   [[ $(curl -s -o /dev/null -w "%{http_code}" -X POST -H "Authorization: Bearer $T" http://localhost:8000/v1/auth/logout-all) == 204 ]] &&
   curl -s -H "Authorization: Bearer $T" http://localhost:8000/v1/auth/me | grep -q logged_out_everywhere'
 
+check "Gateway believes a visitor's address only from the web server (D-084)" bash -c '
+  ip_seen() {
+    T=$(curl -s -X POST http://localhost:8000/v1/auth/dev/login -H "Content-Type: application/json" "$@" \
+      -d "{\"email\":\"verify-ip-$RANDOM$RANDOM@buku.dev\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"data\"][\"accessToken\"])")
+    curl -s -H "Authorization: Bearer $T" http://localhost:8000/v1/auth/sessions | python3 -c "import sys,json;print(json.load(sys.stdin)[\"data\"][0][\"ipAddress\"])"
+  }
+  K=$(grep ^WEB_GATEWAY_KEY= .env | cut -d= -f2)
+  spoofed=$(ip_seen -H "X-BUKU-Client-IP: 203.0.113.7" -H "X-Forwarded-For: 203.0.113.7")
+  trusted=$(ip_seen -H "X-BUKU-Web-Key: $K" -H "X-BUKU-Client-IP: 203.0.113.7")
+  # Addresses are shown masked ("203.0.x.x").
+  [[ -n $spoofed && $spoofed != 203.0.* && $trusted == 203.0.* ]]'
+
 echo "═══ 8. Integration tests (real Postgres + Kafka) ═══"
 check "Integration tests pass"                         pnpm test:int
 

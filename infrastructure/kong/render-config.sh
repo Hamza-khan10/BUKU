@@ -23,11 +23,19 @@ secret_block() { # <kid> <base64 PEM>
   fi
 } > "$SECRETS"
 
-awk -v secrets="$SECRETS" '
+# The web server's key (D-084): 64 hex characters, or empty (then no client
+# address is believed from anyone). Checked strictly: it is pasted into Lua.
+WEB_KEY="${WEB_GATEWAY_KEY:-}"
+if [ -n "$WEB_KEY" ] && ! printf '%s' "$WEB_KEY" | grep -Eq '^[0-9a-f]{64}$'; then
+  echo "kong: WEB_GATEWAY_KEY must be 64 lowercase hex characters (openssl rand -hex 32)" >&2
+  exit 1
+fi
+
+awk -v secrets="$SECRETS" -v webkey="$WEB_KEY" '
   /^[[:space:]]*# __JWT_SECRETS__[[:space:]]*$/ { while ((getline line < secrets) > 0) print line; next }
-  { print }
+  { gsub(/__WEB_GATEWAY_KEY__/, webkey); print }
 ' "$TEMPLATE" > "$OUT"
 
 kong config parse "$OUT" > /dev/null
-echo "kong: rendered $OUT with key id(s): $JWT_KEY_ID ${JWT_PREVIOUS_KEY_ID:-}"
+echo "kong: rendered $OUT with key id(s): $JWT_KEY_ID ${JWT_PREVIOUS_KEY_ID:-}; web key: $([ -n "$WEB_KEY" ] && echo set || echo not set)"
 exec /docker-entrypoint.sh kong docker-start

@@ -11,7 +11,8 @@
 #     (deny by default). Forged/missing tokens never reach a service.
 #   • CORS with an explicit origin allow-list (preflight answered here)
 #   • coarse per-IP rate limits (counters in Valkey → consistent across
-#     gateway replicas); services add precise per-user limits
+#     gateway replicas); services add precise per-user limits. "IP" is the
+#     visitor's real address, also for calls the web app makes for them (D-084)
 #   • request-size limits (uploads bypass the API via presigned S3 URLs)
 #   • correlation ids (X-Request-ID) propagated to every service log line
 #
@@ -41,7 +42,8 @@ services:
       - name: rate-limiting
         config:
           minute: 20
-          limit_by: ip
+          limit_by: header
+          header_name: X-BUKU-Client-IP
           policy: redis
           fault_tolerant: true
           hide_client_headers: false
@@ -194,7 +196,8 @@ services:
       - name: rate-limiting
         config:
           minute: 200
-          limit_by: ip
+          limit_by: header
+          header_name: X-BUKU-Client-IP
           policy: redis
           fault_tolerant: true
           error_code: 429
@@ -286,6 +289,31 @@ services:
 
 plugins:
   # ── Global plugins (every route) ──
+
+  # Who is the client? (D-084) The web app's server calls the API for its
+  # visitors, so those connections come from the web server, not the visitor.
+  # It sends the visitor's address and a shared key; only with that key is the
+  # address believed. Every other request gets the address that actually
+  # connected, whatever headers it sent. The result goes to the services in
+  # X-BUKU-Client-IP (always overwritten here, never passed through), and the
+  # rate limits below count by it. Runs first, in the rewrite phase.
+  - name: pre-function
+    config:
+      rewrite:
+        - |
+          local key = '__WEB_GATEWAY_KEY__'
+          local client = kong.client.get_forwarded_ip()
+          local presented = kong.request.get_header('x-buku-web-key')
+          if key ~= '' and presented == key then
+            local claimed = kong.request.get_header('x-buku-client-ip')
+            if type(claimed) == 'string' and #claimed <= 45 and (claimed:match('^%d+%.%d+%.%d+%.%d+$')
+                or (claimed:find(':', 1, true) and claimed:match('^[%x:%.]+$'))) then
+              client = claimed
+            end
+          end
+          kong.service.request.clear_header('x-buku-web-key')
+          kong.service.request.set_header('x-buku-client-ip', client)
+
   - name: correlation-id
     config:
       header_name: X-Request-ID
@@ -315,7 +343,8 @@ plugins:
   - name: rate-limiting
     config:
       minute: 500
-      limit_by: ip
+      limit_by: header
+      header_name: X-BUKU-Client-IP
       policy: redis
       fault_tolerant: true
       error_code: 429
