@@ -38,7 +38,7 @@ export async function expectAccessible(page: Page) {
 export async function apiAvailable(): Promise<boolean> {
   const api = process.env.E2E_API_URL ?? 'http://localhost:8000';
   try {
-    const res = await fetch(`${api}/v1/categories`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${api}/v1/categories`, { signal: AbortSignal.timeout(5000) });
     return res.ok;
   } catch {
     return false;

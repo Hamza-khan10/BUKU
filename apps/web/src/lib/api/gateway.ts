@@ -24,6 +24,8 @@ export interface GatewayCall {
   incoming: Headers;
   requestId: string;
   signal?: AbortSignal;
+  /** Give up after this long (default 20 s); live streams pass a longer limit. */
+  timeoutMs?: number;
 }
 
 export function callGateway(call: GatewayCall): Promise<Response> {
@@ -36,7 +38,7 @@ export function callGateway(call: GatewayCall): Promise<Response> {
     headers.set('x-buku-web-key', WEB_GATEWAY_KEY);
     headers.set('x-buku-client-ip', ip);
   }
-  const timeout = AbortSignal.timeout(TIMEOUT_MS);
+  const timeout = AbortSignal.timeout(call.timeoutMs ?? TIMEOUT_MS);
   return fetch(`${API_URL}${call.path}${call.search ?? ''}`, {
     method: call.method,
     headers,

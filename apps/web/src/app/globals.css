@@ -115,7 +115,9 @@
   --color-focus: var(--focus);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
-  /* Fixed ink, for text on coral/amber in either theme. */
+  /* Fixed colours that don't follow the theme: text on coral/amber, and dark backdrops
+     (covers, the dimmed page behind dialogs). */
+  --color-night: #0e1525;
   --color-on-brand: #ffffff;
   --color-on-wait: #0e1525;
 
