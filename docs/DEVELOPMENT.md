@@ -113,6 +113,33 @@ checkouts:
 
 Never put the API key or webhook secret in the web or mobile app — only the client-side token.
 
+### Set up WhatsApp (Meta WhatsApp Cloud API)
+
+Without it, connecting answers "WhatsApp isn't available yet" and nothing is sent. Messages are
+written to the log in development (`WHATSAPP_PROVIDER=log`).
+
+1. In **business.facebook.com**, create (or use) a Business portfolio and complete **business
+   verification** (needed for real volumes).
+2. **developers.facebook.com → My apps → Create app → Business**, add the **WhatsApp** product.
+   Add a phone number (not one already used in the WhatsApp app) and note its **Phone number ID**.
+3. _Business settings → System users_: create a system user, give it the app with
+   `whatsapp_business_messaging` and `whatsapp_business_management`, and generate a **permanent
+   token** (never the 24-hour test token).
+4. _App settings → Basic_: copy the **App secret**. Choose a long random **verify token**.
+5. _WhatsApp → Configuration → Webhook_: URL `https://<public address>/v1/webhooks/whatsapp`
+   (locally: `cloudflared tunnel --url http://localhost:8000`), the verify token, and subscribe to
+   **messages**.
+6. In `.env`: `WHATSAPP_PROVIDER=meta`, `WHATSAPP_BUSINESS_NUMBER=+…`, `WHATSAPP_PHONE_NUMBER_ID`,
+   `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`; then
+   `docker compose -f docker-compose.dev.yml up -d notification-service`.
+7. Optional, for paid messages: create the templates listed by
+   `GET /v1/admin/notifications/whatsapp/templates` in _WhatsApp Manager → Message templates_
+   (category **Utility**, same name, variables in the same order) and wait for approval.
+8. As a super admin: `PUT /v1/admin/notifications/settings` with `{ "whatsappEnabled": true }`.
+   To allow paid templates for people without the app, also set `whatsappPaidTypes`,
+   `whatsappMessageCostCents` (Meta's rate card for your market) and a
+   `whatsappMonthlyBudgetCents`. Watch `GET /v1/admin/notifications/whatsapp/usage`.
+
 ## Git workflow
 
 - **Trunk-based:** `main` is always deployable. Work on short-lived branches:

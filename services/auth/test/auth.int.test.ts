@@ -526,6 +526,14 @@ describe('My data: export and deletion', () => {
     await db.appointment.create({
       data: { ...appointmentData(f, new Date('2031-05-02T10:00:00Z')), userId: other.user.id },
     });
+    await db.whatsappContact.create({
+      data: {
+        userId: s.user.id,
+        phoneEncrypted: cipher.encrypt('+923001234567', 'whatsapp.phone'),
+        phoneHash: randomUUID().replace(/-/g, '').padEnd(64, '0'),
+        linkedAt: new Date(),
+      },
+    });
 
     const res = await request(app).get('/v1/auth/me/export').set(bearer(s.accessToken));
     expect(res.status).toBe(200);
@@ -538,6 +546,7 @@ describe('My data: export and deletion', () => {
     expect(data.signInMethods).toEqual([expect.objectContaining({ provider: 'google' })]);
     expect(data.appointments).toHaveLength(1);
     expect(data.appointments[0].business.name).toBe(f.business.name);
+    expect(data.whatsapp).toMatchObject({ phone: '+923001234567', stoppedAt: null });
     expect(JSON.stringify(data)).not.toContain('business-only note');
     expect(JSON.stringify(data)).not.toContain(other.user.id);
     expect(data.securityLog.map((e: { action: string }) => e.action)).toContain('auth.signed_up');
@@ -573,6 +582,14 @@ describe('My data: export and deletion', () => {
       .post('/v1/auth/push-tokens')
       .set(bearer(s.accessToken))
       .send({ token: `fcm-${randomUUID()}`, platform: 'ios' });
+    await db.whatsappContact.create({
+      data: {
+        userId: s.user.id,
+        phoneEncrypted: cipher.encrypt('+923001234568', 'whatsapp.phone'),
+        phoneHash: randomUUID().replace(/-/g, '').padEnd(64, '0'),
+        linkedAt: new Date(),
+      },
+    });
     const res = await request(app)
       .delete('/v1/auth/me')
       .set(bearer(s.accessToken))
@@ -583,6 +600,7 @@ describe('My data: export and deletion', () => {
     const me = await request(app).get('/v1/auth/me').set(bearer(s.accessToken));
     expect(me.body.error).toMatchObject({ code: 'SESSION_REVOKED', details: { reason: 'account_deleted' } });
     expect(await db.pushToken.count({ where: { userId: s.user.id } })).toBe(0);
+    expect(await db.whatsappContact.count({ where: { userId: s.user.id } })).toBe(0);
     const topics = (await db.outboxEvent.findMany({ where: { aggregateId: s.user.id } })).map((e) => e.topic);
     expect(topics).toContain('users.deleted');
   });
@@ -672,8 +690,10 @@ describe('My data: export and deletion', () => {
       where: { id: userId, deletedAt: undefined },
       data: { deletedAt: new Date(Date.now() - 31 * 86_400_000) },
     });
+    await db.notificationMark.create({ data: { key: `test:${randomUUID()}`, kind: 'rebook', userId } });
 
     expect(await rights.purgeDue()).toBeGreaterThanOrEqual(1);
+    expect(await db.notificationMark.count({ where: { userId } })).toBe(0);
 
     const purged = await db.user.findFirstOrThrow({ where: { id: userId, deletedAt: undefined } });
     expect(purged).toMatchObject({

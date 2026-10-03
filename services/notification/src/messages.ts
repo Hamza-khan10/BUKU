@@ -6,16 +6,21 @@
  * messages to customers never name other customers.
  */
 
-export type Category = 'booking' | 'reminder' | 'queue' | 'queue_called' | 'business';
+export type Category = 'booking' | 'reminder' | 'queue' | 'queue_called' | 'business' | 'account';
 
 export interface Message {
   type: string;
-  /** Which preference allows the push (`queue_called` is never switched off). */
+  /** Which preference allows the push (`queue_called` and `account` are never switched off). */
   category: Category;
   title: string;
   body: string;
   /** Deep link for the app. No secrets, no personal data. */
   data: Record<string, string | number>;
+  /**
+   * The values for this type's WhatsApp template, in the template's order (only
+   * types that can go as a paid template have them; see whatsapp/templates.ts).
+   */
+  vars?: string[];
 }
 
 export interface Visit {
@@ -55,6 +60,15 @@ export function shortName(name: string): string {
   return last ? `${first} ${last[0]!.toUpperCase()}.` : (first ?? 'A customer');
 }
 
+/** "tomorrow" / "today" / "on Sat 4 Oct" relative to now, in the business's timezone. */
+function dayWord(v: Visit, now = new Date()): string {
+  const day = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: v.timezone }).format(d);
+  const target = day(v.startAt);
+  if (target === day(now)) return 'today';
+  if (target === day(new Date(now.getTime() + 86_400_000))) return 'tomorrow';
+  return `on ${localTime(v.startAt, v.timezone).split(', ')[0]}`;
+}
+
 const visitLink = (v: Visit) => ({ screen: 'appointment', appointmentId: v.appointmentId });
 const teamLink = (v: Visit) => ({
   screen: 'business-appointment',
@@ -62,6 +76,8 @@ const teamLink = (v: Visit) => ({
   appointmentId: v.appointmentId,
 });
 const when = (v: Visit) => localTime(v.startAt, v.timezone);
+/** Business, service, time, code: the order of the booking WhatsApp templates. */
+const visitVars = (v: Visit) => [v.businessName, v.serviceName, when(v), v.code];
 const withWhom = (v: Visit) => (v.staffName ? ` with ${v.staffName}` : '');
 
 // ── To customers ───────────────────────────────────────────────────────────
@@ -73,6 +89,7 @@ export const toCustomer = {
     title: 'Booking confirmed',
     body: `${v.serviceName} at ${v.businessName}, ${when(v)}${withWhom(v)}. Your code: ${v.code}`,
     data: visitLink(v),
+    vars: visitVars(v),
   }),
   requested: (v: Visit): Message => ({
     type: 'booking_requested',
@@ -94,6 +111,7 @@ export const toCustomer = {
     title: 'Booking cancelled',
     body: `${v.businessName} cancelled your ${v.serviceName} on ${when(v)}${reason ? `: ${reason}` : ''}. Sorry for the trouble.`,
     data: visitLink(v),
+    vars: [v.businessName, v.serviceName, when(v)],
   }),
   rescheduled: (v: Visit): Message => ({
     type: 'booking_rescheduled',
@@ -108,6 +126,35 @@ export const toCustomer = {
     title: 'We missed you',
     body: `Your ${v.serviceName} at ${v.businessName} on ${when(v)} was marked as missed. If you can’t make it next time, please cancel ahead.`,
     data: visitLink(v),
+  }),
+  reminder24h: (v: Visit): Message => ({
+    type: 'reminder_24h',
+    category: 'reminder',
+    title: `Reminder: ${v.serviceName} ${dayWord(v)}`,
+    body: `${v.serviceName} at ${v.businessName}, ${when(v)}${withWhom(v)}. Your code: ${v.code}. Can’t make it? Please cancel or move it in the app.`,
+    data: visitLink(v),
+    vars: visitVars(v),
+  }),
+  reminder2h: (v: Visit): Message => ({
+    type: 'reminder_2h',
+    category: 'reminder',
+    title: `Soon: ${v.serviceName} at ${localTime(v.startAt, v.timezone).split(', ')[1]}`,
+    body: `${v.businessName}${withWhom(v)}. Show code ${v.code} when you arrive.`,
+    data: visitLink(v),
+    vars: visitVars(v),
+  }),
+  /** The customer asked "remind me to book again" (rebook_reminder_at). */
+  bookAgain: (b: {
+    businessId: string;
+    businessName: string;
+    serviceId: string;
+    serviceName: string;
+  }): Message => ({
+    type: 'rebook_reminder',
+    category: 'reminder',
+    title: `Time to book ${b.serviceName} again?`,
+    body: `You asked us to remind you. ${b.businessName} is taking bookings — pick a time that suits you.`,
+    data: { screen: 'book', businessId: b.businessId, serviceId: b.serviceId },
   }),
   queueAhead: (entryId: string, businessName: string, ahead: number): Message => ({
     type: 'queue_position',
@@ -131,6 +178,7 @@ export const toCustomer = {
     title: `It’s your turn — ${ticket}`,
     body: `Please come to the counter at ${businessName}${comeBy ? ` by ${localTime(comeBy, timezone).split(', ')[1]}` : ''}.`,
     data: { screen: 'queue-ticket', entryId },
+    vars: [ticket, businessName],
   }),
   queueClosed: (entryId: string, businessName: string, ticket: string): Message => ({
     type: 'queue_closed',
@@ -165,11 +213,74 @@ export const toTeam = {
     body: `${shortName(v.customerName)} cancelled ${v.serviceName} on ${when(v)}${withWhom(v)}. The time is free again.`,
     data: teamLink(v),
   }),
+  /** A request nobody has answered yet, as its time gets close. */
+  stillPending: (v: Visit): Message => ({
+    type: 'team_request_waiting',
+    category: 'business',
+    title: 'A booking request is waiting',
+    body: `${shortName(v.customerName)} is still waiting to hear about ${v.serviceName} on ${when(v)}${withWhom(v)}. Please confirm or decline.`,
+    data: teamLink(v),
+  }),
   moved: (v: Visit): Message => ({
     type: 'team_booking_moved',
     category: 'business',
     title: 'Booking moved',
     body: `${shortName(v.customerName)} moved ${v.serviceName} to ${when(v)}${withWhom(v)}.`,
     data: teamLink(v),
+  }),
+};
+
+// ── About the account's plan (users and business owners) ──────────────────
+
+export interface PlanNotice {
+  /** Business plans: the business's name ("for Fade Studio"); null for the person's own plan. */
+  businessId: string | null;
+  businessName: string | null;
+  planName: string;
+  endsAt: Date;
+  timezone: string;
+}
+
+const billingLink = (businessId: string | null): Message['data'] =>
+  businessId ? { screen: 'business-billing', businessId } : { screen: 'billing' };
+const planLink = (p: PlanNotice) => billingLink(p.businessId);
+const forWhom = (p: PlanNotice) => (p.businessName ? ` for ${p.businessName}` : '');
+const day = (p: PlanNotice) => localTime(p.endsAt, p.timezone).split(', ')[0]!;
+
+export const toAccount = {
+  trialEnding: (p: PlanNotice): Message => ({
+    type: 'trial_ending',
+    category: 'account',
+    title: 'Your free trial ends soon',
+    body: `Your ${p.planName} trial${forWhom(p)} ends on ${day(p)}. Choose a plan to keep its benefits — nothing is charged unless you do.`,
+    data: planLink(p),
+  }),
+  trialOver: (p: PlanNotice): Message => ({
+    type: 'trial_over',
+    category: 'account',
+    title: 'Your free trial has ended',
+    body: `Your ${p.planName} trial${forWhom(p)} has ended. Your bookings and data are safe; choose a plan any time to get its benefits back.`,
+    data: planLink(p),
+  }),
+  grantEnding: (p: PlanNotice): Message => ({
+    type: 'plan_gift_ending',
+    category: 'account',
+    title: `Your ${p.planName} plan ends soon`,
+    body: `The ${p.planName} plan we gave you${forWhom(p)} ends on ${day(p)}. Choose a plan to keep its benefits.`,
+    data: planLink(p),
+  }),
+  planEnding: (p: PlanNotice): Message => ({
+    type: 'plan_ending',
+    category: 'account',
+    title: `Your ${p.planName} plan ends soon`,
+    body: `You cancelled ${p.planName}${forWhom(p)}; it stays active until ${day(p)}. Changed your mind? You can keep it from the billing page.`,
+    data: planLink(p),
+  }),
+  paymentFailed: (p: Omit<PlanNotice, 'endsAt'>): Message => ({
+    type: 'payment_failed',
+    category: 'account',
+    title: 'Payment didn’t go through',
+    body: `We couldn’t take the payment for ${p.planName}${p.businessName ? ` for ${p.businessName}` : ''}. Please update your card so it stays active.`,
+    data: billingLink(p.businessId),
   }),
 };

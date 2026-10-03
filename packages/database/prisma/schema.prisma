@@ -319,6 +319,8 @@ model User {
   favourites         Favourite[]
   queueEntries       QueueEntry[]
   notifications      Notification[]
+  whatsappContact    WhatsappContact?
+  notificationMarks  NotificationMark[]
   auditLogs          AuditLog[]
   reviewedDocuments  BusinessDocument[]      @relation("DocumentReviewer")
   memberships        BusinessMember[]        @relation("MemberUser")
@@ -411,6 +413,10 @@ model NotificationPreference {
   whatsappUpdates          Boolean   @default(true) @map("whatsapp_updates")
   smsReminders             Boolean   @default(true) @map("sms_reminders")
   emailBookingConfirmation Boolean   @default(true) @map("email_booking_confirmation")
+  /// Reminders by email (24 h before; and as a fallback when the person has no app installed).
+  emailReminders           Boolean   @default(true) @map("email_reminders")
+  /// Team members without the app (web dashboard only): booking alerts by email.
+  emailBusinessAlerts      Boolean   @default(true) @map("email_business_alerts")
   /// GDPR: marketing requires explicit opt-in; consent timestamp recorded.
   marketingEmails          Boolean   @default(false) @map("marketing_emails")
   marketingConsentAt       DateTime? @map("marketing_consent_at") @db.Timestamptz(6)
@@ -1130,25 +1136,28 @@ model QueueEntry {
 
 /// Range-partitioned monthly by created_at (see migration); hence the composite key.
 model Notification {
-  id            String              @default(uuid(7)) @db.Uuid
-  userId        String              @map("user_id") @db.Uuid
-  appointmentId String?             @map("appointment_id") @db.Uuid
-  queueEntryId  String?             @map("queue_entry_id") @db.Uuid
-  type          String              @db.VarChar(50)
-  channel       NotificationChannel
-  title         String              @db.VarChar(200)
-  body          String
+  id              String              @default(uuid(7)) @db.Uuid
+  userId          String              @map("user_id") @db.Uuid
+  appointmentId   String?             @map("appointment_id") @db.Uuid
+  queueEntryId    String?             @map("queue_entry_id") @db.Uuid
+  type            String              @db.VarChar(50)
+  channel         NotificationChannel
+  title           String              @db.VarChar(200)
+  body            String
   /// Deep-link payload for the app (screen + ids). No secrets, no PII.
-  data          Json?
-  status        NotificationStatus  @default(pending)
-  externalId    String?             @map("external_id") @db.VarChar(500)
+  data            Json?
+  status          NotificationStatus  @default(pending)
+  externalId      String?             @map("external_id") @db.VarChar(500)
   /// The device a push went to (to switch it off if the push service says it no longer exists).
-  pushTokenId   String?             @map("push_token_id") @db.Uuid
-  failureReason String?             @map("failure_reason")
-  sentAt        DateTime?           @map("sent_at") @db.Timestamptz(6)
-  deliveredAt   DateTime?           @map("delivered_at") @db.Timestamptz(6)
-  readAt        DateTime?           @map("read_at") @db.Timestamptz(6)
-  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  pushTokenId     String?             @map("push_token_id") @db.Uuid
+  /// WhatsApp only: `window` (free-form reply inside the customer's 24-hour window) or
+  /// `template` (paid template outside it). Counts the month's estimated spend (D-073).
+  whatsappPricing String?             @map("whatsapp_pricing") @db.VarChar(20)
+  failureReason   String?             @map("failure_reason")
+  sentAt          DateTime?           @map("sent_at") @db.Timestamptz(6)
+  deliveredAt     DateTime?           @map("delivered_at") @db.Timestamptz(6)
+  readAt          DateTime?           @map("read_at") @db.Timestamptz(6)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1162,6 +1171,66 @@ model Notification {
 // ═════════════════════════════ ADS ═════════════════════════════
 
 /// DB extras: CHECK budgets/counters >= 0, end_date > start_date.
+/// How notifications go out, editable by admins at any time (one row, id = 1; D-073).
+model NotificationSettings {
+  id                         Int      @id @default(1) @db.SmallInt
+  /// Master switch for email (booking receipts, reminders, billing notices).
+  emailEnabled               Boolean  @default(true) @map("email_enabled")
+  /// Master switch for WhatsApp. Off: nothing goes by WhatsApp, linking still works.
+  whatsappEnabled            Boolean  @default(false) @map("whatsapp_enabled")
+  /// Message types that may go as PAID templates when the person's free 24-hour window is closed.
+  whatsappPaidTypes          String[] @default([]) @map("whatsapp_paid_types") @db.VarChar(50)
+  /// Cap on the month's estimated WhatsApp spend, in US cents. 0 = never pay for a message.
+  whatsappMonthlyBudgetCents Int      @default(0) @map("whatsapp_monthly_budget_cents")
+  /// Estimated price of one paid WhatsApp message, in US cents (Meta's rate card for your market).
+  whatsappMessageCostCents   Decimal  @default(4) @map("whatsapp_message_cost_cents") @db.Decimal(8, 4)
+  /// Replies inside the 24-hour window that Meta does not charge for, per month.
+  whatsappFreeWindowPerMonth Int      @default(1000) @map("whatsapp_free_window_per_month")
+  reminder24h                Boolean  @default(true) @map("reminder_24h")
+  reminder2h                 Boolean  @default(true) @map("reminder_2h")
+  /// Night time (local hours): reminders and suggestions wait until it ends.
+  quietStartHour             Int      @default(21) @map("quiet_start_hour") @db.SmallInt
+  quietEndHour               Int      @default(9) @map("quiet_end_hour") @db.SmallInt
+  updatedById                String?  @map("updated_by_id") @db.Uuid
+  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("notification_settings")
+}
+
+/// A WhatsApp number the person proved is theirs by messaging BUKU a one-time code (D-074).
+model WhatsappContact {
+  userId         String    @id @map("user_id") @db.Uuid
+  /// AES-256-GCM ciphertext, context "whatsapp.phone" (E.164).
+  phoneEncrypted String    @map("phone_encrypted")
+  phoneHash      String    @unique @map("phone_hash") @db.Char(64)
+  linkedAt       DateTime  @map("linked_at") @db.Timestamptz(6)
+  /// Their last message to us: replies are free for 24 hours after it.
+  lastInboundAt  DateTime? @map("last_inbound_at") @db.Timestamptz(6)
+  /// They replied STOP: nothing more by WhatsApp until START.
+  optedOutAt     DateTime? @map("opted_out_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_contacts")
+}
+
+/// Scheduled messages already sent (e.g. "appt:<id>:r24"): each goes once, even with
+/// several notification-service instances; also counts suggestions for frequency caps.
+model NotificationMark {
+  key       String   @id @db.VarChar(200)
+  userId    String?  @map("user_id") @db.Uuid
+  kind      String   @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, createdAt])
+  @@index([createdAt])
+  @@map("notification_marks")
+}
+
 model BusinessAd {
   id                String    @id @default(uuid(7)) @db.Uuid
   businessId        String    @map("business_id") @db.Uuid

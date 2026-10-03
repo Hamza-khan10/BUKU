@@ -14,8 +14,18 @@ export interface PreferencesInput {
   whatsappUpdates?: boolean | undefined;
   smsReminders?: boolean | undefined;
   emailBookingConfirmation?: boolean | undefined;
+  emailReminders?: boolean | undefined;
+  emailBusinessAlerts?: boolean | undefined;
   marketingEmails?: boolean | undefined;
 }
+
+export const UNSUBSCRIBABLE = [
+  'emailBookingConfirmation',
+  'emailReminders',
+  'emailBusinessAlerts',
+  'marketingEmails',
+] as const;
+export type UnsubscribablePref = (typeof UNSUBSCRIBABLE)[number];
 
 /** Inbox rows only (push/WhatsApp rows are delivery records, not shown). */
 const inbox = (userId: string) => ({ userId, channel: 'in_app' as const });
@@ -89,6 +99,11 @@ export class InboxService {
     return prefView(row);
   }
 
+  /** From the signed link in an email: switch off exactly that kind of email. */
+  async unsubscribe(userId: string, pref: UnsubscribablePref): Promise<void> {
+    await this.updatePreferences(userId, { [pref]: false });
+  }
+
   /** Marketing needs explicit opt-in; the moment of consent is recorded (and cleared on opt-out). */
   async updatePreferences(userId: string, input: PreferencesInput) {
     const data = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
@@ -114,6 +129,8 @@ function prefView(p: {
   whatsappUpdates: boolean;
   smsReminders: boolean;
   emailBookingConfirmation: boolean;
+  emailReminders: boolean;
+  emailBusinessAlerts: boolean;
   marketingEmails: boolean;
   marketingConsentAt: Date | null;
 }) {
@@ -125,9 +142,11 @@ function prefView(p: {
     whatsappUpdates: p.whatsappUpdates,
     smsReminders: p.smsReminders,
     emailBookingConfirmation: p.emailBookingConfirmation,
+    emailReminders: p.emailReminders,
+    emailBusinessAlerts: p.emailBusinessAlerts,
     marketingEmails: p.marketingEmails,
     marketingConsentAt: p.marketingConsentAt?.toISOString() ?? null,
-    /** Being called in a queue is always sent; it can't be switched off. */
+    /** Being called in a queue, and notices about the account's plan, are always sent. */
     queueCalledAlwaysOn: true,
   };
 }

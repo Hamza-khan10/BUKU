@@ -1,4 +1,4 @@
-import { AppError, ErrorCodes } from '@buku/common';
+import { AppError, ErrorCodes, type FieldCipher } from '@buku/common';
 import { recordAudit, type Database } from '@buku/database';
 import { createEvent, enqueueEvent, TOPICS } from '@buku/kafka';
 import type { MediaLinks, ObjectStorage } from '@buku/media';
@@ -35,6 +35,8 @@ export class DataRightsService {
   constructor(
     private readonly deps: {
       db: Database;
+      /** To show the connected WhatsApp number in the export. */
+      cipher: FieldCipher;
       users: UserService;
       sessions: SessionService;
       /** To delete the private profile picture on purge. */
@@ -59,6 +61,7 @@ export class DataRightsService {
       queueEntries,
       notifications,
       security,
+      whatsapp,
     ] = await Promise.all([
       this.deps.users.getMe(userId),
       db.user.findUniqueOrThrow({ where: { id: userId } }),
@@ -136,6 +139,7 @@ export class DataRightsService {
         take: 1000,
         select: { action: true, ipAddress: true, userAgent: true, createdAt: true },
       }),
+      db.whatsappContact.findUnique({ where: { userId } }),
     ]);
 
     await recordAudit(db, {
@@ -161,6 +165,13 @@ export class DataRightsService {
       sessions,
       pushDevices: devices,
       notificationPreferences: prefs && { ...prefs, userId: undefined },
+      whatsapp: whatsapp && {
+        // Must match notification-service's WHATSAPP_PHONE_CONTEXT.
+        phone: this.deps.cipher.decrypt(whatsapp.phoneEncrypted, 'whatsapp.phone'),
+        connectedAt: whatsapp.linkedAt,
+        lastMessageFromYouAt: whatsapp.lastInboundAt,
+        stoppedAt: whatsapp.optedOutAt,
+      },
       appointments: appointments.map((a) => ({ ...a, price: a.price.toString() })),
       reviews,
       favourites,
@@ -205,7 +216,9 @@ export class DataRightsService {
     await this.deps.db.$transaction(async (tx) => {
       // Deletion never touches `status`: a suspended account stays suspended if restored.
       await tx.user.update({ where: { id: userId }, data: { deletedAt: now } });
-      await tx.pushToken.deleteMany({ where: { userId } }); // stop notifications right away
+      // Stop notifications right away (a restored account connects them again).
+      await tx.pushToken.deleteMany({ where: { userId } });
+      await tx.whatsappContact.deleteMany({ where: { userId } });
       await enqueueEvent(
         tx,
         createEvent({
@@ -259,6 +272,8 @@ export class DataRightsService {
           await tx.notificationPreference.deleteMany({ where: { userId: id } });
           await tx.favourite.deleteMany({ where: { userId: id } });
           await tx.notification.deleteMany({ where: { userId: id } });
+          await tx.notificationMark.deleteMany({ where: { userId: id } });
+          await tx.whatsappContact.deleteMany({ where: { userId: id } });
           // Ratings stay (they are part of a business's aggregate), the words don't.
           await tx.review.updateMany({ where: { userId: id }, data: { comment: NIL } });
           await tx.appointment.updateMany({ where: { userId: id }, data: { notes: NIL } });

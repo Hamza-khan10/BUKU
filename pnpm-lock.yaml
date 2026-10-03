@@ -523,6 +523,9 @@ importers:
       ioredis:
         specifier: 6.0.0
         version: 6.0.0
+      nodemailer:
+        specifier: 10.0.13
+        version: 10.0.13
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -3185,6 +3188,10 @@ packages:
     peerDependenciesMeta:
       encoding:
         optional: true
+
+  nodemailer@10.0.13:
+    resolution: {integrity: sha512-SzG86OlvcW/NNhUFC6uROMwRTL4n7MswfQqC/T8mhkmnY1YVa23zUEMYi4ijSeXSl9GLz9ZeTJDUatEDuY5FeQ==}
+    engines: {node: '>=20.0.0'}
 
   nopt@8.1.0:
     resolution: {integrity: sha512-ieGu42u/Qsa4TFktmaKEwM6MQH0pOWnaB3htzh0JRtx84+Mebc0cbZYN5bC+6WTZ4+77xrL9Pn5m7CV6VIkV7A==}
@@ -6468,6 +6475,8 @@ snapshots:
   node-fetch@2.7.0:
     dependencies:
       whatwg-url: 5.0.0
+
+  nodemailer@10.0.13: {}
 
   nopt@8.1.0:
     dependencies:

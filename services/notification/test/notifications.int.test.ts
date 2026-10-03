@@ -1,28 +1,16 @@
-import { generateKeyPairSync, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import {
-  createJwtSigner,
-  createJwtVerifier,
-  createLogger,
-  createRedisClient,
-  createRevocationStore,
-  generateConfirmationCode,
-  Readiness,
-  type JwtSigner,
-} from '@buku/common';
-import { createDatabaseClient, maintainPartitions, type Database } from '@buku/database';
-import { createEvent, TOPICS, type EventHandler, type Topic } from '@buku/kafka';
+import { maintainPartitions, type Database } from '@buku/database';
+import { TOPICS, type EventHandler } from '@buku/kafka';
 import express, { type Express } from 'express';
 import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createBusinessFixture, type BusinessFixture } from '../../../packages/database/test/fixtures.js';
-import { testEnv } from '../../../packages/database/test/int-env.js';
-import { buildNotificationApp } from '../src/app.js';
 import type { Notifier } from '../src/notifier.js';
+import { createBusinessFixture } from '../../../packages/database/test/fixtures.js';
 import { ExpoPushSender } from '../src/push/expo.js';
-import type { PushMessage, PushReceipt, PushSender, PushTicket } from '../src/push/sender.js';
+import { booking as bookingIn, createHarness, helpers, type FakePush, type Harness } from './harness.js';
 
 /**
  * Booking and queue events → inbox and push, against the real database. A
@@ -30,83 +18,19 @@ import type { PushMessage, PushReceipt, PushSender, PushTicket } from '../src/pu
  * "gone" behave like uninstalled apps.
  */
 
-class FakePush implements PushSender {
-  readonly name = 'fake';
-  sent: PushMessage[] = [];
-  private tickets = new Map<string, string>();
-  accepts = () => true;
-  send(messages: PushMessage[]): Promise<PushTicket[]> {
-    this.sent.push(...messages);
-    return Promise.resolve(
-      messages.map((m) => {
-        if (m.token.includes('gone-now'))
-          return { ok: false as const, error: 'DeviceNotRegistered', deviceGone: true };
-        const id = randomUUID();
-        this.tickets.set(id, m.token);
-        return { ok: true as const, id };
-      }),
-    );
-  }
-  receipts(ids: string[]): Promise<Map<string, PushReceipt>> {
-    return Promise.resolve(
-      new Map(
-        ids.map((id) => [
-          id,
-          this.tickets.get(id)?.includes('gone-later')
-            ? { ok: false as const, error: 'DeviceNotRegistered', deviceGone: true }
-            : { ok: true as const },
-        ]),
-      ),
-    );
-  }
-  to(token: string) {
-    return this.sent.filter((m) => m.token === token);
-  }
-}
-
+let h: Harness;
 let app: Express;
 let db: Database;
 let redis: Redis;
-let signer: JwtSigner;
 let handle: EventHandler;
 let notifier: Notifier;
-const push = new FakePush();
+let push: FakePush;
+let x: ReturnType<typeof helpers>;
 
 beforeAll(async () => {
-  db = createDatabaseClient({
-    url: testEnv.appUrl,
-    applicationName: 'notification-int-test',
-    maxConnections: 5,
-  });
-  redis = createRedisClient({ url: testEnv.redisUrl, connectionName: 'notification-int-test' });
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const jwt = { issuer: 'https://auth.test', audience: 'buku-api' };
-  signer = await createJwtSigner({
-    ...jwt,
-    keyId: 'k1',
-    privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
-  });
-  const verifier = await createJwtVerifier({
-    ...jwt,
-    keys: [{ keyId: 'k1', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }],
-  });
-  ({
-    app,
-    handler: handle,
-    notifier,
-  } = buildNotificationApp({
-    db,
-    redis,
-    verifier,
-    revocations: createRevocationStore(redis),
-    push,
-    http: {
-      service: 'notification-test',
-      logger: createLogger({ service: 'notification-test', level: 'silent' }),
-      readiness: new Readiness(),
-      trustProxyHops: 1,
-    },
-  }));
+  h = await createHarness('notification-int-test');
+  ({ app, db, redis, handle, notifier, push } = h);
+  x = helpers(h);
 });
 
 afterAll(async () => {
@@ -115,59 +39,13 @@ afterAll(async () => {
 });
 
 const ctx = { topic: 'test', partition: 0, offset: '0', key: null, attempt: 1 };
-const deliver = (type: Topic, data: Record<string, unknown>) => {
-  const event = createEvent({
-    type,
-    source: 'test',
-    subject: String(data.appointmentId ?? data.entryId),
-    data,
-  });
-  return handle(event, ctx).then(() => event);
-};
-const device = async (userId: string, label: string = randomUUID()) => {
-  const token = `ExponentPushToken[${label}]`;
-  await db.pushToken.create({ data: { userId, token, platform: 'android' } });
-  return token;
-};
-const inbox = (userId: string) =>
-  db.notification.findMany({ where: { userId, channel: 'in_app' }, orderBy: { createdAt: 'asc' } });
-const authFor = async (userId: string) => ({
-  Authorization: `Bearer ${(await signer.sign({ sub: userId, role: 'user', sid: randomUUID() })).token}`,
-});
-
-/** A business with a customer and an appointment two days ahead, 10:30 Lahore time. */
-async function booking(opts: { staffUserId?: string; status?: 'pending' | 'confirmed' } = {}) {
-  const f: BusinessFixture = await createBusinessFixture(db);
-  await db.user.update({ where: { id: f.customer.id }, data: { name: 'Ayesha Noor Khan' } });
-  if (opts.staffUserId)
-    await db.staff.update({ where: { id: f.staffA.id }, data: { userId: opts.staffUserId } });
-  const day = new Date(Date.now() + 2 * 86_400_000);
-  const startAt = new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 5, 30));
-  const a = await db.appointment.create({
-    data: {
-      businessId: f.business.id,
-      serviceId: f.service.id,
-      staffId: f.staffA.id,
-      userId: f.customer.id,
-      status: opts.status ?? 'confirmed',
-      startAt,
-      endAt: new Date(startAt.getTime() + 30 * 60_000),
-      blockedUntil: new Date(startAt.getTime() + 30 * 60_000),
-      price: 800,
-      currency: 'PKR',
-      confirmationCode: generateConfirmationCode(),
-    },
-  });
-  return { f, a };
-}
-
-const member = async (businessId: string, role: 'manager' | 'front_desk' | 'staff') => {
-  const u = await db.user.create({
-    data: { name: `Team ${role}`, emailHash: randomUUID().replace(/-/g, '').padEnd(64, '0') },
-  });
-  await db.businessMember.create({ data: { businessId, userId: u.id, role } });
-  return u;
-};
+const deliver = (...args: Parameters<ReturnType<typeof helpers>['deliver']>) => x.deliver(...args);
+const device = (userId: string, label?: string) => x.device(userId, label);
+const inbox = (userId: string) => x.inbox(userId);
+const authFor = (userId: string) => x.authFor(userId);
+const booking = (opts: { staffUserId?: string; status?: 'pending' | 'confirmed' } = {}) =>
+  bookingIn(db, opts);
+const member = (businessId: string, role: 'manager' | 'front_desk' | 'staff') => x.member(businessId, role);
 
 describe('Bookings', () => {
   it('automatic booking: the business hears “new booking”, the customer gets the confirmation with the code', async () => {

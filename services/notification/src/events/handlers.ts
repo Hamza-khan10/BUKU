@@ -2,8 +2,9 @@ import { logger } from '@buku/common';
 import type { Database, Transaction } from '@buku/database';
 import { processOnce, TOPICS, type EventHandler, type Topic } from '@buku/kafka';
 import { z } from 'zod';
-import { toCustomer, toTeam, type Visit } from '../messages.js';
+import { toCustomer, toTeam } from '../messages.js';
 import type { Delivery, Notifier } from '../notifier.js';
+import { approvers, loadVisit } from '../visits.js';
 
 /**
  * Booking and queue events → messages (D-071). Events carry ids only; names,
@@ -72,27 +73,9 @@ async function bookingDeliveries(
   type: Topic,
   e: z.infer<typeof Booking>,
 ): Promise<Delivery[]> {
-  const a = await tx.appointment.findUnique({
-    where: { id: e.appointmentId },
-    include: {
-      business: { select: { id: true, name: true, timezone: true, ownerId: true } },
-      service: { select: { name: true } },
-      staff: { select: { displayName: true, userId: true } },
-      user: { select: { id: true, name: true } },
-    },
-  });
-  if (!a) return [];
-  const visit: Visit = {
-    appointmentId: a.id,
-    businessId: a.businessId,
-    businessName: a.business.name,
-    serviceName: a.service.name,
-    staffName: a.staff?.displayName ?? null,
-    customerName: a.user.name,
-    code: a.confirmationCode,
-    startAt: a.startAt,
-    timezone: a.business.timezone,
-  };
+  const loaded = await loadVisit(tx, e.appointmentId);
+  if (!loaded) return [];
+  const { appointment: a, visit, doer } = loaded;
   const customer = (message: Delivery['message']): Delivery => ({
     userId: a.userId,
     message,
@@ -102,8 +85,6 @@ async function bookingDeliveries(
     [...new Set(userIds)]
       .filter((id) => id !== a.userId)
       .map((userId) => ({ userId, message, appointmentId: a.id }));
-  // The employee doing it, if their profile is linked to a team account; else the owner.
-  const doer = a.staff?.userId ?? a.business.ownerId;
 
   switch (type) {
     case TOPICS.BOOKINGS_CREATED:
@@ -167,13 +148,4 @@ async function queueDeliveries(
     default:
       return [];
   }
-}
-
-/** Owner, managers and front desk: the people who approve booking requests. */
-async function approvers(tx: Transaction, business: { id: string; ownerId: string }): Promise<string[]> {
-  const members = await tx.businessMember.findMany({
-    where: { businessId: business.id, status: 'active', role: { in: ['manager', 'front_desk'] } },
-    select: { userId: true },
-  });
-  return [business.ownerId, ...members.map((m) => m.userId)];
 }
