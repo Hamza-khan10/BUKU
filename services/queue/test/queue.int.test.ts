@@ -290,8 +290,10 @@ describe('Front desk access and settings', () => {
       name: 'Ayesha Khan',
       walkIn: false,
       joinedRemotely: true,
+      // A label only ("Shows up 95%" / "New customer"), never the customer's history.
+      reliability: { label: 'New customer', showsUpPercent: null },
     });
-    expect(JSON.stringify(board.body.data)).not.toMatch(/email|phone|avatar/i);
+    expect(JSON.stringify(board.body.data)).not.toMatch(/email|phone|avatar|noShows/i);
     expect(
       (
         await request(app)

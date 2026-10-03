@@ -445,7 +445,11 @@ describe('The business’s list (serve customers with or without a phone)', () =
     const day = await request(app).get(`${s.base}/appointments`).query({ date: DAY() }).set(s.owner.auth);
     expect(day.body.data.items.map((a: { code: string }) => a.code)).toEqual([code]);
     const item = day.body.data.items[0];
-    expect(item.customer).toEqual({ id: ayesha.id, name: 'Ayesha Khan' });
+    expect(item.customer).toEqual({
+      id: ayesha.id,
+      name: 'Ayesha Khan',
+      reliability: { label: 'New customer', showsUpPercent: null },
+    });
     expect(JSON.stringify(item)).not.toMatch(/email|phone|avatar/i);
 
     const byCode = await request(app)

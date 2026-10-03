@@ -1005,3 +1005,42 @@ numbers and emails in either are replaced with "[contact removed]". Errors: `REV
 includes `reliability` next to `rating`. Notifications: "How was your Haircut?" (customer, once,
 30 min–3 days after the visit), "New 4★ review" (owner and managers), "<Business> replied to your
 review" (reviewer, first reply only).
+
+## Reliability and cancellation insights (2.8 part 2)
+
+| Method & path                                             | Auth          | Purpose                                                  |
+| --------------------------------------------------------- | ------------- | -------------------------------------------------------- |
+| `GET /v1/appointments/reliability`                        | ✔             | My reliability, what it's made of, what businesses see   |
+| `GET /v1/businesses/:id/insights/cancellations?from=&to=` | owner/manager | Cancellations and no-shows (default last 90 days, ≤ 366) |
+| `PUT /v1/businesses/:id/booking-settings`                 | owner/manager | `approvalBelowShowUpPercent`: 50–99, or `null` (off)     |
+
+```json
+GET /v1/appointments/reliability
+{ "data": { "showsUpPercent": 87, "basedOn": 12, "label": "Shows up 87%", "businessesSee": "Shows up 87%",
+            "visits": 10, "noShows": 1, "lateCancellations": 1,
+            "period": { "from": "…", "to": "…" },
+            "tip": "If you can’t make it, cancel before the business’s cancellation window — ordinary cancellations never count against you." } }
+```
+
+Businesses see `customer.reliability: { label, showsUpPercent }` on every appointment (list and
+detail) and on the queue board (`null` for walk-ins); `showsUpPercent` is `null` for new
+customers (fewer than 3 visits, no-shows or late cancellations in 12 months).
+
+```json
+GET /v1/businesses/:id/insights/cancellations
+{ "data": {
+    "period": { "from": "2026-07-06", "to": "2026-10-03", "timezone": "Asia/Karachi" },
+    "totals": { "booked": 140, "completed": 118, "upcoming": 6, "cancelledByCustomer": 9, "lateCancellations": 3,
+                "cancelledByBusiness": 1, "declined": 2, "cancelledBySystem": 0, "noShows": 4, "moved": 5 },
+    "rates": { "customerCancellation": 6.4, "lateCancellation": 2.1, "noShow": 3.3, "businessCancellation": 0.7 },
+    "reasons": [{ "reason": "schedule_conflict", "count": 5 }, { "reason": "illness", "count": 3 }, { "reason": "not_given", "count": 1 }],
+    "byWeekday": [{ "dayOfWeek": 0, "cancellations": 1, "noShows": 0 }, …],
+    "byHour": [{ "hour": 10, "cancellations": 2, "noShows": 1 }, …],
+    "byService": [{ "id": "…", "name": "Haircut", "booked": 90, "cancellations": 6, "noShows": 3, "cancellationRate": 6.7 }],
+    "byStaff": [{ "id": "…", "name": "Ali", "booked": 70, "cancellations": 4, "noShows": 2, "cancellationRate": 5.7 }],
+    "weekly": [{ "weekOf": "2026-09-28", "booked": 12, "cancellations": 1, "noShows": 0 }, …],
+    "rebookLater": { "asked": 4, "bookedAgain": 3, "rate": 75 } } }
+```
+
+Visits are counted by when they were (or would have been). Rates have one decimal; the no-show
+rate is of visits that happened or were missed.

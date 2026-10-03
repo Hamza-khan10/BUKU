@@ -470,3 +470,18 @@ counted) or keeps/restores it, always audited. Customers are asked "How was your
 30 minutes to 3 days after it, not at night; owner and managers hear about new reviews. The
 business's reliability (D-035) sits next to its rating on the profile and in the review summary,
 from the same figures and rule as search (`businessReliability` in `@buku/common`).
+
+**D-078 · Customer reliability encourages, never punishes; owners see where bookings are lost.**
+Over the last 12 months at every business, appointments and queue tickets alike: visits
+(completed, checked in, queue tickets served) against no-shows (counted in full) and late
+cancellations inside the business's window (counted half); ordinary cancellations never count.
+Under 3 such events a customer is "New customer". The customer sees their figure, what it's made
+of and a tip (`GET /v1/appointments/reliability`); businesses only ever see a label — "Shows up 95%"
+or "New customer" — on their appointment list, detail and queue board, never the history. The one
+effect is opt-in: a business (with the manual-approval plan feature) may hold bookings from
+customers below a percentage it chooses (50–99) for approval instead of confirming them at once;
+new customers are never held back. The counting lives in `@buku/database` (`showUpCounts`) so
+every service shows the same figure. The cancellation insights (`/v1/businesses/:id/insights/
+cancellations`, owner and managers; `/reports` already meant reporting a business) give totals and
+rates, reasons, weekday and hour in the business's timezone, per service and employee, a weekly
+trend, and how many "remind me later" cancellations booked again.

@@ -100,7 +100,7 @@ services:
           - '/v1/appointments'
           - '/v1/staff'
           - '/v1/admin/reviews'
-          - '~/v1/businesses/[^/]+/(appointments|availability|services|service-categories|staff|closures|booking-settings|check-in|attendance|reviews)($|/)'
+          - '~/v1/businesses/[^/]+/(appointments|availability|services|service-categories|staff|closures|booking-settings|check-in|attendance|reviews|insights)($|/)'
         strip_path: false
         plugins: [*jwt]
 

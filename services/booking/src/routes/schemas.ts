@@ -98,6 +98,8 @@ export const BookingSettingsBody = zBody({
   minNoticeMinutes: z.number().int().min(0).max(10080).optional(),
   slotStepMinutes: z.literal([5, 10, 15, 20, 30, 60]).optional(),
   noShowGraceMinutes: z.number().int().min(0).max(240).optional(),
+  /** null switches it off. */
+  approvalBelowShowUpPercent: z.number().int().min(50).max(99).nullable().optional(),
 }).refine(atLeastOne, 'at least one field is required');
 
 // ── Availability and appointments ──────────────────────────────────────────
@@ -207,3 +209,6 @@ export const ModerateReviewBody = z.discriminatedUnion('action', [
   zBody({ action: z.literal('keep') }),
   zBody({ action: z.literal('restore') }),
 ]);
+
+// ── Reports ──
+export const ReportQuery = z.object({ from: z.iso.date().optional(), to: z.iso.date().optional() }).strict();

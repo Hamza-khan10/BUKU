@@ -480,6 +480,7 @@ describe('Booking settings', () => {
       minNoticeMinutes: 60,
       slotStepMinutes: 15,
       noShowGraceMinutes: 15,
+      approvalBelowShowUpPercent: null,
     });
     const manager = await member('manager');
     const res = await put(`${base}/booking-settings`, manager, {
@@ -499,6 +500,8 @@ describe('Booking settings', () => {
       { bookingHorizonDays: 0 },
       { slotStepMinutes: 7 },
       { maxFutureBookingsPerCustomer: 50 },
+      { approvalBelowShowUpPercent: 40 },
+      { approvalBelowShowUpPercent: 100 },
       {},
     ]) {
       expect((await put(`${base}/booking-settings`, owner, bad)).status).toBe(400);
@@ -553,8 +556,13 @@ describe('Plans: business limits (billing on)', () => {
         'PLAN_FEATURE_UNAVAILABLE',
         { feature: 'manual_approval', plan: 'business_free' },
       ]);
-      // Other settings are always allowed.
+      const unreliable = await put(`${base}/booking-settings`, owner, { approvalBelowShowUpPercent: 80 });
+      expect(unreliable.body.error?.code).toBe('PLAN_FEATURE_UNAVAILABLE');
+      // Other settings (and switching it off) are always allowed.
       expect((await put(`${base}/booking-settings`, owner, { bookingHorizonDays: 60 })).status).toBe(200);
+      expect(
+        (await put(`${base}/booking-settings`, owner, { approvalBelowShowUpPercent: null })).status,
+      ).toBe(200);
 
       await givePlan(db, { businessId: b.id }, 'business_essential');
       expect((await put(`${base}/booking-settings`, owner, { confirmationMode: 'manual' })).status).toBe(200);
