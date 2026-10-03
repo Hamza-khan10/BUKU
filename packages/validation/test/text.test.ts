@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeText, stripDisallowed, textProblem, zText } from '../src/index.js';
+import { normalizeText, removeDisallowed, stripDisallowed, textProblem, zText } from '../src/index.js';
 
 const ok = (v: string, kind: Parameters<typeof textProblem>[1]) => textProblem(normalizeText(v, kind), kind);
 
@@ -87,5 +87,14 @@ describe('Clean text', () => {
     expect(bad.success).toBe(false);
     expect(bad.error?.issues[0]?.message).toBe('Emojis and picture symbols can’t be used here.');
     expect(schema.safeParse('A very long name indeed').success).toBe(false);
+  });
+
+  it('while typing: removes what is never allowed, keeps spacing as typed', () => {
+    expect(removeDisallowed('Ali \u{1F600}', 'personName')).toBe('Ali ');
+    expect(removeDisallowed('Ali2', 'personName')).toBe('Ali');
+    expect(removeDisallowed('Ali\u200BKhan', 'line')).toBe('AliKhan');
+    expect(removeDisallowed('Shop #2 (DHA)', 'title')).toBe('Shop #2 (DHA)');
+    expect(removeDisallowed('Great\n\nvisit \u2B50', 'text')).toBe('Great\n\nvisit ');
+    expect(removeDisallowed('\u0645\u06CC\u06BA\u200C', 'personName')).toBe('\u0645\u06CC\u06BA\u200C'); // joiner mid-typing kept
   });
 });

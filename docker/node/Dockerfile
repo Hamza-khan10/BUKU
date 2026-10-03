@@ -23,8 +23,11 @@ WORKDIR /repo
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json tsup.config.ts ./
 COPY packages ./packages
 COPY services ./services
+# The web app's manifest only, so the lockfile matches the workspace; its
+# dependencies (Next.js, React…) are not installed into service images.
+COPY apps/web/package.json ./apps/web/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --store-dir /pnpm/store
+    pnpm install --frozen-lockfile --filter '!@buku/web' --store-dir /pnpm/store
 RUN pnpm --filter @buku/database generate \
  && pnpm --filter "@buku/${SERVICE}-service" build
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \

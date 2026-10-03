@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - services/*
+  - apps/*
 
 # ── Supply-chain policy ─────────────────────────────────────────────────────
 # pnpm blocks every dependency lifecycle script by default. Only packages

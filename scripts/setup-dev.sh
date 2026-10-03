@@ -37,6 +37,13 @@ bold "2/3 Secrets (.env)"
 if [[ ! -f .env ]]; then
   cp .env.example .env
   chmod 600 .env
+
+# The web app's server settings (apps/web/.env.local), sharing the gateway key (D-084).
+if [[ ! -f apps/web/.env.local ]]; then
+  sed "s/^WEB_GATEWAY_KEY=$/WEB_GATEWAY_KEY=$(get_value WEB_GATEWAY_KEY)/" apps/web/.env.example > apps/web/.env.local
+  chmod 600 apps/web/.env.local
+  ok "created apps/web/.env.local"
+fi
   ok "created .env from .env.example (mode 600)"
 fi
 
@@ -98,4 +105,5 @@ echo
 bold "Done. Next:"
 echo "  pnpm dev          # start the stack (first run builds images: a few minutes)"
 echo "  pnpm health       # check every component"
-echo "  pnpm verify       # full Phase 1 verification"
+echo "  pnpm verify       # full verification"
+echo "  pnpm web          # the website on http://localhost:3000 (needs the stack)"

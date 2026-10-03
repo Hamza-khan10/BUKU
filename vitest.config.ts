@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 /**
@@ -10,9 +11,17 @@ export default defineConfig({
   test: {
     projects: [
       {
+        // The web app imports its own source as "@/…" (apps/web/tsconfig.json).
+        resolve: {
+          alias: [{ find: /^@\//, replacement: fileURLToPath(new URL('./apps/web/src/', import.meta.url)) }],
+        },
         test: {
           name: 'unit',
-          include: ['packages/*/test/**/*.test.ts', 'services/*/test/**/*.test.ts'],
+          include: [
+            'packages/*/test/**/*.test.ts',
+            'services/*/test/**/*.test.ts',
+            'apps/*/test/**/*.test.ts',
+          ],
           exclude: ['**/*.int.test.ts', '**/node_modules/**'],
           environment: 'node',
           setupFiles: ['packages/common/test/setup-env.ts'],

@@ -571,3 +571,25 @@ services take `req.ip` from it (`createHttpApp`, only when a proxy is trusted). 
 verify`: a spoofed header without the key is ignored, the key makes it count. Rotation: deploy
 Kong and the web app together. Rewriting `X-Forwarded-For` instead doesn't work: Kong reads the
 request headers before plugins can change them.
+
+**D-085 · The web app's foundation: tokens only in cookies, a nonce CSP, one design system.**
+`apps/web` is Next.js 16 (App Router, Turbopack), React 19, Tailwind CSS 4, Radix primitives,
+TanStack Query; Vercel hosts it, the API stays on DigitalOcean. Sessions: the web server is the
+only holder of tokens (WEB_PLAN §4) — sign-in answers pass through `/api/v1/*`, where tokens
+become HttpOnly cookies (access `SameSite=Lax`, refresh `SameSite=Strict; Path=/api`, prefixed
+`__Host-`/`__Secure-` over HTTPS) and are removed from the answer, including the session inside a
+two-step confirmation; a third cookie with no secret says when the access token lapses so the page
+renews once per tab just before. A renewal that loses a race with another tab answers "retry",
+an API outage never signs anyone out, and signing out ends the session at the API too. Cross-site
+use is refused by a custom header plus `Origin`/`Sec-Fetch-Site`. Every page gets a fresh CSP
+nonce with `'strict-dynamic'`, so every page is rendered per request (public data is still cached
+at the fetch level); styles allow inline (see WEB_PLAN §4 for why). The design system is
+CSS-variable tokens whose every text pairing is AA-checked numerically in both themes; the theme
+is a cookie the server reads (no flash, no inline script). Text inputs apply D-083 while typing
+(removed with a polite note, cursor kept, IME composition untouched, normalised on leaving).
+Browser tests (desktop and phone: CSP and headers, axe WCAG 2.2 AA in both themes, clean text,
+the session round trip) run in CI against the production build. `@buku/validation` uses
+extensionless imports because Turbopack doesn't map ".js" to ".ts". The Next.js ESLint plugin is left out:
+it pulls in a package with an unfixed high advisory (GHSA-vfj7-8cjw-p6xm); its rule that matters
+here, internal links through `<Link>`, is a `no-restricted-syntax` selector. Service images copy
+the web app's manifest only and install without it (Next.js never enters them).

@@ -111,3 +111,23 @@ export function stripDisallowed(value: string, kind: TextKind): string {
   }
   return normalizeText(s, kind);
 }
+
+/**
+ * While someone is typing: remove, character by character, what this kind
+ * never accepts (emoji, invisible and control characters; for names and
+ * titles anything outside their letters and punctuation). Spacing is left as
+ * typed and joiners are left for the final check — normalising happens when
+ * the field is done (normalizeText), so typing "Ali " keeps its space.
+ */
+export function removeDisallowed(value: string, kind: TextKind): string {
+  let s = value
+    .replace(new RegExp(PICTOGRAPHIC.source, 'gu'), '')
+    .replace(new RegExp(FORMAT.source, 'gu'), '')
+    .replace(new RegExp(UNASSIGNED_OR_PRIVATE.source, 'gu'), '')
+    .replace(new RegExp(CONTROL.source, 'gu'), '');
+  if (kind === 'personName' || kind === 'title') {
+    const allowed = ALLOWED[kind];
+    s = [...s].filter((ch) => allowed.test(ch)).join('');
+  }
+  return s;
+}

@@ -185,15 +185,23 @@ one and shows the audit trail.
 - **Rendering:** public pages are server components fetching the public API with short
   revalidation; signed-in areas render shells on the server and fetch on the client with
   TanStack Query (optimistic updates where safe).
-- **Session (backend-for-frontend):** sign-in goes through Next.js route handlers which call
-  auth-service and set the tokens as `__Host-` cookies: `HttpOnly; Secure; SameSite=Lax`
-  (access token, 15 min) and `SameSite=Strict; Path=/api/session` (refresh token). The browser
-  never sees a token. Client calls go to same-origin `/api/v1/*`, which forwards to the gateway
-  with the bearer token, refreshes once on expiry (rotation race handled), and passes errors
-  through. CSRF: mutating requests need a custom header and same-origin `Origin`.
-- **Security headers:** CSP with a per-request nonce (`script-src 'nonce-…' 'strict-dynamic'`),
-  `frame-ancestors 'none'`, HSTS, `Referrer-Policy: strict-origin-when-cross-origin`,
-  `Permissions-Policy` (camera only on the check-in page, geolocation only where used).
+- **Session (backend-for-frontend, D-085):** the browser never holds a token. Sign-in answers
+  pass through the web server, which turns the tokens into cookies and removes them from the
+  answer: the access token `HttpOnly; SameSite=Lax; Path=/` (lapses 30 s before the token), the
+  refresh token `HttpOnly; SameSite=Strict; Path=/api`, and a hint cookie with no secret (when the
+  access token lapses) that our scripts read to renew just in time, once per tab. `__Host-` /
+  `__Secure-` prefixes over HTTPS. The browser calls same-origin `/api/v1/*`, which forwards to
+  the gateway with the bearer token and the visitor's address (D-084), renews once when the token
+  has lapsed (a concurrent renewal elsewhere answers "retry", never a sign-out), and passes errors
+  through in the API's envelope. CSRF: every call needs our custom header, a same-origin `Origin`
+  and `Sec-Fetch-Site`; calls that need the refresh token are only reachable through
+  `/api/session/*`.
+- **Security headers:** CSP with a per-request nonce (`script-src 'self' 'nonce-…'
+'strict-dynamic'`, `object-src 'none'`, `base-uri 'none'`, `frame-ancestors 'none'`), built in
+  `src/proxy.ts`; styles allow inline (React style attributes and the dialog/toast libraries —
+  injected CSS can't run code and no secret lives in the markup). HSTS (no preload until the
+  domain is final), `nosniff`, `DENY` framing, `Referrer-Policy: strict-origin-when-cross-origin`,
+  `Permissions-Policy` (camera off except the check-in page, geolocation only for our pages).
 - **No tracking cookies.** Only essential cookies (session, theme) → no consent banner needed;
   the cookie policy says exactly this. Any analytics later must be cookieless.
 - **Errors:** typed `ApiError` (code, message, request id); one error boundary per area;

@@ -18,6 +18,7 @@ checks=(
   "Secret scan (gitleaks)"
   "Integration tests · Migration drift"
   "CodeQL (javascript-typescript)"
+  "Web app · build · browser tests"
 )
 for svc in auth business billing booking queue notification search ads analytics; do checks+=("Production image ($svc)"); done
 contexts=$(printf '%s\n' "${checks[@]}" | python3 -c 'import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')

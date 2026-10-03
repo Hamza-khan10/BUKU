@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { normalizeText, textProblem, TEXT_PROBLEM_MESSAGES, type TextKind } from './text.js';
+import { normalizeText, textProblem, TEXT_PROBLEM_MESSAGES, type TextKind } from './text';
 
 /**
  * A Zod string that is normalised, then refused if it breaks the rules for

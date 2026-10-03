@@ -6,3 +6,7 @@ packages/database/src/generated
 packages/database/prisma/migrations
 .changeset/*.md
 Buku-platformd-developement-guide.md
+.next
+next-env.d.ts
+test-results
+playwright-report
