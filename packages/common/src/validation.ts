@@ -1,3 +1,4 @@
+import { stripDisallowed, type TextKind, zText } from '@buku/validation';
 import sanitizeHtml from 'sanitize-html';
 import { z } from 'zod';
 
@@ -78,17 +79,21 @@ function stripTags(input: string): string {
   return html.replace(/&(amp|lt|gt|quot|#39|apos);/g, (_, name: string) => ENTITIES[name]!);
 }
 
-/** Free text field: trimmed, sanitized, length-bounded (bounds apply after sanitizing). */
-export const zSafeText = (options: { min?: number; max: number }) =>
+/**
+ * A text field: HTML stripped (sanitizeText), then the clean-text rules for
+ * its kind (@buku/validation, D-083): normalised, and refused with a human
+ * message if it contains emoji, invisible or control characters, or — for
+ * names and titles — anything but letters and ordinary punctuation. Bounds
+ * apply after cleaning.
+ *
+ * `strip: true` removes what isn't allowed instead of refusing it: only for
+ * text the person didn't type into our form (e.g. a device's name).
+ */
+export const zSafeText = (options: { kind: TextKind; min?: number; max: number; strip?: boolean }) =>
   z
     .string()
-    .transform(sanitizeText)
-    .pipe(
-      z
-        .string()
-        .min(options.min ?? 0)
-        .max(options.max),
-    );
+    .transform((v) => (options.strip ? stripDisallowed(sanitizeText(v), options.kind) : sanitizeText(v)))
+    .pipe(zText(options));
 
 /**
  * Password policy, aligned with NIST SP 800-63B: length over composition rules.

@@ -26,10 +26,10 @@ export const AudienceParams = z.object({ audience: zAudience });
 export const ChannelParams = z.object({ channel: zChannel });
 
 const planFields = {
-  name: zSafeText({ min: 1, max: 100 }),
-  tagline: zSafeText({ max: 200 }).nullable().optional(),
+  name: zSafeText({ kind: 'title', min: 1, max: 100 }),
+  tagline: zSafeText({ kind: 'line', max: 200 }).nullable().optional(),
   benefits: z
-    .array(zSafeText({ min: 1, max: 200 }))
+    .array(zSafeText({ kind: 'line', min: 1, max: 200 }))
     .max(20)
     .optional(),
   limits: z.record(z.string(), zLimit).optional(),
@@ -69,22 +69,22 @@ const zMoney = z.number().min(0).max(10_000_000).multipleOf(0.01);
 const zCategory = z.enum(['infrastructure', 'messaging', 'software', 'other']);
 
 export const CostBody = zBody({
-  name: zSafeText({ min: 1, max: 100 }),
+  name: zSafeText({ kind: 'title', min: 1, max: 100 }),
   category: zCategory,
   monthlyAmount: zMoney,
-  notes: zSafeText({ max: 300 }).optional(),
+  notes: zSafeText({ kind: 'text', max: 300 }).optional(),
 });
 export const UpdateCostBody = zBody({
-  name: zSafeText({ min: 1, max: 100 }).optional(),
+  name: zSafeText({ kind: 'title', min: 1, max: 100 }).optional(),
   category: zCategory.optional(),
   monthlyAmount: zMoney.optional(),
-  notes: zSafeText({ max: 300 }).nullable().optional(),
+  notes: zSafeText({ kind: 'text', max: 300 }).nullable().optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');
 
 export const FeeBody = zBody({
   percent: z.number().min(0).max(100).multipleOf(0.01),
   fixedAmount: zMoney.default(0),
-  notes: zSafeText({ max: 300 }).optional(),
+  notes: zSafeText({ kind: 'text', max: 300 }).optional(),
 });
 
 export const EconomicsBody = zBody({
@@ -99,12 +99,12 @@ export const GrantBody = zBody({
   businessId: zUuid.optional(),
   /** Until when (ISO date-time); leave out for open-ended. */
   until: z.iso.datetime({ offset: true }).optional(),
-  note: zSafeText({ min: 3, max: 300 }),
+  note: zSafeText({ kind: 'text', min: 3, max: 300 }),
   /** End the account's current grant or trial and give this plan instead. */
   replace: z.boolean().optional(),
 }).refine((b) => Boolean(b.userId) !== Boolean(b.businessId), 'give exactly one of userId or businessId');
 
-export const EndBody = zBody({ reason: zSafeText({ min: 3, max: 300 }) });
+export const EndBody = zBody({ reason: zSafeText({ kind: 'text', min: 3, max: 300 }) });
 
 export const SubscriptionsQuery = zPagination.extend({
   planCode: zPlanCode.optional(),
@@ -116,7 +116,7 @@ export const BusinessRequestParams = z.object({ id: zUuid, requestId: zUuid });
 export const PlanRequestBody = zBody({
   planCode: zPlanCode,
   /** Who they are and why — e.g. "Hospital group, 14 branches, 300 staff". */
-  message: zSafeText({ min: 10, max: 1000 }),
+  message: zSafeText({ kind: 'text', min: 10, max: 1000 }),
 });
 
 export const RequestsQuery = z.object({
@@ -126,12 +126,12 @@ export const RequestsQuery = z.object({
 export const ApproveBody = zBody({
   /** Free until (leave out for open-ended). */
   until: z.iso.datetime({ offset: true }).optional(),
-  note: zSafeText({ min: 3, max: 500 }).optional(),
+  note: zSafeText({ kind: 'text', min: 3, max: 500 }).optional(),
   /** Give a different plan than the one asked for. */
   planCode: zPlanCode.optional(),
 });
 
-export const DeclineBody = zBody({ note: zSafeText({ min: 3, max: 500 }) });
+export const DeclineBody = zBody({ note: zSafeText({ kind: 'text', min: 3, max: 500 }) });
 
 export const CheckoutBody = zBody({ planCode: zPlanCode });
 export const ChangePlanBody = zBody({ planCode: zPlanCode });

@@ -25,17 +25,17 @@ export const zIsoCurrency = z
 export const zWebsite = z.url({ protocol: /^https$/, message: 'must be an https:// URL' }).max(500);
 
 const profileFields = {
-  name: zSafeText({ min: 2, max: 200 }),
+  name: zSafeText({ kind: 'title', min: 2, max: 200 }),
   categoryId: zUuid,
-  description: zSafeText({ max: 2000 }).optional(),
+  description: zSafeText({ kind: 'text', max: 2000 }).optional(),
   phone: zPhone.optional(),
   email: zEmail.optional(),
   website: zWebsite.optional(),
-  address: zSafeText({ min: 3, max: 500 }),
-  city: zSafeText({ min: 1, max: 100 }),
-  state: zSafeText({ max: 100 }).optional(),
+  address: zSafeText({ kind: 'line', min: 3, max: 500 }),
+  city: zSafeText({ kind: 'title', min: 1, max: 100 }),
+  state: zSafeText({ kind: 'title', max: 100 }).optional(),
   country: zCountryCode,
-  postalCode: zSafeText({ max: 20 }).optional(),
+  postalCode: zSafeText({ kind: 'title', max: 20 }).optional(),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
   timezone: zTimezone,
@@ -97,14 +97,14 @@ export const SetHoursBody = zBody({
 
 export const ReportBody = zBody({
   reason: z.enum(['fake_business', 'wrong_information', 'inappropriate_content', 'scam_or_fraud', 'other']),
-  details: zSafeText({ max: 1000 }).optional(),
+  details: zSafeText({ kind: 'text', max: 1000 }).optional(),
 });
 
 export const AdminListQuery = zPagination.extend({
   status: z.enum(['pending', 'verified', 'suspended', 'rejected']).default('pending'),
 });
 
-export const ReasonBody = zBody({ reason: zSafeText({ min: 3, max: 1000 }) });
+export const ReasonBody = zBody({ reason: zSafeText({ kind: 'text', min: 3, max: 1000 }) });
 
 export const ReportListQuery = zPagination.extend({
   status: z.enum(['open', 'reviewed', 'dismissed']).default('open'),
@@ -123,16 +123,16 @@ const zIdentifier = z
   .regex(/^[A-Za-z0-9 .\-/]+$/, 'may contain letters, digits, spaces, "-", "." and "/" only');
 
 export const LegalProfileBody = zBody({
-  legalName: zSafeText({ min: 2, max: 300 }),
+  legalName: zSafeText({ kind: 'title', min: 2, max: 300 }),
   registrationCountry: zCountryCode,
   /** Free text per country, e.g. "NTN", "SECP company", "Companies House", "EIN". */
-  registrationType: zSafeText({ min: 2, max: 100 }),
+  registrationType: zSafeText({ kind: 'title', min: 2, max: 100 }),
   registrationNumber: zIdentifier,
   taxId: zIdentifier.optional(),
-  registeredAddress: zSafeText({ min: 5, max: 500 }),
+  registeredAddress: zSafeText({ kind: 'line', min: 5, max: 500 }),
   responsiblePerson: z.strictObject({
-    name: zSafeText({ min: 2, max: 200 }),
-    role: zSafeText({ min: 2, max: 100 }),
+    name: zSafeText({ kind: 'personName', min: 2, max: 200 }),
+    role: zSafeText({ kind: 'title', min: 2, max: 100 }),
     email: zEmail.optional(),
     phone: zPhone.optional(),
   }),
@@ -162,7 +162,7 @@ export const PictureUploadBody = zBody(pictureFile);
 
 export const PhotoUploadBody = zBody({
   ...pictureFile,
-  altText: zSafeText({ max: 300 }).optional(),
+  altText: zSafeText({ kind: 'line', max: 300 }).optional(),
 });
 
 export const StaffPhotoUploadBody = zBody({
@@ -181,13 +181,13 @@ export const StaffUploadParams = z.object({ id: zUuid, staffId: zUuid, uploadId:
 
 export const ReviewDocumentBody = zBody({
   decision: z.enum(['approved', 'rejected']),
-  note: zSafeText({ max: 1000 }).optional(),
+  note: zSafeText({ kind: 'text', max: 1000 }).optional(),
 });
 
 export const ExportBody = zBody({
   country: zCountryCode,
   /** The official request's reference number (e.g. a regulator's letter id). */
-  reference: zSafeText({ min: 3, max: 100 }),
+  reference: zSafeText({ kind: 'line', min: 3, max: 100 }),
   /** Why this disclosure is lawful. Recorded in the audit log. */
-  legalBasis: zSafeText({ min: 10, max: 1000 }),
+  legalBasis: zSafeText({ kind: 'text', min: 10, max: 1000 }),
 });

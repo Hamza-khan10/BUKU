@@ -89,9 +89,30 @@ describe('validation primitives', () => {
     for (const s of ['Salt & Pepper', 'a < b', '&lt;b&gt;x', 'plain']) {
       expect(sanitizeText(sanitizeText(s))).toBe(sanitizeText(s));
     }
-    const s = zSafeText({ max: 5 });
+    const s = zSafeText({ kind: 'line', max: 5 });
     expect(s.safeParse('<p>abc</p>').success).toBe(true);
     expect(s.safeParse('<p>abcdef</p>').success).toBe(false);
+  });
+
+  it('applies the clean-text rules for each kind after stripping HTML', () => {
+    const name = zSafeText({ kind: 'personName', min: 1, max: 50 });
+    expect(name.parse('  <b>Ayesha</b>   Khan ')).toBe('Ayesha Khan');
+    expect(name.safeParse('Ayesha 2').success).toBe(false);
+    const emoji = name.safeParse('Ayesha \u{1F600}');
+    expect(emoji.error?.issues[0]?.message).toBe('Emojis and picture symbols can\u2019t be used here.');
+
+    const title = zSafeText({ kind: 'title', min: 2, max: 50 });
+    expect(title.parse('Salt & Pepper (DHA) #2')).toBe('Salt & Pepper (DHA) #2');
+    expect(title.safeParse('Shop\u202Egnp').success).toBe(false); // right-to-left override
+
+    const review = zSafeText({ kind: 'text', max: 100 });
+    expect(review.parse('Great cut.\n\n\n\nWill return')).toBe('Great cut.\n\nWill return');
+    expect(review.safeParse('Great \u2B50').success).toBe(false);
+  });
+
+  it('strip mode removes what is not allowed instead of refusing it', () => {
+    const device = zSafeText({ kind: 'line', max: 50, strip: true });
+    expect(device.parse("Ali's iPhone \u{1F4F1}")).toBe("Ali's iPhone");
   });
 
   it('accepts only E.164 phone numbers', () => {

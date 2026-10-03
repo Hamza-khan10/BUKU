@@ -43,6 +43,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check
+      - run: pnpm check:hidden
       - run: pnpm test
       - name: Dependency audit (fail on high/critical)
         run: pnpm audit:deps

@@ -24,6 +24,7 @@
     "lint:fix": "eslint --fix .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "check:hidden": "tsx scripts/check-hidden-chars.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",

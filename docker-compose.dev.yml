@@ -73,6 +73,7 @@ x-node-hardening: &node-hardening
 # Source is mounted READ-ONLY for hot reload; dependencies stay in the image.
 x-shared-src: &shared-src # used by db-migrate
   - ./packages/common/src:/app/packages/common/src:ro
+  - ./packages/validation/src:/app/packages/validation/src:ro
   - ./packages/database/src:/app/packages/database/src:ro
   - ./packages/database/prisma:/app/packages/database/prisma:ro
   - ./packages/kafka/src:/app/packages/kafka/src:ro
@@ -385,6 +386,7 @@ services:
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
@@ -417,6 +419,7 @@ services:
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
@@ -448,6 +451,7 @@ services:
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
@@ -498,6 +502,7 @@ services:
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
@@ -534,6 +539,7 @@ services:
       S3_BUCKET_DOCUMENTS: buku-documents-dev
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
@@ -571,6 +577,7 @@ services:
       PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/billing/src:/app/packages/billing/src:ro
@@ -602,6 +609,7 @@ services:
       SEARCH_ENGINE: postgres
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
@@ -633,6 +641,7 @@ services:
       AD_ATTRIBUTION_WINDOW_DAYS: '7'
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
@@ -666,6 +675,7 @@ services:
       CLICKHOUSE_DATABASE: buku_analytics
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
@@ -713,6 +723,9 @@ services:
       # TTL; without this Kong keeps routing to a replaced container's old IP
       # (504s after every service restart or deploy).
       KONG_DNS_VALID_TTL: '5'
+      # One nginx worker per CPU by default: on a 12-core laptop that is ~490 MB, at the
+      # container's memory limit (Kong slowed to a crawl). Two are plenty for development.
+      KONG_NGINX_WORKER_PROCESSES: '2'
     entrypoint: ['/bin/sh', '/kong/render-config.sh']
     volumes:
       - ./infrastructure/kong/kong.template.yml:/kong/kong.template.yml:ro

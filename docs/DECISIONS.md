@@ -536,3 +536,23 @@ admin sessions without two-step, forged webhooks) next to the existing per-route
 `infrastructure/monitoring/alerts.yml` turns them, plus availability, error-rate and latency
 signals, into Prometheus alerts (validated by `promtool` in `pnpm verify`), each linked to a
 runbook in `docs/compliance/runbooks.md`. Prometheus itself, paging and log shipping are Phase 5.
+
+## Phase 3 — web (2026-10-04)
+
+**D-083 · Clean text: one set of rules, refused at the API, explained in the apps.** A
+browser-safe package, `@buku/validation`, defines what text BUKU accepts, by kind: person names
+(letters of any script, combining marks, spaces, `. ' -`), titles (names of businesses, services,
+categories, cities: also digits and `& , ( ) / + # : !`), one line (addresses, short notes) and
+free text (reviews, descriptions: up to two line breaks in a row). Everywhere it refuses emoji and
+pictographs, control characters, invisible "format" characters (zero-width spaces, bidirectional
+overrides — the "Trojan Source" spoofing trick — byte-order marks, soft hyphens) and private-use
+or unassigned code points; zero-width joiners are allowed only between letters, which Urdu,
+Persian and Indic scripts need. Names and titles are normalised with NFKC (styled "fancy" and
+full-width letters become ordinary ones rather than being refused), other text with NFC. Every
+API text field is `zSafeText({ kind, … })` — HTML stripped, then these rules, with a message a
+person understands — and `kind` is required, so each field states what it holds. Text people
+didn't type into our form (a Google/Apple name, a phone's device name) is cleaned instead of
+refused, so sign-in never fails over it. The web uses the same package for instant feedback. The
+repository holds itself to the rule too: `pnpm check:hidden` (CI and pre-commit) refuses
+invisible characters in committed files. (Emoji can't corrupt the database — it stores Unicode
+safely — but refusing them keeps names, search, printed tickets and notifications consistent.)
