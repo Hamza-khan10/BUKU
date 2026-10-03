@@ -16,6 +16,8 @@ import type { AppointmentService } from '../appointments/appointment-service.js'
 import type { AvailabilityService } from '../availability/availability-service.js';
 import type { CatalogService } from '../catalog/catalog-service.js';
 import { requestContext } from '../http/context.js';
+import type { CancellationReport } from '../reputation/cancellation-report.js';
+import { myReliability } from '../reputation/reliability.js';
 import type { ReviewService } from '../reviews/review-service.js';
 import type { ScheduleService } from '../schedules/schedule-service.js';
 import type { SettingsService } from '../settings/settings-service.js';
@@ -26,6 +28,7 @@ import {
   AppointmentParams,
   AttendanceQuery,
   BusinessReviewsQuery,
+  ReportQuery,
   ModerateReviewBody,
   ReportReviewBody,
   ReviewBody,
@@ -72,6 +75,8 @@ export interface RouteDeps {
   schedules: ScheduleService;
   settings: SettingsService;
   reviews: ReviewService;
+  report: CancellationReport;
+  db: Parameters<typeof myReliability>[0];
   verifier: JwtVerifier;
   revocations: RevocationStore;
   redis: Redis;
@@ -162,6 +167,15 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
         requestContext(req),
       );
       sendNoContent(res);
+    }),
+  );
+
+  // ── Insights: cancellations and no-shows (owner, managers) ────────────────
+  r.get(
+    '/:id/insights/cancellations',
+    auth,
+    validated({ params: IdParams, query: ReportQuery }, async ({ params, query }, req, res) => {
+      sendSuccess(res, await deps.report.build(params.id, requireAuth(req).userId, query));
     }),
   );
 
@@ -639,6 +653,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(res, items, 200, meta);
     }),
   );
+  // How reliable I am, as businesses see it — and what it's made of (D-078).
+  mine.get('/reliability', async (req, res) => {
+    sendSuccess(res, await myReliability(deps.db, requireAuth(req).userId));
+  });
   // My reviews (before /:id so "reviews" isn't read as an id).
   mine.get(
     '/reviews',

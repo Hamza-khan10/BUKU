@@ -1,3 +1,4 @@
+import type { ShowUp } from '@buku/common';
 import type { Prisma } from '@buku/database';
 import { wallClock } from '../availability/time.js';
 
@@ -80,13 +81,21 @@ export function receiptView(a: AppointmentRow, cancellationWindowHours: number, 
   };
 }
 
-/** The business's view: the same receipt plus who the customer is and internal notes. Never contact details or pictures. */
-export function businessView(a: AppointmentRow) {
+/**
+ * The business's view: the same receipt plus who the customer is and internal notes. Never
+ * contact details or pictures. The customer's reliability is a label only ("Shows up 95%" /
+ * "New customer"), never their history.
+ */
+export function businessView(a: AppointmentRow, showUp?: ShowUp) {
   return {
     id: a.id,
     code: a.confirmationCode,
     status: a.status,
-    customer: { id: a.user.id, name: a.user.name },
+    customer: {
+      id: a.user.id,
+      name: a.user.name,
+      ...(showUp && { reliability: { label: showUp.label, showsUpPercent: showUp.showsUpPercent } }),
+    },
     service: { id: a.service.id, name: a.service.name, durationMinutes: a.service.durationMinutes },
     staff: a.staff ? { id: a.staff.id, displayName: a.staff.displayName } : null,
     ...timing(a),

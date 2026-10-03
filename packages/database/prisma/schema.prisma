@@ -739,6 +739,9 @@ model BookingSettings {
   slotStepMinutes              Int              @default(15) @map("slot_step_minutes")
   /// A customer who hasn\'t arrived this long after the start can be marked a no-show.
   noShowGraceMinutes           Int              @default(15) @map("no_show_grace_minutes")
+  /// Bookings from customers who show up less than this often (percent) wait for approval
+  /// instead of being confirmed at once (D-078). Null: off. New customers are never held back.
+  approvalBelowShowUpPercent   Int?             @map("approval_below_show_up_percent") @db.SmallInt
   updatedAt                    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)

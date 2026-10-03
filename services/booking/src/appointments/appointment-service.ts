@@ -13,6 +13,7 @@ import {
   isExclusionViolation,
   isUniqueViolation,
   requireBusinessPermission,
+  showUpLabels,
   type Database,
   type Prisma,
   type Transaction,
@@ -25,7 +26,7 @@ import {
 import { addDays, startOfDay, wallClock } from '../availability/time.js';
 import { findBookableBusiness } from '../businesses.js';
 import type { RequestContext } from '../http/context.js';
-import type { SettingsService } from '../settings/settings-service.js';
+import type { BookingSettingsView, SettingsService } from '../settings/settings-service.js';
 import { appointmentInclude, businessView, receiptView, type AppointmentRow } from './views.js';
 
 /**
@@ -119,7 +120,7 @@ export class AppointmentService {
             409,
           );
         }
-        const status = settings.confirmationMode === 'automatic' ? 'confirmed' : 'pending';
+        const status = await this.initialStatus(tx, settings, userId);
         const created = await this.insert(tx, {
           businessId: business.id,
           serviceId: service.id,
@@ -247,7 +248,7 @@ export class AppointmentService {
       this.db.$transaction(async (tx) => {
         const actor: Actor = { type: 'user', id: userId };
         await this.transition(tx, old, 'rescheduled', actor, 'rescheduled by the customer');
-        const status = settings.confirmationMode === 'automatic' ? 'confirmed' : 'pending';
+        const status = await this.initialStatus(tx, settings, userId);
         const created = await this.insert(tx, {
           businessId: old.businessId,
           serviceId: old.serviceId,
@@ -330,7 +331,15 @@ export class AppointmentService {
       orderBy: { startAt: 'asc' },
       take: 200,
     });
-    return { date: code || q ? null : date, timezone: business.timezone, items: rows.map(businessView) };
+    const showUp = await showUpLabels(
+      this.db,
+      rows.map((r) => r.userId),
+    );
+    return {
+      date: code || q ? null : date,
+      timezone: business.timezone,
+      items: rows.map((r) => businessView(r, showUp.get(r.userId))),
+    };
   }
 
   async businessAppointment(businessId: string, appointmentId: string, actorId: string) {
@@ -346,7 +355,7 @@ export class AppointmentService {
       const mine = a.staffId ? await this.db.staff.count({ where: { id: a.staffId, userId: actorId } }) : 0;
       if (mine === 0) throw AppError.notFound('Appointment', ErrorCodes.APPOINTMENT_NOT_FOUND);
     }
-    return businessView(a);
+    return this.teamView(a);
   }
 
   /** Manual approval mode: accept a request. */
@@ -358,7 +367,7 @@ export class AppointmentService {
       ]);
       await this.publish(tx, TOPICS.BOOKINGS_CONFIRMED, a, ctx);
     });
-    return businessView(await this.load(a.id));
+    return this.teamView(await this.load(a.id));
   }
 
   /** Manual approval mode: turn a request down (not counted against the business). */
@@ -390,7 +399,7 @@ export class AppointmentService {
         reasonCode: 'declined',
       });
     });
-    return businessView(await this.load(a.id));
+    return this.teamView(await this.load(a.id));
   }
 
   /** The business cancels a booking (counts against the business's reliability, D-035). */
@@ -415,7 +424,7 @@ export class AppointmentService {
         reasonCode: 'business_unavailable',
       });
     });
-    return businessView(await this.load(a.id));
+    return this.teamView(await this.load(a.id));
   }
 
   // ── At the venue: arrival, completion, no-show ───────────────────────────
@@ -432,7 +441,7 @@ export class AppointmentService {
     ctx: RequestContext,
   ) {
     const { a, role } = await this.visit(businessId, ref, actorId);
-    if (a.checkedInAt) return businessView(a);
+    if (a.checkedInAt) return this.teamView(a);
     if (a.status === 'pending' && !can(role, 'appointments.manage_all')) throw AppError.forbidden();
     if (a.status !== 'pending' && a.status !== 'confirmed') throw invalidTransition(a.status, 'checked in');
     const now = new Date();
@@ -465,7 +474,7 @@ export class AppointmentService {
         await this.publish(tx, TOPICS.BOOKINGS_CONFIRMED, a, ctx);
       }
     });
-    return businessView(await this.load(a.id));
+    return this.teamView(await this.load(a.id));
   }
 
   /** The visit is done (from its start time on; with or without a recorded check-in). */
@@ -484,7 +493,7 @@ export class AppointmentService {
       ]);
       await this.publish(tx, TOPICS.BOOKINGS_COMPLETED, a, ctx, { checkedIn: a.checkedInAt !== null });
     });
-    return businessView(await this.load(a.id));
+    return this.teamView(await this.load(a.id));
   }
 
   /** The customer didn't come: only after the grace period, and never once they checked in. */
@@ -505,7 +514,7 @@ export class AppointmentService {
       ]);
       await this.publish(tx, TOPICS.BOOKINGS_NO_SHOW, a, ctx);
     });
-    return businessView(await this.load(a.id));
+    return this.teamView(await this.load(a.id));
   }
 
   /**
@@ -656,6 +665,27 @@ export class AppointmentService {
         reason: reason ?? null,
       },
     });
+  }
+
+  /**
+   * Confirmed at once, unless the business approves every booking — or asks to approve
+   * bookings from customers who often don't show up (D-078: the only effect reliability has).
+   */
+  private async initialStatus(
+    tx: Transaction,
+    settings: BookingSettingsView,
+    userId: string,
+  ): Promise<'confirmed' | 'pending'> {
+    if (settings.confirmationMode === 'manual') return 'pending';
+    const threshold = settings.approvalBelowShowUpPercent;
+    if (threshold === null) return 'confirmed';
+    const showUp = (await showUpLabels(tx, [userId])).get(userId)!;
+    return showUp.showsUpPercent !== null && showUp.showsUpPercent < threshold ? 'pending' : 'confirmed';
+  }
+
+  /** One appointment as the team sees it, with the customer's show-up label. */
+  private async teamView(a: AppointmentRow) {
+    return businessView(a, (await showUpLabels(this.db, [a.userId])).get(a.userId));
   }
 
   /** Events carry ids and times only — no names or contact details. */

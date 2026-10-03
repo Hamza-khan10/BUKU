@@ -15,6 +15,8 @@ export interface BookingSettingsView {
   minNoticeMinutes: number;
   slotStepMinutes: number;
   noShowGraceMinutes: number;
+  /** Customers who show up less often than this (percent) need approval; null = off (D-078). */
+  approvalBelowShowUpPercent: number | null;
 }
 
 export const DEFAULT_BOOKING_SETTINGS: BookingSettingsView = {
@@ -25,6 +27,7 @@ export const DEFAULT_BOOKING_SETTINGS: BookingSettingsView = {
   minNoticeMinutes: 60,
   slotStepMinutes: 15,
   noShowGraceMinutes: 15,
+  approvalBelowShowUpPercent: null,
 };
 
 export class SettingsService {
@@ -42,6 +45,7 @@ export class SettingsService {
       minNoticeMinutes: row.minNoticeMinutes,
       slotStepMinutes: row.slotStepMinutes,
       noShowGraceMinutes: row.noShowGraceMinutes,
+      approvalBelowShowUpPercent: row.approvalBelowShowUpPercent,
     };
   }
 
@@ -58,7 +62,8 @@ export class SettingsService {
   ): Promise<BookingSettingsView> {
     await requireBusinessPermission(this.db, businessId, actorId, 'booking.settings');
     await assertNotSuspended(this.db, businessId);
-    if (changes.confirmationMode === 'manual')
+    // Holding bookings for approval (all, or from unreliable customers) is a plan feature.
+    if (changes.confirmationMode === 'manual' || (changes.approvalBelowShowUpPercent ?? null) !== null)
       await assertBusinessFeature(this.db, businessId, 'manual_approval');
     const data = Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined));
     await this.db.$transaction(async (tx) => {

@@ -4,6 +4,7 @@ import {
   constraintNameOf,
   isUniqueViolation,
   requireBusinessPermission,
+  showUpLabels,
   type Database,
   type Transaction,
 } from '@buku/database';
@@ -206,12 +207,20 @@ export class QueueService {
       include: { user: { select: { name: true } } },
       orderBy: [{ priorityLane: 'desc' }, { ticketNumber: 'asc' }],
     });
+    // "Shows up 95%" / "New customer" — a label only, never their history (D-078).
+    const showUp = await showUpLabels(
+      this.db,
+      entries.flatMap((e) => (e.userId ? [e.userId] : [])),
+    );
     const view = (e: (typeof entries)[number]) => ({
       id: e.id,
       ticket: ticketLabel(e.ticketPrefix, e.ticketNumber),
       status: e.status,
       /** The customer's name, or the walk-in's — never contact details or pictures. */
       name: e.user?.name ?? e.walkInName,
+      reliability: e.userId
+        ? (({ label, showsUpPercent }) => ({ label, showsUpPercent }))(showUp.get(e.userId)!)
+        : null,
       walkIn: e.userId === null,
       priority: e.priorityLane,
       joinedRemotely: e.joinedRemotely,

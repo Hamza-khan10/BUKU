@@ -13,6 +13,7 @@ import { AppointmentService } from './appointments/appointment-service.js';
 import { AvailabilityService } from './availability/availability-service.js';
 import { CatalogService } from './catalog/catalog-service.js';
 import { registerRoutes } from './routes/index.js';
+import { CancellationReport } from './reputation/cancellation-report.js';
 import { ReviewService } from './reviews/review-service.js';
 import { ScheduleService } from './schedules/schedule-service.js';
 import { SettingsService } from './settings/settings-service.js';
@@ -55,6 +56,8 @@ export function buildBookingApp(deps: BookingAppDeps): BookingApp {
         schedules,
         settings,
         reviews: new ReviewService(deps.db),
+        report: new CancellationReport(deps.db),
+        db: deps.db,
         verifier: deps.verifier,
         revocations: deps.revocations,
         redis: deps.redis,
