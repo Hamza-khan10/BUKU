@@ -538,6 +538,7 @@ const PUBLIC: [Route['method'], string][] = [
   ['GET', '/v1/categories'],
   ['GET', '/v1/categories/:slug'],
   ['GET', '/v1/categories/:slug/businesses'],
+  ['GET', '/v1/cities'],
 ];
 /** Signed-in actions any customer may take on a business (not team tools). */
 const CUSTOMER_ACTIONS: [Route['method'], string][] = [

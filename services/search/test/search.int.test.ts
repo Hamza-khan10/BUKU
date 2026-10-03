@@ -439,6 +439,25 @@ describe('Trending, featured, autocomplete', () => {
   });
 });
 
+describe('Cities', () => {
+  it('lists cities with businesses on BUKU and how many — never ones with only hidden or empty businesses', async () => {
+    const empty = `Emptyville ${RUN}`;
+    await place({ name: `${WORD} Cities Shop`, verified: true });
+    await place({ name: `${WORD} Cities Pending` });
+    const hiddenOnly = await place({ name: `${WORD} Cities Suspended`, status: 'suspended' });
+    await db.business.update({ where: { id: hiddenOnly.id }, data: { city: empty } });
+
+    const res = await request(app).get('/v1/cities');
+    expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toContain('max-age=300');
+    const cities = res.body.data as { city: string; country: string; businesses: number }[];
+    const mine = cities.find((c) => c.city === CITY);
+    expect(mine?.country).toBe('IS');
+    expect(mine?.businesses).toBeGreaterThanOrEqual(2);
+    expect(cities.some((c) => c.city === empty)).toBe(false);
+  });
+});
+
 describe('Categories', () => {
   it('a tree of active ones; a category with its parent; 404 for unknown or switched off', async () => {
     const tree = await request(app).get('/v1/categories').expect(200);
