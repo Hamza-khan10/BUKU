@@ -12,9 +12,16 @@ const OPTIONS: { value: Theme; label: string; Icon: typeof Sun }[] = [
   { value: 'dark', label: 'Dark', Icon: Moon },
 ];
 
+/** What the page shows now (the server sets it; another toggle may have changed it since). */
+function shownTheme(fallback: Theme): Theme {
+  if (typeof document === 'undefined') return fallback;
+  const value = document.documentElement.getAttribute('data-theme');
+  return value === 'light' || value === 'dark' ? value : 'system';
+}
+
 /** Light / dark / device. Applies at once and is remembered for a year. */
 export function ThemeToggle({ initial, className }: { initial: Theme; className?: string }) {
-  const [theme, setTheme] = useState<Theme>(initial);
+  const [theme, setTheme] = useState<Theme>(() => shownTheme(initial));
 
   const choose = (next: string) => {
     if (next !== 'system' && next !== 'light' && next !== 'dark') return;

@@ -380,6 +380,11 @@ The detailed plan — every page, its data and edge cases, the design system and
   dark), fonts, logo, UI kit (`/kit`), clean-text inputs, session through the web server (tokens
   only in HttpOnly cookies, renewal, sign-out at the API), nonce-based CSP and security headers,
   error pages, browser tests (desktop + phone, WCAG 2.2 AA) in CI.
+- **3.2a Trust pages — ✅ done.** Navigation (desktop, phone menu, full footer); how it works, about,
+  contact, help, security; legal: privacy, terms, business terms, cookies, acceptable use, refunds,
+  sub-processors — written from what the system does, marked as drafts until legal review
+  (`LEGAL_REVIEWED`), contact details from settings and never placeholders; `security.txt` once a
+  security address is set.
 
 ## Phase 4 — Mobile app (Expo)
 
