@@ -6,7 +6,8 @@
  * messages to customers never name other customers.
  */
 
-export type Category = 'booking' | 'reminder' | 'queue' | 'queue_called' | 'business' | 'account';
+export type Category =
+  'booking' | 'reminder' | 'queue' | 'queue_called' | 'business' | 'account' | 'suggestion';
 
 export interface Message {
   type: string;
@@ -228,6 +229,94 @@ export const toTeam = {
     body: `${shortName(v.customerName)} moved ${v.serviceName} to ${when(v)}${withWhom(v)}.`,
     data: teamLink(v),
   }),
+};
+
+// ── Suggestions, from how each person uses BUKU (opt-in; D-075) ───────────
+
+/** A free time to show in a suggestion ("Thu at 10:30 with Ali"). */
+export interface Opening {
+  startAt: Date;
+  staffId: string | null;
+  staffName: string | null;
+}
+
+export interface UsualVisit {
+  businessId: string;
+  businessName: string;
+  serviceId: string;
+  serviceName: string;
+  timezone: string;
+  /** Typical days between their visits. */
+  everyDays: number;
+  /** Days since the last one. */
+  sinceDays: number;
+  opening: Opening | null;
+}
+
+/** "about 2 weeks", "about a month", "about 3 months". */
+export function roughly(days: number): string {
+  if (days < 11) return `about ${Math.max(1, Math.round(days))} days`;
+  if (days < 28) return `about ${Math.round(days / 7)} weeks`;
+  if (days < 45) return 'about a month';
+  return `about ${Math.round(days / 30)} months`;
+}
+
+const openingText = (o: Opening, timezone: string) => {
+  const [day, time] = localTime(o.startAt, timezone).split(', ');
+  return `${o.staffName ? `${o.staffName} has` : 'There’s'} an opening on ${day} at ${time}`;
+};
+
+export const suggest = {
+  /** A regular whose usual visit is coming due, with a real free time if there is one. */
+  usual: (u: UsualVisit): Message => ({
+    type: 'suggest_usual',
+    category: 'suggestion',
+    title: `Time for your usual ${u.serviceName}?`,
+    body: `It’s been ${roughly(u.sinceDays)} since your last visit to ${u.businessName}. ${
+      u.opening ? `${openingText(u.opening, u.timezone)} — book it in a tap.` : 'Book your next one in a tap.'
+    }`,
+    data: {
+      screen: 'book',
+      businessId: u.businessId,
+      serviceId: u.serviceId,
+      ...(u.opening?.staffId && { staffId: u.opening.staffId }),
+      ...(u.opening && { startAt: u.opening.startAt.toISOString() }),
+    },
+  }),
+  /** Someone who stopped coming: their most-visited place is taking bookings. */
+  comeBack: (b: {
+    businessId: string;
+    businessName: string;
+    serviceId: string | null;
+    serviceName: string | null;
+  }): Message => ({
+    type: 'suggest_comeback',
+    category: 'suggestion',
+    title: `${b.businessName} is taking bookings`,
+    body: `It’s been a while! ${
+      b.serviceName ? `Book your ${b.serviceName} again` : 'Book again'
+    } in a tap — or find something new nearby on BUKU.`,
+    data: b.serviceId
+      ? { screen: 'book', businessId: b.businessId, serviceId: b.serviceId }
+      : { screen: 'business', businessId: b.businessId },
+  }),
+  /** A new account that hasn't booked anything yet (step 1 or 2). */
+  firstBooking: (step: 1 | 2): Message =>
+    step === 1
+      ? {
+          type: 'suggest_first_booking',
+          category: 'suggestion',
+          title: 'Book your first visit',
+          body: 'Barbers, clinics, salons and more near you — see real free times and book in seconds. No calls, no waiting on hold.',
+          data: { screen: 'explore' },
+        }
+      : {
+          type: 'suggest_first_booking',
+          category: 'suggestion',
+          title: 'Skip the waiting room',
+          body: 'Join a queue from your phone and come when it’s nearly your turn, or book a time that suits you.',
+          data: { screen: 'explore' },
+        },
 };
 
 // ── About the account's plan (users and business owners) ──────────────────

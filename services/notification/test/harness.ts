@@ -25,7 +25,9 @@ import type { EmailMessage, EmailResult, EmailSender } from '../src/email/sender
 import type { Notifier } from '../src/notifier.js';
 import { EMAIL_CONTEXT } from '../src/notifier.js';
 import type { PushMessage, PushReceipt, PushSender, PushTicket } from '../src/push/sender.js';
+import type { OpeningsFinder, Slot } from '../src/scheduler/openings.js';
 import type { Scheduler } from '../src/scheduler/scheduler.js';
+import type { Suggestions } from '../src/scheduler/suggestions.js';
 import type { NotificationSettings } from '../src/settings.js';
 import type { WhatsAppResult, WhatsAppSender } from '../src/whatsapp/sender.js';
 
@@ -106,6 +108,24 @@ export class FakeWhatsApp implements WhatsAppSender {
   }
 }
 
+/** Free times as booking-service would answer; set `slots` per test, or `down` to fail. */
+export class FakeOpenings implements OpeningsFinder {
+  slots: Slot[] = [];
+  down = false;
+  asked: { businessId: string; serviceId: string; date: string; staffId?: string | undefined }[] = [];
+  find(input: {
+    businessId: string;
+    serviceId: string;
+    date: string;
+    days: number;
+    staffId?: string | undefined;
+  }) {
+    this.asked.push(input);
+    if (this.down) return Promise.resolve(null);
+    return Promise.resolve(this.slots.filter((s) => !input.staffId || s.staffIds.includes(input.staffId)));
+  }
+}
+
 export interface Harness {
   app: Express;
   db: Database;
@@ -114,7 +134,9 @@ export interface Harness {
   handle: EventHandler;
   notifier: Notifier;
   scheduler: Scheduler;
+  suggestions: Suggestions;
   settings: NotificationSettings;
+  openings: FakeOpenings;
   push: FakePush;
   email: FakeEmail;
   wa: FakeWhatsApp;
@@ -142,6 +164,7 @@ export async function createHarness(name: string): Promise<Harness> {
   const push = new FakePush();
   const email = new FakeEmail();
   const wa = new FakeWhatsApp();
+  const openings = new FakeOpenings();
   const cipher = createFieldCipher(
     parseKeyring(testEnv.piiKeyring, process.env.PII_ENCRYPTION_ACTIVE_KEY_ID ?? 'k1'),
   );
@@ -160,6 +183,7 @@ export async function createHarness(name: string): Promise<Harness> {
     cipher,
     indexer,
     urls: { webAppUrl: 'https://app.test', publicApiUrl: 'https://api.test' },
+    openings,
     whatsappConfig: { businessNumber: whatsappNumber, webhook: { appSecret, verifyToken } },
     http: {
       service: name,
@@ -176,7 +200,9 @@ export async function createHarness(name: string): Promise<Harness> {
     handle: built.handler,
     notifier: built.notifier,
     scheduler: built.scheduler,
+    suggestions: built.suggestions,
     settings: built.settings,
+    openings,
     push,
     email,
     wa,

@@ -23,6 +23,8 @@ const prefs = (over: Partial<Prefs> = {}): Prefs => ({
   emailBookingConfirmation: true,
   emailReminders: true,
   emailBusinessAlerts: true,
+  suggestions: false,
+  marketingEmails: false,
   ...over,
 });
 const reach = (over: Partial<Reach> = {}): Reach => ({

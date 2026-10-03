@@ -420,3 +420,20 @@ default = never pay). (4) Anything they send us gets a free, useful answer (thei
 and tickets) and keeps the window open; STOP/START switch WhatsApp off/on. Webhooks are verified
 with the app secret over the raw body; repeated deliveries and day-old messages change nothing.
 Provider: Meta's WhatsApp Cloud API directly (no reseller margin); a `log` sender in development.
+
+**D-075 · Suggestions from how each person uses BUKU — opt-in, capped, useful.** Three kinds of
+people get different messages. Regulars (3+ visits at one place in ~13 months at a steady rhythm,
+typical gap 5–120 days; a check-in counts as a visit, since not every business marks visits
+completed) get "Time for your usual Haircut?" when the next visit is coming due, with a real free
+time near their usual hour and with their usual employee if possible — asked from booking-service's
+availability endpoint, so the app and the message agree (best effort, at most 30 lookups per run
+to stay under its rate limit; without an answer the message goes without a time). People whose
+last booking or queue join was 45–180 days ago get "<their most-visited place> is taking
+bookings". New accounts that never booked get two first-booking nudges (day 2, day 10). Rules:
+opt-in only (`suggestions` for app/push/WhatsApp, as app-store rules require for promotional push;
+`marketingEmails` for email, which goes only to people without the app); never paid WhatsApp
+(free window only); never when they already have something booked there or are in a queue; never
+for employee accounts, suspended or deleted accounts, or places that closed; not at night; once
+per visit / quiet spell / step (`notification_marks`); and admin caps — a gap between suggestions
+(7 days), a monthly maximum (3), and stop after 3 with no booking in between. Inbox items only for
+people who opted in to suggestions (an email-only recipient isn't sent unasked-for app messages).
