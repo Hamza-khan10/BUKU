@@ -387,3 +387,36 @@ a catch-all DEFAULT partition, but nothing created future months — after a yea
 and inbox row would have landed in the catch-all, which then blocks creating that month.
 notification-service runs `maintainPartitions` daily (6 months ahead, one replica at a time) and
 warns if a catch-all ever holds rows.
+
+**D-073 · Channels per person, timed messages exactly once.** Every message lands in the inbox;
+then `planChannels` (pure, unit-tested) picks the outside channels per person: push to every
+device (free); email for receipts and the day-before reminder (if wanted, to a verified address
+only), and for everything else only when the person has no app seen in the last 60 days (team
+members on the web dashboard, customers who never installed it); never email for the live
+queue; account/plan notices always. Timed messages (24 h and 2 h reminders, "book again" after
+a "remind me later" cancellation, unanswered requests to approvers, trial/plan ending, trial
+over, payment failed) run on schedules and carry a key (`appt:<id>:r24`) stored in
+`notification_marks` in the same transaction as the inbox rows, so each goes once whatever the
+number of replicas (mutation-tested); a Valkey lock only saves duplicate work. Reminders wait for
+morning (quiet hours in the business's timezone, editable) and are skipped rather than sent late;
+a reminder that would land right after the booking's confirmation is skipped. Admins edit
+switches, quiet hours and WhatsApp money in `notification_settings` at any time (audited, cached
+30 s). Emails carry an RFC 8058 one-click unsubscribe for exactly their preference, signed with
+an HMAC over (user, preference); GET only shows a button, so mail scanners can't unsubscribe
+people. Blank optional env values from Compose count as unset (follow-up to D-070).
+
+**D-074 · WhatsApp: prove the number, use the free window, pay only where the app can't reach.**
+Meta charges per template message; replies inside the 24-hour window that opens each time the
+person messages us are free (from 1 Oct 2026, the first 1,000 per number per month; utility
+templates inside the window are now charged too). So: (1) a number is connected only by the
+person sending "BUKU <one-time code>" to our number from it (proof of ownership, consent, and
+the window opens); the number lives encrypted in notification-service's `whatsapp_contacts`,
+separate from the unverified phone on the account; a number moves to whoever proves it next.
+(2) Inside the window, worthwhile messages (booking changes, reminders, "your turn") go as free
+text, even to app users, while the month's free allowance lasts. (3) Outside it, a paid template
+goes only to people without the app, only for types an admin allowed, and only while the month's
+estimated spend (counted per message, price set by the admin) stays under the budget (0 by
+default = never pay). (4) Anything they send us gets a free, useful answer (their upcoming visits
+and tickets) and keeps the window open; STOP/START switch WhatsApp off/on. Webhooks are verified
+with the app secret over the raw body; repeated deliveries and day-old messages change nothing.
+Provider: Meta's WhatsApp Cloud API directly (no reseller margin); a `log` sender in development.

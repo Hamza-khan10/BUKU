@@ -79,6 +79,7 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
   });
   const rights = new DataRightsService({
     db: deps.db,
+    cipher: deps.cipher,
     users,
     sessions,
     storage: deps.storage,

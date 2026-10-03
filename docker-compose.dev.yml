@@ -481,15 +481,20 @@ services:
       EMAIL_FROM: 'BUKU <noreply@buku.app>'
       PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS}
       PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
-      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
-      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
-      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
-      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
-      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}
+      PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
+      PUBLIC_API_URL: http://localhost:8000
       # Push: `log` writes what would be sent to the log; `expo` sends to the Expo app.
       PUSH_PROVIDER: ${PUSH_PROVIDER:-log}
       EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+      # WhatsApp: `log` writes what would be sent; `meta` uses the WhatsApp Cloud API.
+      # Nothing is sent until an admin switches WhatsApp on in notification settings.
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-log}
+      WHATSAPP_BUSINESS_NUMBER: ${WHATSAPP_BUSINESS_NUMBER:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/database/src:/app/packages/database/src:ro

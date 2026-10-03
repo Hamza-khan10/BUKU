@@ -1,21 +1,26 @@
-import { logger } from '@buku/common';
+import { logger, type FieldCipher } from '@buku/common';
 import type { Database, Transaction } from '@buku/database';
-import type { Category, Message } from './messages.js';
+import { planChannels, pushAllowed, type Reach } from './channels.js';
+import { renderEmail, type EmailLinks } from './email/render.js';
+import type { EmailSender } from './email/sender.js';
+import type { Message } from './messages.js';
 import type { PushSender } from './push/sender.js';
+import type { NotificationSettings } from './settings.js';
+import type { WhatsAppSender } from './whatsapp/sender.js';
+import { WHATSAPP_TEMPLATES } from './whatsapp/templates.js';
 
 /**
- * Delivering a message to people (D-071):
+ * Delivering a message to people (D-071, D-073):
  *
  *  1. INBOX — always: one `in_app` row per recipient, written in the same
- *     transaction that marks the event as processed (an event is never
- *     half-delivered or delivered twice to the inbox).
- *  2. PUSH — after the commit, to each of the recipient's active devices, if
- *     their preferences allow this category ("it's your turn" always goes).
- *     Each push is recorded with its device and Expo ticket; receipts later
- *     mark it delivered or failed, and switch off devices that no longer exist.
+ *     transaction that marks the event (or scheduled message) as done, so it
+ *     is never half-delivered or delivered twice.
+ *  2. AFTER the commit, the outside channels chosen by `planChannels`:
+ *     push to their devices, email, WhatsApp. Each send is recorded (push with
+ *     its device and Expo ticket; WhatsApp with how it was priced).
  *
- * Deleted accounts get nothing. Push is best effort: a failed send is
- * recorded, the inbox still has the message.
+ * Deleted accounts get nothing. Outside channels are best effort: a failed
+ * send is recorded, the inbox still has the message.
  */
 
 export interface Delivery {
@@ -25,25 +30,36 @@ export interface Delivery {
   queueEntryId?: string | undefined;
 }
 
-const PREF: Record<
-  Exclude<Category, 'queue_called'>,
-  'pushBookingConfirmation' | 'pushReminders' | 'pushQueueUpdates' | 'pushBusinessAlerts'
-> = {
-  booking: 'pushBookingConfirmation',
-  reminder: 'pushReminders',
-  queue: 'pushQueueUpdates',
-  business: 'pushBusinessAlerts',
-};
+export interface NotifierDeps {
+  db: Database;
+  push: PushSender;
+  email: EmailSender;
+  whatsapp: WhatsAppSender;
+  settings: NotificationSettings;
+  cipher: FieldCipher;
+  links: EmailLinks;
+  whatsappLanguage?: string;
+}
+
+/** A device seen within this many days means "uses the app". */
+const APP_ACTIVE_DAYS = 60;
+/** Treat the 24-hour window as closed a little early (clocks, queues). */
+const WINDOW_MS = 24 * 3_600_000 - 10 * 60_000;
+
+export const EMAIL_CONTEXT = 'users.email';
+export const WHATSAPP_PHONE_CONTEXT = 'whatsapp.phone';
 
 export class Notifier {
   private readonly log = logger.child({ module: 'notifier' });
+  private readonly db: Database;
+  private readonly push: PushSender;
 
-  constructor(
-    private readonly db: Database,
-    private readonly push: PushSender,
-  ) {}
+  constructor(private readonly deps: NotifierDeps) {
+    this.db = deps.db;
+    this.push = deps.push;
+  }
 
-  /** Step 1, inside the event's transaction: the inbox rows. Returns what to push afterwards. */
+  /** Step 1, inside the transaction: the inbox rows. Returns what to send afterwards. */
   async record(tx: Transaction, deliveries: Delivery[]): Promise<Delivery[]> {
     const ids = [...new Set(deliveries.map((d) => d.userId))];
     // Soft-deleted accounts are filtered out by the database client.
@@ -54,14 +70,8 @@ export class Notifier {
     if (kept.length) {
       await tx.notification.createMany({
         data: kept.map((d) => ({
-          userId: d.userId,
-          appointmentId: d.appointmentId ?? null,
-          queueEntryId: d.queueEntryId ?? null,
-          type: d.message.type,
+          ...refs(d),
           channel: 'in_app' as const,
-          title: d.message.title,
-          body: d.message.body,
-          data: d.message.data,
           status: 'delivered' as const,
           sentAt: new Date(),
           deliveredAt: new Date(),
@@ -71,25 +81,85 @@ export class Notifier {
     return kept;
   }
 
-  /** Step 2, after the commit: push to devices, as preferences allow. */
-  async send(deliveries: Delivery[]): Promise<void> {
+  /** Step 2, after the commit: push, email and WhatsApp, as each person's reach and preferences allow. */
+  async send(deliveries: Delivery[], now = new Date()): Promise<void> {
     if (!deliveries.length) return;
     const ids = [...new Set(deliveries.map((d) => d.userId))];
-    const [prefs, tokens] = await Promise.all([
+    const settings = await this.deps.settings.get();
+    const [users, prefs, tokens, contacts] = await Promise.all([
+      this.db.user.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, emailEncrypted: true, emailVerifiedAt: true },
+      }),
       this.db.notificationPreference.findMany({ where: { userId: { in: ids } } }),
       this.db.pushToken.findMany({ where: { userId: { in: ids }, isActive: true } }),
+      settings.whatsappEnabled
+        ? this.db.whatsappContact.findMany({ where: { userId: { in: ids }, optedOutAt: null } })
+        : Promise.resolve([]),
     ]);
     const prefOf = new Map(prefs.map((p) => [p.userId, p]));
-    const sends: { delivery: Delivery; token: { id: string; token: string } }[] = [];
-    for (const d of deliveries) {
-      const p = prefOf.get(d.userId);
-      const allowed = d.message.category === 'queue_called' || !p || p[PREF[d.message.category]];
-      if (!allowed) continue;
-      for (const t of tokens)
-        if (t.userId === d.userId && this.push.accepts(t.token)) sends.push({ delivery: d, token: t });
-    }
-    if (!sends.length) return;
+    const userOf = new Map(users.map((u) => [u.id, u]));
+    const contactOf = new Map(contacts.map((c) => [c.userId, c]));
+    const activeSince = now.getTime() - APP_ACTIVE_DAYS * 86_400_000;
 
+    // WhatsApp money: this month's use so far, counted up as we send.
+    const usage = contacts.length ? await this.deps.settings.whatsappUsage(now) : null;
+    let windowSent = usage?.windowMessages ?? 0;
+    let spentCents = usage?.estimatedCents ?? 0;
+    const cost = settings.whatsappMessageCostCents;
+
+    const pushes: { delivery: Delivery; token: { id: string; token: string } }[] = [];
+    const emails: { delivery: Delivery; to: string }[] = [];
+    const chats: { delivery: Delivery; phone: string; pricing: 'window' | 'template' }[] = [];
+
+    for (const d of deliveries) {
+      const user = userOf.get(d.userId);
+      if (!user) continue;
+      const devices = tokens.filter((t) => t.userId === d.userId && this.push.accepts(t.token));
+      const contact = contactOf.get(d.userId);
+      const reach: Reach = {
+        hasApp: devices.some((t) => t.lastSeenAt.getTime() >= activeSince),
+        email: user.emailVerifiedAt ? this.decrypt(user.emailEncrypted, EMAIL_CONTEXT) : null,
+        whatsapp: contact
+          ? {
+              phone: this.decrypt(contact.phoneEncrypted, WHATSAPP_PHONE_CONTEXT) ?? '',
+              windowOpen: (contact.lastInboundAt?.getTime() ?? 0) > now.getTime() - WINDOW_MS,
+            }
+          : null,
+        prefs: prefOf.get(d.userId) ?? null,
+      };
+      if (reach.whatsapp && !reach.whatsapp.phone) reach.whatsapp = null;
+      const windowFree = windowSent < settings.whatsappFreeWindowPerMonth;
+      const plan = planChannels(d.message, reach, {
+        emailEnabled: settings.emailEnabled,
+        whatsappEnabled: settings.whatsappEnabled,
+        whatsappPaidTypes: settings.whatsappPaidTypes,
+        whatsappPaidAllowed: spentCents + cost <= settings.whatsappMonthlyBudgetCents,
+        whatsappWindowFree: windowFree,
+      });
+      // Push goes to every active device, even one not seen lately (it's free);
+      // "has the app" only decides whether other channels must fill in.
+      if (pushAllowed(d.message.category, reach.prefs))
+        for (const token of devices) pushes.push({ delivery: d, token });
+      if (plan.email && reach.email) emails.push({ delivery: d, to: reach.email });
+      if (plan.whatsapp && reach.whatsapp) {
+        chats.push({ delivery: d, phone: reach.whatsapp.phone, pricing: plan.whatsapp });
+        if (plan.whatsapp === 'window') {
+          windowSent++;
+          if (!windowFree) spentCents += cost;
+        } else spentCents += cost;
+      }
+    }
+
+    await Promise.all([
+      this.sendPushes(pushes, now),
+      this.sendEmails(emails, now),
+      this.sendWhatsapp(chats, now),
+    ]);
+  }
+
+  private async sendPushes(sends: { delivery: Delivery; token: { id: string; token: string } }[], now: Date) {
+    if (!sends.length) return;
     const tickets = await this.push.send(
       sends.map((s) => ({
         token: s.token.token,
@@ -98,19 +168,12 @@ export class Notifier {
         data: s.delivery.message.data,
       })),
     );
-    const now = new Date();
     await this.db.notification.createMany({
       data: sends.map((s, i) => {
         const t = tickets[i]!;
         return {
-          userId: s.delivery.userId,
-          appointmentId: s.delivery.appointmentId ?? null,
-          queueEntryId: s.delivery.queueEntryId ?? null,
-          type: s.delivery.message.type,
+          ...refs(s.delivery),
           channel: 'push' as const,
-          title: s.delivery.message.title,
-          body: s.delivery.message.body,
-          data: s.delivery.message.data,
           pushTokenId: s.token.id,
           status: t.ok ? ('sent' as const) : ('failed' as const),
           externalId: t.ok ? t.id : null,
@@ -124,6 +187,69 @@ export class Notifier {
       return !t.ok && t.deviceGone;
     });
     if (gone.length) await this.deactivate(gone.map((s) => s.token.id));
+  }
+
+  private async sendEmails(sends: { delivery: Delivery; to: string }[], now: Date) {
+    if (!sends.length) return;
+    const results = await Promise.all(
+      sends.map((s) =>
+        this.deps.email.send(renderEmail(s.to, s.delivery.userId, s.delivery.message, this.deps.links)),
+      ),
+    );
+    await this.db.notification.createMany({
+      data: sends.map((s, i) => {
+        const r = results[i]!;
+        return {
+          ...refs(s.delivery),
+          channel: 'email' as const,
+          status: r.ok ? ('sent' as const) : ('failed' as const),
+          externalId: r.ok ? r.id : null,
+          failureReason: r.ok ? null : r.error,
+          sentAt: r.ok ? now : null,
+        };
+      }),
+    });
+  }
+
+  private async sendWhatsapp(
+    sends: { delivery: Delivery; phone: string; pricing: 'window' | 'template' }[],
+    now: Date,
+  ) {
+    if (!sends.length) return;
+    const wa = this.deps.whatsapp;
+    const results = await Promise.all(
+      sends.map((s) => {
+        const m = s.delivery.message;
+        const template = WHATSAPP_TEMPLATES[m.type];
+        return s.pricing === 'window'
+          ? wa.sendText(s.phone, `*${m.title}*\n${m.body}`)
+          : wa.sendTemplate(s.phone, template!.name, this.deps.whatsappLanguage ?? 'en', m.vars ?? []);
+      }),
+    );
+    await this.db.notification.createMany({
+      data: sends.map((s, i) => {
+        const r = results[i]!;
+        return {
+          ...refs(s.delivery),
+          channel: 'whatsapp' as const,
+          whatsappPricing: s.pricing,
+          status: r.ok ? ('sent' as const) : ('failed' as const),
+          externalId: r.ok ? r.id : null,
+          failureReason: r.ok ? null : r.error,
+          sentAt: r.ok ? now : null,
+        };
+      }),
+    });
+  }
+
+  private decrypt(value: string | null, context: string): string | null {
+    if (!value) return null;
+    try {
+      return this.deps.cipher.decrypt(value, context);
+    } catch (err) {
+      this.log.error({ err, context }, 'could not decrypt a contact detail');
+      return null;
+    }
   }
 
   /**
@@ -172,3 +298,14 @@ export class Notifier {
     this.log.info({ devices: count }, 'devices that no longer exist were switched off');
   }
 }
+
+/** The columns every record of a delivery shares. */
+const refs = (d: Delivery) => ({
+  userId: d.userId,
+  appointmentId: d.appointmentId ?? null,
+  queueEntryId: d.queueEntryId ?? null,
+  type: d.message.type,
+  title: d.message.title,
+  body: d.message.body,
+  data: d.message.data,
+});

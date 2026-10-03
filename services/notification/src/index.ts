@@ -1,9 +1,12 @@
 import {
+  createBlindIndexer,
+  createFieldCipher,
   createJwtVerifierFromEnv,
   createRedisClient,
   createRevocationStore,
   loadConfig,
   logger,
+  parseKeyring,
   Readiness,
   runService,
   type ShutdownHook,
@@ -19,9 +22,11 @@ import {
 } from '@buku/kafka';
 import { buildNotificationApp } from './app.js';
 import { Env } from './config.js';
+import { SmtpEmailSender } from './email/sender.js';
 import { CONSUMED_TOPICS } from './events/handlers.js';
 import { ExpoPushSender } from './push/expo.js';
 import { LogPushSender } from './push/sender.js';
+import { LogWhatsAppSender, MetaWhatsAppSender } from './whatsapp/sender.js';
 
 const env = loadConfig(Env);
 
@@ -40,7 +45,23 @@ const push =
   env.PUSH_PROVIDER === 'expo'
     ? new ExpoPushSender({ accessToken: env.EXPO_ACCESS_TOKEN })
     : new LogPushSender();
-logger.info({ push: push.name }, 'push sender');
+const email = new SmtpEmailSender({
+  host: env.SMTP_HOST,
+  port: env.SMTP_PORT,
+  user: env.SMTP_USER,
+  password: env.SMTP_PASSWORD,
+  from: env.EMAIL_FROM,
+  requireTls: env.SMTP_REQUIRE_TLS,
+});
+const whatsapp =
+  env.WHATSAPP_PROVIDER === 'meta'
+    ? new MetaWhatsAppSender({
+        phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID!,
+        accessToken: env.WHATSAPP_ACCESS_TOKEN!,
+        graphVersion: env.WHATSAPP_GRAPH_VERSION,
+      })
+    : new LogWhatsAppSender();
+logger.info({ push: push.name, whatsapp: whatsapp.name }, 'senders');
 
 // ── Readiness: every dependency must answer before traffic is routed here ──
 const readiness = new Readiness()
@@ -51,12 +72,25 @@ const readiness = new Readiness()
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const { app, notifier, handler } = buildNotificationApp({
+const { app, notifier, scheduler, handler } = buildNotificationApp({
   db,
   redis,
   verifier,
   revocations: createRevocationStore(redis),
   push,
+  email,
+  whatsapp,
+  cipher: createFieldCipher(parseKeyring(env.PII_ENCRYPTION_KEYS, env.PII_ENCRYPTION_ACTIVE_KEY_ID)),
+  indexer: createBlindIndexer(Buffer.from(env.PII_BLIND_INDEX_KEY, 'base64')),
+  urls: { webAppUrl: env.WEB_APP_URL, publicApiUrl: env.PUBLIC_API_URL },
+  whatsappConfig: {
+    businessNumber: env.WHATSAPP_BUSINESS_NUMBER,
+    templateLanguage: env.WHATSAPP_TEMPLATE_LANGUAGE,
+    webhook:
+      env.WHATSAPP_APP_SECRET && env.WHATSAPP_VERIFY_TOKEN
+        ? { appSecret: env.WHATSAPP_APP_SECRET, verifyToken: env.WHATSAPP_VERIFY_TOKEN }
+        : undefined,
+  },
   http: {
     service: env.SERVICE_NAME,
     logger,
@@ -88,6 +122,20 @@ const receipts = every(10, 'push-receipts', async () => {
   const r = await notifier.checkReceipts();
   if (r.checked) logger.info(r, 'push receipts checked');
 });
+// Timed messages. Each run is skipped if another instance is running it; each message goes once anyway.
+const reminders = every(1, 'reminders', async () => {
+  const r = await scheduler.exclusive('reminders', 55_000, () => scheduler.appointmentReminders());
+  if (r && r.r24 + r.r2 + r.pending) logger.info(r, 'appointment reminders sent');
+});
+const rebook = every(5, 'rebook', async () => {
+  const n = await scheduler.exclusive('rebook', 4 * 60_000, () => scheduler.rebookReminders());
+  if (n) logger.info({ sent: n }, '"book again" reminders sent');
+});
+const plans = every(15, 'plan-notices', async () => {
+  const n = await scheduler.exclusive('plan-notices', 14 * 60_000, () => scheduler.planNotices());
+  if (n) logger.info({ sent: n }, 'plan notices sent');
+});
+const marks = every(24 * 60, 'purge-marks', () => scheduler.purgeMarks());
 // Monthly partitions (inbox, audit log, ad events) months ahead; rows in the catch-all are a red flag.
 const partitionJob = async () => {
   const r = await maintainPartitions(db);
@@ -111,8 +159,8 @@ const hooks: ShutdownHook[] = [
   {
     name: 'jobs',
     fn: () => {
-      clearInterval(receipts);
-      clearInterval(partitions);
+      for (const t of [receipts, partitions, reminders, rebook, plans, marks]) clearInterval(t);
+      email.close();
       return Promise.resolve();
     },
   },

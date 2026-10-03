@@ -160,9 +160,25 @@ services:
     url: http://notification-service:3004
     routes:
       - name: notifications
-        paths: ['/v1/notifications', '/v1/users/me/notification-prefs']
+        paths:
+          [
+            '/v1/notifications',
+            '/v1/users/me/notification-prefs',
+            '/v1/users/me/whatsapp',
+            '/v1/admin/notifications',
+          ]
         strip_path: false
         plugins: [*jwt]
+      # Unsubscribe links in emails: no token, the link itself is signed.
+      - name: notification-unsubscribe
+        paths: ['/v1/notifications/unsubscribe']
+        methods: [GET, POST]
+        strip_path: false
+      # Meta's WhatsApp webhook: no token, the signature is checked by notification-service.
+      - name: whatsapp-webhook
+        paths: ['/v1/webhooks/whatsapp']
+        methods: [GET, POST]
+        strip_path: false
 
   - name: search-service
     url: http://search-service:3005

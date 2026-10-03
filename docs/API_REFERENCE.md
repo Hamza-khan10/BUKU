@@ -809,16 +809,24 @@ each `event_id` is processed once (duplicates answer `{ processed: false }`); up
 the last one applied are ignored (Paddle can deliver out of order). Events BUKU can't use (unknown
 price, no BUKU account) are acknowledged and logged so Paddle stops retrying.
 
-## Notification service — inbox and preferences (2.6 part 1)
+## Notification service — inbox, preferences, email and WhatsApp (2.6)
 
-| Method & path                                                         | Auth | Purpose                                     |
-| --------------------------------------------------------------------- | ---- | ------------------------------------------- |
-| `GET /v1/notifications?unread=true&page=&limit=`                      | ✔    | My inbox, newest first; `meta.unread`       |
-| `GET /v1/notifications/unread-count`                                  | ✔    | `{ unread }` for the badge                  |
-| `POST /v1/notifications/:id/read` · `POST /v1/notifications/read-all` | ✔    | Mark read                                   |
-| `DELETE /v1/notifications/:id`                                        | ✔    | Remove from my inbox                        |
-| `GET`/`PUT /v1/users/me/notification-prefs`                           | ✔    | Which messages also come as push / WhatsApp |
-| `POST /v1/auth/push-tokens` `{ token, platform }` (auth-service)      | ✔    | Register this device (Expo push token)      |
+| Method & path                                                         | Auth  | Purpose                                     |
+| --------------------------------------------------------------------- | ----- | ------------------------------------------- |
+| `GET /v1/notifications?unread=true&page=&limit=`                      | ✔     | My inbox, newest first; `meta.unread`       |
+| `GET /v1/notifications/unread-count`                                  | ✔     | `{ unread }` for the badge                  |
+| `POST /v1/notifications/:id/read` · `POST /v1/notifications/read-all` | ✔     | Mark read                                   |
+| `DELETE /v1/notifications/:id`                                        | ✔     | Remove from my inbox                        |
+| `GET`/`PUT /v1/users/me/notification-prefs`                           | ✔     | Which messages also come as push / WhatsApp |
+| `POST /v1/auth/push-tokens` `{ token, platform }` (auth-service)      | ✔     | Register this device (Expo push token)      |
+| `GET /v1/users/me/whatsapp`                                           | ✔     | Connected? masked number, stopped?          |
+| `POST /v1/users/me/whatsapp/link`                                     | ✔     | One-time code + `wa.me` link (5/hour)       |
+| `DELETE /v1/users/me/whatsapp`                                        | ✔     | Disconnect WhatsApp                         |
+| `GET`/`POST /v1/notifications/unsubscribe?u=&p=&s=`                   | —     | Email unsubscribe link (signed)             |
+| `GET`/`POST /v1/webhooks/whatsapp`                                    | —     | Meta's webhook (verify token / signature)   |
+| `GET`/`PUT /v1/admin/notifications/settings`                          | admin | Switches, quiet hours, WhatsApp money       |
+| `GET /v1/admin/notifications/whatsapp/usage`                          | admin | This month: window/template counts, cost    |
+| `GET /v1/admin/notifications/whatsapp/templates`                      | admin | Templates to create in Meta                 |
 
 ```json
 GET /v1/notifications
@@ -848,8 +856,51 @@ GET /v1/notifications
 
 Businesses see customers as "Ayesha K." (first name and initial).
 
+**Timed messages**
+
+| When                                                      | To                              | Message                                   |
+| --------------------------------------------------------- | ------------------------------- | ----------------------------------------- |
+| 24 h before (booked 30 h+ ahead; not at night)            | customer                        | "Reminder: Haircut tomorrow" + code       |
+| 2 h before (booked 2½ h+ ahead; not at night)             | customer                        | "Soon: Haircut at 10:30"                  |
+| Request unanswered for 2 h, or visit under 24 h away      | owner, managers, front desk     | "A booking request is waiting"            |
+| Cancelled with "remind me later", when that time comes    | customer (unless booked again)  | "Time to book Haircut again?"             |
+| Trial ends in 3 days / ended                              | the account (or business owner) | "Your free trial ends soon" / "has ended" |
+| Gifted plan ends in 7 days; cancelled plan ends in 3 days | the account (or business owner) | "Your Professional plan ends soon"        |
+| Payment failed                                            | the account (or business owner) | "Payment didn't go through"               |
+
+Plan notices are only sent while billing is on for that audience, and not if the account already
+moved to another plan. `data.screen` adds `book` (`businessId`, `serviceId`), `billing` and
+`business-billing`.
+
+**Channels** — the inbox always; push to every device; then per person:
+
+| Message                                           | Email                                        | WhatsApp (if connected) |
+| ------------------------------------------------- | -------------------------------------------- | ----------------------- |
+| Confirmed, declined, cancelled by business, moved | always (`emailBookingConfirmation`)          | ✔                       |
+| Day-before reminder                               | always (`emailReminders`)                    | ✔                       |
+| 2 h reminder, "book again"                        | only without the app (`emailReminders`)      | 2 h reminder ✔          |
+| Team alerts                                       | only without the app (`emailBusinessAlerts`) | —                       |
+| Queue (ahead, called, closed)                     | never                                        | "your turn" ✔           |
+| Plan notices                                      | always (can't be switched off)               | —                       |
+
+WhatsApp ✔ means: free text while their 24-hour window is open; outside it, a paid template only
+for people without the app, for types the admin allowed, within the month's budget. Email needs a
+verified address; every email (except plan notices) has a one-click unsubscribe for its kind.
+
+**Connecting WhatsApp** — `POST /v1/users/me/whatsapp/link` returns
+`{ code, text: "BUKU 7KQ2MX", link: "https://wa.me/<our number>?text=BUKU%207KQ2MX", expiresAt }`
+(15 minutes; a new code replaces the old). The app opens `link`; the person taps send. That
+message proves the number and connects it. Afterwards, any message they send gets their upcoming
+visits back; `STOP` / `START` switch WhatsApp messages off / on. 503 until WhatsApp is set up.
+
 **Preferences** (`PUT …/notification-prefs`, any subset): `pushBookingConfirmation`,
 `pushReminders`, `pushQueueUpdates`, `pushBusinessAlerts`, `whatsappUpdates`, `smsReminders`,
-`emailBookingConfirmation`, `marketingEmails` (explicit opt-in; the time of consent is recorded
-and cleared on opt-out). Switching off a push keeps the message in the inbox. Being called in a
-queue is always pushed.
+`emailBookingConfirmation`, `emailReminders`, `emailBusinessAlerts`, `marketingEmails` (explicit
+opt-in; the time of consent is recorded and cleared on opt-out). Switching off a push keeps the
+message in the inbox. Being called in a queue, and plan notices, are always pushed.
+
+**Admin settings** (`PUT /v1/admin/notifications/settings`, any subset): `emailEnabled`,
+`whatsappEnabled` (default off), `whatsappPaidTypes` (from the templates list),
+`whatsappMonthlyBudgetCents` (0 = never pay), `whatsappMessageCostCents` (Meta's rate for your
+market), `whatsappFreeWindowPerMonth` (1000), `reminder24h`, `reminder2h`, `quietStartHour` /
+`quietEndHour` (21 / 9, local time). Changes apply within 30 seconds and are audited.
