@@ -1,5 +1,12 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { AppError, ErrorCodes, generateSecureToken, type FieldCipher, type Role } from '@buku/common';
+import {
+  AppError,
+  ErrorCodes,
+  generateSecureToken,
+  type FieldCipher,
+  type Role,
+  recordSecurityEvent,
+} from '@buku/common';
 import { recordAudit, type Database } from '@buku/database';
 import type { Redis } from 'ioredis';
 import type { RequestContext } from '../http/context.js';
@@ -281,6 +288,7 @@ export class MfaService {
   private async assertNotLocked(userId: string) {
     const failures = Number((await this.deps.redis.get(`mfa:fail:${userId}`)) ?? 0);
     if (failures >= MAX_FAILURES) {
+      recordSecurityEvent('mfa_locked');
       throw new AppError('Too many wrong codes; try again in 15 minutes', ErrorCodes.MFA_LOCKED, 429);
     }
   }
@@ -297,6 +305,7 @@ export class MfaService {
       newValues: { attempt: n },
       ...auditCtx(ctx),
     });
+    recordSecurityEvent('mfa_failed');
     throw new AppError('That code isn’t right', ErrorCodes.MFA_INVALID_CODE, 401);
   }
 }

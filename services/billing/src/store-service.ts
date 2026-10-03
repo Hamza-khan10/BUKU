@@ -1,5 +1,5 @@
 import type { Account, Audience } from '@buku/billing';
-import { AppError, ErrorCodes, logger } from '@buku/common';
+import { AppError, ErrorCodes, logger, recordSecurityEvent } from '@buku/common';
 import { recordAudit, requireBusinessPermission, type Database, type Transaction } from '@buku/database';
 import { auditCtx, type RequestContext } from './http/context.js';
 import type { PaddleClient, PaddleSubscription } from './paddle/client.js';
@@ -218,6 +218,7 @@ export class StoreService {
     );
     if (!check.ok) {
       this.log.warn({ reason: check.reason }, 'Paddle webhook refused');
+      recordSecurityEvent('webhook_signature_invalid');
       throw new AppError('Invalid signature', ErrorCodes.WEBHOOK_SIGNATURE_INVALID, 401);
     }
     const event = JSON.parse(rawBody!.toString('utf8')) as {

@@ -65,6 +65,7 @@ check "App role cannot DROP tables (least privilege)"  bash -c "! docker compose
 
 echo "═══ 4. Kafka ═══"
 check "Kafka topics exactly match the registry"        bash -c "docker compose -f docker-compose.dev.yml run --rm --no-deps kafka-init /app/node_modules/.bin/tsx scripts/sync-topics.ts --check"
+check "Alert rules are valid (promtool)"                bash -c "docker run --rm --entrypoint promtool -v \"$PWD/infrastructure/monitoring:/r:ro\" prom/prometheus:v3.7.0 check rules /r/alerts.yml >/dev/null"
 check "Auto topic creation disabled"                   bash -c "docker compose -f docker-compose.dev.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:29092 --entity-type brokers --entity-name 1 --describe --all | grep -q 'auto.create.topics.enable=false'"
 
 echo "═══ 5. Search & analytics stores ═══"

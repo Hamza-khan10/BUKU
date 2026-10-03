@@ -1,6 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { type z } from 'zod';
 import { AppError, ErrorCodes, HttpStatus, isAppError } from '../errors.js';
+import { recordSecurityEvent } from './metrics.js';
 import { logger as rootLogger } from '../logger.js';
 import { errorResponse } from '../response.js';
 import type { JwtVerifier, Role, VerifiedAccessToken } from '../security/jwt.js';
@@ -144,6 +145,7 @@ export function requireRole(...roles: Role[]): RequestHandler {
     if (!req.auth) throw AppError.unauthorized();
     if (!roles.includes(req.auth.role)) throw AppError.forbidden();
     if (req.auth.role === 'super_admin' && !req.auth.mfa) {
+      recordSecurityEvent('admin_without_mfa');
       throw new AppError(
         'Admin access needs two-step sign-in: set up an authenticator app, then sign in again',
         ErrorCodes.MFA_REQUIRED,

@@ -1,0 +1,103 @@
+# Prometheus alerting rules for BUKU (D-082; SOC 2 CC7.2, A1.2). Loaded by the production
+# Prometheus (Phase 5); validated in CI-free form by `promtool check rules` (see DEVELOPMENT.md).
+# Severity: critical → page someone now; warning → look today (incident response policy).
+groups:
+  - name: availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"buku-.*"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: '{{ $labels.job }} is not answering metrics scrapes'
+          runbook: docs/compliance/runbooks.md#service-down
+
+      - alert: HighErrorRate
+        expr: |
+          sum by (service) (rate(http_request_duration_seconds_count{status_code=~"5.."}[5m]))
+            / sum by (service) (rate(http_request_duration_seconds_count[5m])) > 0.02
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.service }}: more than 2% of requests fail (5xx)'
+          runbook: docs/compliance/runbooks.md#errors
+
+      - alert: VeryHighErrorRate
+        expr: |
+          sum by (service) (rate(http_request_duration_seconds_count{status_code=~"5.."}[5m]))
+            / sum by (service) (rate(http_request_duration_seconds_count[5m])) > 0.10
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: '{{ $labels.service }}: more than 10% of requests fail (5xx)'
+          runbook: docs/compliance/runbooks.md#errors
+
+      - alert: SlowResponses
+        expr: |
+          histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket[5m]))) > 1
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.service }}: 95th percentile response time above 1 s'
+          runbook: docs/compliance/runbooks.md#slow
+
+      - alert: EventLoopBlocked
+        expr: nodejs_eventloop_lag_p99_seconds > 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.service }}: event loop lag above 500 ms (CPU-bound work or a blocking call)'
+          runbook: docs/compliance/runbooks.md#slow
+
+  - name: security
+    rules:
+      - alert: RefreshTokenReuse
+        expr: increase(security_events_total{event="refresh_token_reuse"}[15m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: 'A rotated session token was used again: possible token theft (the session was ended)'
+          runbook: docs/compliance/runbooks.md#suspicious-sign-in
+
+      - alert: TwoStepCodeGuessing
+        expr: increase(security_events_total{event=~"mfa_failed|mfa_locked"}[10m]) > 20
+        labels: { severity: warning }
+        annotations:
+          summary: 'Many wrong two-step codes in 10 minutes: someone may be guessing'
+          runbook: docs/compliance/runbooks.md#suspicious-sign-in
+
+      - alert: EmployeeLockouts
+        expr: increase(security_events_total{event="member_locked_out"}[15m]) > 10
+        labels: { severity: warning }
+        annotations:
+          summary: 'Many employee accounts locked by wrong passwords in 15 minutes'
+          runbook: docs/compliance/runbooks.md#suspicious-sign-in
+
+      - alert: AdminWithoutTwoStep
+        expr: increase(security_events_total{event="admin_without_mfa"}[1h]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: 'An admin session without two-step sign-in tried an admin tool (refused)'
+          runbook: docs/compliance/runbooks.md#suspicious-sign-in
+
+      - alert: ForgedWebhooks
+        expr: increase(security_events_total{event="webhook_signature_invalid"}[15m]) > 5
+        labels: { severity: warning }
+        annotations:
+          summary: 'Webhooks with bad signatures (Paddle/WhatsApp): forged calls or a wrong secret'
+          runbook: docs/compliance/runbooks.md#webhooks
+
+      - alert: AuthenticationFailureSpike
+        expr: sum(rate(http_request_duration_seconds_count{status_code="401"}[5m])) > 5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: 'Over 5 refused sign-ins/tokens per second for 10 minutes (credential stuffing?)'
+          runbook: docs/compliance/runbooks.md#suspicious-sign-in
+
+      - alert: AccessDeniedSpike
+        expr: sum by (service) (rate(http_request_duration_seconds_count{status_code=~"403|404"}[5m])) > 10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.service }}: many refused or not-found requests (someone probing ids?)'
+          runbook: docs/compliance/runbooks.md#suspicious-sign-in
