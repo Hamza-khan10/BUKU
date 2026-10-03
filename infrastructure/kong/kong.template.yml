@@ -207,7 +207,8 @@ services:
       # Public: discovery works without signing in. Explicit regex priority so
       # these win over the business public-profile route /v1/businesses/{slug}.
       - name: search
-        paths: ['~/v1/businesses/(search|nearby|autocomplete|featured|trending)$', '/v1/categories']
+        paths:
+          ['~/v1/businesses/(search|nearby|autocomplete|featured|trending)$', '/v1/categories', '/v1/cities']
         methods: [GET, OPTIONS]
         regex_priority: 20
         strip_path: false
