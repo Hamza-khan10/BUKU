@@ -56,7 +56,7 @@ export function MobileNav({ theme }: { theme: Theme }) {
         <Menu className="size-6" aria-hidden />
       </RadixDialog.Trigger>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-ink/40 md:hidden" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-night/50 md:hidden" />
         <RadixDialog.Content
           aria-describedby={undefined}
           className="fixed inset-y-0 right-0 z-50 flex w-[min(22rem,100vw)] flex-col bg-canvas shadow-lift animate-rise md:hidden"

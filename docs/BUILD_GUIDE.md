@@ -385,6 +385,12 @@ The detailed plan — every page, its data and edge cases, the design system and
   sub-processors — written from what the system does, marked as drafts until legal review
   (`LEGAL_REVIEWED`), contact details from settings and never placeholders; `security.txt` once a
   security address is set.
+- **3.2b Business page — ✅ done.** `/b/[slug]` (ids redirect to it): cover photo or a quiet
+  category pattern, verified or "Not verified", rating, reliability, open now in the business's
+  timezone; services and prices, booking terms from its settings, team, week hours, directions and
+  contact, reviews (summary, details, replies, more on request), the walk-in queue live over
+  server-sent events; schema.org data (escaped), share image, canonical address. Each section
+  loads on its own: one failing service shows its own message, never a broken page.
 
 ## Phase 4 — Mobile app (Expo)
 

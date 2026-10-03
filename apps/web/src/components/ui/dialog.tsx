@@ -23,7 +23,7 @@ export function DialogContent({
 }: ComponentProps<typeof RadixDialog.Content> & { title: ReactNode; description?: ReactNode }) {
   return (
     <RadixDialog.Portal>
-      <RadixDialog.Overlay className="fixed inset-0 z-40 bg-ink/45 backdrop-blur-[2px] animate-[rise_200ms_ease-out_both]" />
+      <RadixDialog.Overlay className="fixed inset-0 z-40 bg-night/55 backdrop-blur-[2px] animate-[rise_200ms_ease-out_both]" />
       <RadixDialog.Content
         {...(description ? {} : { 'aria-describedby': undefined })}
         className={cn(
