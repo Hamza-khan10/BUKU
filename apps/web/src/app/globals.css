@@ -1,0 +1,233 @@
+@import 'tailwindcss';
+
+/*
+ * BUKU design tokens (WEB_PLAN §2). Components use these semantic names only —
+ * never raw colours — so light and dark themes are one switch.
+ *
+ * Every text/background pair below meets WCAG 2.2 AA (≥ 4.5:1, checked
+ * numerically); control borders meet 3:1. Coral is the only loud colour, so the
+ * eye always finds the next action.
+ *
+ * Theme: <html data-theme="light|dark"> when the person chose one (a cookie the
+ * server reads, so there is no flash); otherwise the device's setting.
+ */
+
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) {
+      @slot;
+    }
+  }
+}
+
+:root {
+  color-scheme: light;
+  --canvas: #fbf8f3; /* warm paper: calm, unhurried */
+  --surface: #ffffff;
+  --sunken: #f4efe7;
+  --ink: #0e1525; /* trust, seriousness */
+  --ink-2: #4b5565;
+  --ink-3: #626b7c;
+  --line: #e3dbcd; /* dividers */
+  --control: #858b97; /* input borders (3:1) */
+  --brand: #d4432a; /* coral: the "book / join" moment */
+  --brand-hover: #bd3a23;
+  --brand-ink: #b83a22; /* coral as text */
+  --brand-soft: #fceae5;
+  --ok: #0b7350; /* available, confirmed, open now */
+  --ok-soft: #e4f4ec;
+  --wait: #f2a516; /* anticipation: queue progress, almost your turn */
+  --wait-ink: #8f5400;
+  --wait-soft: #fdf1d8;
+  --focus: #4338ca;
+  --danger: #b42318; /* errors only */
+  --danger-soft: #fcebe9;
+  --shadow-color: 32 24 12;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --canvas: #0e1525;
+    --surface: #151e33;
+    --sunken: #0a101d;
+    --ink: #f6f2ec;
+    --ink-2: #c5cbd6;
+    --ink-3: #9aa3b2;
+    --line: #27324b;
+    --control: #64718f;
+    --brand-ink: #ff8c73;
+    --brand-soft: #3a1a14;
+    --ok: #3dd69d;
+    --ok-soft: #0e2c24;
+    --wait-ink: #f7c25a;
+    --wait-soft: #2d2410;
+    --focus: #9da4ff;
+    --danger: #ff8a80;
+    --danger-soft: #3a1614;
+    --shadow-color: 0 0 0;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: #0e1525;
+  --surface: #151e33;
+  --sunken: #0a101d;
+  --ink: #f6f2ec;
+  --ink-2: #c5cbd6;
+  --ink-3: #9aa3b2;
+  --line: #27324b;
+  --control: #64718f;
+  --brand-ink: #ff8c73;
+  --brand-soft: #3a1a14;
+  --ok: #3dd69d;
+  --ok-soft: #0e2c24;
+  --wait-ink: #f7c25a;
+  --wait-soft: #2d2410;
+  --focus: #9da4ff;
+  --danger: #ff8a80;
+  --danger-soft: #3a1614;
+  --shadow-color: 0 0 0;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-control: var(--control);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-wait: var(--wait);
+  --color-wait-ink: var(--wait-ink);
+  --color-wait-soft: var(--wait-soft);
+  --color-focus: var(--focus);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  /* Fixed ink, for text on coral/amber in either theme. */
+  --color-on-brand: #ffffff;
+  --color-on-wait: #0e1525;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  --font-display: var(--font-bricolage), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  --shadow-soft: 0 1px 2px rgb(var(--shadow-color) / 0.06), 0 4px 16px rgb(var(--shadow-color) / 0.06);
+  --shadow-lift: 0 2px 4px rgb(var(--shadow-color) / 0.08), 0 12px 32px rgb(var(--shadow-color) / 0.12);
+
+  --animate-live: live 1.8s ease-out infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-print: print 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-rise: rise 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* "This updates by itself": a soft ring that keeps expanding. */
+@keyframes live {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 45%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+/* A ticket "prints": it slides out of the slot, top first. */
+@keyframes print {
+  from {
+    clip-path: inset(0 0 100% 0);
+    transform: translateY(-8px);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+    transform: none;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+    min-height: 100dvh;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background: var(--brand-soft);
+    color: var(--ink);
+  }
+
+  /* One focus style everywhere: clear, never removed. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Numbers that count (times, positions, prices) don't jump while changing. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Movement is a nicety, never a requirement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

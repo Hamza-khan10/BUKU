@@ -36,7 +36,9 @@ password `buku-dev-password-2026`.
 | `pnpm test` / `pnpm test:watch`                 | Unit tests                                                            |
 | `pnpm test:int`                                 | Integration tests against the running stack (uses the `buku_test` DB) |
 | `pnpm typecheck` · `pnpm lint` · `pnpm format`  | Code quality                                                          |
-| `pnpm verify`                                   | Stack and quality checks (43)                                         |
+| `pnpm verify`                                   | Stack and quality checks (45)                                         |
+| `pnpm web`                                      | The website on http://localhost:3000 (hot reload; needs the stack)    |
+| `pnpm web:e2e`                                  | Browser tests: desktop + phone, WCAG 2.2 AA, CSP, clean text, session |
 | `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route) |
 | `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)            |
 | `pnpm db:studio`                                | Browse the database in Prisma Studio                                  |
@@ -97,6 +99,16 @@ router.post(
   }),
 );
 ```
+
+### Work on the website (apps/web)
+
+`pnpm bootstrap` creates `apps/web/.env.local` (see `apps/web/.env.example`). Start the stack
+(`pnpm dev`), then `pnpm web` and open http://localhost:3000 — `/kit` shows every component in
+light and dark. Before writing Next.js code, read the guide for the installed version in
+`apps/web/node_modules/next/dist/docs/` (Next 16 differs from older versions: `proxy.ts`, async
+request APIs, no `next lint`). The browser never holds a token: it calls `/api/v1/…` on the web
+server, which adds the session (D-085). Browser tests need Chromium once:
+`pnpm --filter @buku/web exec playwright install chromium`.
 
 ### Set up Paddle (online payments, sandbox)
 

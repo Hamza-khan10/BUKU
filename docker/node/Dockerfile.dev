@@ -38,7 +38,10 @@ COPY --chown=node:node services/notification/package.json services/notification/
 COPY --chown=node:node services/search/package.json       services/search/
 COPY --chown=node:node services/ads/package.json          services/ads/
 COPY --chown=node:node services/analytics/package.json    services/analytics/
-RUN pnpm install --frozen-lockfile
+# The web app's manifest only (the lockfile must match the workspace); the web
+# app runs on the host (`pnpm web`), so its dependencies aren't installed here.
+COPY --chown=node:node apps/web/package.json              apps/web/
+RUN pnpm install --frozen-lockfile --filter '!@buku/web'
 
 # Full source so the image also works without bind mounts.
 COPY --chown=node:node tsconfig.base.json ./

@@ -99,6 +99,35 @@ jobs:
         if: failure()
         run: docker compose -f docker-compose.dev.yml logs --tail=200
 
+  web:
+    name: Web app · build · browser tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # The production build, served locally; tests that need the API stack skip themselves.
+      APP_URL: http://localhost:3000
+      API_URL: http://localhost:8000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @buku/web build
+      - name: Install the test browser
+        run: pnpm --filter @buku/web exec playwright install --with-deps chromium
+      - name: Browser tests (desktop and phone, WCAG 2.2 AA, CSP, clean text)
+        run: pnpm --filter @buku/web e2e
+      - name: Test report on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: web-e2e-report
+          path: apps/web/playwright-report
+          retention-days: 14
+
   images:
     name: Production image (${{ matrix.service }})
     runs-on: ubuntu-24.04

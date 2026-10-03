@@ -1,6 +1,7 @@
 // @ts-check
 import js from '@eslint/js';
 import prettier from 'eslint-config-prettier';
+import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
@@ -11,6 +12,10 @@ export default tseslint.config(
       '**/dist/**',
       '**/coverage/**',
       'packages/database/src/generated/**',
+      'apps/*/.next/**',
+      'apps/*/next-env.d.ts',
+      'apps/*/test-results/**',
+      'apps/*/playwright-report/**',
       '.changeset/**',
     ],
   },
@@ -42,13 +47,33 @@ export default tseslint.config(
     },
   },
   {
+    // The web app (Next.js + React): hooks and React Compiler rules, browser globals.
+    // (Not the Next.js ESLint plugin: it pulls in a package with an unfixed high advisory,
+    // GHSA-vfj7-8cjw-p6xm. Its rule that matters here — internal links through <Link>, so
+    // navigation stays client-side and prefetched — is the selector below.)
+    files: ['apps/web/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: {
+      ...reactHooks.configs.flat['recommended-latest'].rules,
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "JSXOpeningElement[name.name='a'] > JSXAttribute[name.name='href'] > Literal[value=/^\\/(?!\\/)/]",
+          message: 'Link to pages of this site with <Link> from next/link.',
+        },
+      ],
+    },
+  },
+  {
     // Scripts and seeds are CLI entrypoints: console output is their interface.
     files: ['**/scripts/**', '**/prisma/seed*.ts', '*.config.js'],
     rules: { 'no-console': 'off' },
   },
   {
     // HTTP response bodies in tests are untyped (supertest); production code stays strict.
-    files: ['**/*.test.ts'],
+    files: ['**/*.test.ts', '**/*.spec.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-argument': 'off',

@@ -372,6 +372,15 @@ availability, bookings, reviews, settings) → admin panel → legal pages → P
 Security: httpOnly SameSite cookies for the refresh token, strict CSP with nonces, no tokens in
 localStorage. Branding stays swappable (single `Logo` component + design tokens).
 
+The detailed plan — every page, its data and edge cases, the design system and delivery steps
+3.1–3.7 — is [docs/WEB_PLAN.md](WEB_PLAN.md).
+
+- **3.1 Foundation — ✅ done.** Clean text everywhere (D-083, #38); the visitor's real address
+  through the web server (D-084, #39); `apps/web` (D-085): design tokens (AA-checked, light and
+  dark), fonts, logo, UI kit (`/kit`), clean-text inputs, session through the web server (tokens
+  only in HttpOnly cookies, renewal, sign-out at the API), nonce-based CSP and security headers,
+  error pages, browser tests (desktop + phone, WCAG 2.2 AA) in CI.
+
 ## Phase 4 — Mobile app (Expo)
 
 Expo Router structure → onboarding & auth (secure-store for tokens) → discovery & search (maps) →
