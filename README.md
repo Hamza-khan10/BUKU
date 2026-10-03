@@ -23,13 +23,14 @@ S3 console: <http://localhost:9101>. Full details in [DEVELOPMENT.md](docs/DEVEL
 
 ## Documentation
 
-| Document                             | Read it to learn                                                            |
-| ------------------------------------ | --------------------------------------------------------------------------- |
-| [Build Guide](docs/BUILD_GUIDE.md)   | What each phase builds, in which order, acceptance criteria, open decisions |
-| [Architecture](docs/ARCHITECTURE.md) | How services, data stores and events fit together                           |
-| [Security](docs/SECURITY.md)         | Every security control, where it lives, what's tested                       |
-| [Decisions](docs/DECISIONS.md)       | Why the build differs from the original spec, decision by decision          |
-| [Development](docs/DEVELOPMENT.md)   | Setup, daily commands, how-tos, git workflow, troubleshooting               |
+| Document                                | Read it to learn                                                            |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| [Build Guide](docs/BUILD_GUIDE.md)      | What each phase builds, in which order, acceptance criteria, open decisions |
+| [Architecture](docs/ARCHITECTURE.md)    | How services, data stores and events fit together                           |
+| [Security](docs/SECURITY.md)            | Every security control, where it lives, what's tested                       |
+| [Decisions](docs/DECISIONS.md)          | Why the build differs from the original spec, decision by decision          |
+| [Development](docs/DEVELOPMENT.md)      | Setup, daily commands, how-tos, git workflow, troubleshooting               |
+| [Compliance](docs/compliance/README.md) | SOC 2 readiness report, policies, risk register, runbooks                   |
 
 ## Repository layout
 

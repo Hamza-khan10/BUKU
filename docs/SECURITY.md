@@ -104,6 +104,11 @@ Status legend: ✅ in place and tested (Phase 1) · 🔜 built in the phase show
 | GitHub Actions pinned to commit SHAs; read-only workflow token; Dependabot for npm, actions, Docker | ✅                       |
 | Dependency review on PRs (blocks high-severity and copyleft licences)                               | ✅                       |
 
+## Compliance
+
+The SOC 2 readiness report, policies, risk register and runbooks are in
+[docs/compliance](compliance/README.md).
+
 ## Reporting a vulnerability
 
 Email security@buku.app (to be created before launch). Do not open a public issue.

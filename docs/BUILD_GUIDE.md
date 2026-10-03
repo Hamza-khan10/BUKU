@@ -323,7 +323,7 @@ routes, and as a customer on the 40 admin routes. Public routes are an explicit,
 Found and fixed: business billing routes told outsiders "payments aren't set up" before checking
 who they were.
 
-### 2.10 SOC 2 compliance review (requested 2026-10-02)
+### 2.10 SOC 2 compliance review (requested 2026-10-02) — ✅ done
 
 Once Phase 2 is complete: a full review of the system, start to end, against the SOC 2 Trust
 Services Criteria — security (common criteria), availability, confidentiality, processing
@@ -348,6 +348,15 @@ ask for, the gaps, and the fixes (code, infrastructure or written policy). Expec
 
 Outcome: a readiness report and the fixes merged. The certification itself (Type I, then Type II
 over a period) is performed by an independent CPA firm; this review prepares for it.
+
+Done (PRs #28–#32): the [readiness report](compliance/SOC2-readiness.md) covers every criterion
+with controls, evidence and status. Fixed in code: two-step sign-in required for admins (D-081),
+append-only audit log and a retention schedule in the database, audited admin-role changes and
+access reviews (D-080), image scanning with SBOMs, digest-pinned bases, CodeQL, security alert
+rules with runbooks (D-082), every route checked by the acceptance run (D-079). Written: eight
+policies, risk register, sub-processors, privacy notice draft. What remains is mostly Phase 5
+(production monitoring, backups and restore drills) plus legal review, vendor reports and a
+penetration test before a Type I audit.
 
 **Deferred (built later on the same foundation):** ads (image and video creatives for
 businesses on the Enterprise plan only), ClickHouse analytics, outgoing
