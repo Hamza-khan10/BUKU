@@ -91,7 +91,7 @@ services:
     routes:
       # Public: browsing a business's services, staff and free slots.
       - name: business-booking-public
-        paths: ['~/v1/businesses/[^/]+/(availability|services|staff)$']
+        paths: ['~/v1/businesses/[^/]+/(availability|services|staff|reviews)$']
         methods: [GET, OPTIONS]
         regex_priority: 10
         strip_path: false
@@ -99,7 +99,8 @@ services:
         paths:
           - '/v1/appointments'
           - '/v1/staff'
-          - '~/v1/businesses/[^/]+/(appointments|availability|services|service-categories|staff|closures|booking-settings|check-in|attendance)($|/)'
+          - '/v1/admin/reviews'
+          - '~/v1/businesses/[^/]+/(appointments|availability|services|service-categories|staff|closures|booking-settings|check-in|attendance|reviews)($|/)'
         strip_path: false
         plugins: [*jwt]
 

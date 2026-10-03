@@ -30,6 +30,12 @@ export const TOPIC_SPECS = {
   'bookings.reminder': { partitions: 6, retentionMs: 1 * DAY },
   'bookings.no_show': { partitions: 6, retentionMs: 30 * DAY },
 
+  // ── Reviews ──
+  /** A customer reviewed a visit (the business is told). */
+  'reviews.created': { partitions: 3, retentionMs: 30 * DAY },
+  /** The business replied to a review (the reviewer is told). */
+  'reviews.responded': { partitions: 3, retentionMs: 30 * DAY },
+
   // ── Queues ──
   'queue.session.opened': { partitions: 3, retentionMs: 1 * DAY },
   'queue.session.closed': { partitions: 3, retentionMs: 1 * DAY },

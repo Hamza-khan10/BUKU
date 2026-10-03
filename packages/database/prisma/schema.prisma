@@ -980,6 +980,15 @@ model Review {
   isFlagged         Boolean   @default(false) @map("is_flagged")
   flagReason        String?   @map("flag_reason") @db.VarChar(200)
   isVisible         Boolean   @default(true) @map("is_visible")
+  /// The customer changed it (allowed for 7 days after posting).
+  editedAt          DateTime? @map("edited_at") @db.Timestamptz(6)
+  /// Reported by the business (who and when); an admin decides whether to hide it.
+  flaggedAt         DateTime? @map("flagged_at") @db.Timestamptz(6)
+  flaggedById       String?   @map("flagged_by_id") @db.Uuid
+  /// Hidden by an admin (stays stored; the business's rating no longer counts it).
+  hiddenAt          DateTime? @map("hidden_at") @db.Timestamptz(6)
+  hiddenReason      String?   @map("hidden_reason") @db.VarChar(300)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
@@ -988,6 +997,7 @@ model Review {
 
   @@index([businessId, isVisible, createdAt])
   @@index([businessId, overallRating])
+  @@index([isFlagged, flaggedAt])
   @@index([userId])
   @@map("reviews")
 }

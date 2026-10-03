@@ -39,6 +39,10 @@ export const BUSINESS_PERMISSIONS = {
   'schedule.manage_all': ['owner', 'manager'],
   'schedule.manage_own': ['owner', 'manager', 'front_desk', 'staff'],
   'billing.manage': ['owner'],
+  /** Reply to reviews and report abusive or fake ones. */
+  'reviews.respond': ['owner', 'manager'],
+  /** Reputation and cancellation figures. */
+  'reports.view': ['owner', 'manager'],
 } as const satisfies Record<string, readonly BusinessRole[]>;
 
 export type BusinessPermission = keyof typeof BUSINESS_PERMISSIONS;

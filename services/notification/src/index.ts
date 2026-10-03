@@ -132,6 +132,8 @@ const reminders = every(1, 'reminders', async () => {
 const rebook = every(5, 'rebook', async () => {
   const n = await scheduler.exclusive('rebook', 4 * 60_000, () => scheduler.rebookReminders());
   if (n) logger.info({ sent: n }, '"book again" reminders sent');
+  const r = await scheduler.exclusive('review-requests', 4 * 60_000, () => scheduler.reviewRequests());
+  if (r) logger.info({ sent: r }, 'review requests sent');
 });
 const plans = every(15, 'plan-notices', async () => {
   const n = await scheduler.exclusive('plan-notices', 14 * 60_000, () => scheduler.planNotices());

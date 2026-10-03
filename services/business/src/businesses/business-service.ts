@@ -31,7 +31,11 @@ const IDENTITY_FIELDS = [
   'lng',
 ] as const;
 
-const include = { category: { select: { id: true, name: true, slug: true } }, hours: true } as const;
+const include = {
+  category: { select: { id: true, name: true, slug: true } },
+  hours: true,
+  searchStats: { select: { kept90d: true, businessCancels90d: true } },
+} as const;
 
 export interface BusinessProfileInput {
   name: string;

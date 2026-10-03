@@ -2,7 +2,7 @@ import { logger } from '@buku/common';
 import type { Database, Transaction } from '@buku/database';
 import { processOnce, TOPICS, type EventHandler, type Topic } from '@buku/kafka';
 import { z } from 'zod';
-import { toCustomer, toTeam } from '../messages.js';
+import { shortName, toCustomer, toTeam } from '../messages.js';
 import type { Delivery, Notifier } from '../notifier.js';
 import { approvers, loadVisit } from '../visits.js';
 
@@ -28,6 +28,8 @@ export const CONSUMED_TOPICS: Topic[] = [
   TOPICS.QUEUE_POSITION_UPDATED,
   TOPICS.QUEUE_ENTRY_CALLED,
   TOPICS.QUEUE_ENTRY_LEFT,
+  TOPICS.REVIEWS_CREATED,
+  TOPICS.REVIEWS_RESPONDED,
 ];
 
 const CONSUMER = 'notification-service';
@@ -39,6 +41,12 @@ const Booking = z.object({
   reasonCode: z.string().optional(),
   late: z.boolean().optional(),
 });
+const ReviewEvent = z.object({
+  reviewId: z.uuid(),
+  appointmentId: z.uuid(),
+  businessId: z.uuid(),
+});
+
 const QueueEvent = z.object({
   entryId: z.uuid(),
   businessId: z.uuid(),
@@ -56,7 +64,9 @@ export function notificationHandler(deps: { db: Database; notifier: Notifier }):
     await processOnce(deps.db, CONSUMER, event.id, async (tx) => {
       const deliveries = event.type.startsWith('bookings.')
         ? await bookingDeliveries(tx, event.type, Booking.parse(event.data))
-        : await queueDeliveries(tx, event.type, QueueEvent.parse(event.data));
+        : event.type.startsWith('reviews.')
+          ? await reviewDeliveries(tx, event.type, ReviewEvent.parse(event.data))
+          : await queueDeliveries(tx, event.type, QueueEvent.parse(event.data));
       toPush = await deps.notifier.record(tx, deliveries);
     });
     if (toPush.length) {
@@ -113,6 +123,49 @@ async function bookingDeliveries(
     default:
       return [];
   }
+}
+
+/** New review → owner and managers (who can reply). Reply → the reviewer. */
+async function reviewDeliveries(
+  tx: Transaction,
+  type: Topic,
+  e: z.infer<typeof ReviewEvent>,
+): Promise<Delivery[]> {
+  const review = await tx.review.findUnique({
+    where: { id: e.reviewId },
+    include: {
+      business: { select: { id: true, name: true, ownerId: true } },
+      appointment: { select: { service: { select: { name: true } } } },
+      user: { select: { name: true } },
+    },
+  });
+  if (!review || !review.isVisible) return [];
+  if (type === TOPICS.REVIEWS_RESPONDED) {
+    return [
+      {
+        userId: review.userId,
+        message: toCustomer.reviewReplied({
+          appointmentId: review.appointmentId,
+          businessName: review.business.name,
+        }),
+        appointmentId: review.appointmentId,
+      },
+    ];
+  }
+  const managers = await tx.businessMember.findMany({
+    where: { businessId: review.businessId, status: 'active', role: 'manager' },
+    select: { userId: true },
+  });
+  const message = toTeam.newReview({
+    businessId: review.businessId,
+    reviewId: review.id,
+    reviewer: shortName(review.user.name),
+    overall: review.overallRating,
+    serviceName: review.appointment.service.name,
+  });
+  return [...new Set([review.business.ownerId, ...managers.map((m) => m.userId)])]
+    .filter((id) => id !== review.userId)
+    .map((userId) => ({ userId, message, appointmentId: review.appointmentId }));
 }
 
 async function queueDeliveries(

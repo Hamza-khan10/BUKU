@@ -541,3 +541,55 @@ describe('Admin settings', () => {
     expect(usage.body.data).toMatchObject({ month: expect.stringMatching(/^\d{4}-\d{2}$/) });
   });
 });
+
+describe('Reviews', () => {
+  it('“how was it?” after a visit — once, not for no-shows or reviewed visits; new review → owner and managers; reply → reviewer', async () => {
+    const visited = await booking(db, { startAt: later(-2 * HOUR), createdAt: later(-3 * 24 * HOUR) });
+    await db.appointment.update({ where: { id: visited.a.id }, data: { status: 'completed' } });
+    const missed = await booking(db, { startAt: later(-2 * HOUR), createdAt: later(-3 * 24 * HOUR) });
+    await db.appointment.update({ where: { id: missed.a.id }, data: { status: 'no_show' } });
+    const reviewed = await booking(db, { startAt: later(-2 * HOUR), createdAt: later(-3 * 24 * HOUR) });
+    await db.appointment.update({ where: { id: reviewed.a.id }, data: { status: 'completed' } });
+    await db.review.create({
+      data: {
+        appointmentId: reviewed.a.id,
+        userId: reviewed.f.customer.id,
+        businessId: reviewed.f.business.id,
+        overallRating: 5,
+      },
+    });
+
+    await h.scheduler.reviewRequests(NOW);
+    await h.scheduler.reviewRequests(later(5 * 60_000));
+    expect(await inboxTitles(visited.f.customer.id)).toEqual(['How was your Haircut?']);
+    expect((await x.inbox(visited.f.customer.id))[0]!.data).toEqual({
+      screen: 'review',
+      appointmentId: visited.a.id,
+    });
+    expect(await x.inbox(missed.f.customer.id)).toEqual([]);
+    expect(await x.inbox(reviewed.f.customer.id)).toEqual([]);
+
+    const r = await db.review.create({
+      data: {
+        appointmentId: visited.a.id,
+        userId: visited.f.customer.id,
+        businessId: visited.f.business.id,
+        overallRating: 4,
+      },
+    });
+    const manager = await x.member(visited.f.business.id, 'manager');
+    const desk = await x.member(visited.f.business.id, 'front_desk');
+    const data = { reviewId: r.id, appointmentId: visited.a.id, businessId: visited.f.business.id };
+    await x.deliver(TOPICS.REVIEWS_CREATED, data);
+    for (const u of [visited.f.owner.id, manager.id]) expect(await inboxTitles(u)).toEqual(['New 4★ review']);
+    expect((await x.inbox(manager.id))[0]!.body).toBe(
+      'Ayesha K. reviewed Haircut. Reply to show customers you listen.',
+    );
+    expect(await x.inbox(desk.id)).toEqual([]);
+
+    await x.deliver(TOPICS.REVIEWS_RESPONDED, data);
+    expect((await inboxTitles(visited.f.customer.id)).at(-1)).toBe(
+      `${visited.f.business.name} replied to your review`,
+    );
+  });
+});

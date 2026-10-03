@@ -456,3 +456,17 @@ slots for every result would be too slow). Query parameters are camelCase like t
 (the original spec's snake_case is not used). Search events go to `analytics.search` without user,
 coordinates or contact-like text. `SEARCH_ENGINE=elasticsearch` is refused until that engine is
 built; paid placements slot in with the ads service (`isPromoted`).
+
+**D-077 · Reviews: only real visits, fair to both sides.** A customer reviews their own visit that
+happened (completed, or checked in and started) within 30 days, once; a database trigger refuses a
+review whose business or customer doesn't match its appointment. They can change it for 7 days
+(marked "edited") and delete it any time; the rating is recalculated by the existing trigger.
+Reviewers are shown as "Ayesha K." ("A customer" once the account is deleted), with the month of
+the visit, never ids or contact details; phone numbers and emails typed into reviews or replies
+are masked. Owner and managers reply once per review (edits replace it; the reviewer is told about
+the first reply only) and can report a review as offensive, fake, not a customer, personal info or
+other — reporting never hides it. Only a platform admin hides one (kept, but no longer shown or
+counted) or keeps/restores it, always audited. Customers are asked "How was your visit?" once,
+30 minutes to 3 days after it, not at night; owner and managers hear about new reviews. The
+business's reliability (D-035) sits next to its rating on the profile and in the review summary,
+from the same figures and rule as search (`businessReliability` in `@buku/common`).

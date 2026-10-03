@@ -968,3 +968,40 @@ GET /v1/businesses/autocomplete?q=hai
             "categories": [{ "slug": "hair-salon", "name": "Hair Salon", "icon": null }],
             "services": ["Haircut", "Haircut + Beard", "Hair Colour"] } }
 ```
+
+## Reviews (2.8 part 1)
+
+| Method & path                                                     | Auth          | Purpose                                                                       |
+| ----------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------- |
+| `GET /v1/businesses/:idOrSlug/reviews?sort=&rating=&withComment=` | —             | Reviews (newest first) with `meta.summary`                                    |
+| `POST /v1/appointments/:id/review`                                | the customer  | Review a visit that happened (within 30 days, once)                           |
+| `PATCH /v1/appointments/:id/review`                               | the customer  | Change it (7 days after posting)                                              |
+| `DELETE /v1/appointments/:id/review`                              | the customer  | Delete it                                                                     |
+| `GET /v1/appointments/reviews`                                    | ✔             | My reviews                                                                    |
+| `PUT`/`DELETE /v1/businesses/:id/reviews/:reviewId/response`      | owner/manager | Reply (replaces an earlier reply) / remove the reply                          |
+| `POST /v1/businesses/:id/reviews/:reviewId/report`                | owner/manager | `{ reason: offensive·fake·not_a_customer·personal_info·other, note? }`        |
+| `GET /v1/admin/reviews`                                           | admin         | Reported reviews, oldest report first                                         |
+| `POST /v1/admin/reviews/:reviewId/decision`                       | admin         | `{ action: "hide", reason }` · `{ action: "keep" }` · `{ action: "restore" }` |
+
+```json
+POST /v1/appointments/:id/review
+{ "overall": 5, "waitTime": 4, "staff": 5, "cleanliness": 5, "value": 4, "comment": "Great fade" }
+
+GET /v1/businesses/fade-masters/reviews
+{ "data": [{ "id": "…", "rating": { "overall": 5, "waitTime": 4, "staff": 5, "cleanliness": 5, "value": 4 },
+             "comment": "Great fade", "author": "Ayesha K.", "service": "Haircut", "staff": "Ali",
+             "visitedIn": "2026-10", "createdAt": "…", "edited": false,
+             "response": { "text": "Thanks Ayesha!", "at": "…" } }],
+  "meta": { "page": 1, "limit": 20, "total": 128, "totalPages": 7,
+            "summary": { "average": 4.7, "count": 128, "stars": { "5": 100, "4": 20, "3": 5, "2": 2, "1": 1 },
+                         "details": { "waitTime": 4.4, "staff": 4.8, "cleanliness": 4.9, "value": 4.5 },
+                         "reliability": { "keptPercent": 98, "basedOn": 240 } } } }
+```
+
+Only `overall` is required (1–5); comments up to 2,000 characters, replies up to 1,000; phone
+numbers and emails in either are replaced with "[contact removed]". Errors: `REVIEW_NOT_ALLOWED`
+(422: not your visit yet, a no-show, or over 30 days), `REVIEW_EXISTS` (409), `REVIEW_LOCKED`
+(409: over 7 days to edit). The public business profile (`GET /v1/businesses/:idOrSlug`) now
+includes `reliability` next to `rating`. Notifications: "How was your Haircut?" (customer, once,
+30 min–3 days after the visit), "New 4★ review" (owner and managers), "<Business> replied to your
+review" (reviewer, first reply only).

@@ -64,7 +64,7 @@ check "User emails stored encrypted, never plaintext"  eq "$(psql_q "SELECT coun
 check "App role cannot DROP tables (least privilege)"  bash -c "! docker compose -f docker-compose.dev.yml exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql -h localhost -U buku_app -d buku -c 'DROP TABLE categories' 2>/dev/null"
 
 echo "═══ 4. Kafka ═══"
-check "41 topics exactly match the registry"           bash -c "docker compose -f docker-compose.dev.yml run --rm --no-deps kafka-init /app/node_modules/.bin/tsx scripts/sync-topics.ts --check"
+check "Kafka topics exactly match the registry"        bash -c "docker compose -f docker-compose.dev.yml run --rm --no-deps kafka-init /app/node_modules/.bin/tsx scripts/sync-topics.ts --check"
 check "Auto topic creation disabled"                   bash -c "docker compose -f docker-compose.dev.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server localhost:29092 --entity-type brokers --entity-name 1 --describe --all | grep -q 'auto.create.topics.enable=false'"
 
 echo "═══ 5. Search & analytics stores ═══"

@@ -72,6 +72,13 @@ export const ErrorCodes = {
   BUSINESS_NOT_VERIFIED: 'BUSINESS_NOT_VERIFIED',
   BUSINESS_SUSPENDED: 'BUSINESS_SUSPENDED',
   ALREADY_REPORTED: 'ALREADY_REPORTED',
+
+  // Reviews
+  /** Only for your own visit that happened (completed or checked in), within 30 days. */
+  REVIEW_NOT_ALLOWED: 'REVIEW_NOT_ALLOWED',
+  REVIEW_EXISTS: 'REVIEW_EXISTS',
+  /** Editing is allowed for 7 days after posting. */
+  REVIEW_LOCKED: 'REVIEW_LOCKED',
   VERIFICATION_REQUIREMENTS_NOT_MET: 'VERIFICATION_REQUIREMENTS_NOT_MET',
 
   // Uploads

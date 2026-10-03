@@ -293,10 +293,17 @@ every result: open now, open queue and people waiting, lowest price, distance, c
 Elasticsearch stays for later (`SEARCH_ENGINE=elasticsearch` is refused until built); paid
 placements come with the ads service.
 
-### 2.8 Reputation
+### 2.8 Reputation — 🚧 part 1 done (reviews)
 
 Customer reliability score (visible to the customer; businesses see a simple summary such as
 "shows up 95%"), business reliability figure next to its star rating, cancellation analytics.
+
+Part 1 (built, D-077): reviews — only for real visits (30 days, once; edit 7 days, delete any
+time), public list with summary (stars, detail ratings, reliability), owner/manager replies,
+reports and admin moderation, "How was your visit?" requests, new-review and reply notifications;
+business reliability on the public profile.
+
+Next: part 2 — customer reliability ("shows up 95%") and cancellation analytics for businesses.
 
 ### 2.9 Phase 2 acceptance
 

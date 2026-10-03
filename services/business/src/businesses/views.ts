@@ -1,5 +1,5 @@
 import type { Business, BusinessHours, Category } from '@buku/database';
-import type { BusinessRole } from '@buku/common';
+import { businessReliability, type BusinessRole } from '@buku/common';
 
 /**
  * What the outside world sees vs what the business team sees. Views are
@@ -7,7 +7,12 @@ import type { BusinessRole } from '@buku/common';
  * never leak to the public by accident.
  */
 
-type WithRelations = Business & { category: Pick<Category, 'id' | 'name' | 'slug'>; hours: BusinessHours[] };
+type WithRelations = Business & {
+  category: Pick<Category, 'id' | 'name' | 'slug'>;
+  hours: BusinessHours[];
+  /** Ranking figures (search-service, every 10 minutes); absent for a brand-new business. */
+  searchStats?: { kept90d: number; businessCancels90d: number } | null;
+};
 
 export function publicView(b: WithRelations) {
   return {
@@ -30,6 +35,10 @@ export function publicView(b: WithRelations) {
         }
       : { status: 'not_verified' as const, label: 'Not verified by BUKU', verifiedAt: null },
     rating: { average: b.avgRating.toNumber(), count: b.reviewCount },
+    /** Bookings kept vs cancelled by the business, last 90 days (D-035); null until 10 bookings. */
+    reliability: b.searchStats
+      ? businessReliability(b.searchStats.kept90d, b.searchStats.businessCancels90d)
+      : null,
     hours: b.hours
       .filter((h) => !h.isClosed)
       .sort((x, y) => x.dayOfWeek - y.dayOfWeek || x.openTime.localeCompare(y.openTime))
