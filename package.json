@@ -36,7 +36,8 @@
     "kafka:topics": "pnpm --filter @buku/kafka topics:sync",
     "changeset": "changeset",
     "audit:deps": "pnpm audit --audit-level high",
-    "prisma:validate": "pnpm --filter @buku/database validate"
+    "prisma:validate": "pnpm --filter @buku/database validate",
+    "acceptance": "tsx scripts/acceptance/run.ts"
   },
   "devDependencies": {
     "@changesets/cli": "3.0.3",
