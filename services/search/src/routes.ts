@@ -148,6 +148,11 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     }),
   );
 
+  app.get('/v1/cities', async (_req, res) => {
+    cacheable(res, 300);
+    sendSuccess(res, await deps.search.cities());
+  });
+
   app.get('/v1/categories', async (_req, res) => {
     cacheable(res, 300);
     sendSuccess(res, (await deps.categories.tree()).map(categoryView));

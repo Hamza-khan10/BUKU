@@ -244,6 +244,21 @@ export class SearchService {
     return Promise.all(rows.map((r) => this.view(r)));
   }
 
+  /**
+   * Cities with businesses on BUKU (shown and offering something), the most
+   * first: for the city picker and for honest figures ("12 places in Lahore").
+   */
+  async cities(): Promise<{ city: string; country: string; businesses: number }[]> {
+    const rows = await this.db.$queryRaw<{ city: string; country: string; businesses: bigint }[]>`
+      SELECT min(b.city) AS city, b.country, count(*) AS businesses
+      FROM businesses b
+      WHERE ${VISIBLE} AND ${OFFERS_SOMETHING_PLAIN}
+      GROUP BY lower(b.city), b.country
+      ORDER BY count(*) DESC, min(b.city)
+      LIMIT 200`;
+    return rows.map((r) => ({ city: r.city, country: r.country, businesses: Number(r.businesses) }));
+  }
+
   /** Busiest this week in a city or around a point (bookings + queue joins; at least 3). */
   async trending(
     input: {

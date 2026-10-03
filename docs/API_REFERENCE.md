@@ -938,6 +938,7 @@ All public (no sign-in), rate-limited at the gateway (200/minute per address).
 | `GET /v1/businesses/autocomplete?q=`             | As-you-type: businesses, categories, services (2+ characters)        |
 | `GET /v1/businesses/featured?city=` or `lat,lng` | Homepage picks: verified, with a photo, best first, ≤ 2 per category |
 | `GET /v1/businesses/trending?city=` or `lat,lng` | Busiest this week (bookings + queue joins, at least 3)               |
+| `GET /v1/cities`                                 | Cities with businesses on BUKU and how many, most first              |
 | `GET /v1/categories`                             | Category tree (active only)                                          |
 | `GET /v1/categories/:slug`                       | One category with its children and parent                            |
 | `GET /v1/categories/:slug/businesses`            | Search within a category (and its sub-categories)                    |
