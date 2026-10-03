@@ -531,6 +531,7 @@ model Business {
   members                BusinessMember[]
   managedAccounts        User[]                  @relation("ManagedAccounts")
   reports                BusinessReport[]
+  searchStats            BusinessSearchStats?
 
   @@index([ownerId])
   @@index([categoryId])
@@ -616,6 +617,26 @@ model BusinessDocument {
 
 /// Public opening hours. Multiple rows per day allowed (split shifts).
 /// DB extras: CHECK day 0-6, HH:MM format, open < close.
+/// What search ranks by (D-076), recomputed by search-service every 10 minutes from
+/// bookings and queues. Derived data: safe to delete, rebuilt on the next run.
+model BusinessSearchStats {
+  businessId         String   @id @map("business_id") @db.Uuid
+  /// Bookings made in the last 7 days / the 7 before (excluding ones the business itself cancelled).
+  bookings7d         Int      @default(0) @map("bookings_7d")
+  bookingsPrev7d     Int      @default(0) @map("bookings_prev_7d")
+  queueJoins7d       Int      @default(0) @map("queue_joins_7d")
+  /// Last 90 days: visits kept (completed, checked in, or the customer didn't come) and
+  /// confirmed bookings the business cancelled. Reliability = kept / (kept + cancelled).
+  kept90d            Int      @default(0) @map("kept_90d")
+  businessCancels90d Int      @default(0) @map("business_cancels_90d")
+  refreshedAt        DateTime @map("refreshed_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([bookings7d])
+  @@map("business_search_stats")
+}
+
 model BusinessHours {
   id         String  @id @default(uuid(7)) @db.Uuid
   businessId String  @map("business_id") @db.Uuid

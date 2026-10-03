@@ -437,3 +437,22 @@ for employee accounts, suspended or deleted accounts, or places that closed; not
 per visit / quiet spell / step (`notification_marks`); and admin caps — a gap between suggestions
 (7 days), a monthly maximum (3), and stop after 3 with no booking in between. Inbox items only for
 people who opted in to suggestions (an email-only recipient isn't sent unasked-for app messages).
+
+**D-076 · Search runs on Postgres, live; Elasticsearch only when volume needs it.** One search
+document per business (name A; category and active service names B — "haircut" finds barbers;
+description C; city D) kept current by triggers whenever the business, a service or a category
+changes, so search is never behind. Queries use a prefix full-text query rebuilt from plain words
+(no syntax from users reaches Postgres), PostGIS for radius and distance, and typo tolerance on
+names (every word of 4+ letters within trigram word-similarity 0.5, shorter ones literally).
+Ranking (`relevance`): text match + quality (rating as a Bayesian average — pulled to 4.0 as if
+from 5 reviews — 70%, reliability 30%, +0.05 verified) + closeness (half weight at 5 km).
+Reliability = visits kept / (kept + confirmed bookings the business cancelled) over 90 days;
+declining a request doesn't count; shown from 10 bookings. These and "trending" figures live in
+`business_search_stats`, recomputed every 10 minutes. Results show live facts: open now
+(business hours in its timezone, minus closures), an open queue and how many are waiting, the
+lowest price, cover photo. Only live businesses with something to offer appear; unverified ones
+are labelled. "Available on a date" means open that day (exact times are on the profile — computing
+slots for every result would be too slow). Query parameters are camelCase like the rest of the API
+(the original spec's snake_case is not used). Search events go to `analytics.search` without user,
+coordinates or contact-like text. `SEARCH_ENGINE=elasticsearch` is refused until that engine is
+built; paid placements slot in with the ads service (`isPromoted`).
