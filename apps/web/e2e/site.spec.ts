@@ -30,7 +30,7 @@ test.describe('The website', () => {
 
     // Scripts the server sends must carry this response's nonce (scripts they load
     // later are allowed by 'strict-dynamic'; browsers hide nonces from the DOM).
-    const scripts = (await res.text()).match(/<script\b[^>]*>/g) ?? [];
+    const scripts = (await res.text()).match(/<script\b[^>]*>/gi) ?? [];
     expect(scripts.length).toBeGreaterThan(0);
     for (const tag of scripts) expect(tag).toContain(`nonce="${nonce}"`);
   });
