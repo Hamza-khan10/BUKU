@@ -37,7 +37,8 @@
     "changeset": "changeset",
     "audit:deps": "pnpm audit --audit-level high",
     "prisma:validate": "pnpm --filter @buku/database validate",
-    "acceptance": "tsx scripts/acceptance/run.ts"
+    "acceptance": "tsx scripts/acceptance/run.ts",
+    "admin:role": "pnpm --filter @buku/auth-service exec tsx scripts/set-role.ts"
   },
   "devDependencies": {
     "@changesets/cli": "3.0.3",

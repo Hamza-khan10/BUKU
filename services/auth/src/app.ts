@@ -1,3 +1,4 @@
+import { AccessReview } from './admin/access-review.js';
 import {
   createHttpApp,
   type BlindIndexer,
@@ -121,6 +122,7 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
         redis: deps.redis,
         identity: deps.identity,
         devLoginEnabled: settings.devLoginEnabled,
+        accessReview: new AccessReview({ db: deps.db, cipher: deps.cipher }),
       }),
   });
   return { app, rights };

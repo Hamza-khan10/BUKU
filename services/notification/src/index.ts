@@ -12,7 +12,7 @@ import {
   type ShutdownHook,
   tcpPing,
 } from '@buku/common';
-import { createDatabaseClient, maintainPartitions, pingDatabase } from '@buku/database';
+import { applyRetention, createDatabaseClient, maintainPartitions, pingDatabase } from '@buku/database';
 import {
   consumerGroupId,
   createKafka,
@@ -152,6 +152,11 @@ const partitionJob = async () => {
 };
 await partitionJob();
 const partitions = every(24 * 60, 'partitions', partitionJob);
+// The retention schedule (D-080): expired months and rows removed, each run audited.
+const retention = every(24 * 60, 'retention', async () => {
+  const r = await applyRetention(db);
+  if (r.ran) logger.info(r, 'retention applied');
+});
 
 // Hooks run in REVERSE order on shutdown: stop producing before closing stores.
 const hooks: ShutdownHook[] = [
@@ -167,7 +172,8 @@ const hooks: ShutdownHook[] = [
   {
     name: 'jobs',
     fn: () => {
-      for (const t of [receipts, partitions, reminders, rebook, plans, suggest, marks]) clearInterval(t);
+      for (const t of [receipts, partitions, retention, reminders, rebook, plans, suggest, marks])
+        clearInterval(t);
       email.close();
       return Promise.resolve();
     },

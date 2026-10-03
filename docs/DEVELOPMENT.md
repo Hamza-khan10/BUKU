@@ -27,18 +27,19 @@ password `buku-dev-password-2026`.
 
 ## Everyday commands
 
-| Command                                        | What it does                                                          |
-| ---------------------------------------------- | --------------------------------------------------------------------- |
-| `pnpm dev` / `pnpm dev:down`                   | Start / stop the stack (data kept in Docker volumes)                  |
-| `pnpm dev:wipe`                                | Stop and **delete all local data** (fresh DB + seed on next start)    |
-| `pnpm dev:tools`                               | Also start Kibana (:5601), Kafka UI (:8080), Redis Insight (:5540)    |
-| `pnpm dev:logs`                                | Follow logs of all containers                                         |
-| `pnpm test` / `pnpm test:watch`                | Unit tests                                                            |
-| `pnpm test:int`                                | Integration tests against the running stack (uses the `buku_test` DB) |
-| `pnpm typecheck` · `pnpm lint` · `pnpm format` | Code quality                                                          |
-| `pnpm verify`                                  | Stack and quality checks (43)                                         |
-| `pnpm acceptance`                              | Phase 2 acceptance through the gateway (journeys, races, every route) |
-| `pnpm db:studio`                               | Browse the database in Prisma Studio                                  |
+| Command                                         | What it does                                                          |
+| ----------------------------------------------- | --------------------------------------------------------------------- |
+| `pnpm dev` / `pnpm dev:down`                    | Start / stop the stack (data kept in Docker volumes)                  |
+| `pnpm dev:wipe`                                 | Stop and **delete all local data** (fresh DB + seed on next start)    |
+| `pnpm dev:tools`                                | Also start Kibana (:5601), Kafka UI (:8080), Redis Insight (:5540)    |
+| `pnpm dev:logs`                                 | Follow logs of all containers                                         |
+| `pnpm test` / `pnpm test:watch`                 | Unit tests                                                            |
+| `pnpm test:int`                                 | Integration tests against the running stack (uses the `buku_test` DB) |
+| `pnpm typecheck` · `pnpm lint` · `pnpm format`  | Code quality                                                          |
+| `pnpm verify`                                   | Stack and quality checks (43)                                         |
+| `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route) |
+| `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)            |
+| `pnpm db:studio`                                | Browse the database in Prisma Studio                                  |
 
 Services hot-reload: edit anything under `packages/*/src` or `services/*/src` and the affected
 containers restart within a second. After changing `package.json`/`pnpm-lock.yaml`, run

@@ -250,10 +250,12 @@ export class UserService {
           role: input.role,
           termsVersion: this.deps.termsVersion,
           termsAcceptedAt: now,
+          lastLoginAt: now,
           notificationPrefs: { create: {} },
         },
       }));
     this.assertNotBlocked(user, {});
+    if (existing) await this.deps.db.user.update({ where: { id: user.id }, data: { lastLoginAt: now } });
     const session = await this.deps.sessions.start(user, device, ctx);
     await recordAudit(this.deps.db, {
       userId: user.id,

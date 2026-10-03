@@ -4,11 +4,13 @@ import {
   ErrorCodes,
   rateLimit,
   requireAuth,
+  requireRole,
   sendNoContent,
   sendSuccess,
   validated,
   type RevocationStore,
 } from '@buku/common';
+import type { AccessReview } from '../admin/access-review.js';
 import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
 import { requestContext } from '../http/context.js';
@@ -52,6 +54,7 @@ export interface RouteDeps {
   redis: Redis;
   identity: { google: OidcVerifier | null; apple: OidcVerifier | null };
   devLoginEnabled: boolean;
+  accessReview: AccessReview;
 }
 
 function signInResponse(result: SignInResult) {
@@ -347,4 +350,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   );
 
   app.use('/v1/businesses/:businessId/members', team);
+
+  // ── Platform admins: the quarterly access review (D-080) ─────────────────
+  app.get('/v1/admin/access-review', auth, requireRole('super_admin'), async (req, res) => {
+    sendSuccess(res, await deps.accessReview.generate(requireAuth(req).userId, requestContext(req)));
+  });
 }
