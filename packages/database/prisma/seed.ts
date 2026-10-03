@@ -77,33 +77,30 @@ function contact(email: string | null, phone: string | null) {
 }
 
 // ── Reference data ─────────────────────────────────────────────────────────
+// No icons here: the apps draw each category's icon from its slug.
 const CATEGORY_TREE = [
   {
     name: 'Beauty & Hair',
     slug: 'beauty-hair',
-    icon: '💇',
     children: ['Barbershop', 'Hair Salon', 'Nail Salon'],
   },
   {
     name: 'Health & Medical',
     slug: 'health-medical',
-    icon: '🩺',
     children: ['Dental Clinic', 'General Physician', 'Physiotherapy'],
   },
-  { name: 'Wellness & Spa', slug: 'wellness-spa', icon: '💆', children: ['Spa', 'Massage', 'Yoga Studio'] },
-  { name: 'Fitness', slug: 'fitness', icon: '🏋️', children: ['Gym', 'Personal Training'] },
-  { name: 'Automotive', slug: 'automotive', icon: '🚗', children: ['Car Wash', 'Auto Repair'] },
-  { name: 'Pets', slug: 'pets', icon: '🐾', children: ['Pet Grooming', 'Veterinary'] },
+  { name: 'Wellness & Spa', slug: 'wellness-spa', children: ['Spa', 'Massage', 'Yoga Studio'] },
+  { name: 'Fitness', slug: 'fitness', children: ['Gym', 'Personal Training'] },
+  { name: 'Automotive', slug: 'automotive', children: ['Car Wash', 'Auto Repair'] },
+  { name: 'Pets', slug: 'pets', children: ['Pet Grooming', 'Veterinary'] },
   {
     name: 'Government & Public',
     slug: 'government-public',
-    icon: '🏛️',
     children: ['Passport Office', 'Utility Services'],
   },
   {
     name: 'Home & Professional',
     slug: 'home-professional',
-    icon: '🧰',
     children: ['Tailor', 'Legal Consultation'],
   },
 ] as const;
@@ -284,7 +281,7 @@ async function main(): Promise<void> {
   for (const top of CATEGORY_TREE) {
     const parentId = uuidv7();
     await db.category.create({
-      data: { id: parentId, name: top.name, slug: top.slug, icon: top.icon, depth: 0, sortOrder: sort++ },
+      data: { id: parentId, name: top.name, slug: top.slug, depth: 0, sortOrder: sort++ },
     });
     for (const [i, child] of top.children.entries()) {
       const id = uuidv7();

@@ -11,6 +11,13 @@ Every response uses one envelope:
 ```
 
 Clients branch on `error.code`, never on `message`. Send `X-Request-ID` to correlate with server logs.
+
+**Text fields** follow the clean-text rules (D-083, `@buku/validation`): HTML is stripped; text is
+normalised (trimmed, spaces collapsed); emoji, invisible and control characters are refused with
+`400 VALIDATION_ERROR` and a readable message on the field. Person names accept letters of any
+script and `. ' -`; names of businesses, services, categories and cities also digits and
+`& , ( ) / + # : !`; one-line fields turn a line break into a space; free text (reviews,
+descriptions) keeps up to two line breaks in a row. Length limits apply after cleaning.
 The request/response contracts are defined in each service's `src/routes/schemas.ts`
 (OpenAPI generation from those Zod schemas is added with the web app in Phase 3).
 

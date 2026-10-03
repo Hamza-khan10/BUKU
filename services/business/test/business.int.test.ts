@@ -200,6 +200,24 @@ describe('Registering a business', () => {
     expect(pub.body.data.description).toBe('Best cuts');
   });
 
+  it('refuses emoji and invisible characters with a message people understand (D-083)', async () => {
+    const owner = await person();
+    for (const name of ['Best Cuts \u2702\uFE0F', 'Best\u200BCuts', 'Cuts\u202Egnp']) {
+      const res = await request(app).post('/v1/businesses').set(owner.auth).send(validBusiness({ name }));
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    }
+    const res = await request(app)
+      .post('/v1/businesses')
+      .set(owner.auth)
+      .send(validBusiness({ name: 'Best Cuts \u{1F488}' }));
+    expect(JSON.stringify(res.body.error)).toContain('Emojis and picture symbols can\u2019t be used here.');
+    // Styled "fancy" letters are turned into ordinary ones rather than refused.
+    const b = await createBusiness(owner, { name: '\u{1D401}\u{1D404}\u{1D412}\u{1D413} Cuts' });
+    const pub = await request(app).get(`/v1/businesses/${b.slug}`);
+    expect(pub.body.data.name).toBe('BEST Cuts');
+  });
+
   it('caps businesses per owner (anti-abuse)', async () => {
     const owner = await person();
     for (let i = 0; i < 3; i++) await createBusiness(owner);

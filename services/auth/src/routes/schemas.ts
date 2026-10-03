@@ -7,7 +7,10 @@ import { z } from 'zod';
 export const zLocale = z.string().regex(/^[a-z]{2}(-[A-Z]{2})?$/, 'must look like "en" or "en-PK"');
 
 export const DeviceSchema = z.strictObject({
-  name: zSafeText({ min: 1, max: 100 }).optional(),
+  // Sent by the app, not typed here: cleaned rather than refused (an iPhone may be called "Ali's 📱").
+  name: zSafeText({ kind: 'line', max: 100, strip: true })
+    .transform((v) => v || undefined)
+    .optional(),
   platform: z.enum(['ios', 'android', 'web']).optional(),
 });
 
@@ -24,7 +27,7 @@ export const OAuthSignInBody = zBody({
 
 export const DevSignInBody = zBody({
   email: zEmail,
-  name: zSafeText({ min: 1, max: 200 }).optional(),
+  name: zSafeText({ kind: 'personName', min: 1, max: 200 }).optional(),
   role: z.enum(['user', 'business_owner', 'super_admin']).default('user'),
   device: DeviceSchema.optional(),
 });
@@ -36,7 +39,7 @@ export const RefreshTokenBody = zBody({
 export const SessionIdParams = z.object({ id: z.uuid() });
 
 export const UpdateMeBody = zBody({
-  name: zSafeText({ min: 1, max: 200 }).optional(),
+  name: zSafeText({ kind: 'personName', min: 1, max: 200 }).optional(),
   timezone: zTimezone.optional(),
   locale: zLocale.optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');
@@ -58,7 +61,7 @@ export const DeleteAccountBody = zBody({
   /** Typed confirmation, so a stray request can't delete an account. */
   confirmation: z.literal('DELETE'),
   /** Optional feedback: why the person is leaving. */
-  reason: zSafeText({ max: 500 }).optional(),
+  reason: zSafeText({ kind: 'text', max: 500 }).optional(),
 });
 
 // ── Employee accounts (D-034) ────────────────────────────────────────────
@@ -86,13 +89,13 @@ export const BusinessParams = z.object({ businessId: z.uuid() });
 export const MemberParams = z.object({ businessId: z.uuid(), memberId: z.uuid() });
 
 export const CreateMemberBody = zBody({
-  name: zSafeText({ min: 1, max: 100 }),
+  name: zSafeText({ kind: 'personName', min: 1, max: 100 }),
   username: zUsername,
   role: z.enum(MEMBER_ROLES),
 });
 
 export const UpdateMemberBody = zBody({
-  name: zSafeText({ min: 1, max: 100 }).optional(),
+  name: zSafeText({ kind: 'personName', min: 1, max: 100 }).optional(),
   role: z.enum(MEMBER_ROLES).optional(),
   status: z.enum(['active', 'disabled']).optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');

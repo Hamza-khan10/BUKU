@@ -16,6 +16,15 @@ export * from './ids.js';
 // Validation
 export * from './countries.js';
 export * from './validation.js';
+export {
+  KIND_HINTS,
+  normalizeText,
+  stripDisallowed,
+  TEXT_PROBLEM_MESSAGES,
+  textProblem,
+  type TextKind,
+  type TextProblem,
+} from '@buku/validation';
 
 // Security primitives
 export * from './security/encryption.js';

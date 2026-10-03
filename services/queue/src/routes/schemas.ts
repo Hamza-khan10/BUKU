@@ -17,7 +17,7 @@ export const JoinBody = zBody({
 
 export const WalkInBody = zBody({
   /** A name to call out (optional). */
-  name: zSafeText({ min: 1, max: 100 }).optional(),
+  name: zSafeText({ kind: 'personName', min: 1, max: 100 }).optional(),
   priority: z.boolean().optional(),
 });
 

@@ -28,6 +28,7 @@ COPY --chown=node:node packages/database/package.json packages/database/
 COPY --chown=node:node packages/kafka/package.json    packages/kafka/
 COPY --chown=node:node packages/media/package.json    packages/media/
 COPY --chown=node:node packages/billing/package.json  packages/billing/
+COPY --chown=node:node packages/validation/package.json packages/validation/
 COPY --chown=node:node services/billing/package.json      services/billing/
 COPY --chown=node:node services/auth/package.json         services/auth/
 COPY --chown=node:node services/booking/package.json      services/booking/

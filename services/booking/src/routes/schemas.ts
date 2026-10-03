@@ -17,14 +17,14 @@ const atLeastOne = (b: Record<string, unknown>) => Object.values(b).some((v) => 
 // ── Menu ───────────────────────────────────────────────────────────────────
 
 export const CategoryBody = zBody({
-  name: zSafeText({ min: 1, max: 100 }),
+  name: zSafeText({ kind: 'title', min: 1, max: 100 }),
   sortOrder: z.number().int().min(0).max(1000).optional(),
 });
 export const UpdateCategoryBody = CategoryBody.partial().refine(atLeastOne, 'at least one field is required');
 
 const serviceFields = {
-  name: zSafeText({ min: 1, max: 200 }),
-  description: zSafeText({ max: 2000 }).nullable().optional(),
+  name: zSafeText({ kind: 'title', min: 1, max: 200 }),
+  description: zSafeText({ kind: 'text', max: 2000 }).nullable().optional(),
   categoryId: zUuid.nullable().optional(),
   durationMinutes: z.number().int().min(5).max(1440),
   /** Clean-up time after the service, not shown to customers. */
@@ -42,10 +42,10 @@ export const UpdateServiceBody = zBody({ ...serviceFields, isActive: z.boolean()
 // ── Staff ──────────────────────────────────────────────────────────────────
 
 const staffFields = {
-  displayName: zSafeText({ min: 1, max: 100 }),
-  bio: zSafeText({ max: 1000 }).nullable().optional(),
+  displayName: zSafeText({ kind: 'personName', min: 1, max: 100 }),
+  bio: zSafeText({ kind: 'text', max: 1000 }).nullable().optional(),
   specializations: z
-    .array(zSafeText({ min: 1, max: 60 }))
+    .array(zSafeText({ kind: 'title', min: 1, max: 60 }))
     .max(20)
     .optional(),
   userId: zUuid.nullable().optional(),
@@ -80,7 +80,7 @@ const timeOffFields = {
   to: zDate.optional(),
   startTime: zTimeOfDay.optional(),
   endTime: zTimeOfDay.optional(),
-  reason: zSafeText({ max: 200 }).optional(),
+  reason: zSafeText({ kind: 'line', max: 200 }).optional(),
 };
 export const TimeOffBody = zBody({
   kind: z.enum(['time_off', 'extra_hours']).default('time_off'),
@@ -118,7 +118,7 @@ export const BookBody = zBody({
   staffId: zUuid.optional(),
   /** A start time offered by the availability endpoint, with its UTC offset. */
   startAt: z.iso.datetime({ offset: true }),
-  notes: zSafeText({ max: 500 }).optional(),
+  notes: zSafeText({ kind: 'text', max: 500 }).optional(),
 });
 
 export const MyAppointmentsQuery = zPagination.extend({
@@ -137,7 +137,7 @@ export const CancelBody = zBody({
     'illness',
     'other',
   ]),
-  note: zSafeText({ max: 500 }).optional(),
+  note: zSafeText({ kind: 'text', max: 500 }).optional(),
   /** "I'll book later" → a reminder in a few days. */
   bookLater: z.boolean().optional(),
 });
@@ -152,11 +152,11 @@ export const BusinessAppointmentsQuery = z.object({
   staffId: zUuid.optional(),
   status: z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'no_show', 'rescheduled']).optional(),
   /** A booking code ("BK-7KQ2MX") or part of a customer's name. */
-  q: zSafeText({ min: 1, max: 100 }).optional(),
+  q: zSafeText({ kind: 'line', min: 1, max: 100 }).optional(),
 });
 
-export const DeclineBody = zBody({ reason: zSafeText({ max: 500 }).optional() });
-export const BusinessCancelBody = zBody({ reason: zSafeText({ min: 3, max: 500 }) });
+export const DeclineBody = zBody({ reason: zSafeText({ kind: 'text', max: 500 }).optional() });
+export const BusinessCancelBody = zBody({ reason: zSafeText({ kind: 'text', min: 3, max: 500 }) });
 
 // ── At the venue ───────────────────────────────────────────────────────────
 
@@ -169,13 +169,13 @@ export const CheckInByCodeBody = zBody({
     .regex(/^BK-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/, 'must look like BK-7KQ2MX'),
 });
 
-export const ClockInBody = zBody({ note: zSafeText({ max: 300 }).optional() });
+export const ClockInBody = zBody({ note: zSafeText({ kind: 'line', max: 300 }).optional() });
 export const AttendanceQuery = z.object({ date: zDate.optional(), staffId: zUuid.optional() });
 export const ShiftParams = z.object({ id: zUuid, shiftId: zUuid });
 export const CorrectShiftBody = zBody({
   checkInAt: z.iso.datetime({ offset: true }).optional(),
   checkOutAt: z.iso.datetime({ offset: true }).optional(),
-  note: zSafeText({ max: 300 }).optional(),
+  note: zSafeText({ kind: 'line', max: 300 }).optional(),
 }).refine(atLeastOne, 'at least one field is required');
 
 // ── Reviews ──
@@ -186,7 +186,7 @@ export const ReviewBody = zBody({
   staff: star.optional(),
   cleanliness: star.optional(),
   value: star.optional(),
-  comment: zSafeText({ max: 2000 }).optional(),
+  comment: zSafeText({ kind: 'text', max: 2000 }).optional(),
 });
 export const BusinessReviewsQuery = zPagination.extend({
   limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -199,13 +199,13 @@ export const BusinessReviewsQuery = zPagination.extend({
 });
 export const ReviewParams = z.object({ id: zUuid, reviewId: zUuid });
 export const AdminReviewParams = z.object({ reviewId: zUuid });
-export const ReviewResponseBody = zBody({ text: zSafeText({ min: 2, max: 1000 }) });
+export const ReviewResponseBody = zBody({ text: zSafeText({ kind: 'text', min: 2, max: 1000 }) });
 export const ReportReviewBody = zBody({
   reason: z.enum(['offensive', 'fake', 'not_a_customer', 'personal_info', 'other']),
-  note: zSafeText({ max: 150 }).optional(),
+  note: zSafeText({ kind: 'line', max: 150 }).optional(),
 });
 export const ModerateReviewBody = z.discriminatedUnion('action', [
-  zBody({ action: z.literal('hide'), reason: zSafeText({ min: 3, max: 300 }) }),
+  zBody({ action: z.literal('hide'), reason: zSafeText({ kind: 'text', min: 3, max: 300 }) }),
   zBody({ action: z.literal('keep') }),
   zBody({ action: z.literal('restore') }),
 ]);

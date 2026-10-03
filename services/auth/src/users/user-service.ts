@@ -4,6 +4,7 @@ import {
   normalizeEmail,
   normalizePhone,
   sanitizeText,
+  stripDisallowed,
   type BlindIndexer,
   type FieldCipher,
 } from '@buku/common';
@@ -31,6 +32,22 @@ export const CONTEXT = {
   phone: 'users.phone',
   unverifiedPhone: 'users.unverified_phone',
 } as const;
+
+/** Most characters a stored name may have (users.name is VARCHAR(200)). */
+const MAX_NAME = 200;
+
+/**
+ * A new account's display name. It comes from the account provider, not
+ * from our form, so what our rules don't allow (emoji, invisible characters,
+ * digits…) is removed rather than refused (D-083). With nothing left, the
+ * email's local part ("ayesha.khan92" → "ayesha khan"); the person confirms
+ * or changes it on the welcome screen.
+ */
+export function displayNameFor(providerName: string | null | undefined, email: string): string {
+  const clean = (s: string) =>
+    [...stripDisallowed(sanitizeText(s), 'personName')].slice(0, MAX_NAME).join('').trim();
+  return clean(providerName ?? '') || clean(email.split('@')[0]!.replace(/[._+-]+/g, ' ')) || 'BUKU member';
+}
 
 export interface SignInInput {
   acceptedTermsVersion?: string | undefined;
@@ -176,7 +193,7 @@ export class UserService {
     }
 
     const email = normalizeEmail(identity.email);
-    const name = sanitizeText(identity.name ?? '').slice(0, 200) || email.split('@')[0]!.slice(0, 200);
+    const name = displayNameFor(identity.name, email);
     const now = new Date();
 
     const { created, session } = await db.$transaction(async (tx) => {
@@ -247,7 +264,7 @@ export class UserService {
       existing ??
       (await this.deps.db.user.create({
         data: {
-          name: input.name ?? email.split('@')[0]!,
+          name: input.name ?? displayNameFor(null, email),
           emailEncrypted: this.deps.cipher.encrypt(email, CONTEXT.email),
           emailHash,
           emailVerifiedAt: now,
