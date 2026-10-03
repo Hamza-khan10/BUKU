@@ -16,6 +16,7 @@ export interface PreferencesInput {
   emailBookingConfirmation?: boolean | undefined;
   emailReminders?: boolean | undefined;
   emailBusinessAlerts?: boolean | undefined;
+  suggestions?: boolean | undefined;
   marketingEmails?: boolean | undefined;
 }
 
@@ -104,14 +105,18 @@ export class InboxService {
     await this.updatePreferences(userId, { [pref]: false });
   }
 
-  /** Marketing needs explicit opt-in; the moment of consent is recorded (and cleared on opt-out). */
+  /** Suggestions and marketing need explicit opt-in; the moment of consent is recorded (and cleared on opt-out). */
   async updatePreferences(userId: string, input: PreferencesInput) {
     const data = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
     const current = await this.db.notificationPreference.findUnique({ where: { userId } });
-    const consent =
-      input.marketingEmails === undefined
-        ? {}
-        : { marketingConsentAt: input.marketingEmails ? (current?.marketingConsentAt ?? new Date()) : null };
+    const consent = {
+      ...(input.marketingEmails !== undefined && {
+        marketingConsentAt: input.marketingEmails ? (current?.marketingConsentAt ?? new Date()) : null,
+      }),
+      ...(input.suggestions !== undefined && {
+        suggestionsConsentAt: input.suggestions ? (current?.suggestionsConsentAt ?? new Date()) : null,
+      }),
+    };
     const row = await this.db.notificationPreference.upsert({
       where: { userId },
       create: { userId, ...data, ...consent },
@@ -131,6 +136,8 @@ function prefView(p: {
   emailBookingConfirmation: boolean;
   emailReminders: boolean;
   emailBusinessAlerts: boolean;
+  suggestions: boolean;
+  suggestionsConsentAt: Date | null;
   marketingEmails: boolean;
   marketingConsentAt: Date | null;
 }) {
@@ -144,6 +151,9 @@ function prefView(p: {
     emailBookingConfirmation: p.emailBookingConfirmation,
     emailReminders: p.emailReminders,
     emailBusinessAlerts: p.emailBusinessAlerts,
+    /** Opt-in: "time for your usual…", openings at places they go (in the app, push, WhatsApp). */
+    suggestions: p.suggestions,
+    suggestionsConsentAt: p.suggestionsConsentAt?.toISOString() ?? null,
     marketingEmails: p.marketingEmails,
     marketingConsentAt: p.marketingConsentAt?.toISOString() ?? null,
     /** Being called in a queue, and notices about the account's plan, are always sent. */

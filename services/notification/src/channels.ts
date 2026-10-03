@@ -13,6 +13,9 @@ import type { Category, Message } from './messages.js';
  *                FREE whenever their 24-hour window is open (they messaged us
  *                recently); PAID (a template) only when they have no app, the
  *                admin allowed that message type, and the month's budget has room.
+ *
+ * SUGGESTIONS (D-075) are opt-in everywhere: push, inbox and WhatsApp need
+ * `suggestions`; email needs `marketingEmails`; WhatsApp only ever free.
  */
 
 export interface Prefs {
@@ -24,7 +27,23 @@ export interface Prefs {
   emailBookingConfirmation: boolean;
   emailReminders: boolean;
   emailBusinessAlerts: boolean;
+  suggestions: boolean;
+  marketingEmails: boolean;
 }
+
+/** What someone who never opened their settings gets: everything except the opt-ins. */
+export const DEFAULT_PREFS: Prefs = {
+  pushBookingConfirmation: true,
+  pushReminders: true,
+  pushQueueUpdates: true,
+  pushBusinessAlerts: true,
+  whatsappUpdates: true,
+  emailBookingConfirmation: true,
+  emailReminders: true,
+  emailBusinessAlerts: true,
+  suggestions: false,
+  marketingEmails: false,
+};
 
 export interface Reach {
   /** Has an active device that opened the app recently. */
@@ -33,7 +52,7 @@ export interface Reach {
   email: string | null;
   /** Connected WhatsApp number (not opted out), and whether their free window is open. */
   whatsapp: { phone: string; windowOpen: boolean } | null;
-  /** Null: never set, so the defaults (all on). */
+  /** Null: never set, so DEFAULT_PREFS. */
   prefs: Prefs | null;
 }
 
@@ -54,10 +73,13 @@ export interface ChannelPlan {
 }
 
 type EmailRule = 'always' | 'no_app' | 'never';
-type EmailPref = 'emailBookingConfirmation' | 'emailReminders' | 'emailBusinessAlerts' | null;
+type EmailPref =
+  'emailBookingConfirmation' | 'emailReminders' | 'emailBusinessAlerts' | 'marketingEmails' | null;
+/** WhatsApp: worth paying for if allowed (`true`), only when free (`'free'`), or never. */
+type WhatsappRule = boolean | 'free';
 
 /** Per message type: when it may go by email (and which preference allows it), and whether WhatsApp is worth it. */
-const RULES: Record<string, { email: EmailRule; emailPref: EmailPref; whatsapp: boolean }> = {
+const RULES: Record<string, { email: EmailRule; emailPref: EmailPref; whatsapp: WhatsappRule }> = {
   booking_confirmed: { email: 'always', emailPref: 'emailBookingConfirmation', whatsapp: true },
   booking_requested: { email: 'no_app', emailPref: 'emailBookingConfirmation', whatsapp: false },
   booking_declined: { email: 'always', emailPref: 'emailBookingConfirmation', whatsapp: true },
@@ -81,22 +103,27 @@ const RULES: Record<string, { email: EmailRule; emailPref: EmailPref; whatsapp: 
   plan_gift_ending: { email: 'always', emailPref: null, whatsapp: false },
   plan_ending: { email: 'always', emailPref: null, whatsapp: false },
   payment_failed: { email: 'always', emailPref: null, whatsapp: false },
+  // Suggestions: email only to people the app can't reach; WhatsApp only while free.
+  suggest_usual: { email: 'no_app', emailPref: 'marketingEmails', whatsapp: 'free' },
+  suggest_comeback: { email: 'no_app', emailPref: 'marketingEmails', whatsapp: 'free' },
+  suggest_first_booking: { email: 'no_app', emailPref: 'marketingEmails', whatsapp: false },
 };
 const UNKNOWN = { email: 'never', emailPref: null, whatsapp: false } as const;
 
 const PUSH_PREF: Record<
   Exclude<Category, 'queue_called' | 'account'>,
-  'pushBookingConfirmation' | 'pushReminders' | 'pushQueueUpdates' | 'pushBusinessAlerts'
+  'pushBookingConfirmation' | 'pushReminders' | 'pushQueueUpdates' | 'pushBusinessAlerts' | 'suggestions'
 > = {
   booking: 'pushBookingConfirmation',
   reminder: 'pushReminders',
   queue: 'pushQueueUpdates',
   business: 'pushBusinessAlerts',
+  suggestion: 'suggestions',
 };
 
 export function pushAllowed(category: Category, prefs: Prefs | null): boolean {
   if (category === 'queue_called' || category === 'account') return true;
-  return !prefs || prefs[PUSH_PREF[category]];
+  return (prefs ?? DEFAULT_PREFS)[PUSH_PREF[category]];
 }
 
 /** Which preference an email of this type is unsubscribed through (null: account notices). */
@@ -106,6 +133,7 @@ export function emailPrefOf(type: string): EmailPref {
 
 export function planChannels(message: Message, reach: Reach, settings: ChannelSettings): ChannelPlan {
   const rule = RULES[message.type] ?? UNKNOWN;
+  const prefs = reach.prefs ?? DEFAULT_PREFS;
   const push = reach.hasApp && pushAllowed(message.category, reach.prefs);
 
   const emailWanted = rule.email === 'always' || (rule.email === 'no_app' && !reach.hasApp);
@@ -113,16 +141,22 @@ export function planChannels(message: Message, reach: Reach, settings: ChannelSe
     settings.emailEnabled &&
     reach.email !== null &&
     emailWanted &&
-    (rule.emailPref === null || !reach.prefs || reach.prefs[rule.emailPref]);
+    (rule.emailPref === null || prefs[rule.emailPref]);
 
   let whatsapp: ChannelPlan['whatsapp'] = null;
   const wa = reach.whatsapp;
-  if (settings.whatsappEnabled && wa && rule.whatsapp && (!reach.prefs || reach.prefs.whatsappUpdates)) {
-    if (wa.windowOpen && (settings.whatsappWindowFree || (!reach.hasApp && settings.whatsappPaidAllowed))) {
+  const suggestionOk = message.category !== 'suggestion' || prefs.suggestions;
+  if (settings.whatsappEnabled && wa && rule.whatsapp && prefs.whatsappUpdates && suggestionOk) {
+    const mayPay = rule.whatsapp === true;
+    if (
+      wa.windowOpen &&
+      (settings.whatsappWindowFree || (mayPay && !reach.hasApp && settings.whatsappPaidAllowed))
+    ) {
       // Free while the month's allowance lasts; past it, a window message costs like a
       // paid one, so it's only sent to people the app can't reach.
       whatsapp = 'window';
     } else if (
+      mayPay &&
       !wa.windowOpen &&
       !reach.hasApp &&
       message.vars?.length &&

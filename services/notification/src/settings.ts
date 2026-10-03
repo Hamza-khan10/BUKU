@@ -21,6 +21,10 @@ export interface Settings {
   reminder2h: boolean;
   quietStartHour: number;
   quietEndHour: number;
+  suggestionsEnabled: boolean;
+  suggestionMinDays: number;
+  suggestionMaxPer30Days: number;
+  suggestionMaxIgnored: number;
   updatedAt: string;
 }
 
@@ -121,6 +125,10 @@ function view(r: {
   reminder2h: boolean;
   quietStartHour: number;
   quietEndHour: number;
+  suggestionsEnabled: boolean;
+  suggestionMinDays: number;
+  suggestionMaxPer30Days: number;
+  suggestionMaxIgnored: number;
   updatedAt: Date;
 }): Settings {
   return {
@@ -137,6 +145,10 @@ function view(r: {
     reminder2h: r.reminder2h,
     quietStartHour: r.quietStartHour,
     quietEndHour: r.quietEndHour,
+    suggestionsEnabled: r.suggestionsEnabled,
+    suggestionMinDays: r.suggestionMinDays,
+    suggestionMaxPer30Days: r.suggestionMaxPer30Days,
+    suggestionMaxIgnored: r.suggestionMaxIgnored,
     updatedAt: r.updatedAt.toISOString(),
   };
 }

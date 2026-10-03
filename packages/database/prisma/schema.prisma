@@ -417,6 +417,11 @@ model NotificationPreference {
   emailReminders           Boolean   @default(true) @map("email_reminders")
   /// Team members without the app (web dashboard only): booking alerts by email.
   emailBusinessAlerts      Boolean   @default(true) @map("email_business_alerts")
+  /// Suggestions based on how they use BUKU ("time for your usual haircut?", "Fade Studio has
+  /// openings"): in the app, push and WhatsApp. Opt-in (app-store rules for promotional push);
+  /// consent timestamp recorded. By email they also need `marketingEmails`.
+  suggestions              Boolean   @default(false)
+  suggestionsConsentAt     DateTime? @map("suggestions_consent_at") @db.Timestamptz(6)
   /// GDPR: marketing requires explicit opt-in; consent timestamp recorded.
   marketingEmails          Boolean   @default(false) @map("marketing_emails")
   marketingConsentAt       DateTime? @map("marketing_consent_at") @db.Timestamptz(6)
@@ -1191,6 +1196,14 @@ model NotificationSettings {
   /// Night time (local hours): reminders and suggestions wait until it ends.
   quietStartHour             Int      @default(21) @map("quiet_start_hour") @db.SmallInt
   quietEndHour               Int      @default(9) @map("quiet_end_hour") @db.SmallInt
+  /// Suggestions based on usage (people who opted in only).
+  suggestionsEnabled         Boolean  @default(true) @map("suggestions_enabled")
+  /// At least this many days between two suggestions to the same person.
+  suggestionMinDays          Int      @default(7) @map("suggestion_min_days") @db.SmallInt
+  /// At most this many suggestions to one person in 30 days.
+  suggestionMaxPer30Days     Int      @default(3) @map("suggestion_max_per_30_days") @db.SmallInt
+  /// Stop after this many suggestions with no booking in between (they're not interested).
+  suggestionMaxIgnored       Int      @default(3) @map("suggestion_max_ignored") @db.SmallInt
   updatedById                String?  @map("updated_by_id") @db.Uuid
   updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 

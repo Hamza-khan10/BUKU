@@ -17,7 +17,9 @@ import { InboxService } from './inbox-service.js';
 import { Notifier } from './notifier.js';
 import type { PushSender } from './push/sender.js';
 import { registerRoutes } from './routes/index.js';
+import type { OpeningsFinder } from './scheduler/openings.js';
 import { Scheduler } from './scheduler/scheduler.js';
+import { Suggestions } from './scheduler/suggestions.js';
 import { NotificationSettings } from './settings.js';
 import type { WhatsAppSender } from './whatsapp/sender.js';
 import { WhatsAppService } from './whatsapp/whatsapp-service.js';
@@ -34,6 +36,8 @@ export interface NotificationAppDeps {
   cipher: FieldCipher;
   indexer: BlindIndexer;
   urls: { webAppUrl: string; publicApiUrl: string };
+  /** Free times shown in suggestions (booking-service). */
+  openings: OpeningsFinder;
   whatsappConfig: {
     businessNumber?: string | undefined;
     templateLanguage?: string | undefined;
@@ -47,6 +51,7 @@ export function buildNotificationApp(deps: NotificationAppDeps): {
   app: Express;
   notifier: Notifier;
   scheduler: Scheduler;
+  suggestions: Suggestions;
   settings: NotificationSettings;
   handler: EventHandler;
 } {
@@ -85,11 +90,13 @@ export function buildNotificationApp(deps: NotificationAppDeps): {
         whatsappWebhook: deps.whatsappConfig.webhook,
       }),
   });
+  const scheduler = new Scheduler({ db: deps.db, redis: deps.redis, notifier, settings });
   return {
     app,
     notifier,
     settings,
-    scheduler: new Scheduler({ db: deps.db, redis: deps.redis, notifier, settings }),
+    scheduler,
+    suggestions: new Suggestions({ db: deps.db, settings, scheduler, openings: deps.openings }),
     handler: notificationHandler({ db: deps.db, notifier }),
   };
 }

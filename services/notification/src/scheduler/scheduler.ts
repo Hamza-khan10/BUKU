@@ -40,11 +40,18 @@ export class Scheduler {
   ) {}
 
   /** Send `deliveries` once for `key`. Returns false if that key was already sent. */
-  async once(key: string, kind: string, userId: string | null, deliveries: Delivery[]): Promise<boolean> {
+  async once(
+    key: string,
+    kind: string,
+    userId: string | null,
+    deliveries: Delivery[],
+    /** When it counts as sent (for frequency caps); defaults to now. */
+    at?: Date,
+  ): Promise<boolean> {
     let toSend: Delivery[] = [];
     const sent = await this.deps.db.$transaction(async (tx) => {
       const { count } = await tx.notificationMark.createMany({
-        data: [{ key, kind, userId }],
+        data: [{ key, kind, userId, ...(at && { createdAt: at }) }],
         skipDuplicates: true,
       });
       if (count === 0) return false;

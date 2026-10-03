@@ -54,6 +54,7 @@ const PrefsBody = zBody({
   emailBookingConfirmation: z.boolean().optional(),
   emailReminders: z.boolean().optional(),
   emailBusinessAlerts: z.boolean().optional(),
+  suggestions: z.boolean().optional(),
   marketingEmails: z.boolean().optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');
 
@@ -73,6 +74,10 @@ const SettingsBody = zBody({
   reminder2h: z.boolean().optional(),
   quietStartHour: z.number().int().min(0).max(23).optional(),
   quietEndHour: z.number().int().min(0).max(23).optional(),
+  suggestionsEnabled: z.boolean().optional(),
+  suggestionMinDays: z.number().int().min(0).max(365).optional(),
+  suggestionMaxPer30Days: z.number().int().min(0).max(30).optional(),
+  suggestionMaxIgnored: z.number().int().min(0).max(100).optional(),
 }).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');
 const VerifyQuery = z.object({
   'hub.mode': z.literal('subscribe'),

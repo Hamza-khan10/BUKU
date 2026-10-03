@@ -32,6 +32,9 @@ export const Env = baseServiceEnv
     WEB_APP_URL: z.url().default('http://localhost:3000'),
     PUBLIC_API_URL: z.url().default('http://localhost:8000'),
 
+    /** Free times for suggestions come from booking-service (internal network). */
+    BOOKING_SERVICE_URL: z.url().default('http://booking-service:3002'),
+
     /** Push notifications: `log` (development: written to the log) or `expo` (the Expo app). */
     PUSH_PROVIDER: z.enum(['log', 'expo']).default('log'),
     /** Optional; required once "push security" is enabled in the Expo project (recommended in production). */

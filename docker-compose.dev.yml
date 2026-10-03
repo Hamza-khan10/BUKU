@@ -484,6 +484,7 @@ services:
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
       PUBLIC_API_URL: http://localhost:8000
+      BOOKING_SERVICE_URL: http://booking-service:3002
       # Push: `log` writes what would be sent to the log; `expo` sends to the Expo app.
       PUSH_PROVIDER: ${PUSH_PROVIDER:-log}
       EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}

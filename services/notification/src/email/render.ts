@@ -29,11 +29,17 @@ export function webPath(data: Message['data']): string {
     case 'queue-ticket':
       return `/queue/${id('entryId')}`;
     case 'book':
-      return `/b/${id('businessId')}?service=${id('serviceId')}`;
+      return `/b/${id('businessId')}?service=${id('serviceId')}${
+        data.staffId ? `&staff=${id('staffId')}` : ''
+      }${data.startAt ? `&at=${id('startAt')}` : ''}`;
     case 'business-billing':
       return `/business/${id('businessId')}/billing`;
     case 'billing':
       return '/account/billing';
+    case 'business':
+      return `/b/${id('businessId')}`;
+    case 'explore':
+      return '/explore';
     default:
       return '/';
   }
@@ -74,6 +80,7 @@ const PREF_LABEL: Record<string, string> = {
   emailBookingConfirmation: 'booking confirmations and changes',
   emailReminders: 'reminders',
   emailBusinessAlerts: 'booking alerts for your business',
+  marketingEmails: 'suggestions and news from BUKU',
 };
 
 export function renderEmail(to: string, userId: string, message: Message, links: EmailLinks): EmailMessage {

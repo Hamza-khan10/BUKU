@@ -872,6 +872,19 @@ Plan notices are only sent while billing is on for that audience, and not if the
 moved to another plan. `data.screen` adds `book` (`businessId`, `serviceId`), `billing` and
 `business-billing`.
 
+**Suggestions** (opt-in; every 30 minutes, never at night; D-075)
+
+| Who                                                                | Message                                                                                         |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Regular (3+ visits at one place, steady rhythm) whose visit is due | "Time for your usual Haircut?" — "Ali has an opening on Thu 5 Mar at 10:30 — book it in a tap." |
+| Last booking or queue 45–180 days ago, nothing booked              | "Fade Studio is taking bookings"                                                                |
+| New account, never booked (day 2, day 10)                          | "Book your first visit" / "Skip the waiting room"                                               |
+
+`data` opens the booking screen pre-filled: `{ screen: "book", businessId, serviceId, staffId?, startAt? }`
+(or `explore`, `business`). They need `suggestions: true` (inbox, push, free WhatsApp) or
+`marketingEmails: true` (email, only for people without the app). At most one per 7 days, 3 per
+30 days, and none after 3 with no booking in between (admin-editable).
+
 **Channels** — the inbox always; push to every device; then per person:
 
 | Message                                           | Email                                        | WhatsApp (if connected) |
@@ -895,12 +908,14 @@ visits back; `STOP` / `START` switch WhatsApp messages off / on. 503 until Whats
 
 **Preferences** (`PUT …/notification-prefs`, any subset): `pushBookingConfirmation`,
 `pushReminders`, `pushQueueUpdates`, `pushBusinessAlerts`, `whatsappUpdates`, `smsReminders`,
-`emailBookingConfirmation`, `emailReminders`, `emailBusinessAlerts`, `marketingEmails` (explicit
-opt-in; the time of consent is recorded and cleared on opt-out). Switching off a push keeps the
+`emailBookingConfirmation`, `emailReminders`, `emailBusinessAlerts`, `suggestions` and
+`marketingEmails` (both explicit opt-ins; the time of consent is recorded and cleared on opt-out). Switching off a push keeps the
 message in the inbox. Being called in a queue, and plan notices, are always pushed.
 
 **Admin settings** (`PUT /v1/admin/notifications/settings`, any subset): `emailEnabled`,
 `whatsappEnabled` (default off), `whatsappPaidTypes` (from the templates list),
 `whatsappMonthlyBudgetCents` (0 = never pay), `whatsappMessageCostCents` (Meta's rate for your
 market), `whatsappFreeWindowPerMonth` (1000), `reminder24h`, `reminder2h`, `quietStartHour` /
-`quietEndHour` (21 / 9, local time). Changes apply within 30 seconds and are audited.
+`quietEndHour` (21 / 9, local time), `suggestionsEnabled`, `suggestionMinDays` (7),
+`suggestionMaxPer30Days` (3), `suggestionMaxIgnored` (3). Changes apply within 30 seconds and are
+audited.

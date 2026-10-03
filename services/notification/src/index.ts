@@ -26,6 +26,7 @@ import { SmtpEmailSender } from './email/sender.js';
 import { CONSUMED_TOPICS } from './events/handlers.js';
 import { ExpoPushSender } from './push/expo.js';
 import { LogPushSender } from './push/sender.js';
+import { HttpOpeningsFinder } from './scheduler/openings.js';
 import { LogWhatsAppSender, MetaWhatsAppSender } from './whatsapp/sender.js';
 
 const env = loadConfig(Env);
@@ -72,7 +73,7 @@ const readiness = new Readiness()
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const { app, notifier, scheduler, handler } = buildNotificationApp({
+const { app, notifier, scheduler, suggestions, handler } = buildNotificationApp({
   db,
   redis,
   verifier,
@@ -83,6 +84,7 @@ const { app, notifier, scheduler, handler } = buildNotificationApp({
   cipher: createFieldCipher(parseKeyring(env.PII_ENCRYPTION_KEYS, env.PII_ENCRYPTION_ACTIVE_KEY_ID)),
   indexer: createBlindIndexer(Buffer.from(env.PII_BLIND_INDEX_KEY, 'base64')),
   urls: { webAppUrl: env.WEB_APP_URL, publicApiUrl: env.PUBLIC_API_URL },
+  openings: new HttpOpeningsFinder(env.BOOKING_SERVICE_URL),
   whatsappConfig: {
     businessNumber: env.WHATSAPP_BUSINESS_NUMBER,
     templateLanguage: env.WHATSAPP_TEMPLATE_LANGUAGE,
@@ -135,6 +137,10 @@ const plans = every(15, 'plan-notices', async () => {
   const n = await scheduler.exclusive('plan-notices', 14 * 60_000, () => scheduler.planNotices());
   if (n) logger.info({ sent: n }, 'plan notices sent');
 });
+const suggest = every(30, 'suggestions', async () => {
+  const r = await scheduler.exclusive('suggestions', 29 * 60_000, () => suggestions.run());
+  if (r && r.usual + r.comeBack + r.firstBooking) logger.info(r, 'suggestions sent');
+});
 const marks = every(24 * 60, 'purge-marks', () => scheduler.purgeMarks());
 // Monthly partitions (inbox, audit log, ad events) months ahead; rows in the catch-all are a red flag.
 const partitionJob = async () => {
@@ -159,7 +165,7 @@ const hooks: ShutdownHook[] = [
   {
     name: 'jobs',
     fn: () => {
-      for (const t of [receipts, partitions, reminders, rebook, plans, marks]) clearInterval(t);
+      for (const t of [receipts, partitions, reminders, rebook, plans, suggest, marks]) clearInterval(t);
       email.close();
       return Promise.resolve();
     },

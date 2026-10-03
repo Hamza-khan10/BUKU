@@ -251,7 +251,7 @@ synced to Paddle in one call. A paid plan replaces a running trial or grant.
 the web prices, then switch billing on per audience. Google Play and App Store purchases come with
 the mobile app (Phase 4).
 
-### 2.6 Notification service — 🚧 parts 1–2 done (events, channels, reminders, WhatsApp)
+### 2.6 Notification service — ✅ done (events, channels, reminders, WhatsApp, suggestions)
 
 Push (free) for every alert; WhatsApp for important transactional messages once the provider
 is connected; email for receipts. Preferences, in-app inbox, templates, provider switch
@@ -274,11 +274,15 @@ window, paid templates only for people without the app within an admin budget, S
 "what's coming up" replies. Admin settings (switches, quiet hours, WhatsApp budget and price,
 usage this month). GDPR: the WhatsApp number is exported and erased with the account.
 
-Next: part 3 — messages shaped by how each person uses BUKU (regulars due for their usual visit,
-people who stopped coming, new accounts that never booked; openings at their usual place),
-with opt-in, frequency caps and quiet hours. Before WhatsApp goes live: Meta Business
-verification, the number, the templates (`GET /v1/admin/notifications/whatsapp/templates`) and
-real prices for the budget.
+Part 3 (built): suggestions shaped by how each person uses BUKU (D-075) — regulars due for their
+usual visit get a real free time with their usual employee; people who stopped coming hear that
+their usual place is taking bookings; new accounts that never booked get two first-booking
+nudges. Opt-in, capped (gap, monthly maximum, stop when ignored), never at night, never paid
+WhatsApp, never when something is already booked.
+
+Before WhatsApp goes live: Meta Business verification, the number, the templates
+(`GET /v1/admin/notifications/whatsapp/templates`) and real prices for the budget. The apps
+(Phase 3/4) must ask for the suggestions opt-in during onboarding.
 
 ### 2.7 Search service (Postgres)
 

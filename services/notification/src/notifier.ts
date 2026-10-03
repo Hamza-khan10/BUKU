@@ -67,9 +67,23 @@ export class Notifier {
       (await tx.user.findMany({ where: { id: { in: ids } }, select: { id: true } })).map((u) => u.id),
     );
     const kept = deliveries.filter((d) => live.has(d.userId));
-    if (kept.length) {
+    // Suggestions reach the inbox only for people who opted in (an email-only
+    // recipient gets the email, not an unasked-for inbox item).
+    const suggestionIds = kept.filter((d) => d.message.category === 'suggestion').map((d) => d.userId);
+    const optedIn = new Set(
+      suggestionIds.length
+        ? (
+            await tx.notificationPreference.findMany({
+              where: { userId: { in: suggestionIds }, suggestions: true },
+              select: { userId: true },
+            })
+          ).map((p) => p.userId)
+        : [],
+    );
+    const forInbox = kept.filter((d) => d.message.category !== 'suggestion' || optedIn.has(d.userId));
+    if (forInbox.length) {
       await tx.notification.createMany({
-        data: kept.map((d) => ({
+        data: forInbox.map((d) => ({
           ...refs(d),
           channel: 'in_app' as const,
           status: 'delivered' as const,
