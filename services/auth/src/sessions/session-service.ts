@@ -8,6 +8,7 @@ import {
   type RevocationReason,
   type RevocationStore,
   type Role,
+  recordSecurityEvent,
 } from '@buku/common';
 import { recordAudit, type Database, type Transaction } from '@buku/database';
 import type { RequestContext } from '../http/context.js';
@@ -119,6 +120,7 @@ export class SessionService {
         if (rotatedRecently) return { kind: 'race' as const };
         if (row.revoked_reason === 'rotated') {
           await this.revokeFamily(tx, row.family_id, 'reuse_detected');
+          recordSecurityEvent('refresh_token_reuse');
           await recordAudit(tx, {
             userId: row.user_id,
             action: 'auth.refresh_token_reuse_detected',

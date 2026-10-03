@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { collectDefaultMetrics, Histogram, Registry } from '@prometheus-io/client';
+import { collectDefaultMetrics, Counter, Histogram, Registry } from '@prometheus-io/client';
 
 /**
  * Prometheus metrics. Each service gets its own registry with Node.js runtime
@@ -39,5 +39,31 @@ export function createServiceMetrics(service: string): ServiceMetrics {
     next();
   };
 
+  securityEvents = new Counter({
+    name: 'security_events_total',
+    help: 'Security-relevant events, by kind (alerting rules: infrastructure/monitoring)',
+    labelNames: ['event'] as const,
+    registers: [registry],
+  });
+
   return { registry, httpMiddleware };
+}
+
+/**
+ * Events worth alerting on (D-082): someone reusing a stolen refresh token, wrong
+ * two-step codes, accounts locked, admins without two-step sign-in, forged webhooks.
+ * The audit log has the details; this counts them so alerts can fire.
+ */
+export type SecurityEvent =
+  | 'refresh_token_reuse'
+  | 'mfa_failed'
+  | 'mfa_locked'
+  | 'admin_without_mfa'
+  | 'member_locked_out'
+  | 'webhook_signature_invalid';
+
+let securityEvents: Counter<'event'> | null = null;
+
+export function recordSecurityEvent(event: SecurityEvent): void {
+  securityEvents?.inc({ event });
 }

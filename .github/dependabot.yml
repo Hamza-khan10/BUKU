@@ -26,6 +26,8 @@ updates:
     schedule: { interval: weekly, day: monday }
     commit-message: { prefix: 'ci' }
 
+  # Base images, pinned by digest in the Dockerfiles: new digests as Debian/Node security
+  # fixes land; CI's vulnerability scan checks every image before it can merge (D-082).
   - package-ecosystem: docker
     directories: ['/docker/node', '/docker/postgres']
     schedule: { interval: weekly, day: monday }

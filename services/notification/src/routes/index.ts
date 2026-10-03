@@ -14,6 +14,7 @@ import {
   zUuid,
   type JwtVerifier,
   type RevocationStore,
+  recordSecurityEvent,
 } from '@buku/common';
 import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
@@ -220,7 +221,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     const raw = req.rawBody;
     const given = req.get('x-hub-signature-256') ?? '';
     const expected = raw ? `sha256=${createHmac('sha256', hook.appSecret).update(raw).digest('hex')}` : '';
-    if (!raw || !safeEqual(given, expected)) throw AppError.unauthorized('Invalid signature');
+    if (!raw || !safeEqual(given, expected)) {
+      recordSecurityEvent('webhook_signature_invalid');
+      throw AppError.unauthorized('Invalid signature');
+    }
     sendSuccess(res, await deps.whatsapp.handleWebhook(req.body));
   });
 

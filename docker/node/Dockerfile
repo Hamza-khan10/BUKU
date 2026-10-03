@@ -11,9 +11,9 @@
 #   Application files are owned by root and read-only to the process.
 #   Run with a read-only root filesystem (K8s securityContext, Phase 5).
 # ═══════════════════════════════════════════════════════════════════════════
-ARG NODE_VERSION=24.21.0
-
-FROM node:${NODE_VERSION}-trixie-slim AS build
+# Base images are pinned by digest (reproducible; a cached old base can't slip in) and
+# updated by Dependabot's weekly PRs, which CI's vulnerability scan checks (D-082).
+FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe AS build
 ARG SERVICE
 RUN test -n "$SERVICE" || (echo "Build arg SERVICE is required, e.g. --build-arg SERVICE=auth" && exit 1)
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true CHECKPOINT_DISABLE=1 PRISMA_HIDE_UPDATE_MESSAGE=1
@@ -36,7 +36,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
  # Prisma ships a WASM query compiler per database; BUKU only uses PostgreSQL.
  && find /out/node_modules/@prisma/client/runtime -name 'query_compiler*_bg.*' ! -name '*postgresql*' -delete
 
-FROM gcr.io/distroless/nodejs24-debian13:nonroot AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e AS runtime
 ARG SERVICE
 LABEL org.opencontainers.image.title="buku-${SERVICE}-service" \
       org.opencontainers.image.source="https://github.com/Hamza-khan10/BUKU"

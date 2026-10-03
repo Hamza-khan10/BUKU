@@ -117,9 +117,34 @@ jobs:
           build-args: SERVICE=${{ matrix.service }}
           platforms: linux/amd64
           push: false
+          load: true
           tags: buku/${{ matrix.service }}-service:ci
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Install Trivy (checksum-verified)
+        env:
+          TRIVY_VERSION: 0.75.0
+        run: |
+          set -euo pipefail
+          base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          curl -sSLo trivy.tgz "${base}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -sSLo checksums.txt "${base}/trivy_${TRIVY_VERSION}_checksums.txt"
+          grep "Linux-64bit.tar.gz" checksums.txt | sed "s/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz/trivy.tgz/" | sha256sum -c -
+          tar -xzf trivy.tgz trivy && sudo mv trivy /usr/local/bin/
+      # D-082: an image with a known, fixable high or critical vulnerability can't merge.
+      - name: Scan the image (fail on fixable HIGH/CRITICAL)
+        run: >
+          trivy image --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
+          --exit-code 1 --no-progress buku/${{ matrix.service }}-service:ci
+      - name: Software bill of materials (CycloneDX)
+        run: >
+          trivy image --format cyclonedx --no-progress
+          --output sbom-${{ matrix.service }}.cdx.json buku/${{ matrix.service }}-service:ci
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-${{ matrix.service }}
+          path: sbom-${{ matrix.service }}.cdx.json
+          retention-days: 90
 
   dependency-review:
     name: Dependency review

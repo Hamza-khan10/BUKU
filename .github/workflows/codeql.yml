@@ -1,0 +1,37 @@
+# Static analysis of the TypeScript code (SOC 2 CC7.1, D-082): GitHub CodeQL with the
+# security-extended queries — injection, unsafe deserialisation, path traversal, SSRF,
+# weak crypto and the like. Results appear under Security → Code scanning.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 4 * * 1' # Mondays: new queries also check unchanged code
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL (javascript-typescript)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - '**/generated/**'
+              - '**/node_modules/**'
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:javascript-typescript

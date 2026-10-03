@@ -524,3 +524,15 @@ once, in the shared `requireRole`, so every service applies it — and admins ca
 everyone else may turn it on. The development sign-in counts as having passed it (it is refused
 in production anyway). Chosen over SMS codes (SIM-swap risk, cost) and over relying on the
 Google account's own 2-step setting (not something BUKU can verify).
+
+**D-082 · Supply chain and detection: scanned images, pinned bases, CodeQL, security alerts.**
+Every production image is scanned by Trivy in CI and can't merge with a known, fixable high or
+critical vulnerability; a CycloneDX bill of materials is kept per image (90 days). Base images
+are pinned by digest (a stale cached base was exactly how a fixable OpenSSL issue appeared in the
+first scan) and Dependabot proposes new digests weekly. CodeQL (security-extended queries) scans
+the code on every PR, on main and weekly. Services count security events
+(`security_events_total`: refresh-token reuse, wrong/locked two-step codes, employee lockouts,
+admin sessions without two-step, forged webhooks) next to the existing per-route status codes;
+`infrastructure/monitoring/alerts.yml` turns them, plus availability, error-rate and latency
+signals, into Prometheus alerts (validated by `promtool` in `pnpm verify`), each linked to a
+runbook in `docs/compliance/runbooks.md`. Prometheus itself, paging and log shipping are Phase 5.

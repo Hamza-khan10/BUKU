@@ -6,6 +6,7 @@ import {
   hashPassword,
   needsRehash,
   verifyPassword,
+  recordSecurityEvent,
 } from '@buku/common';
 import { recordAudit, type Database } from '@buku/database';
 import type { RequestContext } from '../http/context.js';
@@ -70,6 +71,7 @@ export class PasswordAuthService {
     if (account.lockedUntil && account.lockedUntil > new Date()) throw locked(account.lockedUntil);
     if (!(await verifyPassword(input.password, account.passwordHash))) {
       const lockedUntil = await this.recordFailure(account.id, ctx);
+      if (lockedUntil) recordSecurityEvent('member_locked_out');
       throw lockedUntil ? locked(lockedUntil) : invalidCredentials();
     }
 
