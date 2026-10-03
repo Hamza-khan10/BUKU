@@ -71,14 +71,21 @@ test.describe('The website', () => {
     page,
     context,
     baseURL,
+    isMobile,
   }) => {
+    // On phones the theme toggle lives in the menu.
+    const openToggle = async () => {
+      if (isMobile) await page.getByRole('button', { name: 'Open menu' }).click();
+    };
     await useTheme(context, 'dark', baseURL!);
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+    await openToggle();
     await page.getByRole('radio', { name: 'Light' }).click();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await page.reload();
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await openToggle();
     await page.getByRole('radio', { name: 'Use device setting' }).click();
     await expect(page.locator('html')).not.toHaveAttribute('data-theme');
   });

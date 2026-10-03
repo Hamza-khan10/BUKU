@@ -28,6 +28,20 @@ const schema = z
       .enum(['true', 'false'])
       .default('false')
       .transform((v) => v === 'true'),
+    // ── Who runs BUKU (legal pages, contact page). Until set, those pages say the
+    //    details are published before launch — never made-up placeholders.
+    LEGAL_NAME: optional(z.string().min(2).max(200)),
+    LEGAL_ADDRESS: optional(z.string().min(5).max(500)),
+    /** The law that governs the terms, e.g. "Pakistan". */
+    LEGAL_JURISDICTION: optional(z.string().min(2).max(100)),
+    SUPPORT_EMAIL: optional(z.email()),
+    PRIVACY_EMAIL: optional(z.email()),
+    SECURITY_EMAIL: optional(z.email()),
+    /** "true" once a lawyer has reviewed the legal pages; until then they are marked as drafts. */
+    LEGAL_REVIEWED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((v) => v === 'true'),
     VERCEL_ENV: optional(z.enum(['production', 'preview', 'development'])),
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   })
