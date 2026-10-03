@@ -90,7 +90,7 @@ x-service-env: &service-env
   DATABASE_URL: postgresql://buku_app:${BUKU_APP_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku
   DATABASE_POOL_SIZE: '5'
 
-# Object storage, for services that store files (business, auth).
+# Object storage: for services that store files (business, auth) or link to them (search).
 x-s3-env: &s3-env
   S3_ENDPOINT: http://s3:9000
   # Presigned links must point at an address the BROWSER can reach.
@@ -594,19 +594,18 @@ services:
     working_dir: /app/services/search
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
-      <<: *service-env
+      <<: [*service-env, *s3-env]
       SERVICE_NAME: search-service
       PORT: '3005'
-      # MVP: Postgres full-text + PostGIS. Set to `elasticsearch` (and start the
-      # stack with --profile elasticsearch) to switch engines.
+      # Postgres full text + PostGIS, always current (D-076). Elasticsearch is
+      # reserved for later and refused until built.
       SEARCH_ENGINE: postgres
-      ELASTICSEARCH_URL: http://elasticsearch:9200
-      ELASTICSEARCH_INDEX_BUSINESSES: businesses
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/kafka/src:/app/packages/kafka/src:ro
+      - ./packages/media/src:/app/packages/media/src:ro
       - ./services/search/src:/app/services/search/src:ro
     depends_on:
       <<: *needs-core

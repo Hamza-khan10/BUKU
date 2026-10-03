@@ -32,12 +32,12 @@ flowchart LR
   AUTH & BOOK & QUEUE & NOTIF & ADS --> PG[(PostgreSQL 17<br/>PostGIS · pgvector)]
   SEARCH --> PG
   AUTH & BOOK & QUEUE & NOTIF & ADS --> VK[(Valkey<br/>locks · queues · rate limits · jobs)]
-  SEARCH --> ES[(Elasticsearch)]
+  SEARCH -. later, at volume .-> ES[(Elasticsearch)]
   ANALYTICS --> CH[(ClickHouse)]
-  NOTIF --> MAIL[SMTP / SES] & SMS[Twilio] & PUSH[FCM]
+  NOTIF --> MAIL[SMTP / SES] & WA[WhatsApp Cloud API] & PUSH[Expo push]
 
   AUTH & BOOK & QUEUE & ADS -. outbox relay .-> K{{Kafka}}
-  K -. consume .-> NOTIF & SEARCH & ADS & ANALYTICS
+  K -. consume .-> NOTIF & ADS & ANALYTICS
 
   classDef client fill:#eef,stroke:#88a
 ```
@@ -49,7 +49,7 @@ flowchart LR
 | PostgreSQL 17          | System of record                                  | Transactions + constraints give correctness guarantees code alone can't |
 | Valkey 8               | Locks, live queue state, rate limits, BullMQ jobs | Redis-compatible; what DigitalOcean's managed cache runs                |
 | Kafka 4.3 (KRaft)      | Event backbone                                    | Durable, ordered per key, replayable; decouples services                |
-| Elasticsearch 9        | Discovery search                                  | Relevance, autocomplete, geo + text in one query                        |
+| Elasticsearch 9        | Discovery search, later (D-076)                   | Only when volume needs it; Postgres full text + PostGIS until then      |
 | ClickHouse 26.3 LTS    | Analytics                                         | Columnar OLAP: dashboard aggregates over millions of rows in ms         |
 
 ## A request, end to end
@@ -106,7 +106,8 @@ Envelope (all topics): `id, type, version, source, occurredAt, subject, correlat
 - **UUIDv7** primary keys: time-ordered (fast inserts), unguessable, shard-friendly.
 - **Integrity in the database:** exclusion constraints (staff and resources can't be double-booked),
   60+ CHECK constraints, partial unique indexes (one live queue ticket per user), foreign keys.
-- **Derived data by trigger:** PostGIS `location` from lat/lng, weighted full-text `search_vector`,
+- **Derived data by trigger:** PostGIS `location` from lat/lng, weighted full-text `search_vector`
+  (name, category and service names, description, city — recomputed when a service changes),
   `avg_rating`/`review_count` from visible reviews, `updated_at`.
 - **Partitioning:** `audit_logs`, `notifications`, `ad_events` are range-partitioned by month
   (partitions live in the `partitions` schema). Old months are detached, not deleted row by row.
@@ -125,7 +126,7 @@ Schemas: `public` (Prisma), `partitions` (monthly partitions), `ai` (vector stor
 | queue                  | queue_settings, queue_sessions, queue_entries                                                                                                      | `queue.*`                                                            | —                                                   |
 | billing                | plans, plan_prices, billing_settings, subscriptions, cost items, channel fees (entitlements via `@buku/billing`)                                   | `payments.*`                                                         | `bookings.created`, `queue.entry.joined`            |
 | notification           | notifications (inbox + delivery records), notification preferences; consumes `bookings.*`, `queue.*`; later webhooks                               | `notifications.delivered`                                            | `bookings.*`, `queue.*`, `users.*`                  |
-| search                 | reads businesses via Postgres (MVP); Elasticsearch index later                                                                                     | `analytics.search`                                                   | `businesses.*`                                      |
+| search                 | business_search_stats (ranking figures); reads businesses, services, hours, queues live from Postgres (D-076)                                      | `analytics.search`                                                   | —                                                   |
 | ads _(deferred)_       | business_ads, ad_events                                                                                                                            | `analytics.ad.impressions`                                           | `bookings.created`                                  |
 | analytics _(deferred)_ | ClickHouse tables                                                                                                                                  | —                                                                    | `analytics.*`, `bookings.*`, `queue.session.closed` |
 

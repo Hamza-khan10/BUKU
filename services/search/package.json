@@ -13,7 +13,7 @@
     "@buku/common": "workspace:*",
     "@buku/database": "workspace:*",
     "@buku/kafka": "workspace:*",
-    "@elastic/elasticsearch": "9.5.1",
+    "@buku/media": "workspace:*",
     "express": "5.2.1",
     "zod": "4.6.5"
   },

@@ -104,7 +104,8 @@ check "Public routes need no token (sign-in, browse)"  bash -c "[[ \$(curl -s -o
 check "Private business routes are guarded at the gateway" bash -c "curl -s http://localhost:8000/v1/businesses/mine | grep -q '\"message\":\"Unauthorized\"'"
 check "Pricing page is public (business plans listed)"  bash -c "curl -s 'http://localhost:8000/v1/billing/plans?audience=business' | grep -q '\"business_enterprise\"'"
 check "Billing admin is guarded at the gateway"         bash -c "curl -s http://localhost:8000/v1/admin/billing/plans | grep -q '\"message\":\"Unauthorized\"'"
-check "Search paths are not swallowed by business profiles" bash -c "curl -s http://localhost:8000/v1/businesses/search | grep -q 'Route not found'"
+check "Search paths reach search (not business profiles)"  bash -c "curl -s 'http://localhost:8000/v1/businesses/search?q=haircut' | grep -q '\"sort\":\"relevance\"'"
+check "Categories are public"                            bash -c "curl -s http://localhost:8000/v1/categories | grep -q '\"children\"'"
 check "Public business profile works without a token"   bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/businesses/\$(docker compose -f docker-compose.dev.yml exec -T postgres psql -U buku_admin -d buku -tAc \"select slug from businesses where status='verified' limit 1\")) == 200 ]]"
 check "Sign-in → /me → log out everywhere works end to end" bash -c '
   T=$(curl -s -X POST http://localhost:8000/v1/auth/dev/login -H "Content-Type: application/json" -d "{\"email\":\"verify@buku.dev\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"data\"][\"accessToken\"])")

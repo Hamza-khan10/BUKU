@@ -284,10 +284,14 @@ Before WhatsApp goes live: Meta Business verification, the number, the templates
 (`GET /v1/admin/notifications/whatsapp/templates`) and real prices for the budget. The apps
 (Phase 3/4) must ask for the suggestions opt-in during onboarding.
 
-### 2.7 Search service (Postgres)
+### 2.7 Search service (Postgres) — ✅ done
 
-Text + location search, nearby, autocomplete, categories, ranking that includes rating and
-reliability. Elasticsearch implementation kept for later (`SEARCH_ENGINE=elasticsearch`).
+Text + location search, nearby, autocomplete, categories, featured and trending, ranking that
+includes rating (adjusted for review count) and reliability (D-076). The search document per
+business is kept current by database triggers (services and category included). Live facts in
+every result: open now, open queue and people waiting, lowest price, distance, cover photo.
+Elasticsearch stays for later (`SEARCH_ENGINE=elasticsearch` is refused until built); paid
+placements come with the ads service.
 
 ### 2.8 Reputation
 

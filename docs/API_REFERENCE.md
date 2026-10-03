@@ -919,3 +919,52 @@ market), `whatsappFreeWindowPerMonth` (1000), `reminder24h`, `reminder2h`, `quie
 `quietEndHour` (21 / 9, local time), `suggestionsEnabled`, `suggestionMinDays` (7),
 `suggestionMaxPer30Days` (3), `suggestionMaxIgnored` (3). Changes apply within 30 seconds and are
 audited.
+
+## Search service — finding businesses (2.7)
+
+All public (no sign-in), rate-limited at the gateway (200/minute per address).
+
+| Method & path                                    | Purpose                                                              |
+| ------------------------------------------------ | -------------------------------------------------------------------- |
+| `GET /v1/businesses/search`                      | Text, place and filters; paged                                       |
+| `GET /v1/businesses/nearby?lat=&lng=`            | Same, nearest first (default radius 5 km)                            |
+| `GET /v1/businesses/autocomplete?q=`             | As-you-type: businesses, categories, services (2+ characters)        |
+| `GET /v1/businesses/featured?city=` or `lat,lng` | Homepage picks: verified, with a photo, best first, ≤ 2 per category |
+| `GET /v1/businesses/trending?city=` or `lat,lng` | Busiest this week (bookings + queue joins, at least 3)               |
+| `GET /v1/categories`                             | Category tree (active only)                                          |
+| `GET /v1/categories/:slug`                       | One category with its children and parent                            |
+| `GET /v1/categories/:slug/businesses`            | Search within a category (and its sub-categories)                    |
+
+**Search parameters** (all optional): `q` (words; partial last word and small typos are fine),
+`lat` + `lng` (together), `radiusKm` (default 10, max 100), `city`, `category` (slug, includes
+sub-categories), `minRating` (1–5), `verifiedOnly`, `openNow`, `hasQueue` (an open queue today),
+`availableDate` (`YYYY-MM-DD`: open that day), `sort` (`relevance` default · `distance` needs
+`lat`/`lng` · `rating` · `newest`), `page` (≤ 50), `limit` (≤ 50, default 20). Unknown parameters
+are refused (400).
+
+```json
+GET /v1/businesses/search?q=haircut&lat=31.52&lng=74.35&openNow=true
+{ "data": [{
+    "id": "…", "slug": "fade-masters", "name": "Fade Masters",
+    "category": { "slug": "barbershop", "name": "Barbershop" },
+    "city": "Lahore", "address": "…", "location": { "lat": 31.52, "lng": 74.36 }, "distanceKm": 1.3,
+    "rating": { "average": 4.7, "count": 128 }, "verified": true,
+    "reliability": { "keptPercent": 98, "basedOn": 240 },
+    "priceFrom": { "amount": 400, "currency": "PKR" },
+    "openNow": true, "queue": { "open": true, "waiting": 4 },
+    "logoUrl": "https://…", "coverPhotoUrl": "https://…", "isPromoted": false }],
+  "meta": { "page": 1, "limit": 20, "total": 7, "totalPages": 1, "sort": "relevance" } }
+```
+
+`reliability` is null until a business has 10 decided bookings; `queue` is null without an open
+queue today; `priceFrom` is the lowest active service price. **Ranking** (`relevance`): how well
+the words match (name first, then category and services, description, city) + quality (rating
+adjusted for how many reviews there are, reliability, verified) + closeness. A 5.0 from 2
+reviews does not beat a 4.8 from 200.
+
+```json
+GET /v1/businesses/autocomplete?q=hai
+{ "data": { "businesses": [{ "id": "…", "slug": "…", "name": "Hair by Sana", "city": "Lahore", "category": "Hair Salon" }],
+            "categories": [{ "slug": "hair-salon", "name": "Hair Salon", "icon": null }],
+            "services": ["Haircut", "Haircut + Beard", "Hair Colour"] } }
+```
