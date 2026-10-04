@@ -78,6 +78,26 @@ export interface UserServiceDeps {
   deletionGraceDays: number;
 }
 
+type DevSignInInput = {
+  email: string;
+  name?: string | undefined;
+  role: 'user' | 'business_owner' | 'super_admin';
+};
+
+/**
+ * Two simultaneous first sign-ins for the same person (a double tap, two
+ * tabs) both try to create the account; the database lets one win. The other
+ * tries once more and finds the account the winner made, so both get in.
+ */
+async function firstSignInRace<T>(signIn: () => Promise<T>): Promise<T> {
+  try {
+    return await signIn();
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    return signIn();
+  }
+}
+
 export class UserService {
   constructor(private readonly deps: UserServiceDeps) {}
 
@@ -96,15 +116,7 @@ export class UserService {
     input: SignInInput,
     ctx: RequestContext,
   ): Promise<SignInResult> {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await this.signInOnce(identity, input, ctx);
-      } catch (err) {
-        // Two simultaneous first sign-ins for the same person: the loser retries and finds the account.
-        if (attempt < 2 && isUniqueViolation(err)) continue;
-        throw err;
-      }
-    }
+    return firstSignInRace(() => this.signInOnce(identity, input, ctx));
   }
 
   private async signInOnce(
@@ -251,8 +263,12 @@ export class UserService {
    * any email with any role, so the platform can be built and tested without
    * real Google/Apple credentials.
    */
-  async signInDev(
-    input: { email: string; name?: string | undefined; role: 'user' | 'business_owner' | 'super_admin' },
+  async signInDev(input: DevSignInInput, device: DeviceInfo, ctx: RequestContext): Promise<SignInResult> {
+    return firstSignInRace(() => this.signInDevOnce(input, device, ctx));
+  }
+
+  private async signInDevOnce(
+    input: DevSignInInput,
     device: DeviceInfo,
     ctx: RequestContext,
   ): Promise<SignInResult> {
