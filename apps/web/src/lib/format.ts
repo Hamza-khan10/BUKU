@@ -107,3 +107,6 @@ export function monthLabel(yearMonth: string): string {
 export function distance(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
 }
+
+/** "Fade Masters’", "Noor Salon’s" — a name's possessive, as English writes it. */
+export const possessive = (name: string) => (/s$/i.test(name.trim()) ? `${name}’` : `${name}’s`);

@@ -472,6 +472,16 @@ The detailed plan — every page, its data and edge cases, the design system and
   person. The account page shows a live ticket at the top. Joining is the page's loud button while
   the queue is open; booking otherwise. Pushes to a closed phone come with the mobile app
   (Phase 4): the web ticket says to keep the page open.
+- **3.4d-1 Reviews — ✅ done.** After a visit that happened (completed, or checked in and started),
+  for 30 days: the receipt's main button is "Review this visit" and the account page asks "How
+  did it go?". `/appointments/[id]/review`: overall stars (needed, each with its word), four
+  optional details, words (clean text; the page says phone numbers and emails are removed, and
+  the API does it), and exactly how it appears — "Ayesha K." with the month of the visit, never
+  the full name, and that the business can reply publicly. Changeable for 7 days, deletable any
+  time (with any reply). `/account/reviews`: every review as the business page shows it, its
+  reply, until when it can change, and plainly when moderators hid it. Names ending in "s" take a
+  plain apostrophe across the site ("Fade Masters’ notice period"). There are no favourites: the
+  API has none, so the site doesn't offer them.
 
 ## Phase 4 — Mobile app (Expo)
 

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { distance, duration, money, monthLabel, openLabel, openState, wallClock } from '../src/lib/format';
+import {
+  distance,
+  duration,
+  money,
+  monthLabel,
+  openLabel,
+  openState,
+  wallClock,
+  possessive,
+} from '../src/lib/format';
 
 const weekdays9to6 = [1, 2, 3, 4, 5, 6].map((d) => ({ dayOfWeek: d, openTime: '09:00', closeTime: '18:00' }));
 
@@ -63,5 +72,12 @@ describe('opening hours, in the business’s timezone', () => {
     const lunch = new Date('2026-10-08T09:00:00Z'); // 14:00 Thursday
     expect(openLabel(openState(split, 'Asia/Karachi', lunch), 4)).toBe('Closed · opens 15:00');
     expect(openLabel(openState([], 'Asia/Karachi', lunch), 4)).toBe('Closed');
+  });
+});
+
+describe('possessives', () => {
+  it('follow English: an apostrophe alone after a final s', () => {
+    expect(possessive('Fade Masters')).toBe('Fade Masters’');
+    expect(possessive('Noor Salon')).toBe('Noor Salon’s');
   });
 });

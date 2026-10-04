@@ -1,10 +1,14 @@
 'use client';
 
-import { CalendarPlus, MapPin, Repeat } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { CalendarPlus, MapPin, Repeat, Star } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { fetchMyReviews, MY_REVIEWS_KEY } from '@/features/reviews/api';
+import { reviewable, visited } from '@/features/reviews/rules';
 import { bookHref } from '../choices';
+import { useMinute } from '../notice';
 import { icsFileName, icsFor } from '../calendar';
 import type { Receipt } from '../types';
 import { CancelDialog } from './cancel-dialog';
@@ -30,8 +34,27 @@ function addToCalendar(r: Receipt) {
  */
 export function VisitActions({ receipt: r }: { receipt: Receipt }) {
   const live = (r.status === 'pending' || r.status === 'confirmed') && !r.checkedInAt;
+  const minute = useMinute();
+  const happened = minute !== null && visited(r, minute);
+  const reviews = useQuery({ queryKey: MY_REVIEWS_KEY, queryFn: () => fetchMyReviews(), enabled: happened });
+  const review = reviews.data?.items.find((v) => v.appointmentId === r.id);
+  const canReview = minute !== null && reviews.isSuccess && !review && reviewable(r, minute);
   return (
     <div className="flex flex-wrap gap-3">
+      {canReview && (
+        <Button asChild variant="primary">
+          <Link href={`/appointments/${r.id}/review` as Route}>
+            <Star aria-hidden /> Review this visit
+          </Link>
+        </Button>
+      )}
+      {review && (
+        <Button asChild variant="secondary">
+          <Link href={`/appointments/${r.id}/review` as Route}>
+            <Star aria-hidden /> Your review
+          </Link>
+        </Button>
+      )}
       {live && (
         <Button variant="secondary" onClick={() => addToCalendar(r)}>
           <CalendarPlus aria-hidden /> Add to calendar
