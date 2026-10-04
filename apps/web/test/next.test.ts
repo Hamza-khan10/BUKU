@@ -15,7 +15,7 @@ describe('where to go after signing in', () => {
       '/\\evil.example',
       'javascript:alert(1)',
       'evil.example',
-      '/%0d%0aSet-Cookie:x=1'.replace('%0d%0a', '\r\n'),
+      '/\r\nSet-Cookie:x=1',
       '/'.padEnd(600, 'a'),
     ]) {
       expect(safeNext(bad)).toBe('/');
