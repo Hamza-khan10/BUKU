@@ -152,6 +152,13 @@ browser. It needs one OAuth client, used by both the website and the API.
 
 The secret is a secret: only in `.env.local` (git-ignored) and Vercel's environment settings.
 
+If Google shows **Error 400: redirect_uri_mismatch**, the address in step 3 isn't registered on
+this client exactly (scheme, host, port and path must match; no trailing slash).
+
+On Vercel the button appears only once `API_URL` points at the deployed API (Phase 5): Google's
+answer has to be handed to the API, and until there is one the site says signing in isn't open
+yet (the Google routes answer the same, never an error page).
+
 ### Set up Paddle (online payments, sandbox)
 
 Billing works without Paddle (checkout answers "online payments aren't set up"). To try real
