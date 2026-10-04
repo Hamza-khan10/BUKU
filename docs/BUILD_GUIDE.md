@@ -391,6 +391,13 @@ The detailed plan — every page, its data and edge cases, the design system and
   contact, reviews (summary, details, replies, more on request), the walk-in queue live over
   server-sent events; schema.org data (escaped), share image, canonical address. Each section
   loads on its own: one failing service shows its own message, never a broken page.
+- **3.2c Discovery — ✅ done.** Home page with live data: search with suggestions, a city
+  people can switch (cities and figures from `GET /v1/cities`, #43), shelves — open now, popular
+  this week, top rated, verified with photos — each left out when it has nothing true to show;
+  `/explore` (words, city, open now, queue open, verified, 4 stars and up, order, pages — all in
+  the address, filters are plain links), "Near me" (location asked, rounded to ~100 m, used for
+  that search only); `/categories` and `/c/[slug]`. Browser tests also check that no page scrolls
+  sideways at 320 and 390 px.
 
 ## Phase 4 — Mobile app (Expo)
 

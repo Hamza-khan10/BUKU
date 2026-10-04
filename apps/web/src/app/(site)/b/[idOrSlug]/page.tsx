@@ -85,7 +85,7 @@ export default async function BusinessPage({ params, searchParams }: Props) {
       />
       <ProfileHeader business={business} />
 
-      <Container className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
+      <Container className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
         {/* First in reading order on phones (what's happening now), the side column on wide screens. */}
         <aside className="flex flex-col gap-4 lg:col-start-2 lg:row-start-1">
           {queue.ok ? (

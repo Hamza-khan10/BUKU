@@ -14,6 +14,8 @@ export interface NavLink {
 }
 
 export const primaryNav: NavLink[] = [
+  { href: '/explore', label: 'Explore' },
+  { href: '/categories', label: 'Categories' },
   { href: '/how-it-works', label: 'How it works' },
   { href: '/help', label: 'Help' },
 ];
@@ -30,6 +32,8 @@ export const footerNav: { title: string; links: NavLink[] }[] = [
   {
     title: 'BUKU',
     links: [
+      { href: '/explore', label: 'Explore' },
+      { href: '/categories', label: 'Categories' },
       { href: '/how-it-works', label: 'How it works' },
       { href: '/about', label: 'About' },
       { href: '/contact', label: 'Contact' },
