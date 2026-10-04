@@ -1,8 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { MapPin } from 'lucide-react';
-import type { Route } from 'next';
+import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,6 +12,7 @@ import { money } from '@/lib/format';
 import { fetchReceipt, RECEIPT_KEY } from '../api';
 import { clockLabel, dayParts } from '../choices';
 import type { Receipt } from '../types';
+import { VisitActions } from './visit-actions';
 
 /** Where the visit stands, in the ticket's band. */
 function statusOf(r: Receipt): TicketProps['status'] {
@@ -29,7 +29,12 @@ function statusOf(r: Receipt): TicketProps['status'] {
       return { label: 'Missed', tone: 'danger' };
     case 'cancelled':
       return {
-        label: r.cancellation?.cancelledBy === 'customer' ? 'Cancelled by you' : 'Cancelled by the business',
+        label:
+          r.cancellation?.cancelledBy === 'user'
+            ? 'Cancelled by you'
+            : r.cancellation?.reasonCode === 'declined'
+              ? 'Declined by the business'
+              : 'Cancelled by the business',
         tone: 'danger',
       };
   }
@@ -54,7 +59,11 @@ function momentLabel(iso: string, timeZone: string): string {
  * personal) — what, where, when on the business's clock, the price paid at
  * the venue, and the business's cancellation terms for this visit.
  */
-export function ReceiptView({ id, fresh }: { id: string; fresh: boolean }) {
+/** How the person arrived here: just booked, just moved, or simply opened it. */
+export type Arrival = 'booked' | 'moved' | null;
+
+export function ReceiptView({ id, arrival }: { id: string; arrival: Arrival }) {
+  const fresh = arrival !== null;
   const receipt = useQuery({
     queryKey: RECEIPT_KEY(id),
     queryFn: () => fetchReceipt(id),
@@ -94,25 +103,41 @@ export function ReceiptView({ id, fresh }: { id: string; fresh: boolean }) {
   const r = receipt.data;
   const tz = r.local.timezone;
   const live = r.status === 'pending' || r.status === 'confirmed';
-  const heading = fresh
-    ? r.status === 'pending'
-      ? 'Request sent'
-      : 'You’re booked'
-    : live
-      ? 'Your booking'
-      : 'Booking';
+  const heading =
+    arrival === 'moved'
+      ? 'Moved to the new time'
+      : arrival === 'booked'
+        ? r.status === 'pending'
+          ? 'Request sent'
+          : 'You’re booked'
+        : live
+          ? 'Your booking'
+          : 'Booking';
 
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-2">
+        <Link
+          href="/account/appointments"
+          className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-ink-2 hover:text-ink"
+        >
+          <ArrowLeft className="size-4" aria-hidden /> Your visits
+        </Link>
         <h1 className="font-display text-4xl font-bold tracking-tight">{heading}</h1>
-        {fresh && r.status === 'pending' && (
+        {arrival === 'moved' && (
+          <p className="text-ink-2">
+            It has a new booking code: the old one no longer works.
+            {r.status === 'pending' &&
+              ` ${r.business.name} confirms the new time; you’ll be told when they do.`}
+          </p>
+        )}
+        {arrival === 'booked' && r.status === 'pending' && (
           <p className="text-ink-2">
             {r.business.name} confirms each booking. You’ll be told as soon as they do — the time is held for
             you meanwhile.
           </p>
         )}
-        {fresh && r.status === 'confirmed' && (
+        {arrival === 'booked' && r.status === 'confirmed' && (
           <p className="text-ink-2">See you there. Show this code at the front desk, or let them scan it.</p>
         )}
       </header>
@@ -158,13 +183,7 @@ export function ReceiptView({ id, fresh }: { id: string; fresh: boolean }) {
             <span className="font-medium text-ink">Reason given:</span> {r.cancellation.reason}
           </p>
         )}
-        <div className="flex flex-wrap gap-3">
-          <Button asChild variant="secondary">
-            <Link href={`/b/${r.business.slug}` as Route}>
-              <MapPin aria-hidden /> {r.business.name}
-            </Link>
-          </Button>
-        </div>
+        <VisitActions receipt={r} />
       </div>
     </div>
   );

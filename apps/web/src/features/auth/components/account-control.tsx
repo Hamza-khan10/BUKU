@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, LogOut, MonitorSmartphone } from 'lucide-react';
+import { CalendarDays, KeyRound, LogOut, MonitorSmartphone, UserRound } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -86,6 +86,23 @@ export function AccountControl({ signedIn }: { signedIn: boolean }) {
             {user.email && <span className="truncate text-sm text-ink-3">{user.email}</span>}
           </DropdownMenu.Label>
           <DropdownMenu.Separator className="my-1 h-px bg-line" />
+          {user.account.type === 'personal' &&
+            (
+              [
+                { href: '/account', label: 'Your account', Icon: UserRound },
+                { href: '/account/appointments', label: 'Your visits', Icon: CalendarDays },
+              ] as const
+            ).map(({ href, label, Icon }) => (
+              <DropdownMenu.Item key={href} asChild>
+                <Link
+                  href={href}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-sm text-ink outline-none data-[highlighted]:bg-sunken"
+                >
+                  <Icon className="size-4 text-ink-3" aria-hidden /> {label}
+                </Link>
+              </DropdownMenu.Item>
+            ))}
+          {user.account.type === 'personal' && <DropdownMenu.Separator className="my-1 h-px bg-line" />}
           {mustChangePassword(user) && (
             <DropdownMenu.Item asChild>
               <Link

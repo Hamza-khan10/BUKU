@@ -12,6 +12,7 @@ import { BookingTerms } from '@/features/business/components/services-menu';
 import type { ServiceItem, ServiceMenu, StaffMember } from '@/features/business/types';
 import { duration, money } from '@/lib/format';
 import { clockLabel, dayParts } from '../choices';
+import { useInsideNotice } from '../notice';
 import type { Slot } from '../types';
 
 const NOTE = zText({ kind: 'text', max: 500 });
@@ -28,19 +29,6 @@ function useDeviceTimeZone(): string | null {
   return useSyncExternalStore(
     noChange,
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || null,
-    () => null,
-  );
-}
-
-/** The current minute (ms), refreshed while the page is open; null while rendering on the server. */
-const subscribeClock = (onChange: () => void) => {
-  const timer = setInterval(onChange, 30_000);
-  return () => clearInterval(timer);
-};
-function useMinute(): number | null {
-  return useSyncExternalStore(
-    subscribeClock,
-    () => Math.floor(Date.now() / 60_000) * 60_000,
     () => null,
   );
 }
@@ -92,11 +80,8 @@ export function BookingSummary({
   onBook: (note: string | undefined) => void;
 }) {
   const deviceZone = useDeviceTimeZone();
-  const now = useMinute();
-  const windowMs = booking.cancellationWindowHours * 3_600_000;
-  // A time inside the business's notice period: say so before booking, not after.
-  const insideNotice =
-    Boolean(slot && now !== null && windowMs > 0) && Date.parse(slot!.startAt) - now! < windowMs;
+  // A time inside the business's notice period: said before booking, not after.
+  const insideNotice = useInsideNotice(slot?.startAt, booking.cancellationWindowHours);
   const [note, setNote] = useState('');
   const [localNoteError, setLocalNoteError] = useState<string | undefined>();
   const ready = Boolean(service && slot);

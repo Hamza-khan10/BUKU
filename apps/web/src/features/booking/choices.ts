@@ -95,6 +95,15 @@ export function dayParts(date: string): { weekday: string; day: string; month: s
   };
 }
 
+/** Days shown at a time on the day picker. */
+export const WINDOW_DAYS = 14;
+
+/** The first day of the two-week window a day falls in, counted from today (windows never overlap). */
+export const windowFor = (today: string, date: string | null) =>
+  date && date >= today
+    ? addDays(today, Math.floor(daysBetween(today, date) / WINDOW_DAYS) * WINDOW_DAYS)
+    : today;
+
 // ── Times ─────────────────────────────────────────────────────────────────
 
 export type DayPart = 'Morning' | 'Afternoon' | 'Evening';
