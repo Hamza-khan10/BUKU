@@ -10,7 +10,7 @@ import { CleanTextarea } from '@/components/ui/clean-text';
 import { Field } from '@/components/ui/field';
 import { BookingTerms } from '@/features/business/components/services-menu';
 import type { ServiceItem, ServiceMenu, StaffMember } from '@/features/business/types';
-import { duration, money } from '@/lib/format';
+import { duration, money, possessive } from '@/lib/format';
 import { clockLabel, dayParts } from '../choices';
 import { useInsideNotice } from '../notice';
 import type { Slot } from '../types';
@@ -147,8 +147,8 @@ export function BookingSummary({
           tone="wait"
           title={`This visit is less than ${duration(booking.cancellationWindowHours * 60)} away`}
         >
-          That’s inside {businessName}’s notice period: if you cancel it, it counts as a late cancellation,
-          and it can’t be moved.
+          That’s inside {possessive(businessName)} notice period: if you cancel it, it counts as a late
+          cancellation, and it can’t be moved.
         </Alert>
       )}
       {slot && deviceZone && deviceZone !== timezone && (

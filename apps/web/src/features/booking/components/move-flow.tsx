@@ -14,7 +14,7 @@ import { problemFrom, type Problem } from '@/features/auth/problems';
 import type { ServiceMenu, StaffMember } from '@/features/business/types';
 import { api } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
-import { duration } from '@/lib/format';
+import { duration, possessive } from '@/lib/format';
 import { fetchAvailability, fetchReceipt, moveVisit, RECEIPT_KEY } from '../api';
 import { addDays, clockLabel, dayParts, daysBetween, todayIn, WINDOW_DAYS } from '../choices';
 import { useInsideNotice } from '../notice';
@@ -116,7 +116,7 @@ function MoveChoices({ receipt: r }: { receipt: Receipt }) {
         {back}
         <Alert tone="wait" title="This visit can’t be moved any more">
           {live
-            ? `It’s inside ${r.business.name}’s notice period. You can still cancel it, or contact the business.`
+            ? `It’s inside ${possessive(r.business.name)} notice period. You can still cancel it, or contact the business.`
             : 'Only upcoming visits can be moved.'}
         </Alert>
       </div>

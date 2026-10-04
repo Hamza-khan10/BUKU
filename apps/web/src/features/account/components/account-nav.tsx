@@ -9,6 +9,7 @@ import { cn } from '@/lib/cn';
 const PAGES: { href: Route; label: string }[] = [
   { href: '/account', label: 'Overview' },
   { href: '/account/appointments', label: 'Visits' },
+  { href: '/account/reviews', label: 'Reviews' },
 ];
 
 export function AccountNav() {

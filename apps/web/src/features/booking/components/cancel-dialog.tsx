@@ -17,6 +17,7 @@ import { cancelVisit, RECEIPT_KEY, RELIABILITY_KEY, type CancelReason } from '..
 import { clockLabel, dayParts } from '../choices';
 import type { Receipt } from '../types';
 import { choiceCard } from './step';
+import { possessive } from '@/lib/format';
 
 /** The API's reasons, in words people use. */
 export const CANCEL_REASONS: { value: CancelReason; label: string }[] = [
@@ -101,8 +102,8 @@ export function CancelDialog({ receipt }: { receipt: Receipt }) {
         <div className="flex flex-col gap-5">
           {late && (
             <Alert tone="wait" title="This counts as a late cancellation">
-              It’s inside {receipt.business.name}’s notice period. Late cancellations count half towards how
-              reliably you keep bookings; cancelling earlier never counts at all.
+              It’s inside {possessive(receipt.business.name)} notice period. Late cancellations count half
+              towards how reliably you keep bookings; cancelling earlier never counts at all.
             </Alert>
           )}
           {errors.form && (

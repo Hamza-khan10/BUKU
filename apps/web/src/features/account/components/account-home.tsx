@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { CalendarDays, Repeat, ShieldCheck } from 'lucide-react';
+import { CalendarDays, Repeat, ShieldCheck, Star } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -13,7 +13,10 @@ import { fetchMe, ME_KEY } from '@/features/auth/api';
 import { fetchReliability, fetchVisits, RELIABILITY_KEY } from '@/features/booking/api';
 import { bookHref, clockLabel, dayParts } from '@/features/booking/choices';
 import type { Receipt } from '@/features/booking/types';
+import { useMinute } from '@/features/booking/notice';
 import { fetchMyTicket, MY_TICKET_KEY } from '@/features/queue/api';
+import { fetchMyReviews, MY_REVIEWS_KEY } from '@/features/reviews/api';
+import { reviewable } from '@/features/reviews/rules';
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
@@ -53,6 +56,15 @@ export function AccountHome() {
   const past = useQuery({ queryKey: ['visits', 'past', 'home'], queryFn: () => fetchVisits('past', 1, 20) });
   const reliability = useQuery({ queryKey: RELIABILITY_KEY, queryFn: fetchReliability });
   const queueTicket = useQuery({ queryKey: MY_TICKET_KEY, queryFn: fetchMyTicket });
+  const reviews = useQuery({ queryKey: MY_REVIEWS_KEY, queryFn: () => fetchMyReviews() });
+  const minute = useMinute();
+  // Visits that happened in the last 30 days and haven't been reviewed yet.
+  const toReview =
+    minute === null || !reviews.data
+      ? []
+      : (past.data?.items ?? [])
+          .filter((v) => reviewable(v, minute) && !reviews.data.items.some((x) => x.appointmentId === v.id))
+          .slice(0, 3);
 
   const first = me.data?.name.split(' ')[0];
   const next = upcoming.data?.items[0];
@@ -143,6 +155,29 @@ export function AccountHome() {
           </EmptyState>
         )}
       </Section>
+
+      {toReview.length > 0 && (
+        <Section title="How did it go?">
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {toReview.map((v) => (
+              <li key={v.id}>
+                <Link
+                  href={`/appointments/${v.id}/review` as Route}
+                  className="flex items-center gap-3 rounded-lg border border-line bg-surface p-4 hover:border-ink-3"
+                >
+                  <Star className="size-5 shrink-0 text-wait" aria-hidden />
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate font-medium text-ink">Review {v.business.name}</span>
+                    <span className="truncate text-sm text-ink-2">
+                      {v.service.name}, {dayParts(v.local.date).label}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <Section title="How reliably you keep bookings">
         {reliability.isPending ? (
