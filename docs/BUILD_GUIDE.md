@@ -410,8 +410,17 @@ The detailed plan — every page, its data and edge cases, the design system and
   only — no open redirects); signed-in visitors skip the page. The header knows on the server
   whether you're signed in (no flash) and shows "Sign in" or your account menu; a session that
   ended elsewhere is cleared. `/signout`: this device or every device, ending the sessions at the
-  API; nothing happens on a plain visit. Next: 3.3b two-step and employee sign-in, 3.3c welcome
-  and Google.
+  API; nothing happens on a plain visit.
+- **3.3b Employee sign-in and two-step codes — ✅ done.** `/signin/business`: the business's
+  handle (or its whole BUKU link, pasted), username and password; a link can fill in the first
+  two. Wrong details get one answer that never says which part was wrong; a locked account says
+  when it can try again. A temporary password from the business is replaced right there (no
+  retyping it), checked by the same rules as the API (D-088), then the employee is signed straight
+  back in; `/signin/new-password` covers the same step after a two-step code or a later visit.
+  `/signin/verify`: the authenticator code (sent once six digits are in, spaces from a paste
+  ignored) or a recovery code (recognised when pasted into the code box; how many are left is
+  said); expired challenges start again. The challenge token never reaches the page (D-088).
+  Next: 3.3c welcome and Google.
 
 ## Phase 4 — Mobile app (Expo)
 

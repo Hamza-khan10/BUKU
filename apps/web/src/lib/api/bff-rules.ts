@@ -32,8 +32,11 @@ export function checkSameOrigin(method: string, headers: Headers, appOrigin: str
 // no encoded slashes or backslashes that could change which route is reached.
 const SEGMENT = /^[A-Za-z0-9._~@:+-]{1,200}$/;
 
-/** Calls that need the refresh token, which only the web server holds (see /api/session). */
-const SERVER_ONLY = new Set(['auth/refresh', 'auth/logout']);
+/**
+ * Calls that need a token only the web server holds (see /api/session): the
+ * refresh token, and a sign-in's two-step challenge.
+ */
+const SERVER_ONLY = new Set(['auth/refresh', 'auth/logout', 'auth/mfa/verify']);
 
 /** The gateway path for `/api/v1/<segments>`, or a refusal. */
 export function gatewayPath(segments: readonly string[]): { path: string } | Refusal {

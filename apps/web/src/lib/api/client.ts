@@ -115,6 +115,28 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   return (await apiCall<T>(path, options)).data;
 }
 
+/**
+ * A call to the web server's own session routes (`/api/session/<name>`), for
+ * steps that need a token only the server holds — finishing two-step sign-in.
+ */
+export async function sessionCall<T>(name: 'verify', body: unknown): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/session/${name}`, {
+      method: 'POST',
+      headers: { [CSRF_HEADER]: '1', accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+  } catch {
+    throw new ApiError(0, 'NETWORK_ERROR', NETWORK_MESSAGE);
+  }
+  const json: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw apiErrorFrom(res.status, json, res.headers.get('x-request-id'));
+  return (json as { data?: T } | null)?.data as T;
+}
+
 /** Sign out of this browser (the session ends at the API too). */
 export async function signOut(): Promise<void> {
   await fetch('/api/session/signout', { method: 'POST', headers: { [CSRF_HEADER]: '1' } }).catch(

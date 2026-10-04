@@ -1,10 +1,7 @@
 'use client';
 
 import { zText } from '@buku/validation';
-import { useQueryClient } from '@tanstack/react-query';
 import { Building2, ShieldCheck, User } from 'lucide-react';
-import type { Route } from 'next';
-import { useRouter } from 'next/navigation';
 import { RadioGroup } from 'radix-ui';
 import { useState, type FormEvent } from 'react';
 import { z } from 'zod';
@@ -13,11 +10,10 @@ import { Button } from '@/components/ui/button';
 import { CleanTextInput } from '@/components/ui/clean-text';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { toast } from '@/components/ui/toaster';
-import { isSignedIn } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/cn';
-import { devSignIn, ME_KEY, type DevRole } from '../api';
+import { devSignIn, type DevRole } from '../api';
+import { COOKIES_BLOCKED, useFinishSignIn } from '../use-finish-sign-in';
 
 const ROLES: { value: DevRole; label: string; text: string; Icon: typeof User }[] = [
   { value: 'user', label: 'Customer', text: 'Book and join queues.', Icon: User },
@@ -40,8 +36,7 @@ interface Errors {
  * API refuses it on the live site). The name follows the clean-text rules.
  */
 export function DevSignInForm({ next }: { next: string }) {
-  const router = useRouter();
-  const queryClient = useQueryClient();
+  const finish = useFinishSignIn();
   const [role, setRole] = useState<DevRole>('user');
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
@@ -65,28 +60,10 @@ export function DevSignInForm({ next }: { next: string }) {
 
     setBusy(true);
     try {
-      const result = await devSignIn({ email: email.data, name: name?.data, role });
-      if ('mfaRequired' in result) {
-        // Development sign-in counts as two-step; this only happens if the API changes.
-        setErrors({
-          form: { message: 'This account needs its two-step code, which development sign-in skips.' },
-        });
-        return;
+      const answer = await devSignIn({ email: email.data, name: name?.data, role });
+      if (finish(answer, { next, start: 'signin' }) === 'no-cookies') {
+        setErrors({ form: { message: COOKIES_BLOCKED } });
       }
-      if (!isSignedIn()) {
-        setErrors({
-          form: {
-            message:
-              'Your browser didn’t keep BUKU’s sign-in cookies. Allow cookies for this site and try again.',
-          },
-        });
-        return;
-      }
-      queryClient.setQueryData(ME_KEY, result.user);
-      const first = result.user.name.split(' ')[0];
-      toast.success(result.isNewUser ? `Welcome to BUKU, ${first}` : `Welcome back, ${first}`);
-      router.replace(next as Route);
-      router.refresh();
     } catch (err) {
       if (err instanceof ApiError) {
         const byField = Object.fromEntries(err.fieldIssues.map((i) => [i.path, i.message]));

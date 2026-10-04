@@ -616,3 +616,19 @@ ads service is deferred. The billing registry now marks each feature as launched
 leaves unlaunched ones out, even when a plan switches them on, and a migration removed the ads
 sentence from Enterprise's benefits (only while it was still the original wording). Admin views
 and entitlements still see every feature, so switching ads on later is one flag.
+
+**D-088 · The two-step challenge stays on the web server; password rules are shared.** When an
+account uses two-step sign-in, the API answers the password (or Google) with a 5-minute challenge
+token instead of a session (D-081). On the website that token is treated like the session tokens
+(D-085): the web server takes it out of the answer and keeps it in a cookie scripts can't read
+(`__Host-buku_mfa`: HttpOnly, SameSite=Strict, as long as the challenge lasts; the expiry rides in
+front of the token so the code page knows without asking the API). The code is sent to the web
+server's own `/api/session/verify`, which adds the token, turns a correct code into the session's
+cookies and clears the challenge; the general `/api/v1` pass-through refuses
+`auth/mfa/verify`, so the token can't be supplied from a page. A lapsed or used challenge is
+answered as "this sign-in has expired" and the form offers to start again; a wrong code keeps it.
+The password policy (length 10–128, not a common password, more than a few different characters,
+not containing the username, not the current one) moved to `@buku/validation`, so the website
+checks a new password exactly as the API will before sending it. Browser tests act as separate
+visitors (`x-real-ip`, honoured in development by `WEB_CLIENT_IP_HEADER=x-real-ip`), so the API's
+per-visitor sign-in limits apply to each test as they would to each person.

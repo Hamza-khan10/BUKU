@@ -13,3 +13,11 @@ import 'server-only';
 export function devSignInEnabled(): boolean {
   return process.env.DEV_SIGN_IN === 'true' && process.env.VERCEL_ENV !== 'production';
 }
+
+/**
+ * Signing in at all (employee passwords, two-step codes) needs the API: on a
+ * site deployed without it, the sign-in pages say so instead of failing.
+ */
+export function apiConfigured(): boolean {
+  return Boolean(process.env.API_URL?.trim() && process.env.APP_URL?.trim());
+}
