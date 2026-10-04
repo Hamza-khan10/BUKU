@@ -106,7 +106,7 @@ export default function HowItWorksPage() {
         description="Two ways to stop waiting without knowing how long: an appointment at a time that suits you, or a place in the queue you can watch move."
       />
 
-      <section aria-labelledby="booking" className="grid items-start gap-12 lg:grid-cols-2">
+      <section aria-labelledby="booking" className="grid grid-cols-1 items-start gap-12 lg:grid-cols-2">
         <div className="flex flex-col gap-8">
           <h2 id="booking" className="font-display text-3xl font-bold tracking-tight">
             Booking an appointment
@@ -130,7 +130,7 @@ export default function HowItWorksPage() {
         </figure>
       </section>
 
-      <section aria-labelledby="queue" className="grid items-start gap-12 lg:grid-cols-2">
+      <section aria-labelledby="queue" className="grid grid-cols-1 items-start gap-12 lg:grid-cols-2">
         <div className="flex flex-col gap-8">
           <h2 id="queue" className="font-display text-3xl font-bold tracking-tight">
             Joining a queue

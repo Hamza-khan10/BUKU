@@ -30,7 +30,7 @@ export function LegalDoc({
 }) {
   return (
     <Container className="py-12 sm:py-16">
-      <div className="grid gap-12 lg:grid-cols-[16rem_1fr]">
+      <div className="grid grid-cols-1 gap-12 lg:grid-cols-[16rem_minmax(0,1fr)]">
         <aside className="hidden lg:block">
           <nav aria-label="On this page" className="sticky top-24 flex flex-col gap-1 text-sm">
             <p className="mb-2 font-semibold text-ink">On this page</p>
