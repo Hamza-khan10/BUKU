@@ -45,3 +45,22 @@ export async function loadBusinessPage(idOrSlug: string) {
   ]);
   return { business: profile.data, menu, staff, reviews, queue };
 }
+
+/**
+ * What the booking page needs: the business, its menu and its team. The
+ * profile decides whether the page exists; without the menu there is nothing
+ * to book (the page says so).
+ */
+export async function loadBookingPage(idOrSlug: string) {
+  if (!ID_OR_SLUG.test(idOrSlug)) return null;
+  const profile = await findPublic<BusinessProfile>(`/v1/businesses/${idOrSlug}`, { revalidate: 60 });
+  if (!profile) return null;
+  const slug = profile.data.slug;
+  const [menu, staff] = await Promise.all([
+    section(
+      getPublic<ServiceMenu>(`/v1/businesses/${slug}/services`, { revalidate: 60 }).then((r) => r.data),
+    ),
+    section(getPublic<StaffMember[]>(`/v1/businesses/${slug}/staff`, { revalidate: 60 }).then((r) => r.data)),
+  ]);
+  return { business: profile.data, menu, staff };
+}

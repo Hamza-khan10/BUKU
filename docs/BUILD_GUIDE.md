@@ -430,13 +430,26 @@ The detailed plan — every page, its data and edge cases, the design system and
   them — and the device's time zone. Both email choices start on, so "Skip for now" loses
   nothing. It asks only about what BUKU sends today: no phone number until WhatsApp is set up
   (the phone is only used for WhatsApp), no promises of settings pages that don't exist yet.
-- **3.3c-2 Sign in with Google — built; needs the owner's Google client to go live.** "Continue
+- **3.3c-2 Sign in with Google — ✅ done; verified end to end locally with the real Google client
+  (2026-10-05).** "Continue
   with Google" on `/signin`, run by the web server (authorization code + PKCE, state and nonce
   checked, no Google script on our pages; D-090); new accounts go to `/welcome`, accounts with
   two-step sign-in to `/signin/verify`, and an account scheduled for deletion can be restored.
-  Shown only where `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set (setup in
-  DEVELOPMENT.md). Tested: every refusal path in the browser, the protocol pieces in unit tests;
-  the round trip through Google itself is checked once the client exists.
+  Shown only where `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set and the API is reachable
+  (setup in DEVELOPMENT.md); the live site gets it once the API is deployed (Phase 5). Where it
+  isn't set up, its routes answer calmly, never with an error page (#57). **3.3 complete.**
+- **3.4a Booking — ✅ done.** `/b/[slug]/book`: service → who (anyone available, or a person who
+  does it) → day and time → book, on one page. Every choice lives in the address, so a refresh,
+  the back button or signing in at the last step never loses it. Days show how many times are
+  free (two weeks at a time, up to the business's horizon); times come fresh from the API, on the
+  business's clock (said so when the visitor's differs). Before booking, a time inside the
+  business's notice period is flagged (cancelling it would count as late). A time taken
+  meanwhile is said so, with the other choices kept; after a lost connection the page checks
+  whether the booking went through before saying anything. Team accounts can't book (said up
+  front). The receipt `/appointments/[id]` is the ticket: code, QR (the code only), what, when,
+  where, price paid at the venue, the cancellation terms for this visit; only its owner sees it.
+  The business page has "Book a visit" and a Book button on every service someone takes bookings
+  for.
 
 ## Phase 4 — Mobile app (Expo)
 
