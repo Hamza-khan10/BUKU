@@ -37,6 +37,8 @@ const GOOGLE_CLIENT_ID = 'buku-test.apps.googleusercontent.com';
 const TERMS = '1.0';
 
 let app: Express;
+/** The same service with development sign-in switched on (never in production). */
+let devApp: Express;
 let rights: DataRightsService;
 let db: Database;
 let redis: Redis;
@@ -78,6 +80,7 @@ async function signUp(overrides: Record<string, unknown> = {}) {
 }
 
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
+const userIdOf = (body: unknown) => (body as { data: { user: { id: string } } }).data.user.id;
 
 /** A fresh client IP per simulated user (the service trusts one proxy hop, like behind Kong). */
 // Random, so re-running the suite within a minute never reuses a rate-limit bucket.
@@ -116,7 +119,7 @@ beforeAll(async () => {
     secretAccessKey: testEnv.s3.secretAccessKey,
     forcePathStyle: true,
   });
-  ({ app, rights } = buildAuthApp({
+  const deps: Parameters<typeof buildAuthApp>[0] = {
     db,
     redis,
     signer,
@@ -157,7 +160,9 @@ beforeAll(async () => {
       readiness: new Readiness(),
       trustProxyHops: 1,
     },
-  }));
+  };
+  ({ app, rights } = buildAuthApp(deps));
+  devApp = buildAuthApp({ ...deps, settings: { ...deps.settings, devLoginEnabled: true } }).app;
 });
 
 afterAll(async () => {
@@ -252,6 +257,33 @@ describe('Sign in with Google', () => {
 
   it('does not expose the dev sign-in unless explicitly enabled', async () => {
     expect((await post('/v1/auth/dev/login').send({ email: 'a@b.co' })).status).toBe(404);
+  });
+
+  it('two simultaneous first sign-ins (a double tap) make one account, and both get in', async () => {
+    const sub = randomUUID();
+    const signIn = async () =>
+      post('/v1/auth/oauth/google').send({
+        idToken: await googleIdToken({ sub }),
+        acceptedTermsVersion: TERMS,
+      });
+    const answers = await Promise.all([signIn(), signIn()]);
+    expect(answers.map((a) => a.status).sort()).toEqual([200, 201]);
+    expect(new Set(answers.map((a) => userIdOf(a.body))).size).toBe(1);
+    expect(await db.oAuthAccount.count({ where: { providerUserId: sub } })).toBe(1);
+  });
+});
+
+describe('Development sign-in (development only)', () => {
+  const devPost = (path: string) => request(devApp).post(path).set('X-Forwarded-For', newIp());
+
+  it('two simultaneous first sign-ins with one email make one account, and both get in', async () => {
+    const email = `dev-race-${randomUUID()}@example.com`;
+    const answers = await Promise.all(
+      [1, 2, 3].map(() => devPost('/v1/auth/dev/login').send({ email, role: 'business_owner' })),
+    );
+    expect(answers.map((a) => a.status).sort()).toEqual([200, 200, 201]);
+    expect(new Set(answers.map((a) => userIdOf(a.body))).size).toBe(1);
+    expect(answers.every((a) => (a.body as { data: { accessToken?: string } }).data.accessToken)).toBe(true);
   });
 });
 
