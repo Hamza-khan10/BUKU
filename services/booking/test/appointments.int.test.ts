@@ -302,6 +302,20 @@ describe('Booking', () => {
     ).toBe(true);
   });
 
+  it('a busy hour: many people booking at once get a booking or a clear “taken”, never a server error', async () => {
+    const s = await salon({ staffCount: 3 });
+    const people = await Promise.all(Array.from({ length: 24 }, () => person()));
+    const times = ['10:00', '10:15', '10:30', '10:45'];
+    const results = await Promise.all(people.map((p, i) => book(p, s, at(DAY(), times[i % times.length]!))));
+    // Conflicts between the transactions (write conflicts, deadlocks) are retried, not shown as 500s.
+    expect(results.map((r) => r.status).filter((st) => st !== 201 && st !== 409)).toEqual([]);
+    expect(
+      results.filter((r) => r.status === 409).every((r) => r.body.error.code === 'SLOT_UNAVAILABLE'),
+    ).toBe(true);
+    // Every one of the three people is booked at each start time that doesn't overlap their own earlier one.
+    expect(results.filter((r) => r.status === 201).length).toBeGreaterThanOrEqual(3);
+  });
+
   it('a customer can’t hold two overlapping appointments, even at different businesses (D-036)', async () => {
     const [a, b] = [await salon(), await salon()];
     const me = await person();
