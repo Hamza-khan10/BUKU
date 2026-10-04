@@ -4,7 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
-import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
+import { rateLimit, type RateLimitInfo } from 'express-rate-limit';
 import { AppError } from '../errors.js';
 import type { Logger } from '../logger.js';
 import { createServiceMetrics } from './metrics.js';
@@ -128,20 +128,22 @@ export function createHttpApp(options: HttpAppOptions): Express {
 
   // A ceiling per address on every route, in each process (D-086): the gateway's
   // limits are the real ones; this one holds even if a request arrives without it.
+  // (express-rate-limit, which code scanning recognises; IPv6 addresses count by /56.)
   const perMinute = options.baselineRequestsPerMinute ?? 3000;
   if (perMinute > 0) {
-    const baseline = new RateLimiterMemory({ keyPrefix: 'rl:baseline', points: perMinute, duration: 60 });
-    app.use((req, _res, next) => {
-      baseline.consume(req.ip ?? 'unknown').then(
-        () => next(),
-        (err: unknown) =>
-          next(
-            err instanceof RateLimiterRes
-              ? AppError.rateLimited(Math.max(1, Math.ceil(err.msBeforeNext / 1000)))
-              : err,
-          ),
-      );
-    });
+    app.use(
+      rateLimit({
+        windowMs: 60_000,
+        limit: perMinute,
+        standardHeaders: false,
+        legacyHeaders: false,
+        handler: (req, _res, next) => {
+          const info = (req as typeof req & { rateLimit?: RateLimitInfo }).rateLimit;
+          const resetAt = info?.resetTime?.getTime() ?? Date.now() + 60_000;
+          next(AppError.rateLimited(Math.max(1, Math.ceil((resetAt - Date.now()) / 1000))));
+        },
+      }),
+    );
   }
   app.use(
     express.json({
