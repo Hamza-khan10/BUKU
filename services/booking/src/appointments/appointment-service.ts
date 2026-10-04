@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import {
   AppError,
   can,
@@ -11,6 +12,7 @@ import {
   businessRoleOf,
   constraintNameOf,
   isExclusionViolation,
+  isRetryableTransactionError,
   isUniqueViolation,
   requireBusinessPermission,
   showUpLabels,
@@ -46,6 +48,9 @@ import { appointmentInclude, businessView, receiptView, type AppointmentRow } fr
 
 const LIVE = ['pending', 'confirmed'] as const;
 const REBOOK_REMINDER_DAYS = 3;
+/** Tries per employee: a write conflict or deadlock between bookings is resolved by trying again. */
+const MAX_ATTEMPTS = 4;
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Check-in opens this long before the start. */
 const CHECK_IN_OPENS_MS = 2 * 3_600_000;
 
@@ -596,7 +601,21 @@ export class AppointmentService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`${userId}:${businessId}`}, 0))`;
   }
 
-  private insert(tx: Transaction, data: Omit<Prisma.AppointmentUncheckedCreateInput, 'confirmationCode'>) {
+  /**
+   * Bookings for the same person take turns for the moment of inserting (a
+   * transaction-scoped lock on that employee). Without it, two simultaneous
+   * inserts that would double-book them can deadlock inside the no-overlap
+   * constraint; with it, the second sees the first and is refused cleanly
+   * ("taken" → the next person). Always after the customer's lock, so the
+   * order never forms a cycle.
+   */
+  private async insert(
+    tx: Transaction,
+    data: Omit<Prisma.AppointmentUncheckedCreateInput, 'confirmationCode'>,
+  ) {
+    if (data.staffId) {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`staff:${data.staffId}`}, 0))`;
+    }
     return tx.appointment.create({ data: { ...data, confirmationCode: generateConfirmationCode() } });
   }
 
@@ -604,11 +623,14 @@ export class AppointmentService {
    * Run `attempt` (a whole transaction) for each candidate employee until one
    * succeeds. The database decides: the customer already busy → stop; this
    * employee just got booked by someone else → next candidate; the random
-   * booking code collided (about 1 in 887 million) → same employee, new code.
+   * booking code collided (about 1 in 887 million) → same employee, new code;
+   * two bookings' transactions got in each other's way (a write conflict or
+   * deadlock, which Postgres resolves by aborting one) → same employee again,
+   * after a short random pause, so a busy hour never shows a server error.
    */
   private async firstFree<T>(candidates: string[], attempt: (staffId: string) => Promise<T>): Promise<T> {
     for (const staffId of candidates) {
-      for (let tries = 0; tries < 3; tries++) {
+      for (let tries = 0; tries < MAX_ATTEMPTS; tries++) {
         try {
           return await attempt(staffId);
         } catch (err) {
@@ -616,6 +638,10 @@ export class AppointmentService {
           if (constraint === 'appointments_no_user_overlap') throw overlap();
           if (isExclusionViolation(err) && constraint === 'appointments_no_staff_overlap') break;
           if (isUniqueViolation(err) && constraint === 'appointments_confirmation_code_key') continue;
+          if (isRetryableTransactionError(err) && tries < MAX_ATTEMPTS - 1) {
+            await pause(10 + randomInt(40) * (tries + 1));
+            continue;
+          }
           throw err;
         }
       }
