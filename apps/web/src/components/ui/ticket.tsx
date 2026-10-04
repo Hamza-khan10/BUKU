@@ -87,8 +87,8 @@ export function Ticket({
           <p className="text-xs font-medium tracking-wide text-ink-3 uppercase">{codeLabel}</p>
           <p className="font-mono text-2xl font-bold tracking-wider text-ink">{code}</p>
           {qr && (
-            <div className="rounded-md bg-white p-2">
-              <QRCodeSVG value={code} size={112} level="M" title={`QR code for ${code}`} />
+            <div role="img" aria-label={`QR code for ${code}`} className="rounded-md bg-white p-2">
+              <QRCodeSVG value={code} size={112} level="M" aria-hidden />
             </div>
           )}
         </div>

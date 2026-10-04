@@ -2,8 +2,11 @@ import type { Metadata, Route } from 'next';
 import { headers } from 'next/headers';
 import { notFound, permanentRedirect } from 'next/navigation';
 import type { ReactNode } from 'react';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/layout';
 import { ErrorState } from '@/components/ui/states';
+import { bookHref } from '@/features/booking/choices';
 import { loadBusinessPage } from '@/features/business/api';
 import { businessJsonLd } from '@/features/business/json-ld';
 import { ProfileHeader } from '@/features/business/components/profile-header';
@@ -88,6 +91,19 @@ export default async function BusinessPage({ params, searchParams }: Props) {
       <Container className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
         {/* First in reading order on phones (what's happening now), the side column on wide screens. */}
         <aside className="flex flex-col gap-4 lg:col-start-2 lg:row-start-1">
+          {menu.ok && menu.data.categories.some((c) => c.services.some((s) => s.staffIds.length > 0)) && (
+            <SideCard title="Book a visit">
+              <p className="mb-4 text-sm text-ink-2">
+                Choose a service and a free time.{' '}
+                {menu.data.booking.confirmationMode === 'automatic'
+                  ? 'Bookings are confirmed straight away.'
+                  : 'The business confirms each booking.'}
+              </p>
+              <Button asChild variant="primary" block>
+                <Link href={bookHref(business.slug) as Route}>Book a visit</Link>
+              </Button>
+            </SideCard>
+          )}
           {queue.ok ? (
             <QueueCard slug={business.slug} initial={queue.data} />
           ) : (
@@ -111,7 +127,7 @@ export default async function BusinessPage({ params, searchParams }: Props) {
 
           <Block id="services" title="Services and prices">
             {menu.ok ? (
-              <ServicesMenu menu={menu.data} />
+              <ServicesMenu menu={menu.data} slug={business.slug} />
             ) : (
               <Unavailable what="services" reference={menu.reference} />
             )}

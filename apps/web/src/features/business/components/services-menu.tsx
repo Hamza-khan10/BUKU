@@ -1,5 +1,9 @@
 import { CalendarCheck, Clock3, Hourglass } from 'lucide-react';
+import type { Route } from 'next';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/states';
+import { bookHref } from '@/features/booking/choices';
 import { duration, money } from '@/lib/format';
 import type { ServiceMenu } from '../types';
 
@@ -31,8 +35,12 @@ export function BookingTerms({ booking }: { booking: ServiceMenu['booking'] }) {
   );
 }
 
-/** The service menu: what the business offers, how long it takes, what it costs (paid at the venue). */
-export function ServicesMenu({ menu }: { menu: ServiceMenu }) {
+/**
+ * The service menu: what the business offers, how long it takes, what it
+ * costs (paid at the venue) — and, for services someone takes bookings for,
+ * a way straight to booking it.
+ */
+export function ServicesMenu({ menu, slug }: { menu: ServiceMenu; slug: string }) {
   const groups = menu.categories.filter((c) => c.services.length > 0);
   if (groups.length === 0) {
     return (
@@ -63,7 +71,16 @@ export function ServicesMenu({ menu }: { menu: ServiceMenu }) {
                       ` · ${s.staffIds.length} ${s.staffIds.length === 1 ? 'person does' : 'people do'} this`}
                   </p>
                 </div>
-                <p className="shrink-0 font-semibold text-ink tabular">{money(s.price, s.currency)}</p>
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <p className="font-semibold text-ink tabular">{money(s.price, s.currency)}</p>
+                  {s.staffIds.length > 0 && (
+                    <Button asChild variant="secondary" size="sm">
+                      <Link href={bookHref(slug, { serviceId: s.id }) as Route}>
+                        Book<span className="sr-only"> {s.name}</span>
+                      </Link>
+                    </Button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
