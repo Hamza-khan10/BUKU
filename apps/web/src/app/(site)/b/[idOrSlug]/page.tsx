@@ -16,6 +16,7 @@ import { BookingTerms, ServicesMenu } from '@/features/business/components/servi
 import { HoursCard, SideCard, VisitCard } from '@/features/business/components/side-cards';
 import { TeamList } from '@/features/business/components/team-list';
 import { env } from '@/lib/env';
+import { signedInHere } from '@/lib/session/server';
 
 type Props = PageProps<'/b/[idOrSlug]'>;
 
@@ -76,6 +77,9 @@ export default async function BusinessPage({ params, searchParams }: Props) {
   }
 
   const nonce = (await headers()).get('x-nonce') ?? undefined;
+  const signedIn = await signedInHere();
+  // One loud button per page: joining when the queue is open now, booking otherwise.
+  const queueOpen = queue.ok && queue.data.status === 'open';
   const url = `${env().APP_URL}/b/${business.slug}`;
 
   return (
@@ -99,13 +103,18 @@ export default async function BusinessPage({ params, searchParams }: Props) {
                   ? 'Bookings are confirmed straight away.'
                   : 'The business confirms each booking.'}
               </p>
-              <Button asChild variant="primary" block>
+              <Button asChild variant={queueOpen ? 'secondary' : 'primary'} block>
                 <Link href={bookHref(business.slug) as Route}>Book a visit</Link>
               </Button>
             </SideCard>
           )}
           {queue.ok ? (
-            <QueueCard slug={business.slug} initial={queue.data} />
+            <QueueCard
+              slug={business.slug}
+              businessId={business.id}
+              initial={queue.data}
+              signedIn={signedIn}
+            />
           ) : (
             <SideCard title="Walk-in queue">
               <p className="text-sm text-ink-2">We couldn’t load the queue. Please refresh in a moment.</p>

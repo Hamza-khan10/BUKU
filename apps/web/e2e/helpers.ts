@@ -23,8 +23,21 @@ export async function useTheme(context: BrowserContext, theme: 'light' | 'dark',
   await context.addCookies([{ name: 'buku_theme', value: theme, url: baseURL }]);
 }
 
-/** WCAG 2.2 A/AA checks with axe; any violation fails, listed by rule and element. */
+/**
+ * WCAG 2.2 A/AA checks with axe; any violation fails, listed by rule and element.
+ * Entrance animations (a dialog fading in, a ticket printing) finish first: half-way
+ * through a fade, text really is too faint, and that isn't what people end up reading.
+ */
 export async function expectAccessible(page: Page) {
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        // Only ones that end: a "live" dot or a loading shimmer runs for ever.
+        .filter((a) => Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity))
+        .map((a) => a.finished.catch(() => undefined)),
+    ),
+  );
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     .analyze();
