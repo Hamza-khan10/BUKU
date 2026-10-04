@@ -19,7 +19,7 @@ function isCurrent(pathname: string, href: string) {
 export function DesktopNav() {
   const pathname = usePathname();
   return (
-    <nav aria-label="Main" className="hidden md:block">
+    <nav aria-label="Main" className="hidden lg:block">
       <ul className="flex items-center gap-1">
         {primaryNav.map(({ href, label }) => {
           const current = isCurrent(pathname, href);
@@ -29,7 +29,7 @@ export function DesktopNav() {
                 href={href}
                 aria-current={current ? 'page' : undefined}
                 className={cn(
-                  'rounded-md px-3 py-2 text-[0.95rem] font-medium text-ink-2 transition-colors hover:bg-sunken hover:text-ink',
+                  'rounded-md px-3 py-2 text-[0.95rem] font-medium whitespace-nowrap text-ink-2 transition-colors hover:bg-sunken hover:text-ink',
                   current && 'text-ink',
                 )}
               >
@@ -50,16 +50,16 @@ export function MobileNav({ theme }: { theme: Theme }) {
   return (
     <RadixDialog.Root open={open} onOpenChange={setOpen}>
       <RadixDialog.Trigger
-        className="grid size-11 place-items-center rounded-md text-ink hover:bg-sunken md:hidden"
+        className="grid size-11 place-items-center rounded-md text-ink hover:bg-sunken lg:hidden"
         aria-label="Open menu"
       >
         <Menu className="size-6" aria-hidden />
       </RadixDialog.Trigger>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-night/50 md:hidden" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-night/50 lg:hidden" />
         <RadixDialog.Content
           aria-describedby={undefined}
-          className="fixed inset-y-0 right-0 z-50 flex w-[min(22rem,100vw)] flex-col bg-canvas shadow-lift animate-rise md:hidden"
+          className="fixed inset-y-0 right-0 z-50 flex w-[min(22rem,100vw)] flex-col bg-canvas shadow-lift animate-rise lg:hidden"
         >
           <div className="flex h-16 items-center justify-between border-b border-line px-4">
             <RadixDialog.Title className="flex items-center gap-2 font-display text-lg font-bold">

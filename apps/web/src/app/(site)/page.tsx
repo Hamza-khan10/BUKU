@@ -316,7 +316,10 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
 
       {/* ── What we promise ── */}
       <Container>
-        <section aria-labelledby="promises" className="rounded-2xl bg-night p-8 text-[#f6f2ec] sm:p-12">
+        <section
+          aria-labelledby="promises"
+          className="rounded-2xl border border-line bg-night p-8 text-[#f6f2ec] sm:p-12"
+        >
           <h2 id="promises" className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
             What you can count on
           </h2>

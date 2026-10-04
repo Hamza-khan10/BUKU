@@ -17,11 +17,13 @@ export const primaryNav: NavLink[] = [
   { href: '/explore', label: 'Explore' },
   { href: '/categories', label: 'Categories' },
   { href: '/how-it-works', label: 'How it works' },
-  { href: '/help', label: 'Help' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/for-business', label: 'For businesses' },
 ];
 
 /** Shown under the main links in the phone menu. */
 export const secondaryNav: NavLink[] = [
+  { href: '/help', label: 'Help' },
   { href: '/about', label: 'About' },
   { href: '/contact', label: 'Contact' },
   { href: '/security', label: 'Security' },
@@ -35,6 +37,8 @@ export const footerNav: { title: string; links: NavLink[] }[] = [
       { href: '/explore', label: 'Explore' },
       { href: '/categories', label: 'Categories' },
       { href: '/how-it-works', label: 'How it works' },
+      { href: '/pricing', label: 'Pricing' },
+      { href: '/for-business', label: 'For businesses' },
       { href: '/about', label: 'About' },
       { href: '/contact', label: 'Contact' },
     ],

@@ -398,6 +398,12 @@ The detailed plan — every page, its data and edge cases, the design system and
   the address, filters are plain links), "Near me" (location asked, rounded to ~100 m, used for
   that search only); `/categories` and `/c/[slug]`. Browser tests also check that no page scrolls
   sideways at 320 and 390 px.
+- **3.2d Pricing, for businesses, sitemap — ✅ done.** `/pricing`: every plan, price, limit and
+  trial from the plan catalog (customers and businesses; the iPhone price stated as the App
+  Store's; "everything is included" while paid plans are off); features not offered yet are left
+  out by the API (D-087, #48). `/for-business`: only what the platform does today, and how to get
+  verified. `sitemap.xml` (site pages, categories, every listed business; hourly), referenced from
+  `robots.txt` once indexing is allowed. **3.2 (public site) complete.**
 
 ## Phase 4 — Mobile app (Expo)
 
