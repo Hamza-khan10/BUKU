@@ -1,4 +1,4 @@
-import { env } from '@/lib/env';
+import { originOnly } from '@/lib/security/csp';
 import { siteFacts } from '@/lib/site';
 
 /**
@@ -8,14 +8,13 @@ import { siteFacts } from '@/lib/site';
 export function GET(): Response {
   const contact = siteFacts().email.security;
   if (!contact) return new Response('Not found', { status: 404 });
-  const site = env().APP_URL;
+  const site = originOnly(process.env.APP_URL);
   const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
   const body = [
     `Contact: mailto:${contact}`,
     `Expires: ${expires}`,
     'Preferred-Languages: en',
-    `Canonical: ${site}/.well-known/security.txt`,
-    `Policy: ${site}/security`,
+    ...(site ? [`Canonical: ${site}/.well-known/security.txt`, `Policy: ${site}/security`] : []),
     '',
   ].join('\n');
   return new Response(body, { headers: { 'content-type': 'text/plain; charset=utf-8' } });

@@ -110,6 +110,25 @@ request APIs, no `next lint`). The browser never holds a token: it calls `/api/v
 server, which adds the session (D-085). Browser tests need Chromium once:
 `pnpm --filter @buku/web exec playwright install chromium`.
 
+### Deploy the website on Vercel
+
+One Vercel project, connected to this repository, with these settings:
+
+| Setting (Vercel → Project → Settings)                  | Value                                                       |
+| ------------------------------------------------------ | ----------------------------------------------------------- |
+| Build and Deployment → **Root Directory**              | `apps/web` (a folder; the branch is chosen separately)      |
+| Build and Deployment → Framework Preset                | Next.js (install command comes from `apps/web/vercel.json`) |
+| Build and Deployment → **Node.js Version**             | 24.x (the repository requires Node 24)                      |
+| Environment Variables → `ENABLE_EXPERIMENTAL_COREPACK` | `1` — so Vercel uses this repository's pnpm (12.8.1)        |
+| Git → Production Branch                                | `main`                                                      |
+
+Then the web app's own variables (from `apps/web/.env.example`), for Production and Preview:
+`APP_URL` (the site's https address), `API_URL` (the public API address, once it is deployed),
+`WEB_GATEWAY_KEY` (the same value as the API's), `WEB_CLIENT_IP_HEADER=x-real-ip`,
+`DEV_SIGN_IN=false`, `ALLOW_INDEXING=false` until launch, and the `LEGAL_*` / `*_EMAIL` details
+when they exist. Until the API is online, pages that only describe BUKU work, and pages that need
+live data show their "isn't loading" state. Previews are behind Vercel's login by default.
+
 ### Set up Paddle (online payments, sandbox)
 
 Billing works without Paddle (checkout answers "online payments aren't set up"). To try real
