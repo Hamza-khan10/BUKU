@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { expectAccessible, useTheme } from './helpers';
 
 /** The public information and legal pages (WEB_PLAN §3.1). */
@@ -39,6 +39,8 @@ test.describe('Information pages', () => {
   });
 
   test('no link on the site leads to a missing page', async ({ page, request }) => {
+    // Visits every page and follows every link: slow on a busy development server.
+    test.slow();
     const seen = new Set<string>();
     for (const path of ['/', ...PAGES]) {
       await page.goto(path);

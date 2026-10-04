@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { checkSameOrigin, endsSession, gatewayPath } from '../src/lib/api/bff-rules';
+import { gatewayHeaders, withQuery } from '../src/lib/api/gateway-headers';
 import { clientIpFrom } from '../src/lib/http/client-ip';
 import { requestIdFrom } from '../src/lib/http/request-id';
 import { buildCsp, newNonce, originOnly } from '../src/lib/security/csp';
@@ -113,5 +114,37 @@ describe('request ids', () => {
     expect(requestIdFrom('short')).not.toBe('short');
     expect(requestIdFrom('id\nInjected: yes')).not.toContain('\n');
     expect(requestIdFrom(null)).toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe('calls from the web server to the API', () => {
+  const webKey = 'f'.repeat(64);
+
+  it('carry the visitor’s address only together with the key that vouches for it (D-084)', () => {
+    const both = gatewayHeaders(undefined, { requestId: 'r1', visitor: '203.0.113.7', webKey });
+    expect(both.get('x-buku-client-ip')).toBe('203.0.113.7');
+    expect(both.get('x-buku-web-key')).toBe(webKey);
+    expect(both.get('x-request-id')).toBe('r1');
+    // No address: no key either (it never travels on its own); no key: the address would be ignored.
+    for (const call of [{ webKey }, { visitor: '203.0.113.7' }]) {
+      const h = gatewayHeaders(undefined, call);
+      expect(h.has('x-buku-web-key')).toBe(false);
+      expect(h.has('x-buku-client-ip')).toBe(false);
+    }
+  });
+
+  it('add the session only when there is one, keeping the headers they were given', () => {
+    const h = gatewayHeaders({ accept: 'application/json' }, { accessToken: 'jwt' });
+    expect(h.get('authorization')).toBe('Bearer jwt');
+    expect(h.get('accept')).toBe('application/json');
+    expect(gatewayHeaders(undefined, {}).has('authorization')).toBe(false);
+  });
+
+  it('file public data under its address alone, empty values left out', () => {
+    expect(withQuery('/v1/businesses/search', { q: 'hair', city: 'Lahore', page: 2, open: true })).toBe(
+      '/v1/businesses/search?q=hair&city=Lahore&page=2&open=true',
+    );
+    expect(withQuery('/v1/categories', { q: '', city: undefined })).toBe('/v1/categories');
+    expect(withQuery('/v1/cities')).toBe('/v1/cities');
   });
 });

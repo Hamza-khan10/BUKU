@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible, useTheme } from './helpers';
 
 /** A business's public page, against the development stack's seed data. */

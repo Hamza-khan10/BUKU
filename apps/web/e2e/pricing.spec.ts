@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible, useTheme } from './helpers';
 
 /** Pricing and "for businesses": every number from the plan catalog, nothing promised that isn't offered. */

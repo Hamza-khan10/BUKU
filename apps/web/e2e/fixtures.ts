@@ -3,11 +3,12 @@ import { test as base } from '@playwright/test';
 
 /**
  * Each test is its own visitor. The live site's host tells the web server who
- * the visitor is (`x-real-ip` on Vercel), and the API limits sign-ins per
- * visitor (D-084). Tests send their own address the same way, so they don't
- * all count against one — which the development web server honours when
- * WEB_CLIENT_IP_HEADER=x-real-ip (apps/web/.env.example). Without it, they
- * simply share the development machine's address, as before.
+ * the visitor is (`x-real-ip` on Vercel), and the API limits each visitor —
+ * sign-ins, searches, everything (D-084, D-089). Tests send their own address
+ * the same way, so they don't all count against one — which the development
+ * web server honours when WEB_CLIENT_IP_HEADER=x-real-ip (apps/web/.env.example).
+ * Without it, they simply share the development machine's address. Every
+ * spec imports `test` from here.
  */
 
 /** A fresh address from 198.18.0.0/15, the block set aside for testing (RFC 2544). */

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { apiAvailable } from './helpers';
 
 /**
@@ -37,6 +38,8 @@ for (const width of [320, 390]) {
     test.use({ viewport: { width, height: 800 } });
 
     test('pages don’t scroll sideways', async ({ page }) => {
+      // Visits every page in turn: slow on a busy development server, so three times the usual time.
+      test.slow();
       const pages = [...STATIC_PAGES];
       if (await apiAvailable()) {
         const api = process.env.E2E_API_URL ?? 'http://localhost:8000';
