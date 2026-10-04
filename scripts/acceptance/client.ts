@@ -75,7 +75,10 @@ export async function signIn(
   name?: string,
 ): Promise<Person> {
   const r = await call('POST', '/v1/auth/dev/login', { body: { email, role, ...(name && { name }) } });
-  if (r.status >= 300) throw new Error(`sign-in failed for ${email}: ${r.status} ${JSON.stringify(r.body)}`);
+  if (r.status >= 300) {
+    const code = (r.body as { error?: { code?: string } } | null)?.error?.code ?? 'no error code';
+    throw new Error(`sign-in failed for ${email}: ${r.status} ${code}`);
+  }
   const d = data<{ accessToken: string; user: { id: string } }>(r);
   return { id: d.user.id, token: d.accessToken, email };
 }

@@ -328,7 +328,7 @@ describe('Expo push service client', () => {
       batches.push(msgs);
       res.json({
         data: msgs.map((m, i) =>
-          m.to.includes('dead')
+          String(m.to).includes('dead')
             ? { status: 'error', message: 'gone', details: { error: 'DeviceNotRegistered' } }
             : { status: 'ok', id: `t${batches.length}-${i}` },
         ),

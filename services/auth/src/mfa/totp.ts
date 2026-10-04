@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 
 /**
  * Authenticator-app codes (TOTP, RFC 6238 over HOTP, RFC 4226): HMAC-SHA1,
@@ -93,8 +93,8 @@ export function otpauthUri(secretBase32: string, account: string, issuer = 'BUKU
 export function newRecoveryCodes(n = 10): string[] {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
   return Array.from({ length: n }, () => {
-    const bytes = randomBytes(8);
-    const chars = [...bytes].map((b) => alphabet[b % alphabet.length]).join('');
+    // randomInt draws evenly; "byte % 31" would make some characters likelier than others.
+    const chars = Array.from({ length: 8 }, () => alphabet[randomInt(alphabet.length)]).join('');
     return `${chars.slice(0, 4)}-${chars.slice(4, 8)}`;
   });
 }
