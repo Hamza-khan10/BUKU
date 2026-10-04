@@ -29,12 +29,14 @@ describe('session cookies', () => {
       refresh: '__Secure-buku_rt',
       hint: '__Host-buku_s',
       challenge: '__Host-buku_mfa',
+      google: '__Host-buku_oauth',
     });
     expect(cookieNames(false)).toEqual({
       access: 'buku_at',
       refresh: 'buku_rt',
       hint: 'buku_s',
       challenge: 'buku_mfa',
+      google: 'buku_oauth',
     });
   });
 

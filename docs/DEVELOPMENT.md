@@ -125,9 +125,32 @@ One Vercel project, connected to this repository, with these settings:
 Then the web app's own variables (from `apps/web/.env.example`), for Production and Preview:
 `APP_URL` (the site's https address), `API_URL` (the public API address, once it is deployed),
 `WEB_GATEWAY_KEY` (the same value as the API's), `WEB_CLIENT_IP_HEADER=x-real-ip`,
-`DEV_SIGN_IN=false`, `ALLOW_INDEXING=false` until launch, and the `LEGAL_*` / `*_EMAIL` details
-when they exist. Until the API is online, pages that only describe BUKU work, and pages that need
-live data show their "isn't loading" state. Previews are behind Vercel's login by default.
+`DEV_SIGN_IN=false`, `ALLOW_INDEXING=false` until launch, the `LEGAL_*` / `*_EMAIL` details
+when they exist, and `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` once Google sign-in is set up
+(below). Until the API is online, pages that only describe BUKU work, and pages that need live
+data show their "isn't loading" state. Previews are behind Vercel's login by default.
+
+### Set up Sign in with Google
+
+The website signs people in with Google on its own server (D-090): no Google script runs in the
+browser. It needs one OAuth client, used by both the website and the API.
+
+1. [Google Cloud console](https://console.cloud.google.com) → create a project (e.g. "BUKU").
+2. _APIs & Services → OAuth consent screen_: user type **External**; app name **BUKU**; your
+   support email; scopes `openid`, `email`, `profile` (nothing else). While it is in **Testing**,
+   only the test users you add can sign in — add yourself.
+3. _APIs & Services → Credentials → Create credentials → OAuth client ID_: type **Web
+   application**. Authorised redirect URIs:
+   - `http://localhost:3000/api/auth/google/callback` (development)
+   - `https://<the site's domain>/api/auth/google/callback` (the live site; add it when the
+     domain is final — Vercel preview addresses change, so previews use development sign-in)
+4. Copy the **client ID** and **client secret**:
+   - `apps/web/.env.local` (and Vercel): `GOOGLE_CLIENT_ID=…`, `GOOGLE_CLIENT_SECRET=…`
+   - the API's root `.env`: `GOOGLE_CLIENT_IDS=<the same client ID>` (comma-separated if the mobile
+     apps add their own later), then `docker compose -f docker-compose.dev.yml up -d auth-service`.
+5. Restart the website (`pnpm web`): `/signin` now shows **Continue with Google**.
+
+The secret is a secret: only in `.env.local` (git-ignored) and Vercel's environment settings.
 
 ### Set up Paddle (online payments, sandbox)
 

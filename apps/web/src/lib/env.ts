@@ -23,6 +23,20 @@ const schema = z
     WEB_CLIENT_IP_HEADER: optional(z.string().regex(/^[a-z0-9-]{1,64}$/)),
     /** Where pictures are served from (allowed by the Content-Security-Policy). */
     MEDIA_ORIGIN: optional(z.url().transform((u) => new URL(u).origin)),
+    /**
+     * Sign in with Google (D-090): the OAuth client of type "Web application" from the Google
+     * Cloud console. Both or neither; without them the sign-in page doesn't offer Google.
+     * The API's GOOGLE_CLIENT_IDS must include the same client id.
+     */
+    GOOGLE_CLIENT_ID: optional(
+      z
+        .string()
+        .regex(
+          /^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/,
+          'must look like 123-abc.apps.googleusercontent.com',
+        ),
+    ),
+    GOOGLE_CLIENT_SECRET: optional(z.string().min(10).max(200)),
     /** Development sign-in (any email, no Google). Refused in production. */
     DEV_SIGN_IN: z
       .enum(['true', 'false'])
@@ -38,6 +52,13 @@ const schema = z
     }
     if (live && !env.APP_URL.startsWith('https://')) {
       ctx.addIssue({ code: 'custom', path: ['APP_URL'], message: 'must be https in production' });
+    }
+    if (Boolean(env.GOOGLE_CLIENT_ID) !== Boolean(env.GOOGLE_CLIENT_SECRET)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [env.GOOGLE_CLIENT_ID ? 'GOOGLE_CLIENT_SECRET' : 'GOOGLE_CLIENT_ID'],
+        message: 'set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither',
+      });
     }
     if (live && !env.WEB_GATEWAY_KEY) {
       ctx.addIssue({

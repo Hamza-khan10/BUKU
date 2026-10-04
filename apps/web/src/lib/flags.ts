@@ -21,3 +21,13 @@ export function devSignInEnabled(): boolean {
 export function apiConfigured(): boolean {
   return Boolean(process.env.API_URL?.trim() && process.env.APP_URL?.trim());
 }
+
+/**
+ * Sign in with Google: offered only where the web server has its Google
+ * client (id and secret) and the API to hand the result to.
+ */
+export function googleSignInEnabled(): boolean {
+  return Boolean(
+    apiConfigured() && process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim(),
+  );
+}
