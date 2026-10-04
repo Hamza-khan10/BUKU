@@ -604,5 +604,7 @@ per-address ceiling of its own (3000 requests a minute per process, far above th
 limits, so it never touches normal use; health, readiness and metrics are exempt). The other three
 were fixed: two-step recovery codes drew characters with `byte % 31`, which favours some (now
 `randomInt`); the acceptance script logged whole errors, which can carry API answers (now the
-message only); a test's fake push server trusted a request field's type. Triage of new findings is
+message only); a test's fake push server trusted a request field's type. The ceiling is built on
+`express-rate-limit`, which code scanning recognises, so the scanner itself confirms every route
+has one rather than its findings being dismissed by hand. Triage of new findings is
 part of every pull request from here on.

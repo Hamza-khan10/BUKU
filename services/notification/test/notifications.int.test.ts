@@ -340,7 +340,7 @@ describe('Expo push service client', () => {
         data: Object.fromEntries(
           ids.map((id) => [
             id,
-            id.endsWith('-0')
+            String(id).endsWith('-0')
               ? { status: 'error', message: 'x', details: { error: 'MessageRateExceeded' } }
               : { status: 'ok' },
           ]),
