@@ -1,6 +1,7 @@
 import {
   computeEconomics,
   describeKeys,
+  launchedFeatureKeysOf,
   featureKeysOf,
   limitKeysOf,
   readPlanValues,
@@ -52,6 +53,15 @@ const planInclude = {
 } satisfies Prisma.PlanInclude;
 type PlanRow = Prisma.PlanGetPayload<{ include: typeof planInclude }>;
 
+/** A plan's values as advertised: only features BUKU offers today (registry `launched`). */
+function advertised(audience: Audience, values: ReturnType<typeof readPlanValues>) {
+  const launched = new Set(launchedFeatureKeysOf(audience));
+  return {
+    limits: values.limits,
+    features: Object.fromEntries(Object.entries(values.features).filter(([k]) => launched.has(k))),
+  };
+}
+
 export class CatalogService {
   constructor(private readonly db: Database) {}
 
@@ -98,7 +108,7 @@ export class CatalogService {
           name: p.name,
           tagline: p.tagline,
           benefits: p.benefits as string[],
-          ...readPlanValues(audience, p.limits, p.features),
+          ...advertised(audience, readPlanValues(audience, p.limits, p.features)),
           prices: p.prices.map((x) => ({
             id: x.id,
             amount: x.amount.toFixed(2),

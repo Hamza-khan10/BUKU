@@ -608,3 +608,11 @@ message only); a test's fake push server trusted a request field's type. The cei
 `express-rate-limit`, which code scanning recognises, so the scanner itself confirms every route
 has one rather than its findings being dismissed by hand. Triage of new findings is
 part of every pull request from here on.
+
+**D-087 · Plans advertise only what BUKU offers today.** The plan catalog (D-065) is data an
+admin can edit, and the first Enterprise plan promised "Promote your business with ads" while the
+ads service is deferred. The billing registry now marks each feature as launched or not
+(`launched: false` for ads); the public pricing answer — the comparison and each plan's features —
+leaves unlaunched ones out, even when a plan switches them on, and a migration removed the ads
+sentence from Enterprise's benefits (only while it was still the original wording). Admin views
+and entitlements still see every feature, so switching ads on later is one flag.
