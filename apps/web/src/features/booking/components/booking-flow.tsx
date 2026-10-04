@@ -18,6 +18,8 @@ import {
   dayParts,
   daysBetween,
   readChoices,
+  WINDOW_DAYS,
+  windowFor,
   type BookingChoices,
 } from '../choices';
 import type { Receipt, Slot } from '../types';
@@ -26,8 +28,6 @@ import { PersonChoice, ServiceChoice, serviceSummary } from './service-step';
 import { Step } from './step';
 import { DayChoice, TimeChoice } from './when-step';
 
-const WINDOW_DAYS = 14;
-
 export interface BookingBusiness {
   id: string;
   slug: string;
@@ -35,12 +35,6 @@ export interface BookingBusiness {
   city: string;
   timezone: string;
 }
-
-/** The two-week window a day falls in, counted from today (so windows never overlap). */
-const windowFor = (today: string, date: string | null) =>
-  date && date >= today
-    ? addDays(today, Math.floor(daysBetween(today, date) / WINDOW_DAYS) * WINDOW_DAYS)
-    : today;
 
 const sameMoment = (a: string, b: string) => Date.parse(a) === Date.parse(b);
 

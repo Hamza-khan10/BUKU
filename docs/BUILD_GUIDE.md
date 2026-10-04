@@ -450,6 +450,16 @@ The detailed plan — every page, its data and edge cases, the design system and
   where, price paid at the venue, the cancellation terms for this visit; only its owner sees it.
   The business page has "Book a visit" and a Book button on every service someone takes bookings
   for.
+- **3.4b Visits — ✅ done.** `/account`: the next visit as its ticket, how reliably you keep
+  bookings (with exactly what businesses see: the label only), and "book again" for places you
+  went. `/account/appointments`: upcoming and past, a page at a time. On a receipt, only what the
+  API allows right now: **add to calendar** (an iCalendar file made in the browser; a request
+  not yet confirmed is tentative), **move** (until the notice period; the visit gets a new code,
+  the person is kept unless another is chosen; a new time inside the notice period is flagged),
+  **cancel** (a reason, an optional note the business sees, one "book again" reminder in 3 days;
+  said plainly when it counts as late — "Keep my visit" is as easy as cancelling), and **book
+  again** afterwards. Declines and cancellations by the business are named as such. The account
+  menu links to the account and visits.
 
 ## Phase 4 — Mobile app (Expo)
 

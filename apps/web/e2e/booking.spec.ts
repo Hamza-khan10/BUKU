@@ -2,34 +2,13 @@ import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
+import { bookable, freeTimes, type Bookable } from './booking-helpers';
 import { visitor } from './team';
 
 /** Booking a visit, start to finish, against the development stack's seed data. */
 
-const API = process.env.E2E_API_URL ?? 'http://localhost:8000';
 const onPage = (path: string | RegExp) => (url: URL) =>
   typeof path === 'string' ? url.pathname === path : path.test(url.pathname);
-
-interface Bookable {
-  slug: string;
-  name: string;
-  service: { id: string; name: string; staffIds: string[] };
-}
-
-/** A seeded business with a service someone takes bookings for. */
-async function bookable(): Promise<Bookable> {
-  const search = (await (await fetch(`${API}/v1/businesses/search?limit=20`)).json()) as {
-    data: { slug: string; name: string }[];
-  };
-  for (const b of search.data) {
-    const menu = (await (await fetch(`${API}/v1/businesses/${b.slug}/services`)).json()) as {
-      data: { categories: { services: Bookable['service'][] }[] };
-    };
-    const service = menu.data.categories.flatMap((c) => c.services).find((s) => s.staffIds.length > 0);
-    if (service) return { slug: b.slug, name: b.name, service };
-  }
-  throw new Error('no bookable business in the development data');
-}
 
 async function devSignIn(page: Page, name: string) {
   await page.getByLabel('Email').fill(`booker.${randomUUID()}@example.com`);
@@ -104,11 +83,8 @@ test.describe('Booking', () => {
     // …and someone else books exactly that before they press Book.
     const other = await visitor(baseURL!);
     await other.post('/api/v1/auth/dev/login', { data: { email: `quick.${randomUUID()}@example.com` } });
-    const menu = (await (await fetch(`${API}/v1/businesses/${place.slug}`)).json()) as {
-      data: { id: string };
-    };
     const taken = await other.post('/api/v1/appointments', {
-      data: { businessId: menu.data.id, serviceId: place.service.id, staffId, startAt: chosen },
+      data: { businessId: place.id, serviceId: place.service.id, staffId, startAt: chosen },
     });
     expect(taken.status()).toBe(201);
     await other.dispose();
@@ -129,19 +105,10 @@ test.describe('Booking', () => {
   test('a receipt is shown only to the person who booked', async ({ page, baseURL }) => {
     const owner = await visitor(baseURL!);
     await owner.post('/api/v1/auth/dev/login', { data: { email: `owner.${randomUUID()}@example.com` } });
-    const business = (await (await fetch(`${API}/v1/businesses/${place.slug}`)).json()) as {
-      data: { id: string };
-    };
-    const today = new Date().toISOString().slice(0, 10);
-    const times = (await (
-      await fetch(
-        `${API}/v1/businesses/${place.slug}/availability?serviceId=${place.service.id}&date=${today}&days=14`,
-      )
-    ).json()) as { data: { days: { slots: { startAt: string }[] }[] } };
-    const startAt = times.data.days.flatMap((d) => d.slots).at(-1)!.startAt;
+    const startAt = (await freeTimes(place)).at(-1)!;
     const made = (await (
       await owner.post('/api/v1/appointments', {
-        data: { businessId: business.data.id, serviceId: place.service.id, startAt },
+        data: { businessId: place.id, serviceId: place.service.id, startAt },
       })
     ).json()) as { data: { id: string } };
     await owner.dispose();

@@ -13,6 +13,8 @@ export default defineConfig({
   // Locally one `next dev` serves every test, compiling pages on demand next to the whole API
   // stack: more than a few tests at once only makes them all slow (timeouts, not bugs).
   workers: process.env.CI ? undefined : 3,
+  // Locally pages load through `next dev` and the whole API stack: allow data a little longer to arrive.
+  expect: { timeout: process.env.CI ? 5_000 : 10_000 },
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',

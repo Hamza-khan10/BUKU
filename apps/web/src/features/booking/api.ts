@@ -40,3 +40,52 @@ export const fetchReceipt = (id: string) => api<Receipt>(`appointments/${id}`);
 /** My upcoming visits (most recent first page). */
 export const fetchUpcoming = (limit = 20) =>
   apiCall<Receipt[]>('appointments', { query: { scope: 'upcoming', limit } }).then((r) => r.data);
+
+// ── My visits ─────────────────────────────────────────────────────────────
+
+export interface VisitsPage {
+  items: Receipt[];
+  meta: { page: number; limit: number; total: number; totalPages: number };
+}
+
+export const VISITS_KEY = (scope: 'upcoming' | 'past') => ['visits', scope] as const;
+
+/** Upcoming (soonest first) or past (latest first) visits, a page at a time. */
+export async function fetchVisits(scope: 'upcoming' | 'past', page: number, limit = 10): Promise<VisitsPage> {
+  const res = await apiCall<Receipt[], VisitsPage['meta']>('appointments', { query: { scope, page, limit } });
+  return { items: res.data, meta: res.meta ?? { page, limit, total: res.data.length, totalPages: 1 } };
+}
+
+export type CancelReason =
+  'schedule_conflict' | 'found_alternative' | 'too_expensive' | 'not_needed' | 'illness' | 'other';
+
+/** Cancel my visit; `bookLater` asks for a "book again?" reminder in a few days. */
+export function cancelVisit(
+  id: string,
+  input: { reasonCode: CancelReason; note?: string; bookLater?: boolean },
+) {
+  return api<Receipt>(`appointments/${id}/cancel`, { method: 'POST', body: input });
+}
+
+/** Move my visit (same service) to another offered time → the new booking, with a new code. */
+export function moveVisit(id: string, input: { startAt: string; staffId?: string | null }) {
+  return api<Receipt>(`appointments/${id}/reschedule`, {
+    method: 'POST',
+    body: { startAt: input.startAt, ...(input.staffId && { staffId: input.staffId }) },
+  });
+}
+
+/** How reliably I keep my bookings (what businesses see is only the label). */
+export interface Reliability {
+  showsUpPercent: number | null;
+  basedOn: number;
+  label: string;
+  visits: number;
+  noShows: number;
+  lateCancellations: number;
+  businessesSee: string;
+  tip: string;
+}
+
+export const RELIABILITY_KEY = ['reliability'] as const;
+export const fetchReliability = () => api<Reliability>('appointments/reliability');
