@@ -18,6 +18,12 @@ import { TOPICS, type Topic } from './topics.js';
  *    blocks a partition forever.
  *  • If even the DLQ write fails, the offset is NOT committed and the error
  *    propagates, so the message is retried rather than silently lost.
+ *  • SELF-HEALING: after Kafka has been away, the client can lose its
+ *    partitions and never rejoin — the service still answers HTTP, but no
+ *    event is handled again until someone restarts it. A watchdog checks
+ *    every `watchEveryMs`; a consumer that has held no partitions for
+ *    `stuckAfterMs` is replaced by a fresh one (committed offsets mean
+ *    nothing is lost or handled twice), and says so in the log.
  */
 
 export interface MessageContext {
@@ -42,6 +48,10 @@ export interface ConsumerOptions {
   /** Start from the earliest offset when the group has no committed offset (critical topics). */
   fromBeginning?: boolean;
   partitionsConsumedConcurrently?: number;
+  /** How often the watchdog looks (default 15 s). */
+  watchEveryMs?: number;
+  /** Replace a consumer that has held no partitions this long (default 90 s; joining takes seconds). */
+  stuckAfterMs?: number;
 }
 
 export interface RunningConsumer {
@@ -56,19 +66,17 @@ export async function startConsumer(options: ConsumerOptions): Promise<RunningCo
   const maxAttempts = options.maxAttempts ?? 5;
   const dlqTopic = options.dlqTopic ?? TOPICS.DLQ_FAILED_EVENTS;
 
-  const consumer = options.kafka.consumer({
-    kafkaJS: {
-      groupId: options.groupId,
-      fromBeginning: options.fromBeginning ?? true,
-      autoCommit: false,
-      sessionTimeout: 30_000,
-      heartbeatInterval: 3_000,
-      allowAutoTopicCreation: false,
-    },
-  });
-
-  await consumer.connect();
-  await consumer.subscribe({ topics: options.topics });
+  const makeConsumer = () =>
+    options.kafka.consumer({
+      kafkaJS: {
+        groupId: options.groupId,
+        fromBeginning: options.fromBeginning ?? true,
+        autoCommit: false,
+        sessionTimeout: 30_000,
+        heartbeatInterval: 3_000,
+        allowAutoTopicCreation: false,
+      },
+    });
 
   const deadLetter = async (
     payload: KafkaJS.EachMessagePayload,
@@ -98,48 +106,102 @@ export async function startConsumer(options: ConsumerOptions): Promise<RunningCo
     );
   };
 
-  await consumer.run({
-    partitionsConsumedConcurrently: options.partitionsConsumedConcurrently ?? 1,
-    eachMessage: async (payload) => {
-      const { topic, partition, message } = payload;
+  const handle = async (consumer: KafkaJS.Consumer, payload: KafkaJS.EachMessagePayload) => {
+    const { topic, partition, message } = payload;
 
-      let event: EventEnvelope | undefined;
-      try {
-        event = parseEnvelope(message.value);
-      } catch (err) {
-        await deadLetter(payload, 'invalid_envelope', err, 0);
-      }
+    let event: EventEnvelope | undefined;
+    try {
+      event = parseEnvelope(message.value);
+    } catch (err) {
+      await deadLetter(payload, 'invalid_envelope', err, 0);
+    }
 
-      if (event) {
-        for (let attempt = 1; ; attempt++) {
-          try {
-            await options.handler(event, {
-              topic,
-              partition,
-              offset: message.offset,
-              key: message.key?.toString('utf8') ?? null,
-              attempt,
-            });
+    if (event) {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await options.handler(event, {
+            topic,
+            partition,
+            offset: message.offset,
+            key: message.key?.toString('utf8') ?? null,
+            attempt,
+          });
+          break;
+        } catch (err) {
+          if (attempt >= maxAttempts) {
+            await deadLetter(payload, 'handler_failed', err, attempt);
             break;
-          } catch (err) {
-            if (attempt >= maxAttempts) {
-              await deadLetter(payload, 'handler_failed', err, attempt);
-              break;
-            }
-            log.warn({ topic, partition, offset: message.offset, attempt, err }, 'handler failed, retrying');
-            await sleep(backoffMs(attempt));
           }
+          log.warn({ topic, partition, offset: message.offset, attempt, err }, 'handler failed, retrying');
+          await sleep(backoffMs(attempt));
         }
       }
+    }
 
-      // Commit the NEXT offset to consume.
-      await consumer.commitOffsets([{ topic, partition, offset: (BigInt(message.offset) + 1n).toString() }]);
-    },
-  });
+    // Commit the NEXT offset to consume.
+    await consumer.commitOffsets([{ topic, partition, offset: (BigInt(message.offset) + 1n).toString() }]);
+  };
 
+  const start = async (): Promise<KafkaJS.Consumer> => {
+    const consumer = makeConsumer();
+    await consumer.connect();
+    await consumer.subscribe({ topics: options.topics });
+    await consumer.run({
+      partitionsConsumedConcurrently: options.partitionsConsumedConcurrently ?? 1,
+      eachMessage: (payload) => handle(consumer, payload),
+    });
+    return consumer;
+  };
+
+  let consumer = await start();
   log.info({ topics: options.topics }, 'consumer started');
+
+  // ── The watchdog ──
+  const watchEveryMs = options.watchEveryMs ?? 15_000;
+  const stuckAfterMs = options.stuckAfterMs ?? 90_000;
+  let emptySince: number | null = null;
+  let busy = false;
+  let stopped = false;
+
+  const holdsPartitions = () => {
+    try {
+      return consumer.assignment().length > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  const watch = async () => {
+    if (stopped || busy) return;
+    if (holdsPartitions()) {
+      emptySince = null;
+      return;
+    }
+    emptySince ??= Date.now();
+    const emptyForMs = Date.now() - emptySince;
+    if (emptyForMs < stuckAfterMs) return;
+    busy = true;
+    log.warn({ emptyForMs }, 'consumer has held no partitions for too long; replacing it');
+    try {
+      await consumer.disconnect().catch(() => undefined);
+      if (stopped) return;
+      consumer = await start();
+      emptySince = null;
+      log.info('consumer replaced');
+    } catch (err) {
+      // Kafka may still be away: try again on the next look.
+      log.error({ err }, 'replacing the consumer failed; will try again');
+    } finally {
+      busy = false;
+    }
+  };
+  const timer = setInterval(() => void watch(), watchEveryMs);
+  timer.unref();
+
   return {
     async stop() {
+      stopped = true;
+      clearInterval(timer);
       await consumer.disconnect();
       log.info('consumer stopped');
     },
