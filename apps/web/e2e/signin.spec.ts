@@ -30,8 +30,11 @@ test.describe('Signing in', () => {
 
   test('sign in, come back where you were, stay signed in, sign out', async ({ page }) => {
     await signIn(page, '/signin?next=/pricing', 'Ayesha Khan');
-    await expect(page).toHaveURL(onPage('/pricing'));
+    // A new account stops at the welcome first.
+    await expect(page).toHaveURL(onPage('/welcome'));
     await expect(page.getByText('Welcome to BUKU, Ayesha')).toBeVisible();
+    await page.getByRole('link', { name: 'Skip for now' }).click();
+    await expect(page).toHaveURL(onPage('/pricing'));
     const account = page.getByRole('button', { name: 'Account: Ayesha Khan' });
     await expect(account).toBeVisible();
 
@@ -53,7 +56,8 @@ test.describe('Signing in', () => {
 
   test('never sends you to another site after signing in', async ({ page }) => {
     await signIn(page, `/signin?next=${encodeURIComponent('https://evil.example/')}`, 'Bilal Ahmed');
-    await expect(page).toHaveURL((url) => url.pathname === '/' && url.host.startsWith('localhost'));
+    await expect(page).toHaveURL((url) => url.pathname === '/welcome' && url.host.startsWith('localhost'));
+    await expect(page.getByRole('link', { name: 'Skip for now' })).toHaveAttribute('href', '/');
   });
 
   test('checks the form before sending, and cleans the name as you type', async ({ page }) => {
@@ -68,6 +72,7 @@ test.describe('Signing in', () => {
 
   test('sign out of every device ends every session', async ({ page, browser }) => {
     await signIn(page, '/signin?next=/about', 'Hamid Raza');
+    await page.getByRole('link', { name: 'Skip for now' }).click();
     await expect(page).toHaveURL(onPage('/about'));
     await page.goto('/signout');
     await page.getByRole('button', { name: 'Sign out of every device' }).click();
