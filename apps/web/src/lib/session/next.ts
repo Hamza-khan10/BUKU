@@ -19,9 +19,8 @@ export function safeNext(value: string | string[] | null | undefined, fallback =
     return fallback;
   }
   if (url.origin !== 'https://buku.invalid') return fallback;
-  // Never back to the sign-in pages themselves (a loop).
-  if (url.pathname === '/signin' || url.pathname.startsWith('/signin/') || url.pathname === '/signout') {
-    return fallback;
-  }
+  // Never back to the sign-in pages themselves, or the welcome that follows them (a loop).
+  const loop = ['/signin', '/signout', '/welcome'];
+  if (loop.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`))) return fallback;
   return `${url.pathname}${url.search}${url.hash}`;
 }

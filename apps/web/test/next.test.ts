@@ -22,10 +22,11 @@ describe('where to go after signing in', () => {
     }
   });
 
-  it('never back to the sign-in pages (a loop), and falls back when empty', () => {
+  it('never back to the sign-in or welcome pages (a loop), and falls back when empty', () => {
     expect(safeNext('/signin')).toBe('/');
     expect(safeNext('/signin/verify?x=1')).toBe('/');
     expect(safeNext('/signout')).toBe('/');
+    expect(safeNext('/welcome?next=/pricing')).toBe('/');
     expect(safeNext(undefined)).toBe('/');
     expect(safeNext('', '/account')).toBe('/account');
   });

@@ -92,6 +92,11 @@ export function verifySignIn(input: { code: string } | { recoveryCode: string })
   return sessionCall<SignedIn>('verify', input);
 }
 
+/** Name, time zone and language (PATCH /v1/auth/me): only what changed. */
+export function updateProfile(change: { name?: string; timezone?: string }) {
+  return api<Me>('auth/me', { method: 'PATCH', body: change });
+}
+
 /** Change one's own password. Every session ends, this one included: sign in again with the new one. */
 export function changePassword(input: { currentPassword: string; newPassword: string }) {
   return api<{ signInAgain: true }>('auth/password', { method: 'POST', body: input });

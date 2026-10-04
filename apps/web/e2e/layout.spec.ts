@@ -49,8 +49,10 @@ for (const width of [320, 390]) {
         pages.push(...DATA_PAGES, ...found.data.map((b) => `/b/${b.slug}`));
       }
       for (const path of pages) {
+        // Loaded, fonts in (text width is final). Not "network idle": a business page keeps its
+        // live queue stream open, so the network is never idle there.
         await page.goto(path);
-        await page.waitForLoadState('networkidle');
+        await page.evaluate(() => document.fonts.ready.then(() => undefined));
         expect([path, await overflow(page)]).toEqual([path, 0]);
       }
     });

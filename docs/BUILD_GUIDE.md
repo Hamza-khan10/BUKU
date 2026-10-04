@@ -424,7 +424,13 @@ The detailed plan — every page, its data and edge cases, the design system and
   `revalidate` time under the API address alone, and fetched as the visitor who needed it, so
   the gateway's per-visitor limits fall on them instead of on the website as a whole (D-089).
   Two simultaneous first sign-ins with one email make one account (#53).
-  Next: 3.3c welcome and Google.
+- **3.3c-1 Welcome — ✅ done.** A new account's first stop is `/welcome` (then on to where it was
+  going): the name businesses see (reviews show only first name and initial), which emails to
+  get — booking updates and reminders, each described exactly as the notification rules send
+  them — and the device's time zone. Both email choices start on, so "Skip for now" loses
+  nothing. It asks only about what BUKU sends today: no phone number until WhatsApp is set up
+  (the phone is only used for WhatsApp), no promises of settings pages that don't exist yet.
+  Next: 3.3c-2 Google sign-in.
 
 ## Phase 4 — Mobile app (Expo)
 

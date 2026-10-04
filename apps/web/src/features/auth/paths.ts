@@ -23,5 +23,8 @@ export const verifyHref = (start: SignInStart, next: string) =>
 
 export const newPasswordHref = (next: string) => withQuery('/signin/new-password', { next });
 
+/** First time here: a couple of choices, then on to where they were going. */
+export const welcomeHref = (next: string) => withQuery('/welcome', { next });
+
 export const startFrom = (value: string | string[] | undefined): SignInStart =>
   (Array.isArray(value) ? value[0] : value) === 'business' ? 'business' : 'signin';
