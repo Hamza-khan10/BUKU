@@ -3,6 +3,7 @@ import { signInHref } from '@/features/auth/paths';
 import { authorizationUrl, encodeFlow, FLOW_SECONDS, GOOGLE_CALLBACK_PATH, newFlow } from '@/lib/auth/google';
 import { env } from '@/lib/env';
 import { googleSignInEnabled } from '@/lib/flags';
+import { seeOther } from '@/lib/http/see-other';
 import { setGoogleFlow } from '@/lib/session/cookies';
 import { safeNext } from '@/lib/session/next';
 
@@ -15,13 +16,11 @@ import { safeNext } from '@/lib/session/next';
 export function GET(request: NextRequest): NextResponse {
   const params = request.nextUrl.searchParams;
   const next = safeNext(params.get('next'));
+  // Not set up on this site: back to sign-in, which says so. Checked before reading any other
+  // setting — a site deployed without the API has none to read.
+  if (!googleSignInEnabled()) return seeOther(signInHref('signin', next, { error: 'google-unavailable' }));
   const { APP_URL, GOOGLE_CLIENT_ID } = env();
-  if (!googleSignInEnabled() || !GOOGLE_CLIENT_ID) {
-    return NextResponse.redirect(
-      new URL(signInHref('signin', next, { error: 'google-unavailable' }), APP_URL),
-      303,
-    );
-  }
+  if (!GOOGLE_CLIENT_ID) return seeOther(signInHref('signin', next, { error: 'google-unavailable' }));
   const flow = newFlow(next, params.get('restore') === '1');
   const response = NextResponse.redirect(
     authorizationUrl(flow, GOOGLE_CLIENT_ID, `${APP_URL}${GOOGLE_CALLBACK_PATH}`),

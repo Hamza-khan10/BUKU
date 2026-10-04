@@ -15,6 +15,7 @@ import {
 import { env } from '@/lib/env';
 import { googleSignInEnabled } from '@/lib/flags';
 import { deviceNameFrom } from '@/lib/http/device-name';
+import { seeOther } from '@/lib/http/see-other';
 import { REQUEST_ID_HEADER, requestIdFrom } from '@/lib/http/request-id';
 import { TERMS_VERSION } from '@/lib/legal-versions';
 import { clearGoogleFlow, readGoogleFlow, setChallenge, setSession } from '@/lib/session/cookies';
@@ -71,6 +72,8 @@ async function idTokenFor(
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  // Not set up on this site: nothing to finish (checked before reading any other setting).
+  if (!googleSignInEnabled()) return seeOther(signInHref('signin', '/', { error: 'google-unavailable' }));
   const { APP_URL } = env();
   const requestId = requestIdFrom(request.headers.get(REQUEST_ID_HEADER));
   const params = request.nextUrl.searchParams;
@@ -93,7 +96,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (!sameState(flow.state, params.get('state'))) return back('google-expired');
   const code = params.get('code');
   if (!code || code.length > 2048) return back('google-failed');
-  if (!googleSignInEnabled()) return back('google-unavailable');
 
   const token = await idTokenFor(code, flow);
   if ('error' in token) return back(token.error);
