@@ -648,3 +648,23 @@ limits fall on whoever caused the request. Refusals (not found, too many request
 kept. Answers that must be live (`revalidate: 0`, the queue) are always asked for. Browser
 tests now all act as separate visitors, and run three at a time locally, where one development
 server compiles every page.
+
+**D-090 · Sign in with Google happens on the web server.** The website signs people in with
+Google through the authorization code flow with PKCE, run by its own server, instead of Google's
+sign-in script in the page. "Continue with Google" is a plain link to `/api/auth/google/start`,
+which makes a fresh state, nonce and PKCE verifier, keeps them in an HttpOnly cookie for ten
+minutes (`__Host-buku_oauth`, SameSite=Lax because Google's redirect back is a navigation from
+another site), and sends the browser to Google's account chooser. `/api/auth/google/callback`
+accepts only an answer to the sign-in this browser started (state, compared in constant time),
+swaps the one-time code for the ID token directly with Google — with the client secret and the
+verifier, which never leave the server — checks the token's nonce, and hands the token to the
+API, which verifies signature, audience and expiry and signs the person in; the session becomes
+cookies (D-085), or two-step sign-in follows (D-088), and a new account goes to `/welcome`. The
+flow cookie is used once. Every way it can fail ends on `/signin` with one of a fixed set of
+reasons (never text from the request), including an account scheduled for deletion, which is
+offered "Restore and sign in". Why not Google's script: it would need Google's domains
+in the Content-Security-Policy and a third party's code on our pages, and the ID token would pass
+through the page's JavaScript; here the page never sees a token at all. New accounts are created
+under the terms version the sign-in page states ("By signing in you agree…"). The button appears
+only where the web server has both the client id and secret; the API's `GOOGLE_CLIENT_IDS` must
+include the same id.

@@ -13,6 +13,9 @@
  *  • challenge — between the password (or Google) and the two-step code: the
  *    5-minute token that turns a correct code into a session. HttpOnly,
  *    SameSite=Strict; the sign-in page's script never holds it either.
+ *  • google    — a Google sign-in in progress (state, nonce, PKCE verifier):
+ *    HttpOnly, 10 minutes, SameSite=Lax because Google's redirect back to us
+ *    is a navigation from another site (D-090).
  *
  * Over HTTPS the names carry the browser-enforced prefixes: `__Host-` (exactly
  * this site, Path=/, Secure) and `__Secure-` (Secure). Plain names over
@@ -43,8 +46,9 @@ export function cookieNames(secure: boolean) {
         refresh: '__Secure-buku_rt',
         hint: '__Host-buku_s',
         challenge: '__Host-buku_mfa',
+        google: '__Host-buku_oauth',
       }
-    : { access: 'buku_at', refresh: 'buku_rt', hint: 'buku_s', challenge: 'buku_mfa' };
+    : { access: 'buku_at', refresh: 'buku_rt', hint: 'buku_s', challenge: 'buku_mfa', google: 'buku_oauth' };
 }
 
 /** Renew this long before the access token actually expires (clock skew, slow networks). */
@@ -211,4 +215,17 @@ export function takeChallenge(data: unknown): { challenge: Challenge | null; dat
     typeof expiresAt === 'string' &&
     !Number.isNaN(Date.parse(expiresAt));
   return { challenge: valid ? { token: mfaToken, expiresAt } : null, data: rest };
+}
+
+/** The cookie holding a Google sign-in in progress (its value from encodeFlow). */
+export function googleFlowCookie(value: string, secure: boolean, maxAge: number): CookieSpec {
+  return {
+    name: cookieNames(secure).google,
+    value,
+    httpOnly: true,
+    secure,
+    sameSite: 'lax',
+    path: '/',
+    maxAge,
+  };
 }

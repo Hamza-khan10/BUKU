@@ -1,4 +1,5 @@
 import { api, sessionCall, signOut } from '@/lib/api/client';
+import { deviceNameFrom } from '@/lib/http/device-name';
 
 /** The signed-in person, as GET /v1/auth/me describes them (only ever to themselves). */
 export interface Me {
@@ -37,29 +38,7 @@ export const fetchMe = () => api<Me>('auth/me');
 
 /** "Chrome on Windows" — so the person recognises this device in their sessions list. */
 export function deviceName(): string | undefined {
-  if (typeof navigator === 'undefined') return undefined;
-  const ua = navigator.userAgent;
-  const browser = /Edg\//.test(ua)
-    ? 'Edge'
-    : /Firefox\//.test(ua)
-      ? 'Firefox'
-      : /Chrome\//.test(ua)
-        ? 'Chrome'
-        : /Safari\//.test(ua)
-          ? 'Safari'
-          : 'Browser';
-  const os = /Android/.test(ua)
-    ? 'Android'
-    : /iPhone|iPad/.test(ua)
-      ? 'iOS'
-      : /Windows/.test(ua)
-        ? 'Windows'
-        : /Mac OS X/.test(ua)
-          ? 'Mac'
-          : /Linux/.test(ua)
-            ? 'Linux'
-            : null;
-  return os ? `${browser} on ${os}` : browser;
+  return typeof navigator === 'undefined' ? undefined : deviceNameFrom(navigator.userAgent);
 }
 
 const device = () => {

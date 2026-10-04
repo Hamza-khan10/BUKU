@@ -60,7 +60,8 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 export function categoryIcon(slug: string): LucideIcon {
-  return ICONS[slug] ?? Store;
+  // Own keys only: a category named "constructor" must not pick up Object's own function.
+  return (Object.hasOwn(ICONS, slug) ? ICONS[slug] : undefined) ?? Store;
 }
 
 /** A category's icon as an element (decorative: the category's name is always shown with it). */

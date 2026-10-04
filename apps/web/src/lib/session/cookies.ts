@@ -6,6 +6,7 @@ import {
   clearedChallengeCookie,
   clearedCookies,
   cookieNames,
+  googleFlowCookie,
   readChallengeValue,
   sessionCookies,
   type Challenge,
@@ -45,4 +46,17 @@ export function setChallenge(response: NextResponse, challenge: Challenge) {
 
 export function clearChallenge(response: NextResponse) {
   apply(response, [clearedChallengeCookie(secureCookies())]);
+}
+
+/** A Google sign-in in progress in this browser (the cookie's raw value; see lib/auth/google). */
+export function readGoogleFlow(request: NextRequest): string | undefined {
+  return request.cookies.get(cookieNames(secureCookies()).google)?.value || undefined;
+}
+
+export function setGoogleFlow(response: NextResponse, value: string, maxAge: number) {
+  apply(response, [googleFlowCookie(value, secureCookies(), maxAge)]);
+}
+
+export function clearGoogleFlow(response: NextResponse) {
+  apply(response, [googleFlowCookie('', secureCookies(), 0)]);
 }

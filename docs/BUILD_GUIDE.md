@@ -430,7 +430,13 @@ The detailed plan — every page, its data and edge cases, the design system and
   them — and the device's time zone. Both email choices start on, so "Skip for now" loses
   nothing. It asks only about what BUKU sends today: no phone number until WhatsApp is set up
   (the phone is only used for WhatsApp), no promises of settings pages that don't exist yet.
-  Next: 3.3c-2 Google sign-in.
+- **3.3c-2 Sign in with Google — built; needs the owner's Google client to go live.** "Continue
+  with Google" on `/signin`, run by the web server (authorization code + PKCE, state and nonce
+  checked, no Google script on our pages; D-090); new accounts go to `/welcome`, accounts with
+  two-step sign-in to `/signin/verify`, and an account scheduled for deletion can be restored.
+  Shown only where `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set (setup in
+  DEVELOPMENT.md). Tested: every refusal path in the browser, the protocol pieces in unit tests;
+  the round trip through Google itself is checked once the client exists.
 
 ## Phase 4 — Mobile app (Expo)
 
