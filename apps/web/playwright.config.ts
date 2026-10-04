@@ -18,7 +18,7 @@ export default defineConfig({
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
     // Session tests talk to the API, not the layout: once (on desktop) is enough, and keeps
     // the test sign-ins under the API's per-address sign-in limit.
-    { name: 'phone', use: { ...devices['Pixel 7'] }, testIgnore: /session\.spec\.ts/ },
+    { name: 'phone', use: { ...devices['Pixel 7'] }, testIgnore: /(session|signin)\.spec\.ts/ },
   ],
   webServer: {
     command: process.env.CI ? 'pnpm start' : 'pnpm dev',

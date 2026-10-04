@@ -2,11 +2,12 @@ import Link from 'next/link';
 import { Logo } from '@/components/brand/logo';
 import { Container } from '@/components/ui/layout';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { AccountControl } from '@/features/auth/components/account-control';
 import type { Theme } from '@/lib/theme';
 import { DesktopNav, MobileNav } from './site-nav';
 
-/** The public site's header: logo, main links (a menu on phones), theme. */
-export function SiteHeader({ theme }: { theme: Theme }) {
+/** The public site's header: logo, main links (a menu on phones), theme, and signing in or the account menu. */
+export function SiteHeader({ theme, signedIn }: { theme: Theme; signedIn: boolean }) {
   return (
     <header className="sticky top-0 z-30 border-b border-line/70 bg-canvas/85 backdrop-blur-md supports-[backdrop-filter]:bg-canvas/70">
       <Container className="flex h-16 items-center justify-between gap-4">
@@ -18,6 +19,7 @@ export function SiteHeader({ theme }: { theme: Theme }) {
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle initial={theme} className="hidden lg:inline-flex" />
+          <AccountControl signedIn={signedIn} />
           <MobileNav theme={theme} />
         </div>
       </Container>

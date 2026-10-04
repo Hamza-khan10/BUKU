@@ -404,6 +404,14 @@ The detailed plan — every page, its data and edge cases, the design system and
   out by the API (D-087, #48). `/for-business`: only what the platform does today, and how to get
   verified. `sitemap.xml` (site pages, categories, every listed business; hourly), referenced from
   `robots.txt` once indexing is allowed. **3.2 (public site) complete.**
+- **3.3a Sign-in (development) — ✅ done.** `/signin` offers only what the site really has:
+  development sign-in (any email, a role to try; never on the live site) or, where nothing is set
+  up, an honest "not open yet". Back to where you were after signing in (`?next=`, same-site paths
+  only — no open redirects); signed-in visitors skip the page. The header knows on the server
+  whether you're signed in (no flash) and shows "Sign in" or your account menu; a session that
+  ended elsewhere is cleared. `/signout`: this device or every device, ending the sessions at the
+  API; nothing happens on a plain visit. Next: 3.3b two-step and employee sign-in, 3.3c welcome
+  and Google.
 
 ## Phase 4 — Mobile app (Expo)
 
