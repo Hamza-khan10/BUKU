@@ -10,6 +10,7 @@ const PAGES: { href: Route; label: string }[] = [
   { href: '/account', label: 'Overview' },
   { href: '/account/appointments', label: 'Visits' },
   { href: '/account/reviews', label: 'Reviews' },
+  { href: '/account/notifications', label: 'Notifications' },
 ];
 
 export function AccountNav() {
@@ -17,7 +18,8 @@ export function AccountNav() {
   return (
     <nav aria-label="Your account" className="-mx-1 flex gap-1 overflow-x-auto border-b border-line">
       {PAGES.map(({ href, label }) => {
-        const current = pathname === href;
+        const current =
+          href === '/account' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link
             key={href}
