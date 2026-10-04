@@ -4,6 +4,7 @@ import { clientIpFrom } from '../http/client-ip';
 import { REQUEST_ID_HEADER } from '../http/request-id';
 import type { SessionTokens } from '../session/policy';
 import { apiErrorFrom, type ApiError } from './errors';
+import { gatewayHeaders } from './gateway-headers';
 
 /** The web server's calls to the API gateway (server-side only). */
 
@@ -30,14 +31,12 @@ export interface GatewayCall {
 
 export function callGateway(call: GatewayCall): Promise<Response> {
   const { API_URL, WEB_GATEWAY_KEY, WEB_CLIENT_IP_HEADER } = env();
-  const headers = new Headers(call.headers);
-  headers.set(REQUEST_ID_HEADER, call.requestId);
-  if (call.accessToken) headers.set('authorization', `Bearer ${call.accessToken}`);
-  const ip = clientIpFrom(call.incoming, WEB_CLIENT_IP_HEADER);
-  if (ip && WEB_GATEWAY_KEY) {
-    headers.set('x-buku-web-key', WEB_GATEWAY_KEY);
-    headers.set('x-buku-client-ip', ip);
-  }
+  const headers = gatewayHeaders(call.headers, {
+    requestId: call.requestId,
+    accessToken: call.accessToken,
+    visitor: clientIpFrom(call.incoming, WEB_CLIENT_IP_HEADER),
+    webKey: WEB_GATEWAY_KEY,
+  });
   const timeout = AbortSignal.timeout(call.timeoutMs ?? TIMEOUT_MS);
   return fetch(`${API_URL}${call.path}${call.search ?? ''}`, {
     method: call.method,

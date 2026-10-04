@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
 
 /** Finding places: home, search with suggestions, filters, near me, categories (against the dev stack). */

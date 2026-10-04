@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { expectAccessible, useTheme, watchForProblems } from './helpers';
 
 test.describe('The website', () => {

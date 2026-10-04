@@ -420,6 +420,10 @@ The detailed plan — every page, its data and edge cases, the design system and
   `/signin/verify`: the authenticator code (sent once six digits are in, spaces from a paste
   ignored) or a recovery code (recognised when pasted into the code box; how many are left is
   said); expired challenges start again. The challenge token never reaches the page (D-088).
+- **Fixes before 3.3c — ✅ done.** Public data on server-rendered pages is kept for its
+  `revalidate` time under the API address alone, and fetched as the visitor who needed it, so
+  the gateway's per-visitor limits fall on them instead of on the website as a whole (D-089).
+  Two simultaneous first sign-ins with one email make one account (#53).
   Next: 3.3c welcome and Google.
 
 ## Phase 4 — Mobile app (Expo)

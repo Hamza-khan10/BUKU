@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 /** The clean-text inputs (D-083) on the UI kit page, as a person would use them. */
 

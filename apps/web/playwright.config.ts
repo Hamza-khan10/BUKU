@@ -10,6 +10,9 @@ const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:3000';
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
+  // Locally one `next dev` serves every test, compiling pages on demand next to the whole API
+  // stack: more than a few tests at once only makes them all slow (timeouts, not bugs).
+  workers: process.env.CI ? undefined : 3,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',

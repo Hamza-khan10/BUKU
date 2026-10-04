@@ -632,3 +632,19 @@ not containing the username, not the current one) moved to `@buku/validation`, s
 checks a new password exactly as the API will before sending it. Browser tests act as separate
 visitors (`x-real-ip`, honoured in development by `WEB_CLIENT_IP_HEADER=x-real-ip`), so the API's
 per-visitor sign-in limits apply to each test as they would to each person.
+
+**D-089 · Public data on server-rendered pages: kept by address, fetched as the visitor.**
+Server-rendered pages (business profiles, categories, search) read public API data on the web
+server. Two faults were found together. The copy meant to be kept for a minute never was: the
+fetch cache files a response under its request headers too, and every request carried its own
+request id, so every page view asked the API again. And those calls carried no visitor address,
+so the gateway counted all of them against the web server's one address — under its per-address
+limits (search 200 a minute), one visitor sending endless different searches could have made
+public pages fail for everyone. Now the web server keeps each answer for its `revalidate`
+seconds under the API address alone (`unstable_cache`, keyed by path and query; the request id
+and visitor are deliberately outside the key), and when it must ask the API — the first visitor,
+or a stale copy — it asks as that visitor (their address with the gateway key, D-084), so the
+limits fall on whoever caused the request. Refusals (not found, too many requests) are never
+kept. Answers that must be live (`revalidate: 0`, the queue) are always asked for. Browser
+tests now all act as separate visitors, and run three at a time locally, where one development
+server compiles every page.
