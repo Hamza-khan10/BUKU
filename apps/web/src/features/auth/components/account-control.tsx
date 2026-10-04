@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, KeyRound, LogOut, MonitorSmartphone, UserRound } from 'lucide-react';
+import { Bell, CalendarDays, KeyRound, LogOut, MonitorSmartphone, UserRound } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toaster';
 import { ApiError } from '@/lib/api/errors';
+import { fetchUnreadCount, UNREAD_KEY } from '@/features/notifications/api';
 import { fetchMe, ME_KEY, mustChangePassword, signOut } from '../api';
 
 /** The session is over (signed out elsewhere, expired, account closed) — not a passing hiccup. */
@@ -27,6 +28,13 @@ export function AccountControl({ signedIn }: { signedIn: boolean }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [ended, setEnded] = useState(false);
+  const unread = useQuery({
+    queryKey: UNREAD_KEY,
+    queryFn: fetchUnreadCount,
+    enabled: signedIn && !ended,
+    refetchInterval: 60_000,
+    retry: false,
+  });
   const me = useQuery({
     queryKey: ME_KEY,
     queryFn: fetchMe,
@@ -57,6 +65,7 @@ export function AccountControl({ signedIn }: { signedIn: boolean }) {
   }
 
   const user = me.data;
+  const count = unread.data?.unread ?? 0;
   const first = user.name.split(' ')[0];
   const leave = async () => {
     await signOut();
@@ -70,9 +79,19 @@ export function AccountControl({ signedIn }: { signedIn: boolean }) {
     <DropdownMenu.Root>
       <DropdownMenu.Trigger
         className="flex items-center gap-2 rounded-full py-1 pr-1 pl-1 hover:bg-sunken sm:pr-3"
-        aria-label={`Account: ${user.name}`}
+        aria-label={`Account: ${user.name}${count > 0 ? `, ${count} unread ${count === 1 ? 'notification' : 'notifications'}` : ''}`}
       >
-        <Avatar name={user.name} src={user.avatarUrl} size={34} />
+        <span className="relative">
+          <Avatar name={user.name} src={user.avatarUrl} size={34} />
+          {count > 0 && (
+            <span
+              aria-hidden
+              className="absolute -top-1 -right-1 grid h-4.5 min-w-4.5 place-items-center rounded-full bg-brand px-1 text-[0.65rem] font-bold text-on-brand ring-2 ring-canvas"
+            >
+              {count > 9 ? '9+' : count}
+            </span>
+          )}
+        </span>
         <span className="hidden max-w-32 truncate text-sm font-medium text-ink sm:inline">{first}</span>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -91,6 +110,11 @@ export function AccountControl({ signedIn }: { signedIn: boolean }) {
               [
                 { href: '/account', label: 'Your account', Icon: UserRound },
                 { href: '/account/appointments', label: 'Your visits', Icon: CalendarDays },
+                {
+                  href: '/account/notifications',
+                  label: count > 0 ? `Notifications (${count} unread)` : 'Notifications',
+                  Icon: Bell,
+                },
               ] as const
             ).map(({ href, label, Icon }) => (
               <DropdownMenu.Item key={href} asChild>

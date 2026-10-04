@@ -482,6 +482,16 @@ The detailed plan — every page, its data and edge cases, the design system and
   reply, until when it can change, and plainly when moderators hid it. Names ending in "s" take a
   plain apostrophe across the site ("Fade Masters’ notice period"). There are no favourites: the
   API has none, so the site doesn't offer them.
+- **3.4d-2 Notifications — ✅ done.** `/account/notifications`: the inbox — every message BUKU
+  sent the account, newest first, unread ones marked; opening one marks it read and goes where it
+  leads (a booking, its review, a queue ticket, a suggested booking pre-filled; messages about
+  screens the site doesn't have yet are shown without a link); remove one; mark all read. The
+  header shows how many are unread. `/account/notifications/settings`: only the ways BUKU reaches
+  someone on the website today — email (booking updates, reminders, business alerts for teams)
+  and suggestions as an explicit opt-in (inbox, and by email only if also chosen; turning
+  suggestions off turns the emailed ones off too); each switch saves at once and puts itself back
+  if saving fails; what's always sent is listed with why. App push settings come with the app,
+  WhatsApp once it's set up.
 
 ## Phase 4 — Mobile app (Expo)
 
