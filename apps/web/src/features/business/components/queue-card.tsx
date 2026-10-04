@@ -1,37 +1,33 @@
 'use client';
 
 import { Users } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { LiveDot } from '@/components/ui/live-dot';
+import { JoinQueue } from '@/features/queue/components/join-queue';
+import { useLiveQueue } from '@/features/queue/use-live-queue';
 import { distance } from '@/lib/format';
 import type { QueueState } from '../types';
 import { SideCard } from './side-cards';
 
 /**
  * The business's walk-in queue, live: open or not, how many are waiting,
- * which tickets are being served, the wait for someone joining now. It
- * follows the queue over a stream (ticket numbers only) and reconnects by
- * itself; while it can't, it says so instead of showing stale numbers as live.
+ * which tickets are being served, the wait for someone joining now — and the
+ * way to join from the phone. It follows the queue over a stream (ticket
+ * numbers only) and reconnects by itself; while it can't, it says so instead
+ * of showing stale numbers as live.
  */
-export function QueueCard({ slug, initial }: { slug: string; initial: QueueState }) {
-  const [state, setState] = useState(initial);
-  const [live, setLive] = useState(false);
-
-  useEffect(() => {
-    const source = new EventSource(`/api/live/queue/${slug}`);
-    const onState = (e: MessageEvent<string>) => {
-      try {
-        setState(JSON.parse(e.data) as QueueState);
-        setLive(true);
-      } catch {
-        // A malformed message: keep what we have.
-      }
-    };
-    source.addEventListener('state', onState);
-    source.addEventListener('unavailable', () => setLive(false));
-    source.onerror = () => setLive(false);
-    return () => source.close();
-  }, [slug]);
+export function QueueCard({
+  slug,
+  businessId,
+  initial,
+  signedIn,
+}: {
+  slug: string;
+  businessId: string;
+  initial: QueueState;
+  signedIn: boolean;
+}) {
+  const { state: current, live } = useLiveQueue(slug, initial);
+  const state = current ?? initial;
 
   if (state.status === 'closed') {
     return (
@@ -68,9 +64,18 @@ export function QueueCard({ slug, initial }: { slug: string; initial: QueueState
           Now serving: <span className="font-mono font-semibold text-ink">{state.serving.join(', ')}</span>
         </p>
       )}
-      <p className="mt-3 text-xs text-ink-3">
-        You can join from within {distance(state.remoteJoinRadiusMeters / 1000)} of the business.
-      </p>
+      {paused && <p className="mt-3 text-sm text-ink-2">No new sign-ups from phones while it’s paused.</p>}
+      <JoinQueue
+        business={{ id: businessId, slug }}
+        signedIn={signedIn}
+        paused={paused}
+        radiusMeters={state.remoteJoinRadiusMeters}
+      />
+      {!signedIn && (
+        <p className="mt-3 text-xs text-ink-3">
+          You can join from within {distance(state.remoteJoinRadiusMeters / 1000)} of the business.
+        </p>
+      )}
     </SideCard>
   );
 }

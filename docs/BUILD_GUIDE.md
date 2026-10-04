@@ -460,6 +460,18 @@ The detailed plan — every page, its data and edge cases, the design system and
   said plainly when it counts as late — "Keep my visit" is as easy as cancelling), and **book
   again** afterwards. Declines and cancellations by the business are named as such. The account
   menu links to the account and visits.
+- **3.4c Walk-in queue — ✅ done.** On a business page the live queue card now lets people join
+  from their phone: the position is asked for only when "Join the queue" is pressed, used once for
+  the distance rule and not kept (the API stores only that they joined remotely) — said next to
+  the button. Every refusal is said plainly (how far away they are and the limit; paused, closed,
+  full; counter only; location turned off). One ticket at a time: the card shows it instead of a
+  second "Join". `/queue/[id]`: the live ticket — place in line and wait worked out from the
+  public live stream (ticket numbers only), the API asked again only when the ticket's state
+  changes; when called, "Go to the counter" with the time to be there by, in the tab's title too
+  and with a buzz on phones that allow it; leaving says first that the place goes to the next
+  person. The account page shows a live ticket at the top. Joining is the page's loud button while
+  the queue is open; booking otherwise. Pushes to a closed phone come with the mobile app
+  (Phase 4): the web ticket says to keep the page open.
 
 ## Phase 4 — Mobile app (Expo)
 

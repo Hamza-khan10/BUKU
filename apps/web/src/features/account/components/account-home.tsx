@@ -13,6 +13,7 @@ import { fetchMe, ME_KEY } from '@/features/auth/api';
 import { fetchReliability, fetchVisits, RELIABILITY_KEY } from '@/features/booking/api';
 import { bookHref, clockLabel, dayParts } from '@/features/booking/choices';
 import type { Receipt } from '@/features/booking/types';
+import { fetchMyTicket, MY_TICKET_KEY } from '@/features/queue/api';
 
 function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
@@ -51,6 +52,7 @@ export function AccountHome() {
   });
   const past = useQuery({ queryKey: ['visits', 'past', 'home'], queryFn: () => fetchVisits('past', 1, 20) });
   const reliability = useQuery({ queryKey: RELIABILITY_KEY, queryFn: fetchReliability });
+  const queueTicket = useQuery({ queryKey: MY_TICKET_KEY, queryFn: fetchMyTicket });
 
   const first = me.data?.name.split(' ')[0];
   const next = upcoming.data?.items[0];
@@ -61,6 +63,29 @@ export function AccountHome() {
       <h1 className="font-display text-4xl font-bold tracking-tight">
         {first ? `Hi, ${first}` : 'Your account'}
       </h1>
+
+      {queueTicket.data && (
+        <Section title="Your place in a queue">
+          <Link
+            href={`/queue/${queueTicket.data.id}` as Route}
+            className="flex max-w-xl items-center gap-4 rounded-lg border border-wait/40 bg-wait-soft p-4 hover:border-wait"
+          >
+            <span className="font-mono text-2xl font-bold text-ink">{queueTicket.data.ticket}</span>
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate font-medium text-ink">{queueTicket.data.business.name}</span>
+              <span className="text-sm text-ink-2">
+                {queueTicket.data.status === 'called'
+                  ? 'It’s your turn — open your ticket'
+                  : queueTicket.data.status === 'serving'
+                    ? 'You’re being served'
+                    : queueTicket.data.ahead === 0
+                      ? 'You’re next — open your ticket'
+                      : `${queueTicket.data.ahead ?? '…'} ahead of you — open your ticket`}
+              </span>
+            </span>
+          </Link>
+        </Section>
+      )}
 
       <Section
         title="Your next visit"

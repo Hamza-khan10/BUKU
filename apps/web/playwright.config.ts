@@ -21,9 +21,9 @@ export default defineConfig({
   use: { baseURL, trace: 'retain-on-failure' },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
-    // Sign-in and session tests (session, signin, team-signin) are about the API round trip,
-    // not the layout: once, on desktop, is enough.
-    { name: 'phone', use: { ...devices['Pixel 7'] }, testIgnore: /(session|signin)\.spec\.ts/ },
+    // Sign-in, session and queue tests are about the round trip, not the layout: once, on desktop,
+    // is enough (the queue ones also share one test business's queue).
+    { name: 'phone', use: { ...devices['Pixel 7'] }, testIgnore: /(session|signin|queue)\.spec\.ts/ },
   ],
   webServer: {
     command: process.env.CI ? 'pnpm start' : 'pnpm dev',

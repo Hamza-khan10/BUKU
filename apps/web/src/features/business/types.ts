@@ -100,4 +100,6 @@ export type QueueState =
       serving: string[];
       estimatedWaitMinutes: number | null;
       avgServiceSeconds: number;
+      /** Staff clocked in: the wait for any place in line is shared among them. */
+      staffOnShift: number;
     };
