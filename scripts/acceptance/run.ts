@@ -668,6 +668,7 @@ function directScan(routes: Route[]): string[] {
 }
 
 main().catch((err: unknown) => {
-  console.error(err);
+  // The message only: an error's other fields can carry API answers (tokens included).
+  console.error(err instanceof Error ? err.message : 'acceptance run failed');
   process.exit(1);
 });

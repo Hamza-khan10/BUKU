@@ -328,3 +328,28 @@ describe("the visitor's address (D-084)", () => {
     expect((res.body as { data: { ip: string } }).data.ip).not.toBe('203.0.113.7');
   });
 });
+
+describe('the baseline ceiling per address (D-086)', () => {
+  const app = createHttpApp({
+    service: 'ceiling',
+    logger,
+    readiness: new Readiness(),
+    trustProxyHops: 1,
+    baselineRequestsPerMinute: 3,
+    routes: (a) => a.get('/thing', (_req, res) => sendSuccess(res, { ok: true })),
+  });
+  const from = (ip: string) => request(app).get('/thing').set('X-BUKU-Client-IP', ip);
+
+  it('refuses an address past the ceiling with the standard 429, and counts each address on its own', async () => {
+    for (let i = 0; i < 3; i++) expect((await from('203.0.113.1')).status).toBe(200);
+    const refused = await from('203.0.113.1');
+    expect(refused.status).toBe(429);
+    expect(refused.body.error.code).toBe('RATE_LIMITED');
+    expect((await from('203.0.113.2')).status).toBe(200);
+  });
+
+  it('never limits the health, readiness and metrics endpoints', async () => {
+    for (let i = 0; i < 6; i++)
+      expect((await request(app).get('/health').set('X-BUKU-Client-IP', '203.0.113.9')).status).toBe(200);
+  });
+});

@@ -4,6 +4,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import express, { type Express } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
+import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
+import { AppError } from '../errors.js';
 import type { Logger } from '../logger.js';
 import { createServiceMetrics } from './metrics.js';
 import { errorHandler, notFoundHandler } from './middleware.js';
@@ -32,6 +34,12 @@ export interface HttpAppOptions {
    * webhook signatures, which are computed over the raw body.
    */
   keepRawBody?: boolean;
+  /**
+   * Requests per minute one address may make to this process (D-086). Well above
+   * the gateway's own limits, so it never touches normal use; it still holds if
+   * the service is ever reached without the gateway. 0 turns it off.
+   */
+  baselineRequestsPerMinute?: number;
   routes: (app: Express) => void;
 }
 
@@ -118,6 +126,23 @@ export function createHttpApp(options: HttpAppOptions): Express {
     res.send(await metrics.registry.metrics());
   });
 
+  // A ceiling per address on every route, in each process (D-086): the gateway's
+  // limits are the real ones; this one holds even if a request arrives without it.
+  const perMinute = options.baselineRequestsPerMinute ?? 3000;
+  if (perMinute > 0) {
+    const baseline = new RateLimiterMemory({ keyPrefix: 'rl:baseline', points: perMinute, duration: 60 });
+    app.use((req, _res, next) => {
+      baseline.consume(req.ip ?? 'unknown').then(
+        () => next(),
+        (err: unknown) =>
+          next(
+            err instanceof RateLimiterRes
+              ? AppError.rateLimited(Math.max(1, Math.ceil(err.msBeforeNext / 1000)))
+              : err,
+          ),
+      );
+    });
+  }
   app.use(
     express.json({
       limit: options.bodyLimit ?? '100kb',

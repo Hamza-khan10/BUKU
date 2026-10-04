@@ -593,3 +593,16 @@ extensionless imports because Turbopack doesn't map ".js" to ".ts". The Next.js 
 it pulls in a package with an unfixed high advisory (GHSA-vfj7-8cjw-p6xm); its rule that matters
 here, internal links through `<Link>`, is a `no-restricted-syntax` selector. Service images copy
 the web app's manifest only and install without it (Next.js never enters them).
+
+**D-086 · A per-address ceiling in every service, and open code-scanning findings cleared.**
+Code scanning (D-082) had collected 115 open findings on `main`; the CodeQL check only blocks new
+ones on a pull request. 112 said routes weren't rate-limited: true of the code it could see, not
+of the system — the gateway limits every route per visitor address and services aren't reachable
+except through it — but a service that is ever reached directly (a misconfiguration, an internal
+caller gone wrong) would then have no ceiling at all. So `createHttpApp` now gives every service a
+per-address ceiling of its own (3000 requests a minute per process, far above the gateway's
+limits, so it never touches normal use; health, readiness and metrics are exempt). The other three
+were fixed: two-step recovery codes drew characters with `byte % 31`, which favours some (now
+`randomInt`); the acceptance script logged whole errors, which can carry API answers (now the
+message only); a test's fake push server trusted a request field's type. Triage of new findings is
+part of every pull request from here on.
