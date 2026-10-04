@@ -15,6 +15,11 @@ export interface KeyInfo {
   description: string;
   /** Singular, for messages like "includes 1 team login". */
   one?: string;
+  /**
+   * false: BUKU doesn't offer this yet. It stays out of everything plans advertise
+   * (the pricing page, the comparison) until it exists, even if a plan switches it on.
+   */
+  launched?: false;
 }
 
 export const LIMIT_KEYS = {
@@ -51,7 +56,8 @@ export const FEATURE_KEYS = {
       description: 'Confirm each booking before it is final.',
     },
     staff_photos: { label: 'Staff photos', description: 'Photos next to employees’ names.' },
-    ads: { label: 'Ads', description: 'Promote the business on BUKU.' },
+    // The ads service is deferred (not built yet): not advertised until it exists.
+    ads: { label: 'Ads', description: 'Promote the business on BUKU.', launched: false },
     priority_support: { label: 'Priority support', description: 'Faster answers from the BUKU team.' },
   },
 } as const satisfies Record<Audience, Record<string, KeyInfo>>;
@@ -85,9 +91,20 @@ export function readPlanValues(audience: Audience, limits: unknown, features: un
   };
 }
 
-/** Labels and descriptions of every limit and feature, e.g. for the pricing page's comparison table. */
+/** Features BUKU offers today (not ones marked `launched: false`). */
+export const launchedFeatureKeysOf = (audience: Audience) =>
+  Object.entries(FEATURE_KEYS[audience] as Record<string, KeyInfo>)
+    .filter(([, v]) => v.launched !== false)
+    .map(([k]) => k);
+
+/**
+ * Labels and descriptions of every limit and every launched feature, e.g. for
+ * the pricing page's comparison table. Unlaunched features are left out.
+ */
 export function describeKeys(audience: Audience) {
   const list = (keys: Record<string, KeyInfo>) =>
-    Object.entries(keys).map(([key, v]) => ({ key, label: v.label, description: v.description }));
+    Object.entries(keys)
+      .filter(([, v]) => v.launched !== false)
+      .map(([key, v]) => ({ key, label: v.label, description: v.description }));
   return { limits: list(LIMIT_KEYS[audience]), features: list(FEATURE_KEYS[audience]) };
 }

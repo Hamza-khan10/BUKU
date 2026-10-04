@@ -155,7 +155,11 @@ describe('The pricing page', () => {
       ['business_enterprise', '99.99'],
     ]);
     expect(plans.map((p) => p.limits.team_accounts)).toEqual([3, 15, null]);
-    expect(plans.map((p) => p.features.ads)).toEqual([false, false, true]);
+    // Ads aren't offered yet (D-087): no plan advertises them, in its features, the comparison or its words.
+    expect(plans.every((p) => !('ads' in p.features))).toBe(true);
+    expect(plans.map((p) => p.features.queue)).toEqual([true, true, true]);
+    expect(res.body.data.comparison.features.map((f: { key: string }) => f.key)).not.toContain('ads');
+    expect(JSON.stringify(res.body.data)).not.toMatch(/\bads?\b/i);
     expect(res.body.data.comparison.limits.map((l: { label: string }) => l.label)).toEqual([
       'Team logins',
       'Bookable staff',
