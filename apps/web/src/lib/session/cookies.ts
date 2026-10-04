@@ -1,7 +1,17 @@
 import 'server-only';
 import type { NextRequest, NextResponse } from 'next/server';
 import { secureCookies } from '../env';
-import { clearedCookies, cookieNames, sessionCookies, type CookieSpec, type SessionTokens } from './policy';
+import {
+  challengeCookie,
+  clearedChallengeCookie,
+  clearedCookies,
+  cookieNames,
+  readChallengeValue,
+  sessionCookies,
+  type Challenge,
+  type CookieSpec,
+  type SessionTokens,
+} from './policy';
 
 /** The tokens this browser holds (server-side only). */
 export function readSession(request: NextRequest) {
@@ -22,4 +32,17 @@ export function setSession(response: NextResponse, tokens: SessionTokens) {
 
 export function clearSession(response: NextResponse) {
   apply(response, clearedCookies(secureCookies()));
+}
+
+/** The sign-in waiting for its two-step code in this browser, if any (server-side only). */
+export function readChallenge(request: NextRequest): Challenge | null {
+  return readChallengeValue(request.cookies.get(cookieNames(secureCookies()).challenge)?.value);
+}
+
+export function setChallenge(response: NextResponse, challenge: Challenge) {
+  apply(response, [challengeCookie(challenge, secureCookies())]);
+}
+
+export function clearChallenge(response: NextResponse) {
+  apply(response, [clearedChallengeCookie(secureCookies())]);
 }

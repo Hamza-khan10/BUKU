@@ -1,4 +1,11 @@
-import { stripDisallowed, type TextKind, zText } from '@buku/validation';
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  passwordProblem,
+  stripDisallowed,
+  type TextKind,
+  zText,
+} from '@buku/validation';
 import sanitizeHtml from 'sanitize-html';
 import { z } from 'zod';
 
@@ -96,38 +103,21 @@ export const zSafeText = (options: { kind: TextKind; min?: number; max: number; 
     .pipe(zText(options));
 
 /**
- * Password policy, aligned with NIST SP 800-63B: length over composition rules.
- * Upper bound prevents hashing-DoS with megabyte-long passwords.
+ * Password policy (the rules live in @buku/validation, shared with the apps).
+ * Messages in the API's own style: "newPassword must be at least 10 characters".
  */
-const COMMON_PASSWORDS = new Set([
-  'password',
-  'password1',
-  'password12',
-  'password123',
-  'passw0rd',
-  '1234567890',
-  '12345678910',
-  'qwertyuiop',
-  'qwerty1234',
-  'iloveyou12',
-  'letmein123',
-  'welcome123',
-  'admin12345',
-  'abc1234567',
-  '1q2w3e4r5t',
-  'pakistan123',
-  'buku123456',
-  'bukupassword',
-]);
-export const zPassword = z
-  .string()
-  .min(10, 'must be at least 10 characters')
-  .max(128, 'must be at most 128 characters')
-  .refine(
-    (pw) => !COMMON_PASSWORDS.has(pw.toLowerCase()),
-    'is too common; choose a less predictable password',
-  )
-  .refine((pw) => new Set(pw).size >= 4, 'must not be a repetition of a few characters');
+const PASSWORD_API_MESSAGES: Record<'too_short' | 'too_long' | 'common' | 'repetitive', string> = {
+  too_short: `must be at least ${PASSWORD_MIN_LENGTH} characters`,
+  too_long: `must be at most ${PASSWORD_MAX_LENGTH} characters`,
+  common: 'is too common; choose a less predictable password',
+  repetitive: 'must not be a repetition of a few characters',
+};
+export const zPassword = z.string().superRefine((pw, ctx) => {
+  const problem = passwordProblem(pw);
+  if (problem === 'too_short' || problem === 'too_long' || problem === 'common' || problem === 'repetitive') {
+    ctx.addIssue({ code: 'custom', message: PASSWORD_API_MESSAGES[problem], params: { problem } });
+  }
+});
 
 /** Offset pagination: `?page=1&limit=20`. */
 export const zPagination = z.object({

@@ -12,14 +12,15 @@ import { callGateway, refreshSession } from '@/lib/api/gateway';
 import { errorResponse } from '@/lib/api/respond';
 import { env } from '@/lib/env';
 import { REQUEST_ID_HEADER, requestIdFrom } from '@/lib/http/request-id';
-import { clearSession, readSession, setSession } from '@/lib/session/cookies';
-import { takeSession, type SessionTokens } from '@/lib/session/policy';
+import { clearChallenge, clearSession, readSession, setChallenge, setSession } from '@/lib/session/cookies';
+import { takeChallenge, takeSession, type Challenge, type SessionTokens } from '@/lib/session/policy';
 
 /**
  * The browser's way to the API: `/api/v1/<path>` → gateway `/v1/<path>`, with
  * the session's access token added here (the browser never holds it), the
  * visitor's address passed on (D-084), sessions renewed when the access token
- * has lapsed, and any new session in an answer turned into cookies.
+ * has lapsed, and any new session in an answer turned into cookies — as is a
+ * sign-in's two-step challenge (D-088).
  */
 
 const MAX_QUERY_LENGTH = 2048;
@@ -70,6 +71,8 @@ async function handle(request: NextRequest, ctx: RouteContext<'/api/v1/[...path]
   let sessionEnded = false;
   /** A new session in the answer itself (signing in, two-step). */
   let signedIn: SessionTokens | null = null;
+  /** A sign-in that needs its two-step code first. */
+  let challenge: Challenge | null = null;
 
   /** Renew with the refresh token. Returns a response to send instead, if renewing can't continue. */
   const renew = async (): Promise<NextResponse | null> => {
@@ -144,7 +147,9 @@ async function handle(request: NextRequest, ctx: RouteContext<'/api/v1/[...path]
     if (upstream.ok && json && typeof json === 'object' && 'data' in json) {
       const taken = takeSession(json.data);
       signedIn = taken.tokens;
-      payload = { ...json, data: taken.data };
+      const asked = signedIn ? { challenge: null, data: taken.data } : takeChallenge(taken.data);
+      challenge = asked.challenge;
+      payload = { ...json, data: asked.data };
     }
     const code = (json as { error?: { code?: unknown } } | null)?.error?.code;
     if (code === 'SESSION_REVOKED') sessionEnded = true;
@@ -154,7 +159,10 @@ async function handle(request: NextRequest, ctx: RouteContext<'/api/v1/[...path]
   }
 
   if (upstream.ok && endsSession(method, target.path)) sessionEnded = true;
-  if (signedIn) setSession(response, signedIn);
+  if (signedIn) {
+    setSession(response, signedIn);
+    clearChallenge(response);
+  } else if (challenge) setChallenge(response, challenge);
   else if (sessionEnded) clearSession(response);
   else if (renewed) setSession(response, renewed);
   return response;

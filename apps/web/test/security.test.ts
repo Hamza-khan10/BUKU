@@ -74,12 +74,14 @@ describe('API pass-through: which gateway path', () => {
     });
   });
 
-  it('refuses traversal, odd characters and calls that need the refresh token', () => {
+  it('refuses traversal, odd characters and calls that need a token only the server holds', () => {
     for (const bad of [[], ['..', 'admin'], ['auth', '.'], ['a%2Fb'], ['a\\b'], ['a b'], ['x'.repeat(201)]]) {
       expect(gatewayPath(bad)).toMatchObject({ status: 404 });
     }
     expect(gatewayPath(['auth', 'refresh'])).toMatchObject({ status: 404 });
     expect(gatewayPath(['auth', 'logout'])).toMatchObject({ status: 404 });
+    expect(gatewayPath(['auth', 'mfa', 'verify'])).toMatchObject({ status: 404 });
+    expect(gatewayPath(['auth', 'mfa'])).toEqual({ path: '/v1/auth/mfa' });
     expect(gatewayPath(Array.from({ length: 13 }, () => 'a'))).toMatchObject({ status: 404 });
   });
 

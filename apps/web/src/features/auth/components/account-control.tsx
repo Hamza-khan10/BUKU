@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { LogOut, MonitorSmartphone } from 'lucide-react';
+import { KeyRound, LogOut, MonitorSmartphone } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toaster';
 import { ApiError } from '@/lib/api/errors';
-import { fetchMe, ME_KEY, signOut } from '../api';
+import { fetchMe, ME_KEY, mustChangePassword, signOut } from '../api';
 
 /** The session is over (signed out elsewhere, expired, account closed) — not a passing hiccup. */
 const sessionOver = (e: unknown) => e instanceof ApiError && e.status === 401;
@@ -86,6 +86,16 @@ export function AccountControl({ signedIn }: { signedIn: boolean }) {
             {user.email && <span className="truncate text-sm text-ink-3">{user.email}</span>}
           </DropdownMenu.Label>
           <DropdownMenu.Separator className="my-1 h-px bg-line" />
+          {mustChangePassword(user) && (
+            <DropdownMenu.Item asChild>
+              <Link
+                href="/signin/new-password"
+                className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium text-brand-ink outline-none data-[highlighted]:bg-sunken"
+              >
+                <KeyRound className="size-4" aria-hidden /> Choose your own password
+              </Link>
+            </DropdownMenu.Item>
+          )}
           <DropdownMenu.Item asChild>
             <Link
               href="/signout"

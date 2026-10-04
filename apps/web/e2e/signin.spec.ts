@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
 
 /** Signing in (development sign-in), the account menu, and signing out — against the dev stack. */

@@ -1,4 +1,5 @@
-import { expect, request as playwright, test, type APIRequestContext } from '@playwright/test';
+import { request as playwright, type APIRequestContext } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { apiAvailable } from './helpers';
 
 /**
