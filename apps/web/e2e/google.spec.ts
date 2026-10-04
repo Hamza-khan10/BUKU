@@ -78,10 +78,15 @@ test.describe('Sign in with Google', () => {
   });
 
   test('only known reasons are shown, never text from the address', async ({ page }) => {
+    // Inside the page's own content: Next.js keeps a route announcer (role="alert") outside it.
+    const alerts = page.getByRole('main').getByRole('alert');
     await page.goto('/signin?error=%3Cb%3Ehello%3C%2Fb%3E');
-    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Sign in to BUKU' })).toBeVisible();
+    await expect(alerts).toHaveCount(0);
+    await expect(page.getByText('hello')).toHaveCount(0);
     await page.goto('/signin?error=toString');
-    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(alerts).toHaveCount(0);
+    await expect(page.getByText('function')).toHaveCount(0);
     await page.goto('/signin?error=deletion-pending&until=%3Cscript%3E');
     await expect(page.getByText('This account is scheduled for deletion.', { exact: true })).toBeVisible();
   });
