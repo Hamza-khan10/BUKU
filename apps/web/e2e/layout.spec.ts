@@ -15,9 +15,18 @@ const STATIC_PAGES = [
   '/security',
   '/legal',
   '/legal/privacy',
+  '/legal/cookies',
   '/kit',
 ];
-const DATA_PAGES = ['/explore', '/explore?q=hair', '/categories', '/c/barbershop'];
+// Pages that need the API (pricing reads the plan catalog).
+const DATA_PAGES = [
+  '/explore',
+  '/explore?q=hair',
+  '/categories',
+  '/c/barbershop',
+  '/pricing',
+  '/for-business',
+];
 
 async function overflow(page: Page): Promise<number> {
   return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

@@ -17,7 +17,7 @@ export function SiteHeader({ theme }: { theme: Theme }) {
           <DesktopNav />
         </div>
         <div className="flex items-center gap-2">
-          <ThemeToggle initial={theme} className="hidden md:inline-flex" />
+          <ThemeToggle initial={theme} className="hidden lg:inline-flex" />
           <MobileNav theme={theme} />
         </div>
       </Container>

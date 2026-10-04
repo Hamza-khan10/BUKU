@@ -39,7 +39,7 @@ export function ProseTable({
       role="region"
       aria-label={caption ?? 'Table'}
       tabIndex={0}
-      className="mt-6 overflow-x-auto rounded-md border border-line"
+      className="relative mt-6 overflow-x-auto rounded-md border border-line"
     >
       <table className="w-full min-w-[36rem] border-collapse text-left text-[0.95rem]">
         {caption && <caption className="sr-only">{caption}</caption>}
