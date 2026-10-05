@@ -511,6 +511,15 @@ The detailed plan — every page, its data and edge cases, the design system and
   recovery codes shown once — copy, download as a text file, and say they're kept before going
   on. "Where you're signed in": every device, this browser first, since when, last active, a
   shortened network address; sign any other one out (its session ends at the API), or everywhere.
+- **3.4d-3c Your data — ✅ done.** On `/account/settings`: download a copy of everything BUKU
+  keeps (the API's export, saved as a JSON file); deleting the account is one step away, except for
+  employee accounts (their business closes them). `/account/settings/delete` says what happens
+  before asking: signed out everywhere at once, visits still to come cancelled and the businesses
+  told, queues left (the API didn't do this before: nobody consumed `users.deleted` — fixed in
+  booking and queue), 30 days to change one's mind (cancelled visits stay cancelled), then what's
+  removed for good and what businesses keep; a copy of the data first; an optional reason; the word
+  DELETE typed. A sign-in older than the API's window is asked to sign in again first, and comes
+  straight back. `/goodbye` says the day the details are removed and how to restore before then.
 
 ## Phase 4 — Mobile app (Expo)
 

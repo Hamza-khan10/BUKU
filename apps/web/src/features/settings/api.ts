@@ -89,3 +89,18 @@ export const fetchSessions = () => api<SignedInDevice[]>('auth/sessions');
 
 /** Sign another device out (this browser signs out the usual way). */
 export const endSession = (id: string) => api<undefined>(`auth/sessions/${id}`, { method: 'DELETE' });
+
+// ── Your data ─────────────────────────────────────────────────────────────
+
+/** Everything BUKU keeps about the account, as one document (a few times an hour at most). */
+export const fetchMyData = () => api<unknown>('auth/me/export');
+
+/**
+ * Delete the account: signed out everywhere at once, restorable until
+ * `purgeAfter`. Needs a recent sign-in (REAUTH_REQUIRED otherwise).
+ */
+export const deleteAccount = (reason: string | undefined) =>
+  api<{ status: 'scheduled'; purgeAfter: string }>('auth/me', {
+    method: 'DELETE',
+    body: { confirmation: 'DELETE', ...(reason && { reason }) },
+  });

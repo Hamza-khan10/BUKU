@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { fileSize, MAX_PICTURE_BYTES, pictureProblem, PICTURE_TYPES } from '../src/features/settings/picture';
 import type { SignedInDevice } from '../src/features/settings/api';
 import { deviceLabel, isPhone, sortedDevices } from '../src/features/settings/devices';
+import {
+  confirmed,
+  DELETION_GRACE_DAYS,
+  exportFileName,
+  goodbyeHref,
+  longDate,
+  untilFrom,
+} from '../src/features/settings/my-data';
 import { groupedKey, recoveryCodesFile } from '../src/features/settings/two-step';
 import { offsetOf, zoneLabel, zoneOptions } from '../src/features/settings/zones';
 
@@ -120,5 +128,33 @@ describe('signed-in devices', () => {
       device({ id: 'recent', lastActiveAt: '2026-10-05T00:00:00Z' }),
     ];
     expect(sortedDevices(list).map((d) => d.id)).toEqual(['here', 'recent', 'old']);
+  });
+});
+
+describe('your data', () => {
+  it('the days to change your mind are the ones auth-service keeps a deleted account', () => {
+    const config = readFileSync(new URL('../../../services/auth/src/config.ts', import.meta.url), 'utf8');
+    const days = /ACCOUNT_DELETION_GRACE_DAYS: z[^\n]*\.default\((\d+)\)/.exec(config)?.[1];
+    expect(Number(days)).toBe(DELETION_GRACE_DAYS);
+  });
+
+  it('names the export by its day', () => {
+    expect(exportFileName(new Date('2026-10-05T23:30:00Z'))).toBe('buku-data-export-2026-10-05.json');
+  });
+
+  it('the word typed to confirm, in any case, without stray spaces', () => {
+    expect(confirmed('DELETE')).toBe(true);
+    expect(confirmed(' delete ')).toBe(true);
+    expect(confirmed('DELET')).toBe(false);
+    expect(confirmed('DELETE ME')).toBe(false);
+  });
+
+  it('the goodbye page shows the last day only when the address carries a real date', () => {
+    expect(goodbyeHref('2026-11-04T20:15:00.000Z')).toBe('/goodbye?until=2026-11-04');
+    expect(longDate(untilFrom('2026-11-04')!)).toBe('4 November 2026');
+    expect(untilFrom('2026-02-30')).toBeNull();
+    expect(untilFrom('<script>')).toBeNull();
+    expect(untilFrom(['2026-11-04'])).toBeNull();
+    expect(untilFrom(undefined)).toBeNull();
   });
 });

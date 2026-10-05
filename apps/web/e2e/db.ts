@@ -81,3 +81,27 @@ export function pictureFromProvider(userId: string, url: string): boolean {
   if (!/^https?:\/\/[\w.:-]+\/[\w./-]*$/.test(url)) throw new Error('not a plain picture link');
   return sql(`UPDATE users SET avatar_url = '${url}' WHERE id = '${userId}' RETURNING 1`) === '1';
 }
+
+/** An appointment's status, straight from the database. */
+export function appointmentStatus(appointmentId: string): string | null {
+  if (!UUID.test(appointmentId)) throw new Error('not an appointment id');
+  return sql(`SELECT status FROM appointments WHERE id = '${appointmentId}'`);
+}
+
+/** Every session of this account started `minutes` ago (as if signed in long before). */
+export function signedInAgo(userId: string, minutes: number): boolean {
+  if (!UUID.test(userId)) throw new Error('not a user id');
+  if (!Number.isInteger(minutes) || minutes < 1) throw new Error('not a number of minutes');
+  return (
+    sql(
+      `WITH moved AS (UPDATE refresh_tokens SET created_at = created_at - interval '${minutes} minutes'
+         WHERE user_id = '${userId}' RETURNING 1) SELECT count(*) > 0 FROM moved`,
+    ) === 't'
+  );
+}
+
+/** Has this account asked to be deleted? */
+export function deletionRequested(userId: string): boolean {
+  if (!UUID.test(userId)) throw new Error('not a user id');
+  return sql(`SELECT deleted_at IS NOT NULL FROM users WHERE id = '${userId}'`) === 't';
+}

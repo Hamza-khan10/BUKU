@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/states';
 import { fetchMe, ME_KEY, type Me } from '@/features/auth/api';
 import { ApiError } from '@/lib/api/errors';
+import { DataSection } from './data-section';
 import { DetailsSection } from './details-section';
 import { PictureSection } from './picture-section';
 import { SettingsSection } from './section';
@@ -45,6 +46,7 @@ export function AccountSettings() {
       <SignInDetails me={me.data} />
       <TwoStepSection me={me.data} />
       <SessionsSection />
+      <DataSection me={me.data} />
     </div>
   );
 }
