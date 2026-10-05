@@ -197,6 +197,11 @@ The response is the same as any sign-in. `user.account` tells the app what kind 
   screen.
 - A password change returns `{ "signInAgain": true }` and ends **every** session of the account,
   including the current one; the app signs in again with the new password.
+- A new password seen in a known data breach is refused: `422 PASSWORD_BREACHED`. The check uses
+  Have I Been Pwned's range API (only the first 5 characters of the password's SHA-1 leave the
+  server, with padding); if it can't be reached in time, the password is allowed — the length and
+  common-password rules have already been applied — and `security_events_total{event="breach_check_unavailable"}`
+  counts it. A wrong `currentPassword` counts towards the same lock as sign-in.
 - Wrong business, username or password all return the same `401 INVALID_CREDENTIALS`.
 - 5 wrong passwords in a row lock sign-in for 15 minutes (`429 ACCOUNT_LOCKED`,
   `details.retryAfterSeconds`). The owner or a manager can unlock at once by resetting the password.

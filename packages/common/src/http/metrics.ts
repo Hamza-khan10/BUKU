@@ -60,6 +60,8 @@ export type SecurityEvent =
   | 'mfa_locked'
   | 'admin_without_mfa'
   | 'member_locked_out'
+  /** The breached-password check couldn't be reached; the password was allowed (our own rules still apply). */
+  | 'breach_check_unavailable'
   | 'webhook_signature_invalid';
 
 let securityEvents: Counter<'event'> | null = null;

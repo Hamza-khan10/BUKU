@@ -43,6 +43,8 @@ export const ErrorCodes = {
   OTP_LOCKED: 'OTP_LOCKED',
   OTP_RATE_LIMITED: 'OTP_RATE_LIMITED',
   PASSWORD_TOO_WEAK: 'PASSWORD_TOO_WEAK',
+  /** The password has appeared in a known data breach (Have I Been Pwned). */
+  PASSWORD_BREACHED: 'PASSWORD_BREACHED',
 
   // Booking
   SLOT_UNAVAILABLE: 'SLOT_UNAVAILABLE',

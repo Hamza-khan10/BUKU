@@ -55,6 +55,13 @@ export const Env = baseServiceEnv
     MEMBER_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().min(3).max(20).default(5),
     /** ...for this long. The business can unlock earlier by resetting the password. */
     MEMBER_LOCKOUT_MINUTES: z.coerce.number().int().min(1).max(1440).default(15),
+    /**
+     * New passwords are checked against known data breaches (Have I Been Pwned, k-anonymity: only
+     * 5 characters of a hash leave the server). If it can't be reached, the password is allowed.
+     */
+    BREACHED_PASSWORD_CHECK: envBool.default(true),
+    PWNED_PASSWORDS_URL: z.url().default('https://api.pwnedpasswords.com'),
+    PWNED_PASSWORDS_TIMEOUT_MS: z.coerce.number().int().min(200).max(10_000).default(2500),
     /** Platform safety cap; the business's PLAN decides the real number (Enterprise: unlimited). */
     MAX_MEMBERS_PER_BUSINESS: z.coerce.number().int().min(1).max(10_000).default(1000),
 
