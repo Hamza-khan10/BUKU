@@ -1440,4 +1440,36 @@ describe('Two-step sign-in (D-081)', () => {
     const secret = await db.userMfa.findUnique({ where: { userId: me.user.id } });
     expect(secret).toBeNull();
   });
+
+  it('lost the phone: a recovery code gets new codes or turns it off, and works only once', async () => {
+    const me = await withMfa();
+    const renewed = await request(app)
+      .post('/v1/auth/mfa/recovery-codes')
+      .set(bearer(me.accessToken))
+      .send({ recoveryCode: me.recoveryCodes[0] });
+    expect(renewed.status).toBe(200);
+    const fresh = renewed.body.data.recoveryCodes as string[];
+    expect(fresh).toHaveLength(10);
+    // The old codes are gone, the one just used included.
+    const old = await request(app)
+      .delete('/v1/auth/mfa')
+      .set(bearer(me.accessToken))
+      .send({ recoveryCode: me.recoveryCodes[1] });
+    expect([old.status, old.body.error.code]).toEqual([401, 'MFA_INVALID_CODE']);
+    // Exactly one of the two: a code or a recovery code.
+    const both = await request(app)
+      .delete('/v1/auth/mfa')
+      .set(bearer(me.accessToken))
+      .send({ code: codeFor(me.secret, 1), recoveryCode: fresh[0] });
+    expect(both.status).toBe(400);
+
+    const off = await request(app)
+      .delete('/v1/auth/mfa')
+      .set(bearer(me.accessToken))
+      .send({ recoveryCode: fresh[0] });
+    expect(off.status).toBe(204);
+    expect(await db.userMfa.findUnique({ where: { userId: me.user.id } })).toBeNull();
+    // Then a new phone can be set up.
+    expect((await request(app).post('/v1/auth/mfa/setup').set(bearer(me.accessToken))).status).toBe(200);
+  });
 });

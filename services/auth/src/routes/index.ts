@@ -41,6 +41,7 @@ import {
   UpdateMeBody,
   UpdateMemberBody,
   MfaCodeBody,
+  MfaSecondFactorBody,
   MfaVerifyBody,
 } from './schemas.js';
 import type { JwtVerifier } from '@buku/common';
@@ -414,18 +415,15 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   );
   mfa.post(
     '/recovery-codes',
-    validated({ body: MfaCodeBody }, async ({ body }, req, res) => {
-      sendSuccess(
-        res,
-        await deps.mfa.newRecoveryCodes(requireAuth(req).userId, body.code, requestContext(req)),
-      );
+    validated({ body: MfaSecondFactorBody }, async ({ body }, req, res) => {
+      sendSuccess(res, await deps.mfa.newRecoveryCodes(requireAuth(req).userId, body, requestContext(req)));
     }),
   );
   mfa.delete(
     '/',
-    validated({ body: MfaCodeBody }, async ({ body }, req, res) => {
+    validated({ body: MfaSecondFactorBody }, async ({ body }, req, res) => {
       const a = requireAuth(req);
-      await deps.mfa.disable({ id: a.userId, role: a.role }, body.code, requestContext(req));
+      await deps.mfa.disable({ id: a.userId, role: a.role }, body, requestContext(req));
       sendNoContent(res);
     }),
   );
