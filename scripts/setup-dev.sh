@@ -83,6 +83,7 @@ set_if_empty S3_SECRET_ACCESS_KEY        "$(hex 24)"
 set_if_empty PII_ENCRYPTION_KEYS         "k1:$(b64_32)"
 set_if_empty PII_BLIND_INDEX_KEY         "$(b64_32)"
 set_if_empty WEB_GATEWAY_KEY             "$(hex 32)"
+set_if_empty ADMIN_GATEWAY_KEY           "$(hex 32)"
 
 if [[ -z "$(get_value JWT_PRIVATE_KEY)" ]]; then
   tmpd=$(mktemp -d); trap 'rm -rf "$tmpd"' EXIT

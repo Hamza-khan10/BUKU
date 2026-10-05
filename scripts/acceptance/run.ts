@@ -624,6 +624,21 @@ async function authorizationScan(ctx: { shop: Shop; stranger: Person; customer: 
   await step(`a customer on all ${adminRoutes.length} admin routes: 403`, () => {
     expect(!adminProblems.length, adminProblems.join('\n      '));
   });
+
+  // D-091: admin routes answer only the admin app's server. Without its key they don't exist,
+  // whoever is signed in — so a session stolen from anywhere else can't reach them.
+  const keylessProblems: string[] = [];
+  for (const r of adminRoutes) {
+    const res = await call(r.method, fill(r.path, ctx.shop), {
+      token: ctx.customer.token,
+      asAdminApp: false,
+      ...(r.method === 'GET' || r.method === 'DELETE' ? {} : { body: {} }),
+    });
+    if (res.status !== 404) keylessProblems.push(`${r.method} ${r.path} → ${show(res)}`);
+  }
+  await step(`without the admin app's key: all ${adminRoutes.length} admin routes are unknown (404)`, () => {
+    expect(!keylessProblems.length, keylessProblems.join('\n      '));
+  });
 }
 
 const PORTS: Record<string, number> = {

@@ -298,14 +298,26 @@ plugins:
   # connected, whatever headers it sent. The result goes to the services in
   # X-BUKU-Client-IP (always overwritten here, never passed through), and the
   # rate limits below count by it. Runs first, in the rewrite phase.
+  #
+  # Platform admin tools (D-091): every /v1/admin path answers only the admin
+  # app's server, which holds its own key (the public website never has it). A
+  # request without it is told the route doesn't exist, before any token check;
+  # with no key configured, admin routes are closed to everyone.
   - name: pre-function
     config:
       rewrite:
         - |
           local key = '__WEB_GATEWAY_KEY__'
+          local admin_key = '__ADMIN_GATEWAY_KEY__'
           local client = kong.client.get_forwarded_ip()
           local presented = kong.request.get_header('x-buku-web-key')
-          if key ~= '' and presented == key then
+          local presented_admin = kong.request.get_header('x-buku-admin-key')
+          local from_admin_app = admin_key ~= '' and presented_admin == admin_key
+          local path = kong.request.get_path()
+          if (path == '/v1/admin' or path:sub(1, 10) == '/v1/admin/') and not from_admin_app then
+            return kong.response.exit(404, { message = 'no Route matched with those values' })
+          end
+          if (key ~= '' and presented == key) or from_admin_app then
             local claimed = kong.request.get_header('x-buku-client-ip')
             if type(claimed) == 'string' and #claimed <= 45 and (claimed:match('^%d+%.%d+%.%d+%.%d+$')
                 or (claimed:find(':', 1, true) and claimed:match('^[%x:%.]+$'))) then
@@ -313,6 +325,7 @@ plugins:
             end
           end
           kong.service.request.clear_header('x-buku-web-key')
+          kong.service.request.clear_header('x-buku-admin-key')
           kong.service.request.set_header('x-buku-client-ip', client)
 
   - name: correlation-id

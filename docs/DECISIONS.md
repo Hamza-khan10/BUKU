@@ -668,3 +668,19 @@ through the page's JavaScript; here the page never sees a token at all. New acco
 under the terms version the sign-in page states ("By signing in you agree…"). The button appears
 only where the web server has both the client id and secret; the API's `GOOGLE_CLIENT_IDS` must
 include the same id.
+
+**D-091 · Platform admin tools live in a separate admin app, reachable only through it.** The
+public website never offers an admin sign-in and never passes an admin call on: its API
+pass-through refuses every `/v1/admin` path, whatever the session's role, so a script injected
+into the public site — or a stolen customer session — can't reach admin tools through it. Admins
+use a separate app on its own address (admin.<domain>), with its own sign-in, its own
+HttpOnly cookies on that origin only, two-step sign-in always required, and no link from the
+public site. At the gateway, every `/v1/admin` path answers only requests carrying the admin
+app's server key (`ADMIN_GATEWAY_KEY`, 64 hex, different from the website's key, held only by
+Kong and the admin app's server): without it the route doesn't exist (404, before any token
+check), so even a valid admin token used from anywhere else gets nothing. With no key configured,
+admin routes are closed to everyone. The services still require the admin role and a session that
+passed two-step sign-in (D-081) — three independent locks: the admin app's key, the token's role,
+and its two-step claim. Why not a hidden `/admin` path on the public site: it would share the
+site's domain, cookies, code and attack surface; one cross-site scripting bug on any public page
+would be one step from the admin tools.
