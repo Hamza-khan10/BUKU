@@ -11,7 +11,7 @@ import { buildCsp, newNonce, originOnly } from '@/lib/security/csp';
  *    (A convenience only: the API refuses anyone without a valid session.)
  */
 
-const PERSONAL = ['/account', '/appointments', '/queue', '/business', '/admin', '/welcome'];
+const PERSONAL = ['/account', '/appointments', '/queue', '/business', '/welcome'];
 const SESSION_HINTS = ['__Host-buku_s', 'buku_s'];
 
 export function proxy(request: NextRequest) {

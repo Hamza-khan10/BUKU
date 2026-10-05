@@ -88,6 +88,25 @@ describe('refusals, in words', () => {
     expect(problem.reference).toBe(reference);
   });
 
+  it('too many tries: plain words, and when to try again if it’s more than a minute', () => {
+    const soon = problemFrom(
+      new ApiError(429, 'RATE_LIMITED', 'Too many requests, please slow down', reference, {
+        retryAfterSeconds: 40,
+      }),
+      'x',
+    );
+    expect(soon).toEqual({
+      title: 'Too many tries in a short time',
+      detail: 'Please wait a minute and try again.',
+      reference,
+    });
+    const later = problemFrom(
+      new ApiError(429, 'RATE_LIMITED', 'Too many', reference, { retryAfterSeconds: 900 }),
+      'x',
+    );
+    expect(later.detail).toBe(`Please try again at ${clockIn(900)}.`);
+  });
+
   it('passes the API’s own message on, without a reference for network failures', () => {
     expect(problemFrom(new ApiError(403, 'ACCOUNT_SUSPENDED', 'Access is off.', reference), 'x')).toEqual({
       title: 'Access is off.',

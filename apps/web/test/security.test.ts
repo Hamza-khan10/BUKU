@@ -110,6 +110,10 @@ describe('API pass-through: which gateway path', () => {
     expect(gatewayPath(['auth', 'logout'])).toMatchObject({ status: 404 });
     expect(gatewayPath(['auth', 'mfa', 'verify'])).toMatchObject({ status: 404 });
     expect(gatewayPath(['auth', 'mfa'])).toEqual({ path: '/v1/auth/mfa' });
+    // Admin tools only through the separate admin app, whatever this site's session is.
+    expect(gatewayPath(['admin', 'access-review'])).toMatchObject({ status: 404 });
+    expect(gatewayPath(['admin', 'billing', 'plans'])).toMatchObject({ status: 404 });
+    expect(gatewayPath(['admin'])).toMatchObject({ status: 404 });
     expect(gatewayPath(Array.from({ length: 13 }, () => 'a'))).toMatchObject({ status: 404 });
   });
 

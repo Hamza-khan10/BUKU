@@ -1,7 +1,7 @@
 'use client';
 
 import { zText } from '@buku/validation';
-import { Building2, ShieldCheck, User } from 'lucide-react';
+import { Building2, User } from 'lucide-react';
 import { RadioGroup } from 'radix-ui';
 import { useState, type FormEvent } from 'react';
 import { z } from 'zod';
@@ -13,12 +13,14 @@ import { Input } from '@/components/ui/input';
 import { ApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/cn';
 import { devSignIn, type DevRole } from '../api';
+import { problemFrom, type Problem } from '../problems';
 import { COOKIES_BLOCKED, useFinishSignIn } from '../use-finish-sign-in';
+import { ProblemAlert } from './problem-alert';
 
-const ROLES: { value: DevRole; label: string; text: string; Icon: typeof User }[] = [
+/** Platform admins never sign in here: the admin app has its own sign-in, on its own address. */
+const ROLES: { value: Exclude<DevRole, 'super_admin'>; label: string; text: string; Icon: typeof User }[] = [
   { value: 'user', label: 'Customer', text: 'Book and join queues.', Icon: User },
   { value: 'business_owner', label: 'Business owner', text: 'Run a business on BUKU.', Icon: Building2 },
-  { value: 'super_admin', label: 'Platform admin', text: 'BUKU’s own tools.', Icon: ShieldCheck },
 ];
 
 const EMAIL = z.email({ message: 'Please enter an email address like name@example.com.' });
@@ -27,7 +29,7 @@ const NAME = zText({ kind: 'personName', max: 100 });
 interface Errors {
   email?: string | undefined;
   name?: string | undefined;
-  form?: { message: string; reference?: string | undefined } | undefined;
+  form?: Problem | undefined;
 }
 
 /**
@@ -62,15 +64,15 @@ export function DevSignInForm({ next }: { next: string }) {
     try {
       const answer = await devSignIn({ email: email.data, name: name?.data, role });
       if (finish(answer, { next, start: 'signin' }) === 'no-cookies') {
-        setErrors({ form: { message: COOKIES_BLOCKED } });
+        setErrors({ form: { title: COOKIES_BLOCKED } });
       }
     } catch (err) {
       if (err instanceof ApiError) {
         const byField = Object.fromEntries(err.fieldIssues.map((i) => [i.path, i.message]));
         if (byField.email || byField.name) setErrors({ email: byField.email, name: byField.name });
-        else setErrors({ form: { message: err.message, reference: err.requestId } });
+        else setErrors({ form: problemFrom(err, 'Signing in didn’t work. Please try again.') });
       } else {
-        setErrors({ form: { message: 'Signing in didn’t work. Please try again.' } });
+        setErrors({ form: { title: 'Signing in didn’t work. Please try again.' } });
       }
     } finally {
       setBusy(false);
@@ -82,13 +84,7 @@ export function DevSignInForm({ next }: { next: string }) {
       <Alert title="Development sign-in">
         Only on development and test sites: any email, no password. The live site uses Google.
       </Alert>
-      {errors.form && (
-        <Alert tone="danger" title={errors.form.message}>
-          {errors.form.reference && (
-            <span className="font-mono text-xs">Reference: {errors.form.reference}</span>
-          )}
-        </Alert>
-      )}
+      <ProblemAlert problem={errors.form} />
       <Field label="Email" required error={errors.email}>
         <Input name="email" type="email" autoComplete="email" inputMode="email" autoFocus maxLength={254} />
       </Field>

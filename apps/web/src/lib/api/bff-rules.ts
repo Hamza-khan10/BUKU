@@ -47,6 +47,9 @@ export function gatewayPath(segments: readonly string[]): { path: string } | Ref
   }
   const joined = segments.join('/');
   if (SERVER_ONLY.has(joined)) return notFound;
+  // Platform admin tools are reachable only through the separate admin app: never with a
+  // session from this site, whatever its role (a script injected here can't reach them).
+  if (segments[0] === 'admin') return notFound;
   return { path: `/v1/${joined}` };
 }
 

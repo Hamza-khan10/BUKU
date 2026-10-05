@@ -79,7 +79,10 @@ export function NewPasswordForm({
       setBusy(false);
       if (err instanceof ApiError && err.code === 'INVALID_CREDENTIALS' && !current) {
         setErrors({ current: 'That isn’t the temporary password. Check it with your business.' });
-      } else if (err instanceof ApiError && err.code === 'PASSWORD_TOO_WEAK') {
+      } else if (
+        err instanceof ApiError &&
+        (err.code === 'PASSWORD_TOO_WEAK' || err.code === 'PASSWORD_BREACHED')
+      ) {
         setErrors({ password: sentence(err.message) });
       } else {
         setErrors({ form: problemFrom(err, 'Your password couldn’t be changed. Please try again.') });
