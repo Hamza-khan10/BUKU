@@ -35,6 +35,7 @@ export interface BookingApp {
   app: Express;
   /** Exposed for the event consumer (index.ts) and tests. */
   staff: StaffService;
+  appointments: AppointmentService;
 }
 
 export function buildBookingApp(deps: BookingAppDeps): BookingApp {
@@ -63,5 +64,5 @@ export function buildBookingApp(deps: BookingAppDeps): BookingApp {
         redis: deps.redis,
       }),
   });
-  return { app, staff };
+  return { app, staff, appointments };
 }

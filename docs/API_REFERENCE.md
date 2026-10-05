@@ -168,7 +168,10 @@ Requires that this session signed in within the last 10 minutes, otherwise
 ```
 
 Immediately: every device is signed out (`SESSION_REVOKED` / `account_deleted`), push
-notifications stop, and other services are told (`users.deleted`) to cancel upcoming bookings.
+notifications stop, and other services are told (`users.deleted`): booking-service cancels every
+visit still to come (as the customer, so the business is told; ones they've arrived for stay), and
+queue-service gives up their places in line (`queue.entry.left`, reason `account_closed`). A
+restored account's bookings stay cancelled.
 Until `purgeAfter` the person can restore the account by signing in (see above). After it,
 personal data is erased for good; appointment records remain for the businesses, anonymized.
 

@@ -214,6 +214,48 @@ export class AppointmentService {
     return this.receipt(a.id);
   }
 
+  /**
+   * The customer closed their account: every visit still to come is cancelled,
+   * as if they had cancelled it themselves (the business is told, late ones
+   * count as late), so nobody keeps a place for someone who has gone. Visits
+   * they've arrived for are left alone. Safe to run again: nothing is left to
+   * cancel the second time. Returns how many were cancelled.
+   */
+  async cancelForClosedAccount(userId: string, ctx: RequestContext): Promise<number> {
+    const now = new Date();
+    const upcoming = await this.db.appointment.findMany({
+      where: { userId, status: { in: [...LIVE] }, startAt: { gt: now }, checkedInAt: null },
+      include: appointmentInclude,
+    });
+    let cancelled = 0;
+    for (const a of upcoming) {
+      const settings = await this.settings.effective(a.businessId);
+      const late = now.getTime() > a.startAt.getTime() - settings.cancellationWindowHours * 3_600_000;
+      try {
+        await this.db.$transaction(async (tx) => {
+          await this.transition(tx, a, 'cancelled', { type: 'user', id: userId }, 'account closed', {
+            cancelledAt: now,
+            cancelledBy: 'user',
+            cancelReasonCode: 'other',
+            cancelReason: 'Account closed',
+            lateCancellation: late,
+          });
+          await this.publish(tx, TOPICS.BOOKINGS_CANCELLED, a, ctx, {
+            cancelledBy: 'user',
+            late,
+            reasonCode: 'other',
+            bookLater: false,
+          });
+        });
+        cancelled++;
+      } catch (err) {
+        // Changed meanwhile (checked in, cancelled by the business): nothing to do for that one.
+        if (!(err instanceof AppError && err.code === ErrorCodes.INVALID_TRANSITION)) throw err;
+      }
+    }
+    return cancelled;
+  }
+
   /** Move my appointment (same service) — only before the cancellation window starts. */
   async rescheduleMine(
     userId: string,
