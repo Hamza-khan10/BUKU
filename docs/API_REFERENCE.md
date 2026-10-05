@@ -1062,8 +1062,8 @@ rate is of visits that happened or were missed.
 | `POST /v1/auth/mfa/confirm` `{ code }`        | ✔                  | Turns it on: `{ recoveryCodes[10], session: { accessToken } }`                   |
 | `POST /v1/auth/mfa/verify`                    | — (the `mfaToken`) | Answer a sign-in challenge: `{ mfaToken, code }` or `{ mfaToken, recoveryCode }` |
 | `POST /v1/auth/mfa/step-up` `{ code }`        | ✔                  | Mark the current session as having passed it (new access token)                  |
-| `POST /v1/auth/mfa/recovery-codes` `{ code }` | ✔                  | Replace the recovery codes                                                       |
-| `DELETE /v1/auth/mfa` `{ code }`              | ✔ (not admins)     | Turn it off                                                                      |
+| `POST /v1/auth/mfa/recovery-codes` `{ code }` | ✔                  | Replace the recovery codes; `{ recoveryCode }` instead works too (used up)       |
+| `DELETE /v1/auth/mfa` `{ code }`              | ✔ (not admins)     | Turn it off; `{ recoveryCode }` instead works too, for a lost phone              |
 
 With it on, `POST /v1/auth/oauth/*` and `/business-login` answer
 `{ mfaRequired: true, mfaToken, expiresAt }` (5 minutes) instead of a session; the app asks for
