@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, CalendarDays, KeyRound, LogOut, MonitorSmartphone, UserRound } from 'lucide-react';
+import { Bell, CalendarDays, KeyRound, LogOut, MonitorSmartphone, Settings, UserRound } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -115,6 +115,7 @@ export function AccountControl({ signedIn }: { signedIn: boolean }) {
                   label: count > 0 ? `Notifications (${count} unread)` : 'Notifications',
                   Icon: Bell,
                 },
+                { href: '/account/settings', label: 'Settings', Icon: Settings },
               ] as const
             ).map(({ href, label, Icon }) => (
               <DropdownMenu.Item key={href} asChild>

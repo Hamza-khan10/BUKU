@@ -23,6 +23,8 @@ const schema = z
     WEB_CLIENT_IP_HEADER: optional(z.string().regex(/^[a-z0-9-]{1,64}$/)),
     /** Where pictures are served from (allowed by the Content-Security-Policy). */
     MEDIA_ORIGIN: optional(z.url().transform((u) => new URL(u).origin)),
+    /** Object storage, where signed links point (the API's S3_PUBLIC_ENDPOINT): private pictures and uploads. */
+    STORAGE_ORIGIN: optional(z.url().transform((u) => new URL(u).origin)),
     /**
      * Sign in with Google (D-090): the OAuth client of type "Web application" from the Google
      * Cloud console. Both or neither; without them the sign-in page doesn't offer Google.

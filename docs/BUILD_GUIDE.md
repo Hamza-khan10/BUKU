@@ -492,6 +492,16 @@ The detailed plan — every page, its data and edge cases, the design system and
   suggestions off turns the emailed ones off too); each switch saves at once and puts itself back
   if saving fails; what's always sent is listed with why. App push settings come with the app,
   WhatsApp once it's set up.
+- **3.4d-3a Your details — ✅ done.** `/account/settings` (a Settings tab, and in the account
+  menu): the profile picture — private, only ever shown to the person themself (D-051); checked in
+  the browser first (JPEG, PNG or WebP, up to 10 MB), sent straight to storage by a signed link,
+  then cleaned by the API (no location or camera details survive); removing asks first, since a
+  picture from Google doesn't come back by itself — the name businesses see and the account's
+  time zone (with this device's offered when they differ, and what it's used for: notices about
+  the person's own plan; visit times are always the business's), saved together; and how the
+  account signs in, read-only. The Content-Security-Policy names object storage
+  (`STORAGE_ORIGIN`) for pictures and uploads only. No phone number yet: its only use is
+  WhatsApp, which isn't live.
 
 ## Phase 4 — Mobile app (Expo)
 

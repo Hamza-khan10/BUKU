@@ -13,6 +13,11 @@ export interface CspOptions {
   dev: boolean;
   /** Where pictures are served from (object storage), e.g. "https://media.buku.app". */
   mediaOrigin?: string | undefined;
+  /**
+   * Object storage itself, where signed links point: private pictures load
+   * from it and uploads go straight to it, e.g. "https://fra1.digitaloceanspaces.com".
+   */
+  storageOrigin?: string | undefined;
 }
 
 /**
@@ -21,16 +26,18 @@ export interface CspOptions {
  */
 const SIGN_IN_PICTURES = 'https://lh3.googleusercontent.com';
 
-export function buildCsp({ nonce, dev, mediaOrigin }: CspOptions): string {
+export function buildCsp({ nonce, dev, mediaOrigin, storageOrigin }: CspOptions): string {
   const media = mediaOrigin ? ` ${mediaOrigin}` : '';
+  const storage = storageOrigin ? ` ${storageOrigin}` : '';
+  const pictures = storageOrigin && storageOrigin !== mediaOrigin ? `${media}${storage}` : media || storage;
   const directives: Record<string, string> = {
     'default-src': "'self'",
     'script-src': `'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
     'style-src': "'self' 'unsafe-inline'",
-    'img-src': `'self' data: blob:${media} ${SIGN_IN_PICTURES}`,
+    'img-src': `'self' data: blob:${pictures} ${SIGN_IN_PICTURES}`,
     'media-src': `'self'${media}`,
     'font-src': "'self'",
-    'connect-src': `'self'${dev ? ' ws: wss:' : ''}`,
+    'connect-src': `'self'${storage}${dev ? ' ws: wss:' : ''}`,
     'worker-src': "'self' blob:",
     'manifest-src': "'self'",
     'frame-src': "'none'",

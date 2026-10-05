@@ -29,6 +29,7 @@ export function proxy(request: NextRequest) {
     nonce,
     dev: process.env.NODE_ENV === 'development',
     mediaOrigin: originOnly(process.env.MEDIA_ORIGIN),
+    storageOrigin: originOnly(process.env.STORAGE_ORIGIN),
   });
   const requestId = requestIdFrom(request.headers.get(REQUEST_ID_HEADER));
 

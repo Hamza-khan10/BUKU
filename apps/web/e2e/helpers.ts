@@ -57,3 +57,8 @@ export async function apiAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+/** How far the page scrolls sideways, in pixels (0: it fits the screen). */
+export async function sidewaysOverflow(page: Page): Promise<number> {
+  return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+}

@@ -28,3 +28,9 @@ export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
     />
   );
 }
+
+/** A native select that belongs to its Field (label, hint, error). */
+export function Select({ className, ...props }: ComponentProps<'select'>) {
+  const { noticeId: _notice, ...field } = useFieldControl(props);
+  return <select {...props} {...field} className={cn(controlStyles, 'h-11 pr-8', className)} />;
+}

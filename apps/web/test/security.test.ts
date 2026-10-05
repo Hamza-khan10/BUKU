@@ -33,6 +33,25 @@ describe('Content-Security-Policy', () => {
     expect(csp).not.toMatch(/img-src[^;]*\*/);
   });
 
+  it('object storage: pictures from it, uploads to it — and nowhere else', () => {
+    const csp = buildCsp({
+      nonce: 'n',
+      dev: false,
+      mediaOrigin: 'https://media.buku.app',
+      storageOrigin: 'https://fra1.digitaloceanspaces.com',
+    });
+    expect(csp).toContain("connect-src 'self' https://fra1.digitaloceanspaces.com;");
+    expect(csp).toMatch(/img-src [^;]*https:\/\/media\.buku\.app https:\/\/fra1\.digitaloceanspaces\.com/);
+    // In development both are the same address: named once.
+    const dev = buildCsp({
+      nonce: 'n',
+      dev: true,
+      mediaOrigin: 'http://localhost:9100',
+      storageOrigin: 'http://localhost:9100',
+    });
+    expect(dev.match(/localhost:9100/g)).toHaveLength(3); // img-src, media-src, connect-src
+  });
+
   it('nonces are fresh and long enough', () => {
     const a = newNonce();
     expect(a).not.toBe(newNonce());

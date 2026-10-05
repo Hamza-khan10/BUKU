@@ -126,8 +126,11 @@ Then the web app's own variables (from `apps/web/.env.example`), for Production 
 `APP_URL` (the site's https address), `API_URL` (the public API address, once it is deployed),
 `WEB_GATEWAY_KEY` (the same value as the API's), `WEB_CLIENT_IP_HEADER=x-real-ip`,
 `DEV_SIGN_IN=false`, `ALLOW_INDEXING=false` until launch, the `LEGAL_*` / `*_EMAIL` details
-when they exist, and `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` once Google sign-in is set up
-(below). Until the API is online, pages that only describe BUKU work, and pages that need live
+when they exist, `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` once Google sign-in is set up
+(below), and with the API: `MEDIA_ORIGIN` (the CDN that serves public photos) and
+`STORAGE_ORIGIN` (the API's `S3_PUBLIC_ENDPOINT`: profile pictures load from it and are
+uploaded straight to it — its private bucket's CORS must allow `PUT` from the site's address,
+as `infrastructure/s3/init.sh` does in development). Until the API is online, pages that only describe BUKU work, and pages that need live
 data show their "isn't loading" state. Previews are behind Vercel's login by default.
 
 ### Set up Sign in with Google
