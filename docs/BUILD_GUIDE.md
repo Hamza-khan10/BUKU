@@ -502,6 +502,15 @@ The detailed plan — every page, its data and edge cases, the design system and
   account signs in, read-only. The Content-Security-Policy names object storage
   (`STORAGE_ORIGIN`) for pictures and uploads only. No phone number yet: its only use is
   WhatsApp, which isn't live.
+- **3.4d-3b Sign-in and security — ✅ done.** On `/account/settings`: two-step sign-in — off,
+  with a way to turn it on; on, since when and how many recovery codes are left, new codes, and
+  turning it off (platform admins can't) — each proved with a code from the app or, for a lost
+  phone, a recovery code (the API took only app codes before: someone who lost the phone could
+  never turn it off, fixed in auth). `/account/settings/two-step`: what it is and what's needed,
+  then the app (QR code, or the key in groups of four), a code to prove it works, then the
+  recovery codes shown once — copy, download as a text file, and say they're kept before going
+  on. "Where you're signed in": every device, this browser first, since when, last active, a
+  shortened network address; sign any other one out (its session ends at the API), or everywhere.
 
 ## Phase 4 — Mobile app (Expo)
 

@@ -8,11 +8,13 @@ import { ApiError } from '@/lib/api/errors';
 import { DetailsSection } from './details-section';
 import { PictureSection } from './picture-section';
 import { SettingsSection } from './section';
+import { SessionsSection } from './sessions-section';
+import { TwoStepSection } from './two-step-section';
 
 /**
- * The account's own settings: picture, name and time zone, and how the
- * account signs in — only what can be changed here today, and why the rest
- * can't.
+ * The account's own settings: picture, name and time zone, how the account
+ * signs in (two-step sign-in, signed-in devices) — only what can be changed
+ * here today, and why the rest can't.
  */
 export function AccountSettings() {
   const me = useQuery({ queryKey: ME_KEY, queryFn: fetchMe });
@@ -41,6 +43,8 @@ export function AccountSettings() {
       <PictureSection me={me.data} />
       <DetailsSection key={`${me.data.name}|${me.data.timezone}`} me={me.data} />
       <SignInDetails me={me.data} />
+      <TwoStepSection me={me.data} />
+      <SessionsSection />
     </div>
   );
 }

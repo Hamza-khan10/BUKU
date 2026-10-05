@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fileSize, MAX_PICTURE_BYTES, pictureProblem, PICTURE_TYPES } from '../src/features/settings/picture';
+import type { SignedInDevice } from '../src/features/settings/api';
+import { deviceLabel, isPhone, sortedDevices } from '../src/features/settings/devices';
+import { groupedKey, recoveryCodesFile } from '../src/features/settings/two-step';
 import { offsetOf, zoneLabel, zoneOptions } from '../src/features/settings/zones';
 
 const media = readFileSync(new URL('../../../packages/media/src/file-types.ts', import.meta.url), 'utf8');
@@ -61,5 +64,61 @@ describe('time zones', () => {
     expect(options).toContain('Asia/Karachi');
     expect(new Set(options).size).toBe(options.length);
     expect([...options].sort((a, b) => a.localeCompare(b))).toEqual(options);
+  });
+});
+
+describe('two-step sign-in', () => {
+  it('shows the setup key in groups of four, for typing by hand', () => {
+    expect(groupedKey('JBSWY3DPEHPK3PXP')).toBe('JBSW Y3DP EHPK 3PXP');
+    expect(groupedKey('JBSWY3DPEHPK3PXPAB')).toBe('JBSW Y3DP EHPK 3PXP AB');
+    expect(groupedKey('')).toBe('');
+  });
+
+  it('the recovery codes file says what they are, whose, and lists every code', () => {
+    const codes = ['K7QX-2M9P', 'A1B2-C3D4'];
+    const file = recoveryCodesFile(codes, 'ayesha@example.com', new Date('2026-10-05T20:00:00Z'));
+    expect(file.name).toBe('buku-recovery-codes-2026-10-05.txt');
+    expect(file.text).toContain('Account: ayesha@example.com');
+    for (const c of codes) expect(file.text.split('\n')).toContain(c);
+  });
+});
+
+describe('signed-in devices', () => {
+  let made = 0;
+  const device = (over: Partial<SignedInDevice>): SignedInDevice => ({
+    id: `device-${++made}`,
+    device: null,
+    ipAddress: '203.0.x.x',
+    userAgent: null,
+    signedInAt: '2026-10-01T10:00:00Z',
+    lastActiveAt: '2026-10-05T10:00:00Z',
+    current: false,
+    ...over,
+  });
+
+  it('are named as people know them', () => {
+    expect(deviceLabel(device({ device: { name: 'Chrome on Windows', platform: 'web' } }))).toBe(
+      'Chrome on Windows',
+    );
+    expect(
+      deviceLabel(
+        device({
+          userAgent:
+            'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+        }),
+      ),
+    ).toBe('Safari on iOS');
+    expect(deviceLabel(device({}))).toBe('Unknown device');
+    expect(isPhone(device({ device: { platform: 'android' } }))).toBe(true);
+    expect(isPhone(device({ device: { name: 'Firefox on Linux', platform: 'web' } }))).toBe(false);
+  });
+
+  it('this browser comes first, then the most recently active', () => {
+    const list = [
+      device({ id: 'old', lastActiveAt: '2026-10-01T00:00:00Z' }),
+      device({ id: 'here', current: true, lastActiveAt: '2026-10-02T00:00:00Z' }),
+      device({ id: 'recent', lastActiveAt: '2026-10-05T00:00:00Z' }),
+    ];
+    expect(sortedDevices(list).map((d) => d.id)).toEqual(['here', 'recent', 'old']);
   });
 });
