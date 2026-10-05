@@ -12,6 +12,7 @@ const PAGES: { href: Route; label: string }[] = [
   { href: '/account/appointments', label: 'Visits' },
   { href: '/account/reviews', label: 'Reviews' },
   { href: '/account/notifications', label: 'Notifications' },
+  { href: '/account/plan', label: 'Plan' },
   { href: '/account/settings', label: 'Settings' },
 ];
 

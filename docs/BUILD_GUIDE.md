@@ -520,6 +520,15 @@ The detailed plan — every page, its data and edge cases, the design system and
   removed for good and what businesses keep; a copy of the data first; an optional reason; the word
   DELETE typed. A sign-in older than the API's window is asked to sign in again first, and comes
   straight back. `/goodbye` says the day the details are removed and how to restore before then.
+- **3.4d-4 Your plan — ✅ done.** `/account/plan` (a Plan tab) says only what's true of the plan
+  now: while paid plans are switched off, that everything is free with no limits; otherwise the
+  plan, what's used of its limits (in total), a free trial when one is offered (no card, once, back
+  to the free plan after — nothing charged), a trial's end date, a plan given by BUKU and until
+  when, and a plan bought in the app managed in its store. A plan bought on the website: renews or
+  ends on a date, a failed payment said first, payment details and receipts on the payment
+  provider's own pages (only ever its https address), stop renewing (asks first) or keep it
+  renewing. No "buy" button: buying online needs the payment provider set up (the owner's Paddle
+  account), so the page says plans can't be bought on the website yet.
 
 ## Phase 4 — Mobile app (Expo)
 
