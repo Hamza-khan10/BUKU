@@ -13,7 +13,9 @@ describe('Content-Security-Policy', () => {
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
     expect(csp).toContain("base-uri 'none'");
-    expect(csp).toContain("img-src 'self' data: blob: https://media.buku.app");
+    expect(csp).toContain(
+      "img-src 'self' data: blob: https://media.buku.app https://lh3.googleusercontent.com;",
+    );
     expect(csp).toContain("connect-src 'self';");
     expect(csp.endsWith('upgrade-insecure-requests')).toBe(true);
   });
@@ -23,6 +25,12 @@ describe('Content-Security-Policy', () => {
     expect(csp).toContain("'unsafe-eval'");
     expect(csp).toContain("connect-src 'self' ws: wss:");
     expect(csp).not.toContain('upgrade-insecure-requests');
+  });
+
+  it('pictures: our own, the media store, and Google account pictures — nothing else', () => {
+    const csp = buildCsp({ nonce: 'n', dev: false });
+    expect(csp).toContain("img-src 'self' data: blob: https://lh3.googleusercontent.com;");
+    expect(csp).not.toMatch(/img-src[^;]*\*/);
   });
 
   it('nonces are fresh and long enough', () => {

@@ -74,3 +74,10 @@ export function visitHappened(appointmentId: string, days = 5): boolean {
   }
   return false;
 }
+
+/** Give an account a picture link, as a sign-in provider would. */
+export function pictureFromProvider(userId: string, url: string): boolean {
+  if (!UUID.test(userId)) throw new Error('not a user id');
+  if (!/^https?:\/\/[\w.:-]+\/[\w./-]*$/.test(url)) throw new Error('not a plain picture link');
+  return sql(`UPDATE users SET avatar_url = '${url}' WHERE id = '${userId}' RETURNING 1`) === '1';
+}

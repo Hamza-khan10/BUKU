@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { canSimulateTime, pictureFromProvider } from './db';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
 
@@ -52,6 +53,24 @@ test.describe('Signing in', () => {
     expect((await page.request.get('/api/v1/auth/me', { headers: { 'x-buku-csrf': '1' } })).status()).toBe(
       401,
     );
+  });
+
+  test('a picture that can’t load shows initials, never an empty circle', async ({ page }) => {
+    test.skip(!canSimulateTime(), 'the development database isn’t reachable');
+    await signIn(page, '/signin?next=/pricing', 'Bilal Raza');
+    await page.getByRole('link', { name: 'Skip for now' }).click();
+    const me = (await (
+      await page.request.get('/api/v1/auth/me', { headers: { 'x-buku-csrf': '1' } })
+    ).json()) as {
+      data: { id: string };
+    };
+    // Like a sign-in provider's picture that has since gone.
+    expect(pictureFromProvider(me.data.id, 'http://localhost:3000/gone.png')).toBe(true);
+
+    await page.reload();
+    const account = page.getByRole('button', { name: 'Account: Bilal Raza' });
+    await expect(account).toContainText('BR');
+    await expect(account.locator('img')).toHaveCount(0);
   });
 
   test('never sends you to another site after signing in', async ({ page }) => {

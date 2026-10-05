@@ -15,13 +15,19 @@ export interface CspOptions {
   mediaOrigin?: string | undefined;
 }
 
+/**
+ * Where someone's sign-in provider keeps their picture: a person who signed in
+ * with Google sees their own Google picture on their account button (D-051).
+ */
+const SIGN_IN_PICTURES = 'https://lh3.googleusercontent.com';
+
 export function buildCsp({ nonce, dev, mediaOrigin }: CspOptions): string {
   const media = mediaOrigin ? ` ${mediaOrigin}` : '';
   const directives: Record<string, string> = {
     'default-src': "'self'",
     'script-src': `'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
     'style-src': "'self' 'unsafe-inline'",
-    'img-src': `'self' data: blob:${media}`,
+    'img-src': `'self' data: blob:${media} ${SIGN_IN_PICTURES}`,
     'media-src': `'self'${media}`,
     'font-src': "'self'",
     'connect-src': `'self'${dev ? ' ws: wss:' : ''}`,
