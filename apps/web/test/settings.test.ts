@@ -9,7 +9,9 @@ import {
   exportFileName,
   goodbyeHref,
   longDate,
+  nothingGoes,
   untilFrom,
+  whatDeletionCancels,
 } from '../src/features/settings/my-data';
 import { groupedKey, recoveryCodesFile } from '../src/features/settings/two-step';
 import { offsetOf, zoneLabel, zoneOptions } from '../src/features/settings/zones';
@@ -156,5 +158,49 @@ describe('your data', () => {
     expect(untilFrom('<script>')).toBeNull();
     expect(untilFrom(['2026-11-04'])).toBeNull();
     expect(untilFrom(undefined)).toBeNull();
+  });
+});
+
+describe('what deleting the account would cancel', () => {
+  const label = { day: (d: string) => `day ${d}`, clock: (t: string) => `at-${t}` };
+  const visit = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    status: 'confirmed',
+    checkedInAt: null,
+    business: { name: 'Studio Noor' },
+    service: { name: 'Haircut' },
+    local: { date: '2026-10-10', startTime: '15:00' },
+    ...over,
+  });
+
+  it('lists visits still to come and a live queue place, the way people know them', () => {
+    const what = whatDeletionCancels(
+      [visit('a'), visit('b', { status: 'pending' })],
+      { id: 't', status: 'waiting', ticket: 'A-012', business: { name: 'Fade Barbers' } },
+      label,
+    );
+    expect(what.visits.map((v) => v.label)).toEqual([
+      'Haircut at Studio Noor, day 2026-10-10 at at-15:00',
+      'Haircut at Studio Noor, day 2026-10-10 at at-15:00',
+    ]);
+    expect(what.ticket?.label).toBe('Your place in the queue at Fade Barbers (ticket A-012)');
+    expect(nothingGoes(what)).toBe(false);
+  });
+
+  it('leaves out visits they’ve arrived for, finished tickets, and shows at most five', () => {
+    const many = Array.from({ length: 7 }, (_, i) => visit(`v${i}`));
+    const what = whatDeletionCancels(
+      [
+        ...many,
+        visit('here', { checkedInAt: '2026-10-10T14:55:00Z' }),
+        visit('done', { status: 'completed' }),
+      ],
+      { id: 't', status: 'serving', ticket: 'A-001', business: { name: 'Fade Barbers' } },
+      label,
+    );
+    expect(what.visits).toHaveLength(5);
+    expect(what.moreVisits).toBe(2);
+    expect(what.ticket).toBeNull();
+    expect(nothingGoes(whatDeletionCancels([], null, label))).toBe(true);
   });
 });

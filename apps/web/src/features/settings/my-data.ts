@@ -32,3 +32,49 @@ export const longDate = (date: Date) =>
     year: 'numeric',
     timeZone: 'UTC',
   }).format(date);
+
+/** What deleting the account would cancel, said the way the person knows it. */
+export interface WhatGoes {
+  visits: { id: string; label: string }[];
+  /** Visits beyond the ones listed. */
+  moreVisits: number;
+  ticket: { id: string; label: string } | null;
+}
+
+const LIVE_TICKET = ['waiting', 'called'];
+const SHOWN = 5;
+
+/**
+ * The visits still to come (not ones they've arrived for: those stay) and a
+ * live queue place, labelled "Haircut at Studio Noor, Sat 10 Oct at 3:00 pm".
+ */
+export function whatDeletionCancels(
+  visits: {
+    id: string;
+    status: string;
+    checkedInAt: string | null;
+    business: { name: string };
+    service: { name: string };
+    local: { date: string; startTime: string };
+  }[],
+  ticket: { id: string; status: string; ticket: string; business: { name: string } } | null,
+  label: { day: (date: string) => string; clock: (time: string) => string },
+): WhatGoes {
+  const live = visits.filter((v) => (v.status === 'pending' || v.status === 'confirmed') && !v.checkedInAt);
+  return {
+    visits: live.slice(0, SHOWN).map((v) => ({
+      id: v.id,
+      label: `${v.service.name} at ${v.business.name}, ${label.day(v.local.date)} at ${label.clock(v.local.startTime)}`,
+    })),
+    moreVisits: Math.max(0, live.length - SHOWN),
+    ticket:
+      ticket && LIVE_TICKET.includes(ticket.status)
+        ? {
+            id: ticket.id,
+            label: `Your place in the queue at ${ticket.business.name} (ticket ${ticket.ticket})`,
+          }
+        : null,
+  };
+}
+
+export const nothingGoes = (w: WhatGoes) => w.visits.length === 0 && w.ticket === null;

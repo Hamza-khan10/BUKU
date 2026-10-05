@@ -518,8 +518,9 @@ The detailed plan — every page, its data and edge cases, the design system and
   told, queues left (the API didn't do this before: nobody consumed `users.deleted` — fixed in
   booking and queue), 30 days to change one's mind (cancelled visits stay cancelled), then what's
   removed for good and what businesses keep; a copy of the data first; an optional reason; the word
-  DELETE typed. A sign-in older than the API's window is asked to sign in again first, and comes
-  straight back. `/goodbye` says the day the details are removed and how to restore before then.
+  DELETE typed; then, if any visits still to come or a queue place would be cancelled, a pop-up lists
+  them ("These will be cancelled") and asks once more: keep the account, or cancel them and delete.
+  A sign-in older than the API's window is asked to sign in again first, and comes straight back. `/goodbye` says the day the details are removed and how to restore before then.
 - **3.4d-4 Your plan — ✅ done.** `/account/plan` (a Plan tab) says only what's true of the plan
   now: while paid plans are switched off, that everything is free with no limits; otherwise the
   plan, what's used of its limits (in total), a free trial when one is offered (no card, once, back

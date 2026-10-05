@@ -68,6 +68,22 @@ test.describe('Your data', () => {
     await page.getByLabel(/^Type DELETE to confirm/).fill('delete');
     await page.getByRole('button', { name: 'Delete my account' }).click();
 
+    // Asked once more, with exactly what would be cancelled.
+    const dialog = page.getByRole('dialog', { name: 'These will be cancelled' });
+    await expect(dialog.getByRole('list', { name: 'Cancelled if you delete' })).toContainText(
+      `${place.service.name} at ${place.name}`,
+    );
+    await expectAccessible(page);
+    await dialog.getByRole('button', { name: 'Keep my account' }).click();
+    await expect(dialog).toBeHidden();
+    expect(appointmentStatus(visit.id)).toBe('confirmed');
+
+    await page.getByRole('button', { name: 'Delete my account' }).click();
+    await page
+      .getByRole('dialog', { name: 'These will be cancelled' })
+      .getByRole('button', { name: 'Cancel them and delete' })
+      .click();
+
     await expect(page).toHaveURL((url) => url.pathname === '/goodbye');
     const until = new URL(page.url()).searchParams.get('until')!;
     expect(Math.round((Date.parse(until) - Date.now()) / 86_400_000)).toBeGreaterThanOrEqual(29);

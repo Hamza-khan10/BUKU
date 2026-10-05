@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogClose, DialogContent } from '@/components/ui/dialog';
 import { CleanTextarea } from '@/components/ui/clean-text';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -13,11 +14,22 @@ import { fetchMe, ME_KEY } from '@/features/auth/api';
 import { ProblemAlert } from '@/features/auth/components/problem-alert';
 import { signInHref } from '@/features/auth/paths';
 import { problemFrom, type Problem } from '@/features/auth/problems';
+import { fetchVisits } from '@/features/booking/api';
+import { clockLabel, dayParts } from '@/features/booking/choices';
+import { fetchMyTicket } from '@/features/queue/api';
 import { signOut } from '@/lib/api/client';
 import { ApiError } from '@/lib/api/errors';
 import { zText } from '@buku/validation';
 import { deleteAccount } from '../api';
-import { CONFIRM_WORD, confirmed, DELETION_GRACE_DAYS, goodbyeHref } from '../my-data';
+import {
+  CONFIRM_WORD,
+  confirmed,
+  DELETION_GRACE_DAYS,
+  goodbyeHref,
+  nothingGoes,
+  whatDeletionCancels,
+  type WhatGoes,
+} from '../my-data';
 import { DownloadMyData } from './data-section';
 
 const REASON = zText({ kind: 'text', max: 500 });
@@ -39,6 +51,8 @@ export function DeleteAccount() {
   const [problem, setProblem] = useState<Problem | undefined>();
   const [reauth, setReauth] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Visits and a queue place that deleting would cancel: asked about once more before going ahead. */
+  const [goes, setGoes] = useState<{ what: WhatGoes; reason: string | undefined } | null>(null);
 
   if (me.isPending) return <Skeleton className="h-96 max-w-2xl" />;
   if (me.isError) {
@@ -69,16 +83,37 @@ export function DeleteAccount() {
     };
     setErrors(found);
     if (found.reason || found.typed) return;
+    const given = parsed?.success ? parsed.data : undefined;
 
+    // Before anything is cancelled, say exactly what would be.
     setBusy(true);
     setProblem(undefined);
     try {
-      const { purgeAfter } = await deleteAccount(parsed?.success ? parsed.data : undefined);
+      const [visits, ticket] = await Promise.all([fetchVisits('upcoming', 1, 50), fetchMyTicket()]);
+      const what = whatDeletionCancels(visits.items, ticket, {
+        day: (date) => dayParts(date).label,
+        clock: clockLabel,
+      });
+      setBusy(false);
+      if (nothingGoes(what)) await remove(given);
+      else setGoes({ what, reason: given });
+    } catch (err) {
+      setBusy(false);
+      setProblem(problemFrom(err, 'We couldn’t check your bookings just now. Please try again.'));
+    }
+  };
+
+  const remove = async (given: string | undefined) => {
+    setBusy(true);
+    setProblem(undefined);
+    try {
+      const { purgeAfter } = await deleteAccount(given);
       // Signed out already (the web server cleared this browser's session): start clean.
       queryClient.clear();
       window.location.assign(goodbyeHref(purgeAfter));
     } catch (err) {
       setBusy(false);
+      setGoes(null);
       if (err instanceof ApiError && err.code === 'REAUTH_REQUIRED') {
         const within = (err.details as { withinMinutes?: unknown } | undefined)?.withinMinutes;
         setReauth(typeof within === 'number' ? within : 10);
@@ -161,10 +196,47 @@ export function DeleteAccount() {
             className="max-w-64 font-mono tracking-widest"
           />
         </Field>
-        <Button type="submit" variant="danger" size="lg" loading={busy} className="w-fit">
+        <Button type="submit" variant="danger" size="lg" loading={busy && !goes} className="w-fit">
           Delete my account
         </Button>
       </form>
+
+      <Dialog open={goes !== null} onOpenChange={(open) => !open && !busy && setGoes(null)}>
+        {goes && (
+          <DialogContent
+            title="These will be cancelled"
+            description="Deleting your account cancels them now, and the businesses are told. They stay cancelled even if you restore your account."
+          >
+            <div className="flex flex-col gap-5">
+              <ul aria-label="Cancelled if you delete" className="flex flex-col gap-2 text-sm text-ink">
+                {goes.what.visits.map((v) => (
+                  <li key={v.id} className="rounded-md bg-sunken px-3 py-2">
+                    {v.label}
+                  </li>
+                ))}
+                {goes.what.moreVisits > 0 && (
+                  <li className="px-3 text-ink-2">
+                    and {goes.what.moreVisits} more {goes.what.moreVisits === 1 ? 'visit' : 'visits'}
+                  </li>
+                )}
+                {goes.what.ticket && (
+                  <li className="rounded-md bg-sunken px-3 py-2">{goes.what.ticket.label}</li>
+                )}
+              </ul>
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <DialogClose asChild>
+                  <Button variant="secondary" disabled={busy}>
+                    Keep my account
+                  </Button>
+                </DialogClose>
+                <Button variant="danger" loading={busy} onClick={() => void remove(goes.reason)}>
+                  Cancel them and delete
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   );
 }
