@@ -44,7 +44,7 @@ const readiness = new Readiness()
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const { app, staff } = buildBookingApp({
+const { app, staff, appointments } = buildBookingApp({
   db,
   redis,
   verifier,
@@ -59,12 +59,13 @@ const { app, staff } = buildBookingApp({
   },
 });
 
-// Reacts to other services' events (e.g. an employee left → no longer bookable).
+// Reacts to other services' events (an employee left → no longer bookable; an account closed →
+// its upcoming visits cancelled).
 const consumer = await startConsumer({
   kafka,
   groupId: consumerGroupId(env.SERVICE_NAME),
   topics: CONSUMED_TOPICS,
-  handler: bookingEventHandler({ staff }),
+  handler: bookingEventHandler({ staff, appointments }),
   producer,
 });
 

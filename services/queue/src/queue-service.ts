@@ -193,6 +193,32 @@ export class QueueService {
     return this.ticketView(entry.id);
   }
 
+  /**
+   * The customer closed their account: they leave every line they're waiting
+   * in, so the people behind move up. Someone already being served is left
+   * alone. Safe to run again. Returns how many tickets were given up.
+   */
+  async leaveForClosedAccount(userId: string, ctx: RequestContext): Promise<number> {
+    const entries = await this.db.queueEntry.findMany({
+      where: { userId, status: { in: ['waiting', 'called'] } },
+      include: entryInclude,
+    });
+    let left = 0;
+    for (const entry of entries) {
+      try {
+        await this.change(entry.session.id, async (tx, session) => {
+          await this.move(tx, entry, ['waiting', 'called'], 'left', { leftAt: new Date() });
+          await this.publish(tx, TOPICS.QUEUE_ENTRY_LEFT, session, entry, ctx, { reason: 'account_closed' });
+        });
+        left++;
+      } catch (err) {
+        // Moved on meanwhile (served, marked absent): nothing to do for that one.
+        if (!(err instanceof AppError && err.code === ErrorCodes.INVALID_TRANSITION)) throw err;
+      }
+    }
+    return left;
+  }
+
   // ── The front desk ───────────────────────────────────────────────────────
 
   /** Today's queue as the front desk sees it: who's waiting (in order), called and being served. */

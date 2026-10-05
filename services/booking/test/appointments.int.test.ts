@@ -17,7 +17,10 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
 import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
+import { createEvent, TOPICS } from '@buku/kafka';
 import { buildBookingApp } from '../src/app.js';
+import type { AppointmentService } from '../src/appointments/appointment-service.js';
+import { bookingEventHandler } from '../src/events/handlers.js';
 import { addDays, toInstant, wallClock } from '../src/availability/time.js';
 
 /**
@@ -27,6 +30,7 @@ import { addDays, toInstant, wallClock } from '../src/availability/time.js';
 
 const TZ = 'Asia/Karachi';
 let app: Express;
+let appointmentService: AppointmentService;
 let db: Database;
 let redis: Redis;
 let signer: JwtSigner;
@@ -135,7 +139,7 @@ beforeAll(async () => {
     secretAccessKey: testEnv.s3.secretAccessKey,
     forcePathStyle: true,
   });
-  ({ app } = buildBookingApp({
+  ({ app, appointments: appointmentService } = buildBookingApp({
     db,
     redis,
     verifier,
@@ -402,6 +406,49 @@ describe('My appointments (receipts)', () => {
       ).status,
     ).toBe(409);
     // Someone else can now take 10:00.
+    expect((await book(await person(), s, at(DAY(), '10:00'))).status).toBe(201);
+  });
+
+  it('closing the account cancels every visit still to come, once, as the customer; arrived ones stay', async () => {
+    const s = await salon({ settings: { cancellationWindowHours: 168 } }); // a week: DAY() is inside it
+    const me = await person();
+    const first = (await book(me, s, at(DAY(), '10:00'))).body.data.id as string;
+    const second = (await book(me, s, at(DAY(), '12:00'))).body.data.id as string;
+    const arrived = (await book(me, s, at(DAY(), '14:00'))).body.data.id as string;
+    await db.appointment.update({ where: { id: arrived }, data: { checkedInAt: new Date() } });
+    const someoneElse = (await book(await person(), s, at(DAY(), '16:00'))).body.data.id as string;
+
+    const handle = bookingEventHandler({ staff: {} as never, appointments: appointmentService });
+    const event = createEvent({
+      type: TOPICS.USERS_DELETED,
+      source: 'auth-service',
+      subject: me.id,
+      data: { userId: me.id, purgeAfter: new Date(Date.now() + 30 * 86_400_000).toISOString() },
+    });
+    const ctx = { topic: event.type, partition: 0, offset: '0', key: null, attempt: 1 };
+    await handle(event, ctx);
+    await handle(event, ctx); // delivered twice: nothing more happens
+
+    const rows = await db.appointment.findMany({
+      where: { id: { in: [first, second, arrived, someoneElse] } },
+    });
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    for (const id of [first, second]) {
+      expect(byId.get(id)).toMatchObject({
+        status: 'cancelled',
+        cancelledBy: 'user',
+        cancelReasonCode: 'other',
+        lateCancellation: true,
+      });
+    }
+    expect(byId.get(arrived)!.status).toBe('confirmed');
+    expect(byId.get(someoneElse)!.status).toBe('confirmed');
+    // The business is told, once per visit.
+    const told = await db.outboxEvent.findMany({
+      where: { aggregateId: { in: [first, second] }, topic: 'bookings.cancelled' },
+    });
+    expect(told).toHaveLength(2);
+    // The times are free for others again.
     expect((await book(await person(), s, at(DAY(), '10:00'))).status).toBe(201);
   });
 
