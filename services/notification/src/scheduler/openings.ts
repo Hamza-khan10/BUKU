@@ -30,7 +30,8 @@ export class HttpOpeningsFinder implements OpeningsFinder {
   private readonly log = logger.child({ module: 'openings' });
 
   constructor(
-    private readonly bookingServiceUrl: string,
+    /** The API gateway (booking's public availability route). */
+    private readonly gatewayUrl: string,
     private readonly timeoutMs = 3000,
   ) {}
 
@@ -49,7 +50,7 @@ export class HttpOpeningsFinder implements OpeningsFinder {
     });
     try {
       const res = await fetch(
-        `${this.bookingServiceUrl}/v1/businesses/${encodeURIComponent(input.businessId)}/availability?${q.toString()}`,
+        `${this.gatewayUrl}/v1/businesses/${encodeURIComponent(input.businessId)}/availability?${q.toString()}`,
         { signal: AbortSignal.timeout(this.timeoutMs) },
       );
       if (!res.ok) {

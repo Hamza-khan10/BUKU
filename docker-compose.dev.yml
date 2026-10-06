@@ -18,7 +18,7 @@
 #     capabilities dropped, no privilege escalation.
 #
 # Endpoints (host):
-#   API gateway   http://localhost:8000        Kong admin   http://localhost:8001
+#   API gateway   http://localhost:8000        (Kong admin: inside its container only, D-092)
 #   Mailpit UI    http://localhost:8025        S3 console   http://localhost:9101
 #   Postgres      localhost:5432               Valkey       localhost:6379
 #   Kafka         localhost:9092               Elasticsearch http://localhost:9200
@@ -28,9 +28,32 @@
 
 name: buku
 
+# ── Networks: each service sees only what it needs (D-092) ─────────────────
+# Every service has a network of its own, shared only with the data stores it
+# uses and with Kong (its one way in). Services can't reach each other: a
+# compromised service can't call another's internal port, and the only route
+# between them is the public gateway, with its checks. Networks marked internal
+# have no way out to the internet: services that never call outside can't send
+# anything out either. Containers with host ports also join "published".
 networks:
-  buku:
-    driver: bridge
+  published: {}
+  kong-cache: { internal: true }
+  migrate: { internal: true }
+  kafka-admin: { internal: true }
+  s3-admin: { internal: true }
+  es-admin: { internal: true }
+  tools: {}
+  # Outside calls needed: Google sign-in and leaked-password checks (auth),
+  # email/push/WhatsApp (notification), Paddle (billing).
+  svc-auth: {}
+  svc-notification: {}
+  svc-billing: {}
+  svc-booking: { internal: true }
+  svc-queue: { internal: true }
+  svc-business: { internal: true }
+  svc-search: { internal: true }
+  svc-ads: { internal: true }
+  svc-analytics: { internal: true }
 
 volumes:
   postgres-data:
@@ -47,12 +70,10 @@ x-logging: &logging
 
 x-infra: &infra
   restart: unless-stopped
-  networks: [buku]
   logging: *logging
 
 x-oneshot: &oneshot
   restart: 'no'
-  networks: [buku]
   logging: *logging
 
 # One image for every Node workload, built once from docker/node/Dockerfile.dev.
@@ -119,6 +140,20 @@ services:
 
   postgres:
     <<: *infra
+    networks:
+      [
+        published,
+        migrate,
+        svc-auth,
+        svc-booking,
+        svc-queue,
+        svc-notification,
+        svc-business,
+        svc-billing,
+        svc-search,
+        svc-ads,
+        svc-analytics,
+      ]
     build: { context: docker/postgres }
     image: buku/postgres:local
     shm_size: 256mb
@@ -153,6 +188,19 @@ services:
 
   valkey:
     <<: *infra
+    networks:
+      [
+        published,
+        kong-cache,
+        tools,
+        svc-auth,
+        svc-booking,
+        svc-queue,
+        svc-notification,
+        svc-business,
+        svc-billing,
+        svc-ads,
+      ]
     image: valkey/valkey:8.1.4-alpine
     # noeviction: this instance holds booking locks, queue state and BullMQ
     # jobs. An LRU policy would silently DELETE them under memory pressure.
@@ -184,6 +232,21 @@ services:
 
   kafka:
     <<: *infra
+    networks:
+      [
+        published,
+        kafka-admin,
+        tools,
+        svc-auth,
+        svc-booking,
+        svc-queue,
+        svc-notification,
+        svc-business,
+        svc-billing,
+        svc-search,
+        svc-ads,
+        svc-analytics,
+      ]
     image: apache/kafka:4.3.1
     environment:
       KAFKA_NODE_ID: 1
@@ -223,6 +286,7 @@ services:
 
   elasticsearch:
     profiles: [elasticsearch]
+    networks: [published, es-admin, tools, svc-search]
     <<: *infra
     image: docker.elastic.co/elasticsearch/elasticsearch:9.5.3
     environment:
@@ -253,6 +317,7 @@ services:
 
   clickhouse:
     profiles: [analytics]
+    networks: [published, svc-analytics]
     <<: *infra
     image: clickhouse/clickhouse-server:26.3.36-alpine
     environment:
@@ -277,6 +342,7 @@ services:
   # S3-compatible object storage (production: DigitalOcean Spaces).
   s3:
     <<: *infra
+    networks: [published, s3-admin, svc-auth, svc-booking, svc-business, svc-search]
     image: rustfs/rustfs:1.0.0
     environment:
       RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID:?run pnpm bootstrap}
@@ -292,6 +358,7 @@ services:
   # Catches every outgoing email in dev (production: AWS SES via SMTP).
   mailpit:
     <<: *infra
+    networks: [published, svc-notification]
     image: axllent/mailpit:v1.31.3
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: 'true'
@@ -304,6 +371,7 @@ services:
 
   kafka-init:
     <<: [*oneshot, *node-image, *node-hardening]
+    networks: [kafka-admin]
     working_dir: /app/packages/kafka
     command: ['/app/node_modules/.bin/tsx', 'scripts/sync-topics.ts']
     environment:
@@ -320,6 +388,7 @@ services:
 
   db-migrate:
     <<: [*oneshot, *node-image, *node-hardening]
+    networks: [migrate]
     working_dir: /app/packages/database
     command:
       ['sh', '-c', 'node_modules/.bin/prisma migrate deploy && /app/node_modules/.bin/tsx prisma/seed.ts']
@@ -337,6 +406,7 @@ services:
 
   elasticsearch-init:
     profiles: [elasticsearch]
+    networks: [es-admin]
     <<: *oneshot
     image: curlimages/curl:8.22.0
     user: curl_user
@@ -351,6 +421,7 @@ services:
 
   s3-init:
     <<: *oneshot
+    networks: [s3-admin]
     image: amazon/aws-cli:2.37.6
     entrypoint: ['/bin/sh', '/init/init.sh']
     environment:
@@ -368,6 +439,7 @@ services:
 
   auth-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-auth]
     working_dir: /app/services/auth
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
@@ -410,6 +482,7 @@ services:
 
   booking-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-booking]
     working_dir: /app/services/booking
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
@@ -442,6 +515,7 @@ services:
 
   queue-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-queue]
     working_dir: /app/services/queue
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
@@ -473,6 +547,7 @@ services:
 
   notification-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-notification]
     working_dir: /app/services/notification
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
@@ -488,7 +563,8 @@ services:
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
       PUBLIC_API_URL: http://localhost:8000
-      BOOKING_SERVICE_URL: http://booking-service:3002
+      # Free times for suggestions: booking's public route, through the gateway (D-092).
+      GATEWAY_URL: http://kong:8000
       # Push: `log` writes what would be sent to the log; `expo` sends to the Expo app.
       PUSH_PROVIDER: ${PUSH_PROVIDER:-log}
       EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
@@ -524,6 +600,7 @@ services:
 
   business-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-business]
     working_dir: /app/services/business
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
@@ -563,6 +640,7 @@ services:
 
   billing-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-billing]
     working_dir: /app/services/billing
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
@@ -598,6 +676,7 @@ services:
 
   search-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-search]
     working_dir: /app/services/search
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
@@ -630,6 +709,7 @@ services:
 
   ads-service:
     profiles: [ads]
+    networks: [svc-ads]
     <<: [*infra, *node-image, *node-hardening]
     working_dir: /app/services/ads
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
@@ -662,6 +742,7 @@ services:
 
   analytics-service:
     profiles: [analytics]
+    networks: [svc-analytics]
     <<: [*infra, *node-image, *node-hardening]
     working_dir: /app/services/analytics
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
@@ -698,6 +779,20 @@ services:
 
   kong:
     <<: *infra
+    networks:
+      [
+        published,
+        kong-cache,
+        svc-auth,
+        svc-booking,
+        svc-queue,
+        svc-notification,
+        svc-business,
+        svc-billing,
+        svc-search,
+        svc-ads,
+        svc-analytics,
+      ]
     image: kong:3.9.3
     environment:
       KONG_DATABASE: 'off'
@@ -712,9 +807,12 @@ services:
       # The admin app's server key: the only way to reach /v1/admin (D-091).
       ADMIN_GATEWAY_KEY: ${ADMIN_GATEWAY_KEY:-}
       KONG_PROXY_LISTEN: '0.0.0.0:8000'
-      # Admin API: dev convenience only, localhost-bound. Disabled in prod.
-      KONG_ADMIN_LISTEN: '0.0.0.0:8001'
-      KONG_STATUS_LISTEN: '0.0.0.0:8100'
+      # Admin API: inside this container only (D-092). In DB-less mode it can replace the whole
+      # gateway configuration, so nothing on any network may reach it. To look at it while debugging:
+      # docker exec buku-kong-1 resty -e 'print(require("resty.http").new():request_uri("http://127.0.0.1:8001/status").body)'
+      # Off entirely in production.
+      KONG_ADMIN_LISTEN: '127.0.0.1:8001'
+      KONG_STATUS_LISTEN: '127.0.0.1:8100'
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
@@ -734,7 +832,7 @@ services:
     volumes:
       - ./infrastructure/kong/kong.template.yml:/kong/kong.template.yml:ro
       - ./infrastructure/kong/render-config.sh:/kong/render-config.sh:ro
-    ports: ['127.0.0.1:8000:8000', '127.0.0.1:8001:8001']
+    ports: ['127.0.0.1:8000:8000']
     depends_on:
       valkey: { condition: service_healthy }
       auth-service: { condition: service_healthy }
@@ -758,6 +856,7 @@ services:
 
   kibana:
     <<: *infra
+    networks: [tools]
     profiles: [elasticsearch]
     image: docker.elastic.co/kibana/kibana:9.5.3
     environment:
@@ -769,6 +868,7 @@ services:
 
   kafka-ui:
     <<: *infra
+    networks: [tools]
     profiles: [tools]
     image: kafbat/kafka-ui:v1.5.0
     environment:
@@ -782,6 +882,7 @@ services:
 
   redis-insight:
     <<: *infra
+    networks: [tools]
     profiles: [tools]
     image: redis/redisinsight:3.8.0
     ports: ['127.0.0.1:5540:5540']

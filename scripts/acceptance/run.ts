@@ -639,6 +639,26 @@ async function authorizationScan(ctx: { shop: Shop; stranger: Person; customer: 
   await step(`without the admin app's key: all ${adminRoutes.length} admin routes are unknown (404)`, () => {
     expect(!keylessProblems.length, keylessProblems.join('\n      '));
   });
+
+  // D-092: a service that is taken over can't reach the others, the gateway's admin API, or (for
+  // services that never call outside) the internet — only the gateway's public routes.
+  await step(
+    'services are walled off from each other, from the gateway admin API and from the internet',
+    () => {
+      const fromSearch = reach('search', [
+        'http://booking-service:3002/health',
+        'http://auth-service:3001/health',
+        'http://kong:8001/status',
+        'https://example.com/',
+        'http://kong:8000/v1/categories',
+      ]);
+      const fromBooking = reach('booking', ['http://queue-service:3003/health', 'https://example.com/']);
+      const problems = Object.entries({ ...fromSearch, ...fromBooking })
+        .filter(([url, answer]) => (url === 'http://kong:8000/v1/categories') !== (answer === 'reached'))
+        .map(([url, answer]) => `${url} → ${answer}`);
+      expect(!problems.length, problems.join('\n      '));
+    },
+  );
 }
 
 const PORTS: Record<string, number> = {
@@ -651,35 +671,66 @@ const PORTS: Record<string, number> = {
   billing: 3009,
 };
 
-/** Calls each service by its internal address from inside a service container; returns what didn't answer 401. */
+/** Runs a small script inside a container (Node is in every service image); returns its last line. */
+function inside(container: string, script: string): string {
+  const out = execFileSync('docker', ['exec', '-i', container, 'node', '--input-type=module', '-'], {
+    input: script,
+    encoding: 'utf8',
+  });
+  return out.trim().split('\n').at(-1)!;
+}
+
+/**
+ * Calls each service on its own port from inside its own container (services
+ * can't reach each other, D-092); returns what didn't answer 401.
+ */
 function directScan(routes: Route[]): string[] {
-  const targets = routes.map((r) => ({
-    label: `${r.method} ${r.path} (${r.service})`,
-    method: r.method,
-    url: `http://${r.service}-service:${PORTS[r.service]}${r.path}`,
-  }));
+  const bad: string[] = [];
+  for (const service of [...new Set(routes.map((r) => r.service))]) {
+    const targets = routes
+      .filter((r) => r.service === service)
+      .map((r) => ({
+        label: `${r.method} ${r.path} (${r.service})`,
+        method: r.method,
+        url: `http://localhost:${PORTS[r.service]}${r.path}`,
+      }));
+    const script = `
+      const targets = ${JSON.stringify(targets)};
+      const bad = [];
+      for (const t of targets) {
+        const res = await fetch(t.url, {
+          method: t.method,
+          headers: { 'content-type': 'application/json' },
+          body: t.method === 'GET' || t.method === 'DELETE' ? undefined : '{}',
+        });
+        if (res.status !== 401) bad.push(t.label + ' -> ' + res.status);
+        await res.body?.cancel();
+      }
+      console.log(JSON.stringify(bad));`;
+    bad.push(...(JSON.parse(inside(`buku-${service}-service-1`, script)) as string[]));
+  }
+  return bad;
+}
+
+/**
+ * From inside a service, what it can reach (D-092): another service's port, the
+ * gateway's admin API, the internet. Each answer is "reached" or the error code.
+ */
+function reach(fromService: string, urls: string[]): Record<string, string> {
   const script = `
-    const targets = ${JSON.stringify(targets)};
-    const bad = [];
-    for (const t of targets) {
-      const res = await fetch(t.url, {
-        method: t.method,
-        headers: { 'content-type': 'application/json' },
-        body: t.method === 'GET' || t.method === 'DELETE' ? undefined : '{}',
-      });
-      if (res.status !== 401) bad.push(t.label + ' -> ' + res.status);
-      await res.body?.cancel();
+    const urls = ${JSON.stringify(urls)};
+    const out = {};
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+        await res.body?.cancel();
+        out[url] = 'reached';
+      } catch (err) {
+        out[url] = err?.cause?.code ?? err?.name ?? 'failed';
+      }
     }
-    console.log(JSON.stringify(bad));`;
-  const out = execFileSync(
-    'docker',
-    ['exec', '-i', 'buku-search-service-1', 'node', '--input-type=module', '-'],
-    {
-      input: script,
-      encoding: 'utf8',
-    },
-  );
-  return JSON.parse(out.trim().split('\n').at(-1)!) as string[];
+    console.log(JSON.stringify(out));`;
+  return JSON.parse(inside(`buku-${fromService}-service-1`, script)) as Record<string, string>;
 }
 
 main().catch((err: unknown) => {

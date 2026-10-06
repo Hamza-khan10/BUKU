@@ -684,3 +684,24 @@ passed two-step sign-in (D-081) — three independent locks: the admin app's key
 and its two-step claim. Why not a hidden `/admin` path on the public site: it would share the
 site's domain, cookies, code and attack surface; one cross-site scripting bug on any public page
 would be one step from the admin tools.
+
+**D-092 · A service that is taken over must not be able to take the rest.** Each service gets
+only the access its own job needs, at every layer, so a bug or a stolen dependency in one service
+can't reach the others' data or powers:
+
+- **Network.** Every service is on a network of its own, shared only with the data stores it uses
+  and with Kong (its one way in). Services can't reach each other at all; the one call between
+  them (notification asking booking for free times) goes through the gateway's public route,
+  with its checks. Networks of services that never call the internet (booking, queue, business,
+  search, ads, analytics) are internal: nothing can be sent out from them either. Kong's admin API
+  — which in DB-less mode can replace the whole gateway configuration — listens only inside the
+  Kong container, and is off in production.
+- **Database.** Each service signs in to Postgres as its own role, allowed to change only the
+  tables it owns and to read only the others it needs (ARCHITECTURE.md, "Service ownership").
+- **Events.** Each service has its own Kafka credentials, allowed to publish only its own topics
+  and to read only what it consumes: nobody can forge another service's events (a forged
+  `users.deleted` would cancel someone's bookings).
+- **Cache.** Each service has its own Valkey user, limited to its own keys (and reading the
+  shared revocation list).
+  Proven by the acceptance run: from inside a service, the others, the gateway admin API and (for
+  internal networks) the internet can't be reached, while the public gateway can.

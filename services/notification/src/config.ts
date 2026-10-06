@@ -32,8 +32,11 @@ export const Env = baseServiceEnv
     WEB_APP_URL: z.url().default('http://localhost:3000'),
     PUBLIC_API_URL: z.url().default('http://localhost:8000'),
 
-    /** Free times for suggestions come from booking-service (internal network). */
-    BOOKING_SERVICE_URL: z.url().default('http://booking-service:3002'),
+    /**
+     * Free times for suggestions, from booking's public availability route through the gateway:
+     * this service can't reach booking-service directly (D-092: each service on its own network).
+     */
+    GATEWAY_URL: z.url().default('http://kong:8000'),
 
     /** Push notifications: `log` (development: written to the log) or `expo` (the Expo app). */
     PUSH_PROVIDER: z.enum(['log', 'expo']).default('log'),
