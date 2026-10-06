@@ -134,6 +134,7 @@ x-needs-core: &needs-core
   postgres: { condition: service_healthy }
   kafka-init: { condition: service_completed_successfully }
   db-migrate: { condition: service_completed_successfully }
+  db-access: { condition: service_completed_successfully }
 
 services:
   # ═════════════════════════════ DATA STORES ═════════════════════════════
@@ -404,6 +405,33 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
 
+  # Each service's own database role, with exactly its rights (D-092; packages/database/src/
+  # access.ts). Runs after every migration, as the admin: roles, passwords, grants.
+  db-access:
+    <<: [*oneshot, *node-image, *node-hardening]
+    networks: [migrate]
+    working_dir: /app/packages/database
+    command: ['/app/node_modules/.bin/tsx', 'scripts/apply-access.ts']
+    environment:
+      NODE_ENV: development
+      DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku
+      BUKU_DB_PASSWORD_AUTH: ${BUKU_DB_PASSWORD_AUTH:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_BOOKING: ${BUKU_DB_PASSWORD_BOOKING:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_QUEUE: ${BUKU_DB_PASSWORD_QUEUE:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_NOTIFICATION: ${BUKU_DB_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_BUSINESS: ${BUKU_DB_PASSWORD_BUSINESS:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_BILLING: ${BUKU_DB_PASSWORD_BILLING:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_SEARCH: ${BUKU_DB_PASSWORD_SEARCH:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_ADS: ${BUKU_DB_PASSWORD_ADS:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_ANALYTICS: ${BUKU_DB_PASSWORD_ANALYTICS:?run pnpm bootstrap}
+    volumes:
+      - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
+      - ./packages/database/src:/app/packages/database/src:ro
+      - ./packages/database/scripts:/app/packages/database/scripts:ro
+    depends_on:
+      db-migrate: { condition: service_completed_successfully }
+
   elasticsearch-init:
     profiles: [elasticsearch]
     networks: [es-admin]
@@ -444,6 +472,8 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: [*service-env, *s3-env]
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_auth:${BUKU_DB_PASSWORD_AUTH:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: auth-service
       PORT: '3001'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
@@ -487,6 +517,8 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: [*service-env, *s3-env]
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_booking:${BUKU_DB_PASSWORD_BOOKING:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: booking-service
       PORT: '3002'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
@@ -520,6 +552,8 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_queue:${BUKU_DB_PASSWORD_QUEUE:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: queue-service
       PORT: '3003'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
@@ -552,6 +586,8 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_notification:${BUKU_DB_PASSWORD_NOTIFICATION:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: notification-service
       PORT: '3004'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
@@ -605,6 +641,8 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: [*service-env, *s3-env]
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_business:${BUKU_DB_PASSWORD_BUSINESS:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: business-service
       PORT: '3008'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
@@ -645,6 +683,8 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_billing:${BUKU_DB_PASSWORD_BILLING:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: billing-service
       PORT: '3009'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
@@ -681,6 +721,8 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: [*service-env, *s3-env]
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_search:${BUKU_DB_PASSWORD_SEARCH:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: search-service
       PORT: '3005'
       # Postgres full text + PostGIS, always current (D-076). Elasticsearch is
@@ -715,6 +757,8 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_ads:${BUKU_DB_PASSWORD_ADS:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: ads-service
       PORT: '3006'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
@@ -748,6 +792,8 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_analytics:${BUKU_DB_PASSWORD_ANALYTICS:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: analytics-service
       PORT: '3007'
       CLICKHOUSE_URL: http://clickhouse:8123

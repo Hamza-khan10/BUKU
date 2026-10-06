@@ -60,6 +60,18 @@ containers restart within a second. After changing `package.json`/`pnpm-lock.yam
 5. Add/adjust integration tests in `packages/database/test`.
    CI fails if `schema.prisma` and the migrations disagree.
 
+### Give a service access to a table
+
+Every service signs in to Postgres as its own role (D-092). A new table is usable by no service
+until it is added to `packages/database/src/access.ts`: the owning service under `owns`, others
+under `reads` (whole table or listed columns) or, rarely, `updates`/`inserts`/`deletes`. Then
+`pnpm test` (checks every table has an owner) and
+`docker compose -f docker-compose.dev.yml up -d --force-recreate db-access` (applies the roles).
+A "permission denied" in a service's log means the map is missing something; find which with
+`docker logs buku-postgres-1 2>&1 | grep -A1 "permission denied"`. Triggers run with the rights
+of whoever fired them: a trigger function that writes another service's table is made
+`SECURITY DEFINER` in its migration.
+
 ### Add a Kafka topic
 
 Add it to `TOPIC_SPECS` in `packages/kafka/src/topics.ts`, then `pnpm kafka:topics`

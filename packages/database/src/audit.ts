@@ -20,7 +20,9 @@ export interface AuditEntry {
 }
 
 export async function recordAudit(db: Database | Transaction, entry: AuditEntry): Promise<void> {
-  await db.auditLog.create({
+  // createMany: a plain INSERT, nothing read back — every service may append to the audit log,
+  // none may read it except auth (a person's own security log) (D-092).
+  await db.auditLog.createMany({
     data: {
       userId: entry.userId ?? null,
       action: entry.action,

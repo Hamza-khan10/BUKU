@@ -539,8 +539,12 @@ The detailed plan — every page, its data and edge cases, the design system and
   cookies, platform admins only (any other account is signed out at once), two-step sign-in set
   up before anything shows, the access review as its first page; Kong answers `/v1/admin` only to
   the admin app's key (`ADMIN_GATEWAY_KEY`); both web servers share `@buku/web-security`. The
-  operator tools themselves (3.6) build on it. Next: isolating the services from each other, then
-  the premium redesign.
+  operator tools themselves (3.6) build on it. **Services walled off from each other (D-092) — in
+  progress:** each service on a network of its own (only Kong and its own data stores), the
+  gateway admin API closed, each service publishing only its own outbox events, and each signing
+  in to Postgres as its own role with only the tables and columns its job needs (no one else
+  reads credentials; the audit log is append-only). Next: Kafka and Valkey credentials per
+  service, then the premium redesign.
 
 ## Phase 4 — Mobile app (Expo)
 

@@ -696,12 +696,26 @@ can't reach the others' data or powers:
   search, ads, analytics) are internal: nothing can be sent out from them either. Kong's admin API
   — which in DB-less mode can replace the whole gateway configuration — listens only inside the
   Kong container, and is off in production.
-- **Database.** Each service signs in to Postgres as its own role, allowed to change only the
-  tables it owns and to read only the others it needs (ARCHITECTURE.md, "Service ownership").
+- **Database.** Each service signs in to Postgres as its own role (`buku_svc_<name>`), granted
+  exactly what `packages/database/src/access.ts` lists and nothing else: it changes only the
+  tables it owns, reads only the others it needs, and other services' columns only where its job
+  needs them (an account's deletion clearing the words people wrote). No other service can read
+  credentials, contact hashes or sign-in lock state — `users` is readable to them column by
+  column. The shared outbox is row-limited: a service sees and publishes only its own events
+  (row-level security). Trigger functions that keep derived figures up to date (search text, a
+  business's rating) run as their owner, and old rows are cleared by a database function with
+  fixed periods, so no service needs delete rights on others' tables to do upkeep. The audit log
+  can be appended to and changed by no one. A new table is usable by no service until it is
+  added to the map (a test checks every table has an owner and every name exists). The roles are
+  applied by the `db-access` job at start-up (`apply-access.ts`, each with its own password,
+  `BUKU_DB_PASSWORD_<SERVICE>`); migrations and seeds keep their own role.
 - **Events.** Each service has its own Kafka credentials, allowed to publish only its own topics
   and to read only what it consumes: nobody can forge another service's events (a forged
   `users.deleted` would cancel someone's bookings).
 - **Cache.** Each service has its own Valkey user, limited to its own keys (and reading the
   shared revocation list).
-  Proven by the acceptance run: from inside a service, the others, the gateway admin API and (for
-  internal networks) the internet can't be reached, while the public gateway can.
+
+Proven by the acceptance run: from inside a service, the others, the gateway admin API and (for
+internal networks) the internet can't be reached, while the public gateway can. The acceptance
+run and every browser test pass with each service on its own database role, with no "permission
+denied" in the database's log.

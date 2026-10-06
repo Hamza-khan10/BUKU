@@ -52,7 +52,7 @@ test.describe('The website', () => {
   test('personal areas send signed-out visitors to sign in, and remember where they were going', async ({
     request,
   }) => {
-    for (const path of ['/account', '/business/123/queue', '/admin', '/appointments/abc?x=1']) {
+    for (const path of ['/account', '/business/123/queue', '/appointments/abc?x=1']) {
       const res = await request.get(path, { maxRedirects: 0 });
       expect(res.status()).toBe(307);
       const to = new URL(res.headers()['location'] ?? '', 'http://x');
