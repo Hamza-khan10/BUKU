@@ -25,8 +25,9 @@ const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   typedRoutes: true,
-  // Shared with the API: the same clean-text rules (D-083), as TypeScript source.
-  transpilePackages: ['@buku/validation'],
+  // Shared as TypeScript source: the clean-text rules with the API (D-083), and the security
+  // building blocks with the admin app (D-091).
+  transpilePackages: ['@buku/validation', '@buku/web-security'],
   headers: () => Promise.resolve([{ source: '/:path*', headers: securityHeaders }]),
 };
 

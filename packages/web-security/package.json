@@ -1,0 +1,11 @@
+{
+  "name": "@buku/web-security",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Security building blocks shared by BUKU's web servers (the public website and the admin app): the Content-Security-Policy, the same-origin check, API path rules, session cookies, request ids. Pure and server-side; no framework.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./*": "./src/*.ts"
+  }
+}
