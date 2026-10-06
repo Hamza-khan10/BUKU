@@ -147,7 +147,11 @@ A **second** Vercel project, on its own domain (e.g. `admin.buku.app`) — never
 project or domain, so the two never share cookies. Same settings as the website, with **Root
 Directory** `apps/admin`, plus its variables (from `apps/admin/.env.example`): `APP_URL` (its own
 https address), `API_URL`, `ADMIN_GATEWAY_KEY` (the same value as Kong's — a secret that exists
-only in Kong and here), `ADMIN_CLIENT_IP_HEADER=x-real-ip` and `DEV_SIGN_IN=false`. Consider
+only in Kong and here), `ADMIN_CLIENT_IP_HEADER=x-real-ip`, `DEV_SIGN_IN=false`, and
+`ADMIN_GOOGLE_CLIENT_ID` / `ADMIN_GOOGLE_CLIENT_SECRET` from a **separate** Google OAuth client
+(same steps as the website's below, redirect URI `https://<admin domain>/api/auth/google/callback`;
+add its id to the API's `GOOGLE_CLIENT_IDS`). Admins sign in with Google accounts that already
+exist and were made admins with `pnpm admin:role`; the admin app never creates an account. Consider
 Vercel's deployment protection or an IP allow-list for the whole project: the app is for a handful
 of people.
 

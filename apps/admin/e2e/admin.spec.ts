@@ -88,6 +88,21 @@ test.describe('Admin app', () => {
     expect((await context.cookies()).filter((c) => c.name.startsWith('buku_admin'))).toEqual([]);
   });
 
+  test('without the admin app’s own Google client, Google isn’t offered and its endpoints say so', async ({
+    page,
+  }) => {
+    test.skip(process.env.ADMIN_GOOGLE_CLIENT_ID !== undefined, 'Google is set up for this admin app');
+    await page.goto('/signin');
+    await expect(page.getByRole('link', { name: 'Continue with Google' })).toHaveCount(0);
+    for (const path of ['/api/auth/google/start', '/api/auth/google/callback?code=x&state=y']) {
+      await page.goto(path);
+      await expect(page).toHaveURL(
+        (url) => url.pathname === '/signin' && url.searchParams.get('error') === 'google-unavailable',
+      );
+      await expect(page.getByRole('main').getByRole('alert')).toContainText('isn’t available right now');
+    }
+  });
+
   test('calls from other sites are refused, and the admin API is closed to everyone else', async ({
     page,
     baseURL,

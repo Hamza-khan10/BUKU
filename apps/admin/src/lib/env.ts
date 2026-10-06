@@ -19,6 +19,20 @@ const schema = z
     ADMIN_GATEWAY_KEY: z.string().regex(/^[0-9a-f]{64}$/, 'must be 64 lowercase hex characters'),
     /** The header the hosting platform puts the visitor's address in ("x-real-ip" on Vercel). */
     ADMIN_CLIENT_IP_HEADER: optional(z.string().regex(/^[a-z0-9-]{1,64}$/)),
+    /**
+     * Sign in with Google for admins: the admin app's OWN OAuth client (type "Web application",
+     * redirect URI <APP_URL>/api/auth/google/callback) — never the website's, so neither app holds
+     * the other's secret. Both or neither. The API's GOOGLE_CLIENT_IDS must include this id.
+     */
+    ADMIN_GOOGLE_CLIENT_ID: optional(
+      z
+        .string()
+        .regex(
+          /^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/,
+          'must look like 123-abc.apps.googleusercontent.com',
+        ),
+    ),
+    ADMIN_GOOGLE_CLIENT_SECRET: optional(z.string().min(10).max(200)),
     DEV_SIGN_IN: z
       .enum(['true', 'false'])
       .default('false')
@@ -29,6 +43,13 @@ const schema = z
     const live = e.VERCEL_ENV === 'production';
     if (live && e.DEV_SIGN_IN)
       ctx.addIssue({ code: 'custom', path: ['DEV_SIGN_IN'], message: 'must be false in production' });
+    if (Boolean(e.ADMIN_GOOGLE_CLIENT_ID) !== Boolean(e.ADMIN_GOOGLE_CLIENT_SECRET)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ADMIN_GOOGLE_CLIENT_SECRET'],
+        message: 'set both Google settings, or neither',
+      });
+    }
     if (live && !e.APP_URL.startsWith('https://'))
       ctx.addIssue({ code: 'custom', path: ['APP_URL'], message: 'must be https in production' });
   });
@@ -53,3 +74,7 @@ export const secureCookies = () => env().APP_URL.startsWith('https://');
 /** Development sign-in: never on the live site, whatever the settings say. */
 export const devSignInEnabled = () =>
   process.env.DEV_SIGN_IN === 'true' && process.env.VERCEL_ENV !== 'production';
+
+/** Sign in with Google: offered only where this app has its own Google client (id and secret). */
+export const googleSignInEnabled = () =>
+  Boolean(process.env.ADMIN_GOOGLE_CLIENT_ID?.trim() && process.env.ADMIN_GOOGLE_CLIENT_SECRET?.trim());

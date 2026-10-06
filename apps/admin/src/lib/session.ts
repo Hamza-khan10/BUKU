@@ -2,6 +2,7 @@ import 'server-only';
 import {
   challengeCookie,
   clearedChallengeCookie,
+  googleFlowCookie,
   clearedCookies,
   cookieNames,
   readChallengeValue,
@@ -54,4 +55,15 @@ export function clearSession(response: NextResponse) {
 
 export function setChallenge(response: NextResponse, challenge: Challenge) {
   apply(response, [challengeCookie(challenge, secureCookies(), Date.now(), PREFIX)]);
+}
+
+/** A Google sign-in in progress (the shared flow's cookie, under this app's name). */
+export const readGoogleFlow = (jar: CookieSource) => jar.get(names().google)?.value || undefined;
+
+export function setGoogleFlow(response: NextResponse, value: string, maxAge: number) {
+  apply(response, [googleFlowCookie(value, secureCookies(), maxAge, PREFIX)]);
+}
+
+export function clearGoogleFlow(response: NextResponse) {
+  apply(response, [googleFlowCookie('', secureCookies(), 0, PREFIX)]);
 }
