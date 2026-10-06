@@ -15,6 +15,7 @@ import {
   EventProducer,
   kafkaConnectionFromEnv,
   startConsumer,
+  OutboxRelay,
 } from '@buku/kafka';
 import { Env } from './config.js';
 import { buildQueueApp } from './app.js';
@@ -70,6 +71,10 @@ const consumer = await startConsumer({
   producer,
 });
 
+// Publishes this service's committed outbox events (queue.*): each service its own (D-092).
+const relay = new OutboxRelay({ db, producer, source: 'queue-service' });
+relay.start();
+
 // Hooks run in REVERSE order on shutdown: stop producing before closing stores.
 const hooks: ShutdownHook[] = [
   { name: 'postgres', fn: () => db.$disconnect() },
@@ -80,6 +85,7 @@ const hooks: ShutdownHook[] = [
     },
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
+  { name: 'outbox-relay', fn: () => relay.stop() },
   { name: 'kafka-consumer', fn: () => consumer.stop() },
   {
     name: 'valkey-live',

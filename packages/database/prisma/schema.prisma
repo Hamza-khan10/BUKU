@@ -1661,6 +1661,8 @@ model OutboxEvent {
   id            String    @id @default(uuid(7)) @db.Uuid
   aggregateType String    @map("aggregate_type") @db.VarChar(50)
   aggregateId   String    @map("aggregate_id") @db.Uuid
+  /// The service that wrote it (the envelope's source): only that service's relay publishes it (D-092).
+  source        String    @db.VarChar(50)
   /// Kafka topic, e.g. "bookings.created".
   topic         String    @db.VarChar(100)
   /// Kafka message key (per-aggregate ordering).
@@ -1673,6 +1675,7 @@ model OutboxEvent {
   publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  @@index([source, publishedAt, createdAt])
   @@index([publishedAt, createdAt])
   @@index([aggregateType, aggregateId])
   @@map("outbox_events")

@@ -35,6 +35,8 @@ export async function enqueueEvent(
     data: {
       aggregateType,
       aggregateId: event.subject,
+      // Only the writing service's relay publishes it (D-092).
+      source: event.source,
       topic: event.type,
       partitionKey: options.partitionKey ?? event.subject,
       payload: event as unknown as Prisma.InputJsonValue,
@@ -53,6 +55,12 @@ interface OutboxRow {
 export interface OutboxRelayOptions {
   db: Database;
   producer: EventProducer;
+  /**
+   * The service whose events this relay publishes ("booking-service"): each
+   * service publishes only its own (D-092), so its Kafka credentials need only
+   * its own topics.
+   */
+  source: string;
   batchSize?: number;
   pollIntervalMs?: number;
   /** Published rows older than this are deleted. Default 7 days. */
@@ -80,9 +88,9 @@ export class OutboxRelay {
   /**
    * Publish one batch. Returns how many events were published.
    *
-   * Only ONE relay instance works at a time (transaction-scoped advisory
-   * lock), which preserves per-aggregate event order even when several
-   * replicas of a service run a relay. The others simply find the lock taken.
+   * Only ONE relay instance per service works at a time (a transaction-scoped
+   * advisory lock keyed by the service), which preserves per-aggregate event
+   * order even when several replicas run a relay. The others find it taken.
    */
   async runOnce(): Promise<number> {
     const { db, producer } = this.options;
@@ -90,13 +98,13 @@ export class OutboxRelay {
       async (tx) => {
         const [lock] = await tx.$queryRaw<
           { locked: boolean }[]
-        >`SELECT pg_try_advisory_xact_lock(${RELAY_LOCK_KEY}) AS locked`;
+        >`SELECT pg_try_advisory_xact_lock(${RELAY_LOCK_KEY}::int, hashtext(${this.options.source})) AS locked`;
         if (!lock?.locked) return 0;
 
         const rows = await tx.$queryRaw<OutboxRow[]>`
           SELECT id, partition_key, payload, headers
           FROM outbox_events
-          WHERE published_at IS NULL
+          WHERE source = ${this.options.source} AND published_at IS NULL
           ORDER BY created_at, id
           LIMIT ${this.batchSize}
           FOR UPDATE SKIP LOCKED`;
@@ -133,7 +141,8 @@ export class OutboxRelay {
   async prune(): Promise<number> {
     return this.options.db.$executeRaw`
       DELETE FROM outbox_events
-      WHERE published_at IS NOT NULL AND published_at < now() - make_interval(days => ${this.retentionDays})`;
+      WHERE source = ${this.options.source}
+        AND published_at IS NOT NULL AND published_at < now() - make_interval(days => ${this.retentionDays})`;
   }
 
   start(): void {

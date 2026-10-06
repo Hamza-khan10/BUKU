@@ -39,9 +39,9 @@ const producer = new EventProducer(kafka);
 const verifier = await createJwtVerifierFromEnv(env);
 const { storage, links } = storageFromEnv(env);
 await producer.connect();
-// Publishes committed outbox events (businesses.*). Only one relay across all
-// services is active at a time (advisory lock), so running one here is safe.
-const relay = new OutboxRelay({ db, producer });
+// Publishes this service's committed outbox events (businesses.*): each service its own (D-092).
+// One replica at a time (advisory lock per service).
+const relay = new OutboxRelay({ db, producer, source: 'business-service' });
 relay.start();
 
 // ── Readiness ──

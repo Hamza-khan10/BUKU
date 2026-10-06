@@ -51,8 +51,9 @@ await verifier.verify(
 if (env.AUTH_DEV_LOGIN_ENABLED) logger.warn('DEV LOGIN IS ENABLED — development only');
 
 await producer.connect();
-// Publishes committed outbox events (e.g. users.registered) to Kafka.
-const relay = new OutboxRelay({ db, producer });
+// Publishes this service's committed outbox events (users.*, businesses.member_removed): each
+// service its own (D-092).
+const relay = new OutboxRelay({ db, producer, source: 'auth-service' });
 relay.start();
 
 // ── Readiness ──
