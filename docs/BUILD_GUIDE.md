@@ -530,6 +530,17 @@ The detailed plan — every page, its data and edge cases, the design system and
   provider's own pages (only ever its https address), stop renewing (asks first) or keep it
   renewing. No "buy" button: buying online needs the payment provider set up (the owner's Paddle
   account), so the page says plans can't be bought on the website yet.
+- **Hardening before 3.4d ships (owner's request, 2026-10-06) — in progress.** Deleting an account
+  lists what it cancels first; the API refuses passwords seen in data breaches (Have I Been Pwned,
+  k-anonymity; allowed if unreachable); the public sign-in offers no admin role and its API
+  pass-through refuses every admin path; browser tests prove tokens are HttpOnly only, admin is
+  enforced on the server, and sign-in is rate-limited. **Separate admin app (D-091) — foundation
+  done:** `apps/admin` on its own address (port 3200 in development), its own `buku_admin_…`
+  cookies, platform admins only (any other account is signed out at once), two-step sign-in set
+  up before anything shows, the access review as its first page; Kong answers `/v1/admin` only to
+  the admin app's key (`ADMIN_GATEWAY_KEY`); both web servers share `@buku/web-security`. The
+  operator tools themselves (3.6) build on it. Next: isolating the services from each other, then
+  the premium redesign.
 
 ## Phase 4 — Mobile app (Expo)
 

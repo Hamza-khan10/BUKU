@@ -29,6 +29,7 @@ export default {
         'analytics',
         // apps (phase 3/4)
         'web',
+        'admin',
         'mobile',
         // cross-cutting
         'infra',

@@ -133,6 +133,24 @@ uploaded straight to it — its private bucket's CORS must allow `PUT` from the 
 as `infrastructure/s3/init.sh` does in development). Until the API is online, pages that only describe BUKU work, and pages that need live
 data show their "isn't loading" state. Previews are behind Vercel's login by default.
 
+### Work on the admin app (apps/admin)
+
+Platform operators use a separate app (D-091), never the website. Copy `apps/admin/.env.example` to
+`apps/admin/.env.local` and set `ADMIN_GATEWAY_KEY` to the root `.env`'s value (`pnpm bootstrap`
+generates it for Kong). With the stack up, `pnpm admin` and open http://localhost:3200. In
+development any email signs in as an admin; two-step sign-in must be set up before anything else
+shows. Browser tests: `pnpm admin:e2e`.
+
+### Deploy the admin app
+
+A **second** Vercel project, on its own domain (e.g. `admin.buku.app`) — never the website's
+project or domain, so the two never share cookies. Same settings as the website, with **Root
+Directory** `apps/admin`, plus its variables (from `apps/admin/.env.example`): `APP_URL` (its own
+https address), `API_URL`, `ADMIN_GATEWAY_KEY` (the same value as Kong's — a secret that exists
+only in Kong and here), `ADMIN_CLIENT_IP_HEADER=x-real-ip` and `DEV_SIGN_IN=false`. Consider
+Vercel's deployment protection or an IP allow-list for the whole project: the app is for a handful
+of people.
+
 ### Set up Sign in with Google
 
 The website signs people in with Google on its own server (D-090): no Google script runs in the

@@ -38,12 +38,6 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
   chmod 600 .env
 
-# The web app's server settings (apps/web/.env.local), sharing the gateway key (D-084).
-if [[ ! -f apps/web/.env.local ]]; then
-  sed "s/^WEB_GATEWAY_KEY=$/WEB_GATEWAY_KEY=$(get_value WEB_GATEWAY_KEY)/" apps/web/.env.example > apps/web/.env.local
-  chmod 600 apps/web/.env.local
-  ok "created apps/web/.env.local"
-fi
   ok "created .env from .env.example (mode 600)"
 fi
 
@@ -97,6 +91,19 @@ if [[ -z "$(get_value JWT_PRIVATE_KEY)" ]]; then
 fi
 chmod 600 .env
 
+# The web servers' settings, sharing the gateway keys — created only now that the keys exist:
+# the website's (apps/web/.env.local, D-084) and the admin app's (apps/admin/.env.local, D-091).
+if [[ ! -f apps/web/.env.local ]]; then
+  sed "s/^WEB_GATEWAY_KEY=$/WEB_GATEWAY_KEY=$(get_value WEB_GATEWAY_KEY)/" apps/web/.env.example > apps/web/.env.local
+  chmod 600 apps/web/.env.local
+  ok "created apps/web/.env.local"
+fi
+if [[ ! -f apps/admin/.env.local ]]; then
+  sed "s/^ADMIN_GATEWAY_KEY=$/ADMIN_GATEWAY_KEY=$(get_value ADMIN_GATEWAY_KEY)/" apps/admin/.env.example > apps/admin/.env.local
+  chmod 600 apps/admin/.env.local
+  ok "created apps/admin/.env.local"
+fi
+
 bold "3/3 Dependencies"
 pnpm install --frozen-lockfile
 pnpm db:generate >/dev/null
@@ -108,3 +115,4 @@ echo "  pnpm dev          # start the stack (first run builds images: a few minu
 echo "  pnpm health       # check every component"
 echo "  pnpm verify       # full verification"
 echo "  pnpm web          # the website on http://localhost:3000 (needs the stack)"
+echo "  pnpm admin        # the admin app on http://localhost:3200 (needs the stack)"
