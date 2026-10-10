@@ -29,8 +29,8 @@ export function DesktopNav() {
                 href={href}
                 aria-current={current ? 'page' : undefined}
                 className={cn(
-                  'rounded-md px-3 py-2 text-[0.95rem] font-medium whitespace-nowrap text-ink-2 transition-colors hover:bg-sunken hover:text-ink',
-                  current && 'text-ink',
+                  'rounded-full px-3.5 py-2 text-[0.95rem] font-medium whitespace-nowrap text-ink-2 transition-colors duration-200 hover:text-ink',
+                  current && 'bg-sunken text-ink',
                 )}
               >
                 {label}
@@ -50,23 +50,24 @@ export function MobileNav({ theme }: { theme: Theme }) {
   return (
     <RadixDialog.Root open={open} onOpenChange={setOpen}>
       <RadixDialog.Trigger
-        className="grid size-11 place-items-center rounded-md text-ink hover:bg-sunken lg:hidden"
+        className="grid size-11 place-items-center rounded-full text-ink transition-colors hover:bg-sunken lg:hidden"
         aria-label="Open menu"
       >
         <Menu className="size-6" aria-hidden />
       </RadixDialog.Trigger>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-night/50 lg:hidden" />
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-night/45 backdrop-blur-sm lg:hidden" />
         <RadixDialog.Content
           aria-describedby={undefined}
-          className="fixed inset-y-0 right-0 z-50 flex w-[min(22rem,100vw)] flex-col bg-canvas shadow-lift animate-rise lg:hidden"
+          className="fixed inset-y-0 right-0 z-50 flex w-[min(22rem,100vw)] flex-col bg-canvas shadow-lift animate-[sheet-in-right_420ms_var(--ease-out)_both] lg:hidden"
+          data-lenis-prevent
         >
           <div className="flex h-16 items-center justify-between border-b border-line px-4">
-            <RadixDialog.Title className="flex items-center gap-2 font-display text-lg font-bold">
+            <RadixDialog.Title className="flex items-center gap-2 text-lg font-semibold tracking-[-0.015em]">
               <LogoMark className="size-7" /> Menu
             </RadixDialog.Title>
             <RadixDialog.Close
-              className="grid size-11 place-items-center rounded-md hover:bg-sunken"
+              className="grid size-11 place-items-center rounded-full transition-colors hover:bg-sunken"
               aria-label="Close menu"
             >
               <X className="size-6" aria-hidden />
@@ -80,7 +81,7 @@ export function MobileNav({ theme }: { theme: Theme }) {
                     href={href}
                     onClick={() => setOpen(false)}
                     aria-current={isCurrent(pathname, href) ? 'page' : undefined}
-                    className="flex h-12 items-center rounded-md px-3 text-lg font-medium text-ink hover:bg-sunken aria-[current=page]:bg-sunken"
+                    className="flex h-12 items-center rounded-xl px-3 text-lg font-medium tracking-[-0.01em] text-ink transition-colors hover:bg-sunken aria-[current=page]:bg-sunken"
                   >
                     {label}
                   </Link>
@@ -94,7 +95,7 @@ export function MobileNav({ theme }: { theme: Theme }) {
                     href={href}
                     onClick={() => setOpen(false)}
                     aria-current={isCurrent(pathname, href) ? 'page' : undefined}
-                    className="flex h-11 items-center rounded-md px-3 text-ink-2 hover:bg-sunken hover:text-ink aria-[current=page]:text-ink"
+                    className="flex h-11 items-center rounded-xl px-3 text-ink-2 transition-colors hover:bg-sunken hover:text-ink aria-[current=page]:text-ink"
                   >
                     {label}
                   </Link>

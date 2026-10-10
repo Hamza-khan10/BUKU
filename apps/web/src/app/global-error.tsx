@@ -42,9 +42,9 @@ export default function GlobalError({
               minHeight: '2.75rem',
               padding: '0 1.25rem',
               border: 0,
-              borderRadius: '0.75rem',
-              background: '#d4432a',
-              color: '#fff',
+              borderRadius: '999px',
+              background: '#0b6b4f',
+              color: '#fcfdfc',
               fontSize: '1rem',
               cursor: 'pointer',
             }}

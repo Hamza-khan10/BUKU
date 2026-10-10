@@ -1,48 +1,42 @@
-import {
-  ArrowRight,
-  BadgeCheck,
-  CalendarCheck,
-  LockKeyhole,
-  MessageSquareQuote,
-  Ticket as TicketIcon,
-  Wallet,
-} from 'lucide-react';
+import { BadgeCheck, LockKeyhole, MessageSquareQuote, Wallet } from 'lucide-react';
 import type { Metadata, Route } from 'next';
 import Link from 'next/link';
-import type { ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/layout';
-import { Ticket } from '@/components/ui/ticket';
 import { CategoryIcon } from '@/features/categories/icons';
+import { HowItGoes } from '@/features/home/components/how-it-goes';
+import { PlacesRail } from '@/features/home/components/places-rail';
+import { QueueBoard } from '@/features/home/components/queue-board';
 import { categoryTree, cities, shelf } from '@/features/search/api';
-import { BusinessGrid } from '@/features/search/components/business-card';
 import { SearchBox } from '@/features/search/components/search-box';
-import type { CategoryNode, City, SearchItem } from '@/features/search/types';
+import type { CategoryNode, City } from '@/features/search/types';
 import { cn } from '@/lib/cn';
 
 export const metadata: Metadata = { alternates: { canonical: '/' } };
 
 /**
- * The home page: what BUKU is, then real places to go to — open now,
- * popular this week, top rated — in a city people can switch. Every number
- * and every place comes from the API; a shelf with nothing true to show is
- * simply left out.
+ * The home page (WEB_PLAN §2, D-093): what BUKU is in one line and one
+ * picture (the queue board), then real places in a city people can switch,
+ * how a visit goes, every kind of place, and what BUKU promises. Every place
+ * and every number comes from the API; a list with nothing true to show is
+ * left out.
  */
 
 const PROMISES = [
   {
     Icon: MessageSquareQuote,
     title: 'Reviews only from real visits',
-    text: 'Only someone whose visit was completed can review it — once.',
+    text: 'Only someone whose visit was completed can review it, and only once.',
   },
   {
     Icon: BadgeCheck,
-    title: '“Verified” means checked',
-    text: 'BUKU reviews a business’s legal details and documents before it says so.',
+    title: 'Verified means checked',
+    text: 'BUKU checks a business’s legal details and documents before calling it verified.',
   },
   {
     Icon: LockKeyhole,
     title: 'Your number stays yours',
-    text: 'Businesses see your name and booking — never your phone, email or picture.',
+    text: 'Businesses see your name and your booking. Never your phone, email or picture.',
   },
   {
     Icon: Wallet,
@@ -51,30 +45,13 @@ const PROMISES = [
   },
 ];
 
-function Shelf({ id, title, items, more }: { id: string; title: string; items: SearchItem[]; more: Route }) {
-  if (items.length === 0) return null;
-  return (
-    <section aria-labelledby={id} className="flex flex-col gap-5">
-      <div className="flex items-end justify-between gap-4">
-        <h2 id={id} className="font-display text-2xl font-bold tracking-tight sm:text-3xl">
-          {title}
-        </h2>
-        <Link
-          href={more}
-          className="inline-flex items-center gap-1 text-sm font-medium text-brand-ink hover:underline"
-        >
-          See all <ArrowRight className="size-4" aria-hidden />
-        </Link>
-      </div>
-      <BusinessGrid items={items} label={title} />
-    </section>
-  );
-}
-
 function CityPicker({ list, current }: { list: City[]; current: string }) {
   if (list.length < 2) return null;
   return (
-    <nav aria-label="Choose a city" className="flex flex-wrap gap-2">
+    <nav
+      aria-label="Choose a city"
+      className="inline-flex max-w-full gap-1 self-start overflow-x-auto rounded-full bg-sunken p-1"
+    >
       {list.slice(0, 8).map((c) => {
         const on = c.city.toLowerCase() === current.toLowerCase();
         return (
@@ -84,8 +61,8 @@ function CityPicker({ list, current }: { list: City[]; current: string }) {
             scroll={false}
             aria-current={on ? 'true' : undefined}
             className={cn(
-              'inline-flex h-10 items-center rounded-full border px-4 text-sm font-medium transition-colors',
-              on ? 'border-ink bg-ink text-canvas' : 'border-line bg-surface text-ink-2 hover:text-ink',
+              'inline-flex h-9 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow] duration-200',
+              on ? 'bg-surface text-ink shadow-soft' : 'text-ink-2 hover:text-ink',
             )}
           >
             {c.city}
@@ -96,16 +73,7 @@ function CityPicker({ list, current }: { list: City[]; current: string }) {
   );
 }
 
-function Step({ n, children }: { n: number; children: ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <span className="grid size-7 shrink-0 place-items-center rounded-full bg-brand-soft text-sm font-semibold text-brand-ink tabular">
-        {n}
-      </span>
-      <span className="text-ink-2">{children}</span>
-    </li>
-  );
-}
+const sectionTitle = 'text-[2.25rem] leading-[1.05] font-semibold tracking-[-0.035em] sm:text-[3rem]';
 
 export default async function HomePage({ searchParams }: PageProps<'/'>) {
   const asked = (await searchParams).city;
@@ -120,111 +88,74 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
   const places = cityList.reduce((n, c) => n + c.businesses, 0);
   const cityQuery = city ? `city=${encodeURIComponent(city)}` : '';
 
-  const [openNow, trending, topRated, featured] = city
+  const [openNow, trending, topRated] = city
     ? await Promise.all([
         shelf({ city, openNow: true, limit: 6 }),
         shelf({ city, limit: 6 }, '/v1/businesses/trending'),
         shelf({ city, sort: 'rating', minRating: 4, limit: 6 }),
-        shelf({ city, limit: 6 }, '/v1/businesses/featured'),
       ])
-    : [[], [], [], []];
-  const nothingYet = city && [openNow, trending, topRated, featured].every((s) => s.length === 0);
+    : [[], [], []];
+  const nothingYet = city && [openNow, trending, topRated].every((s) => s.length === 0);
 
   return (
-    <div className="flex flex-col gap-20 pb-8 sm:gap-24">
-      {/* ── The pitch ── */}
-      <section className="relative overflow-hidden border-b border-line bg-[radial-gradient(ellipse_at_top_right,color-mix(in_srgb,var(--brand)_10%,transparent),transparent_55%)]">
-        <Container className="grid grid-cols-1 items-center gap-12 py-14 sm:py-20 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-          <div className="flex flex-col gap-6 animate-rise">
-            <p className="text-sm font-semibold tracking-wide text-brand-ink uppercase">
-              Appointments and queues
-            </p>
-            <h1 className="font-display text-5xl leading-[1.02] font-bold tracking-tight sm:text-6xl lg:text-7xl">
-              Know exactly when. <span className="text-brand-ink">It’s handled.</span>
-            </h1>
-            <p className="max-w-xl text-lg text-ink-2 sm:text-xl">
-              Book a time at local businesses, or join their queue from nearby and watch your place in line
-              move — no calling around, no standing and wondering.
-            </p>
-            <div className="max-w-xl">
-              <SearchBox city={city || undefined} />
-            </div>
-            {tree.length > 0 && (
-              <ul aria-label="Popular categories" className="flex flex-wrap gap-2">
-                {tree.slice(0, 6).map((c) => (
-                  <li key={c.slug}>
-                    <Link
-                      href={`/c/${c.slug}` as Route}
-                      className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-medium text-ink-2 hover:border-ink-3 hover:text-ink"
-                    >
-                      <CategoryIcon slug={c.slug} className="size-4" />
-                      {c.name}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
+    <div className="flex flex-col gap-28 pb-8 sm:gap-36">
+      {/* ── What BUKU is ── */}
+      <Container className="grid grid-cols-1 items-center gap-14 pt-12 sm:pt-20 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
+        <div className="flex flex-col gap-7">
+          <h1 className="text-[3.25rem] leading-[0.98] font-semibold tracking-[-0.045em] sm:text-[4.5rem] xl:text-[5.25rem]">
+            Know exactly when.
+          </h1>
+          <p className="max-w-[34rem] text-xl leading-relaxed text-ink-2 sm:text-[1.35rem]">
+            Book a time at local businesses, or join their queue from home and come in when you’re called.
+          </p>
+          <div className="max-w-xl pt-1">
+            <SearchBox city={city || undefined} />
+          </div>
+        </div>
+        <QueueBoard className="mx-auto w-full max-w-[30rem] lg:mr-0" />
+      </Container>
+
+      {/* ── Real places, in a city you choose ── */}
+      {city && (
+        <Container className="flex flex-col gap-10">
+          <div className="flex flex-col gap-5">
+            <h2 className={sectionTitle}>Places in {city}</h2>
             {places > 0 && (
-              <p className="text-sm text-ink-3">
+              <p className="text-lg text-ink-2">
                 {places} {places === 1 ? 'place' : 'places'} in {cityList.length}{' '}
                 {cityList.length === 1 ? 'city' : 'cities'} on BUKU so far.
               </p>
             )}
-          </div>
-          <figure className="hidden flex-col items-center gap-3 lg:flex">
-            <div className="relative w-full max-w-md">
-              <div aria-hidden className="absolute -inset-6 -z-10 rounded-[2rem] bg-wait-soft/60 blur-2xl" />
-              <Ticket
-                fresh
-                qr
-                title="Haircut with Ali"
-                place="Example Barbers"
-                when="Thu · 10:30–11:00"
-                details={<span>Pay at the venue</span>}
-                code="BK-7KQ2MX"
-                codeLabel="Booking code"
-                status={{ label: 'Confirmed', tone: 'ok' }}
-              />
-            </div>
-            <figcaption className="text-sm text-ink-3">Example: what your booking looks like</figcaption>
-          </figure>
-        </Container>
-      </section>
-
-      {/* ── Real places, in a city you choose ── */}
-      {city && (
-        <Container className="flex flex-col gap-12">
-          <div className="flex flex-col gap-4">
-            <h2 className="font-display text-3xl font-bold tracking-tight sm:text-4xl">Places in {city}</h2>
             <CityPicker list={cityList} current={city} />
           </div>
-          <Shelf
-            id="open-now"
-            title="Open now"
-            items={openNow}
-            more={`/explore?${cityQuery}&openNow=1` as Route}
-          />
-          <Shelf
-            id="trending"
-            title="Popular this week"
-            items={trending}
-            more={`/explore?${cityQuery}` as Route}
-          />
-          <Shelf
-            id="top-rated"
-            title="Top rated"
-            items={topRated}
-            more={`/explore?${cityQuery}&sort=rating&topRated=1` as Route}
-          />
-          <Shelf
-            id="featured"
-            title="Verified, with photos"
-            items={featured}
-            more={`/explore?${cityQuery}&verifiedOnly=1` as Route}
+          <PlacesRail
+            shelves={[
+              {
+                id: 'open-now',
+                label: 'Open now',
+                moreLabel: `All places open now in ${city}`,
+                items: openNow,
+                more: `/explore?${cityQuery}&openNow=1` as Route,
+              },
+              {
+                id: 'trending',
+                label: 'Popular this week',
+                moreLabel: `Every place in ${city}`,
+                items: trending,
+                more: `/explore?${cityQuery}` as Route,
+              },
+              {
+                id: 'top-rated',
+                label: 'Top rated',
+                moreLabel: `Top-rated places in ${city}`,
+                items: topRated,
+                more: `/explore?${cityQuery}&sort=rating` as Route,
+              },
+            ]}
           />
           {nothingYet && (
             <p className="text-ink-2">
-              Nothing to show in {city} right now.{' '}
+              No places to show in {city} right now.{' '}
               <Link
                 href={`/explore?${cityQuery}` as Route}
                 className="font-medium text-brand-ink underline underline-offset-4"
@@ -237,101 +168,88 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
         </Container>
       )}
 
+      {/* ── How a visit goes ── */}
+      <Container>
+        <HowItGoes />
+      </Container>
+
       {/* ── Every kind of place ── */}
       {tree.length > 0 && (
         <Container>
-          <section aria-labelledby="categories" className="flex flex-col gap-6">
-            <div className="flex items-end justify-between gap-4">
-              <h2 id="categories" className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
-                Every kind of place
+          <section aria-labelledby="categories" className="flex flex-col gap-10">
+            <div className="flex flex-col gap-4">
+              <h2 id="categories" className={sectionTitle}>
+                Every kind of place.
               </h2>
-              <Link
-                href="/categories"
-                className="inline-flex items-center gap-1 text-sm font-medium text-brand-ink hover:underline"
-              >
-                All categories <ArrowRight className="size-4" aria-hidden />
-              </Link>
+              <p className="max-w-2xl text-lg leading-relaxed text-ink-2">
+                Barbers and clinics, government offices and garages. If you’d normally wait there, it can be
+                on BUKU.
+              </p>
             </div>
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {tree.map((c) => (
                 <li key={c.slug}>
                   <Link
                     href={`/c/${c.slug}` as Route}
-                    className="group flex h-full flex-col gap-3 rounded-lg border border-line bg-surface p-4 shadow-soft transition-shadow hover:shadow-lift"
+                    className="group flex h-full flex-col justify-between gap-10 rounded-xl bg-sunken p-5 transition-[background-color,transform] duration-300 ease-(--ease-out) hover:bg-line/70 active:scale-[0.98] sm:p-6"
                   >
-                    <span className="grid size-11 place-items-center rounded-md bg-brand-soft text-brand-ink transition-transform group-hover:scale-105">
-                      <CategoryIcon slug={c.slug} className="size-5" />
-                    </span>
-                    <span className="font-medium text-ink">{c.name}</span>
+                    <CategoryIcon
+                      slug={c.slug}
+                      className="size-7 text-ink-2 transition-colors duration-300 group-hover:text-brand-ink"
+                    />
+                    <span className="text-[1.05rem] font-semibold tracking-[-0.01em] text-ink">{c.name}</span>
                   </Link>
                 </li>
               ))}
             </ul>
+            <Link
+              href="/categories"
+              className="self-start font-medium text-brand-ink underline-offset-4 hover:underline"
+            >
+              All categories and what’s in them
+            </Link>
           </section>
         </Container>
       )}
 
-      {/* ── Two ways to stop waiting ── */}
-      <Container>
-        <section aria-labelledby="how" className="flex flex-col gap-6">
-          <h2 id="how" className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
-            Two ways to stop waiting
-          </h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-6 shadow-soft">
-              <span className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-md bg-ok-soft text-ok">
-                  <CalendarCheck className="size-5" aria-hidden />
-                </span>
-                <h3 className="font-display text-xl font-semibold">Book a time</h3>
-              </span>
-              <ol className="flex flex-col gap-3">
-                <Step n={1}>Pick a service and one of the business’s real free times.</Step>
-                <Step n={2}>Get a ticket with a code — and reminders before you go.</Step>
-                <Step n={3}>Show the code at the front desk. Review your visit after.</Step>
-              </ol>
-            </div>
-            <div className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-6 shadow-soft">
-              <span className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-md bg-wait-soft text-wait-ink">
-                  <TicketIcon className="size-5" aria-hidden />
-                </span>
-                <h3 className="font-display text-xl font-semibold">Join the queue</h3>
-              </span>
-              <ol className="flex flex-col gap-3">
-                <Step n={1}>Take a ticket from nearby, before you arrive.</Step>
-                <Step n={2}>Watch how many are ahead of you, live.</Step>
-                <Step n={3}>Get a nudge when you’re close, and come in when called.</Step>
-              </ol>
-            </div>
-          </div>
-          <Link
-            href="/how-it-works"
-            className="inline-flex items-center gap-1 font-medium text-brand-ink hover:underline"
-          >
-            How it works, step by step <ArrowRight className="size-4" aria-hidden />
-          </Link>
-        </section>
-      </Container>
-
       {/* ── What we promise ── */}
       <Container>
-        <section
-          aria-labelledby="promises"
-          className="rounded-2xl border border-line bg-night p-8 text-[#f6f2ec] sm:p-12"
-        >
-          <h2 id="promises" className="font-display text-3xl font-bold tracking-tight sm:text-4xl">
-            What you can count on
+        <section aria-labelledby="promises" className="flex flex-col gap-12">
+          <h2 id="promises" className={cn(sectionTitle, 'max-w-2xl')}>
+            What you can count on.
           </h2>
-          <ul className="mt-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          <ul className="grid gap-x-12 gap-y-12 border-t border-line pt-12 sm:grid-cols-2 lg:grid-cols-4">
             {PROMISES.map(({ Icon, title, text }) => (
               <li key={title} className="flex flex-col gap-3">
-                <Icon className="size-6 text-[#ff8c73]" aria-hidden />
-                <h3 className="font-display text-lg font-semibold">{title}</h3>
-                <p className="text-[#c5cbd6]">{text}</p>
+                <Icon className="size-6 text-brand-ink" aria-hidden />
+                <h3 className="mt-2 text-lg font-semibold tracking-[-0.015em]">{title}</h3>
+                <p className="leading-relaxed text-ink-2">{text}</p>
               </li>
             ))}
           </ul>
+        </section>
+      </Container>
+
+      {/* ── For businesses ── */}
+      <Container>
+        <section
+          aria-labelledby="for-business"
+          className="flex flex-col items-start gap-8 rounded-2xl border border-line bg-surface p-8 shadow-soft sm:p-12 lg:flex-row lg:items-end lg:justify-between"
+        >
+          <div className="flex max-w-xl flex-col gap-4">
+            <h2
+              id="for-business"
+              className="text-[2rem] leading-[1.08] font-semibold tracking-[-0.03em] sm:text-[2.5rem]"
+            >
+              Run a business? Give people a time, not a wait.
+            </h2>
+            <p className="text-lg leading-relaxed text-ink-2">
+              Your calendar and your walk-in queue in one place, with reminders sent before every visit.
+            </p>
+          </div>
+          <Button asChild variant="primary" size="lg">
+            <Link href="/for-business">BUKU for businesses</Link>
+          </Button>
         </section>
       </Container>
     </div>

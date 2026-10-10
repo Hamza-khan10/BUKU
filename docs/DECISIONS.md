@@ -729,3 +729,22 @@ Proven by the acceptance run: from inside a service, the others, the gateway adm
 internal networks) the internet can't be reached, while the public gateway can. The acceptance
 run and every browser test pass with each service on its own database role, with no "permission
 denied" in the database's log.
+
+**D-093 · A premium redesign: porcelain, graphite and one emerald accent.** The owner asked for a
+website that "attracts people on its own": luxury, modern, trustworthy, crafted, suited to
+booking and queueing, not "a gradient of colours", using Apple's design principles, Lenis, GSAP
+and React Bits. The first design (warm paper, coral, Bricolage + Inter) had become the commonest
+generated look, so it is replaced rather than polished (WEB_PLAN §2):
+
+- **Colour:** graphite on cool porcelain; emerald is the only accent and means "go"; amber means
+  waiting; red is errors only. Every pair checked against WCAG 2.2 AA in both themes.
+- **Type:** Instrument Sans for everything (chosen from a rendered specimen of six against the
+  brand's own content), a monospace only for codes read aloud.
+- **Motion:** springs that can be interrupted, feedback on press, one orchestrated moment per
+  page. Lenis for smooth wheel scrolling, GSAP for the one scroll-told story, Motion for
+  interface state; never two of them on the same element. All of it off under reduced motion.
+- **React Bits** components are adapted into `src/components/motion/` (MIT + Commons Clause:
+  allowed as part of the site; never redistributed on their own), with their CSS in the site's
+  stylesheet and real accessible text.
+- **No fake content:** no stock or placeholder photos. Businesses' own pictures where they exist;
+  otherwise designed, honest stand-ins (the business's initial, its category).

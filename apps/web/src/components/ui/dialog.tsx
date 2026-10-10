@@ -23,19 +23,22 @@ export function DialogContent({
 }: ComponentProps<typeof RadixDialog.Content> & { title: ReactNode; description?: ReactNode }) {
   return (
     <RadixDialog.Portal>
-      <RadixDialog.Overlay className="fixed inset-0 z-40 bg-night/55 backdrop-blur-[2px] animate-[rise_200ms_ease-out_both]" />
+      <RadixDialog.Overlay className="fixed inset-0 z-40 bg-night/45 backdrop-blur-sm animate-[rise_240ms_var(--ease-out)_both]" />
       <RadixDialog.Content
         {...(description ? {} : { 'aria-describedby': undefined })}
         className={cn(
-          'fixed inset-x-0 bottom-0 z-50 max-h-[92dvh] overflow-y-auto rounded-t-xl bg-surface p-6 shadow-lift animate-rise',
-          'sm:inset-auto sm:top-1/2 sm:left-1/2 sm:w-[min(32rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl',
+          'fixed inset-x-0 bottom-0 z-50 max-h-[92dvh] overflow-y-auto rounded-t-2xl border border-line bg-surface p-6 pt-5 shadow-lift animate-rise',
+          'sm:inset-auto sm:top-1/2 sm:left-1/2 sm:w-[min(32rem,calc(100vw-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:p-7',
           className,
         )}
+        data-lenis-prevent
         {...props}
       >
+        {/* A sheet's handle on phones: it reads as something that slid up and can go back down. */}
+        <span aria-hidden className="mx-auto mb-4 block h-1 w-10 rounded-full bg-line sm:hidden" />
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
-            <RadixDialog.Title className="font-display text-xl font-semibold tracking-tight">
+            <RadixDialog.Title className="text-xl font-semibold tracking-[-0.02em]">
               {title}
             </RadixDialog.Title>
             {description && (
@@ -43,7 +46,7 @@ export function DialogContent({
             )}
           </div>
           <RadixDialog.Close
-            className="-mt-1 -mr-2 grid size-11 shrink-0 place-items-center rounded-md text-ink-2 hover:bg-sunken"
+            className="-mt-1 -mr-2 grid size-11 shrink-0 place-items-center rounded-full text-ink-2 transition-colors hover:bg-sunken hover:text-ink"
             aria-label="Close"
           >
             <X className="size-5" aria-hidden />

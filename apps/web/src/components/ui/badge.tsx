@@ -4,7 +4,7 @@ import { cn } from '@/lib/cn';
 
 /** Short status labels: "Confirmed", "Open now", "Not verified", "3 ahead". */
 export const badgeStyles = cva(
-  'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold whitespace-nowrap [&_svg]:size-3.5',
+  'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs leading-none font-semibold whitespace-nowrap [&_svg]:size-3.5',
   {
     variants: {
       tone: {

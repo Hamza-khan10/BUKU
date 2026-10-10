@@ -15,7 +15,7 @@ export function Stars({ value, className }: { value: number; className?: string 
         ))}
       </span>
       <span
-        className="absolute inset-0 flex overflow-hidden text-wait"
+        className="absolute inset-0 flex overflow-hidden text-ink"
         style={{ width: `${(value / 5) * 100}%` }}
       >
         {[0, 1, 2, 3, 4].map((i) => (
@@ -26,7 +26,7 @@ export function Stars({ value, className }: { value: number; className?: string 
   );
 }
 
-/** "★★★★½ 4.5 (2 reviews)" — or, honestly, "No reviews yet". */
+/** "★★★★½ 4.5 (2 reviews)", or, honestly, "No reviews yet". */
 export function RatingInline({
   average,
   count,

@@ -1,7 +1,7 @@
 import { cn } from '@/lib/cn';
 
 /**
- * The BUKU mark: a ticket whose stub carries a check — booking and queueing
+ * The BUKU mark: a ticket whose stub carries a check, booking and queueing
  * in one shape. One component, so the brand can change in one place.
  */
 export function LogoMark({ className, title }: { className?: string; title?: string }) {
@@ -19,18 +19,12 @@ export function LogoMark({ className, title }: { className?: string; title?: str
         fill="var(--brand)"
       />
       {/* Perforation. */}
-      <path
-        d="M20 9v14"
-        stroke="var(--on-mark, #fff)"
-        strokeWidth="1.6"
-        strokeDasharray="1.6 2.2"
-        opacity=".75"
-      />
+      <path d="M20 9v14" stroke="var(--on-brand)" strokeWidth="1.6" strokeDasharray="1.6 2.2" opacity=".75" />
       {/* The check, on the main part of the ticket. */}
       <path
         d="m9.5 16.2 2.6 2.6 5-5.6"
         fill="none"
-        stroke="var(--on-mark, #fff)"
+        stroke="var(--on-brand)"
         strokeWidth="2.4"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -43,7 +37,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <span className={cn('inline-flex items-center gap-2 text-ink', className)}>
       <LogoMark />
-      <span className="font-display text-xl font-bold tracking-tight">BUKU</span>
+      <span className="text-[1.3rem] font-semibold tracking-[-0.03em]">BUKU</span>
     </span>
   );
 }

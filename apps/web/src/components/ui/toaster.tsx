@@ -3,7 +3,7 @@
 import { Toaster as Sonner } from 'sonner';
 
 /**
- * Short confirmations and background failures ("Saved", "Couldn't refresh —
+ * Short confirmations and background failures ("Saved", "Couldn't refresh,
  * retrying"). Never the only place an error appears for something the person
  * is doing: forms show errors next to the field.
  */
@@ -14,10 +14,10 @@ export function Toaster() {
       closeButton
       toastOptions={{
         classNames: {
-          toast: 'rounded-md border border-line bg-surface text-ink shadow-lift font-sans',
+          toast: 'rounded-xl border border-line bg-surface text-ink shadow-lift font-sans',
           description: 'text-ink-2',
-          actionButton: 'bg-brand text-on-brand',
-          cancelButton: 'bg-sunken text-ink',
+          actionButton: 'rounded-full bg-brand text-on-brand',
+          cancelButton: 'rounded-full bg-sunken text-ink',
         },
       }}
     />

@@ -9,7 +9,10 @@ import { cn } from '@/lib/cn';
 export function Accordion({ className, ...props }: ComponentProps<typeof RadixAccordion.Root>) {
   return (
     <RadixAccordion.Root
-      className={cn('divide-y divide-line rounded-lg border border-line bg-surface', className)}
+      className={cn(
+        'divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface',
+        className,
+      )}
       {...props}
     />
   );
@@ -30,7 +33,7 @@ export function AccordionItem({
         <RadixAccordion.Trigger className="group flex min-h-14 w-full items-center justify-between gap-4 px-5 py-3 text-left font-medium text-ink hover:bg-sunken/60">
           {question}
           <ChevronDown
-            className="size-5 shrink-0 text-ink-3 transition-transform duration-200 group-data-[state=open]:rotate-180"
+            className="size-5 shrink-0 text-ink-3 transition-transform duration-300 ease-(--ease-out) group-data-[state=open]:rotate-180"
             aria-hidden
           />
         </RadixAccordion.Trigger>

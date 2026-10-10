@@ -6,10 +6,10 @@ import { footerNav } from './nav';
 /** The public site's footer: every public and legal page, reachable from anywhere. */
 export function SiteFooter() {
   return (
-    <footer className="mt-24 border-t border-line bg-sunken/40">
-      <Container className="grid grid-cols-2 gap-x-6 gap-y-10 py-12 lg:grid-cols-4">
+    <footer className="mt-32 border-t border-line">
+      <Container className="grid grid-cols-2 gap-x-6 gap-y-10 py-16 lg:grid-cols-4">
         <div className="col-span-2 flex flex-col gap-3 lg:col-span-1">
-          <span className="inline-flex items-center gap-2 font-display text-lg font-bold">
+          <span className="inline-flex items-center gap-2 text-lg font-semibold tracking-[-0.015em]">
             <LogoMark className="size-7" /> BUKU
           </span>
           <p className="max-w-xs text-sm text-ink-2">
@@ -24,7 +24,7 @@ export function SiteFooter() {
                 <li key={href}>
                   <Link
                     href={href}
-                    className="inline-flex min-h-9 items-center text-sm text-ink-2 hover:text-ink hover:underline"
+                    className="inline-flex min-h-9 items-center text-sm text-ink-2 transition-colors hover:text-ink"
                   >
                     {label}
                   </Link>

@@ -38,21 +38,21 @@ export default async function Image({ params }: { params: Promise<{ idOrSlug: st
         flexDirection: 'column',
         justifyContent: 'space-between',
         padding: 72,
-        background: '#0e1525',
-        color: '#f6f2ec',
+        background: '#0b0f0d',
+        color: '#edf2ef',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
         <svg width="64" height="64" viewBox="0 0 32 32">
           <path
             d="M6 6h20a2 2 0 0 1 2 2v5a3 3 0 0 0 0 6v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-5a3 3 0 0 0 0-6V8a2 2 0 0 1 2-2Z"
-            fill="#d4432a"
+            fill="#3fc495"
           />
-          <path d="M20 9v14" stroke="#fff" strokeWidth="1.6" strokeDasharray="1.6 2.2" opacity=".75" />
+          <path d="M20 9v14" stroke="#06140f" strokeWidth="1.6" strokeDasharray="1.6 2.2" opacity=".75" />
           <path
             d="m9.5 16.2 2.6 2.6 5-5.6"
             fill="none"
-            stroke="#fff"
+            stroke="#06140f"
             strokeWidth="2.4"
             strokeLinecap="round"
           />
@@ -60,13 +60,13 @@ export default async function Image({ params }: { params: Promise<{ idOrSlug: st
         <span style={{ fontSize: 40, fontWeight: 700 }}>BUKU</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <span style={{ fontSize: 30, color: '#ff8c73' }}>{line}</span>
+        <span style={{ fontSize: 30, color: '#5ed3a8' }}>{line}</span>
         <span style={{ fontSize: name.length > 28 ? 64 : 84, fontWeight: 800, lineHeight: 1.05 }}>
           {name}
         </span>
-        {rating && <span style={{ fontSize: 34, color: '#f7c25a' }}>{rating}</span>}
+        {rating && <span style={{ fontSize: 34, color: '#f2b655' }}>{rating}</span>}
       </div>
-      <span style={{ fontSize: 28, color: '#c5cbd6' }}>Services, prices and opening hours on BUKU</span>
+      <span style={{ fontSize: 28, color: '#b9c2bd' }}>Services, prices and opening hours on BUKU</span>
     </div>,
     size,
   );
