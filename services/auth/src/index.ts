@@ -19,6 +19,7 @@ import { buildAuthApp } from './app.js';
 import { AccountPurger } from './users/data-rights.js';
 import { Env } from './config.js';
 import { createOidcVerifier } from './identity/oidc.js';
+import { noBreachCheck, PwnedPasswords } from './members/breached-passwords.js';
 
 const env = loadConfig(Env);
 
@@ -50,8 +51,9 @@ await verifier.verify(
 if (env.AUTH_DEV_LOGIN_ENABLED) logger.warn('DEV LOGIN IS ENABLED — development only');
 
 await producer.connect();
-// Publishes committed outbox events (e.g. users.registered) to Kafka.
-const relay = new OutboxRelay({ db, producer });
+// Publishes this service's committed outbox events (users.*, businesses.member_removed): each
+// service its own (D-092).
+const relay = new OutboxRelay({ db, producer, source: 'auth-service' });
 relay.start();
 
 // ── Readiness ──
@@ -74,6 +76,9 @@ const { app, rights } = buildAuthApp({
   storage,
   pictureUploads: new PictureUploads(storage, redis, { privateBucket: env.S3_BUCKET_PRIVATE }),
   mediaLinks: links,
+  breaches: env.BREACHED_PASSWORD_CHECK
+    ? new PwnedPasswords({ baseUrl: env.PWNED_PASSWORDS_URL, timeoutMs: env.PWNED_PASSWORDS_TIMEOUT_MS })
+    : noBreachCheck,
   identity: {
     google: env.GOOGLE_CLIENT_IDS.length ? createOidcVerifier('google', env.GOOGLE_CLIENT_IDS) : null,
     apple: env.APPLE_SIGN_IN_ENABLED ? createOidcVerifier('apple', env.APPLE_CLIENT_IDS) : null,

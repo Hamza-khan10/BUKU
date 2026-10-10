@@ -18,7 +18,7 @@ echo "BUKU local health check"
 echo "── Data stores ──"
 exec_in postgres pg_isready -U buku_admin -d buku -q && ok "PostgreSQL" "$(exec_in postgres psql -U buku_admin -d buku -tAc 'SELECT version()' | cut -d' ' -f1-2)" || bad "PostgreSQL"
 [[ "$(exec_in valkey valkey-cli ping)" == "PONG" ]] && ok "Valkey" || bad "Valkey"
-topics=$(exec_in kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:29092 --list | grep -vc '^__' || true)
+topics=$(exec_in kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server 127.0.0.1:29093 --list | grep -vc '^__' || true)
 [[ "${topics:-0}" -ge 41 ]] && ok "Kafka" "$topics topics" || bad "Kafka" "${topics:-0} topics (expected 41)"
 if running elasticsearch; then
   es=$(curl -sf 'http://localhost:9200/_cluster/health' | grep -o '"status":"[a-z]*"' | cut -d'"' -f4)

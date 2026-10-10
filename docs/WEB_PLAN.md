@@ -34,62 +34,91 @@ things go wrong, and the order we build it in.
 
 ## 2. Brand and design system
 
+Redesigned 2026-10-10 (D-093) from the owner's brief: luxury, modern, trustworthy and crafted,
+suited to booking and queueing, "not a gradient of colours". The first design (warm paper, coral,
+Bricolage + Inter) had become the commonest generated look; this replaces it.
+
+**Design read:** a premium consumer marketplace for booking times and joining queues at local
+businesses, for everyday customers and the businesses serving them, in a calm, precise, physical
+language (Apple's design principles, translated for the web). Dials: variance 7, motion 6,
+density 3 on public pages; 5 / 4 / 5 in the account and business areas.
+
 ### Feeling we design for
 
-Calm control → confident momentum → small celebration. Booking and queueing are usually
-stressful (waiting, uncertainty, phone calls). BUKU should feel like the opposite: **"I know
-exactly when, and it's handled."**
+Calm control, then confident momentum, then a small celebration. Booking and queueing are usually
+stressful (waiting, uncertainty, phone calls). BUKU feels like the opposite: **"I know exactly
+when, and it's handled."** Restraint everywhere, so the one thing that matters on each screen
+(the time, your place in line, the next step) is the most obvious thing on it.
 
-### Colour (psychology → role)
+### Colour
 
-| Token           | Value                      | Feeling / role                                                                 | Contrast (checked)           |
-| --------------- | -------------------------- | ------------------------------------------------------------------------------ | ---------------------------- |
-| `ink`           | `#0E1525`                  | Trust, seriousness, premium; text, dark hero sections                          | 17.2:1 on paper              |
-| `paper`         | `#FBF8F3`                  | Warm, calm, unhurried (not clinical white); page background                    | —                            |
-| `coral` (brand) | `#D4432A` / text `#B83A22` | Energy and action — the "book / join" moment; primary buttons, the ticket stub | white on it 4.53 · text 5.41 |
-| `mint`          | `#0B7350` / bg `#E7F6EF`   | Go, available, confirmed, open now                                             | 5.53 on paper                |
-| `amber`         | `#F2A516` / text `#9A5B00` | Anticipation — queue progress, "almost your turn", pending                     | ink on it 8.82 · text 5.12   |
-| `indigo`        | `#4338CA`                  | Focus rings and links on dark (clarity, not decoration)                        | 7.46 on paper                |
-| `slate`         | `#4B5565` / `#667085`      | Secondary / muted text                                                         | 7.11 / 4.70                  |
-| `danger`        | `#B42318`                  | Errors only (red never decorates)                                              | ≥ 5:1                        |
+Mostly graphite on porcelain, cool and quiet. **Emerald is the only accent**, and it means one
+thing: go (book, join, available, confirmed). Amber means waiting. Red is for errors only.
+Nothing else is coloured, and nothing is a gradient.
 
-Dark theme: the same roles on an ink canvas (tokens are CSS variables; components never use raw
-colours). Coral is the only loud colour, so the eye always finds the next action.
+| Token                     | Light                             | Dark                              | Role                                           |
+| ------------------------- | --------------------------------- | --------------------------------- | ---------------------------------------------- |
+| `canvas`                  | `#F4F5F3` porcelain               | `#0B0F0D`                         | Page                                           |
+| `surface`                 | `#FCFDFC`                         | `#121815`                         | Raised things: tickets, dialogs, menus, inputs |
+| `sunken`                  | `#ECEEEB`                         | `#080B0A`                         | Wells, tracks, quiet sections                  |
+| `ink` / `ink-2` / `ink-3` | `#131815` / `#47504B` / `#5C6560` | `#EDF2EF` / `#B9C2BD` / `#8E9893` | Text: primary, secondary, muted                |
+| `line` / `control`        | `#DDE1DE` / `#7F8782`             | `#242C28` / `#66716B`             | Hairlines; input borders (3:1)                 |
+| `brand` (emerald)         | `#0B6B4F`                         | `#3FC495`                         | Book, join, available, confirmed; focus rings  |
+| `wait` (amber)            | `#E9A23B`, text `#7F4F00`         | `#F2B655`, text `#F5C878`         | In a queue, almost your turn, pending          |
+| `danger`                  | `#B42318`                         | `#FF8A80`                         | Errors only                                    |
+
+Every text pair meets WCAG 2.2 AA, checked numerically: body text 7.6:1 and up, muted text 5.2:1
+and up, white on emerald 6.4:1 (dark: 8.6:1), input borders 3.4:1. Components use the tokens
+only, never raw colours.
 
 ### Type
 
-- **Display:** Bricolage Grotesque — friendly, distinctive, confident headlines.
-- **Text:** Inter — legible at every size, all scripts we need for names.
-- **Tickets and codes:** a monospace (JetBrains Mono) for `BK-7KQ2MX`, `A-023`, times — tabular
-  figures so numbers don't jump while counting down.
+- **Instrument Sans** for everything (one family; hierarchy from size, weight and tracking, the
+  way Apple sets type). Display sizes are tight (negative tracking, leading about 1.02); small
+  text is slightly open. Numbers are tabular wherever they count or line up (times, queue
+  positions, prices).
+- **A monospace only for codes** people read aloud (`BK-7KQ2MX`), where 0 and O must never be
+  confused.
 - Self-hosted through `next/font` (no requests to font CDNs from visitors' browsers).
+
+### Shape and material
+
+- Buttons, chips and time pills are pills. Inputs: 12 px corners. Panels and tickets: 20 px.
+  Pictures: 16 px.
+- Raised things (tickets, dialogs, menus) have a hairline and a soft shadow tinted to the page,
+  never black. Everything else is grouped by space and hairlines, not boxes.
+- The header is a translucent material: content scrolls under it, blurred, with a soft fade at
+  its edge instead of a hard divider (solid when reduced transparency is asked for).
 
 ### Signature motifs
 
-- **The ticket.** Receipts and queue tickets look like real tickets: a stub with a perforated
-  edge, the code large, a QR, a live status band. People already trust paper tickets; we borrow
-  that trust.
-- **Time as pills.** Free times are tappable pills; the chosen one fills coral; taken ones simply
-  aren't there (no greyed-out clutter).
-- **Live.** A soft pulsing dot means "this updates by itself" (queue position, open now).
-- **The "now" line** on calendars and day views.
+- **The board.** The split-flap display of a station or a waiting room: "Now serving 07", your
+  time. The one bold thing on the home page; everywhere else stays quiet.
+- **The ticket.** Bookings and queue places look like real tickets: a stub with a perforated
+  edge, the code large, a QR, a live status band.
+- **Time as pills.** Free times are tappable pills; the chosen one fills emerald; taken ones
+  simply aren't there.
+- **Live.** A soft pulse means "this updates by itself" (queue position, open now), and only that.
 
 ### Motion
 
-Short (150–300 ms), purposeful: elements arrive in the order you read them; the ticket "prints"
-when a booking is confirmed; the queue position counts down; one modest burst of celebration on
-a confirmed booking. Everything is disabled under `prefers-reduced-motion`.
+Springs, not timelines (critically damped by default; a little bounce only after a flick), so
+everything can be interrupted and starts from where it is. Feedback on press, not on release.
+One orchestrated moment per page: the board on the home page, the ticket arriving when a booking
+is confirmed, your place counting down in a queue. Lenis smooths wheel scrolling on desktop;
+GSAP runs the one scroll-told story (how a visit goes). Under `prefers-reduced-motion`: no smooth
+scrolling, no pinning, short cross-fades instead of movement.
 
 ### Voice
 
-Plain, warm, specific. "You're booked — Haircut with Ali, Thu 10:30." Not "Your request was
+Plain, warm, specific. "You're booked: haircut with Ali, Thursday 10:30." Not "Your request was
 processed successfully." Errors say what happened and what to do next, never blame. Numbers
-before adjectives.
+before adjectives. Sentence case, no all-caps labels, no em dashes.
 
 ### Logo
 
 A single `Logo` component (mark + wordmark) so the brand stays swappable: a ticket with a check
-cut into the stub — booking and queue in one shape.
+cut into the stub, booking and queue in one shape, in emerald.
 
 ## 3. Pages (information architecture)
 

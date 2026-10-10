@@ -55,7 +55,7 @@ export function TwoStepForm({
     return (
       <div className="flex flex-col gap-5">
         <Alert tone="wait" title="This sign-in has expired">
-          For your safety, the code step only stays open for a few minutes. Start again — it only takes a
+          For your safety, the code step only stays open for a few minutes. Start again: it only takes a
           moment.
         </Alert>
         <Button asChild variant="primary" size="lg" block>
@@ -103,7 +103,7 @@ export function TwoStepForm({
       if (err instanceof ApiError && err.code === 'MFA_INVALID_CODE') {
         setFieldError(
           mode === 'code'
-            ? 'That code isn’t right. Codes change every 30 seconds — enter the one showing now.'
+            ? 'That code isn’t right. Codes change every 30 seconds: enter the one showing now.'
             : 'That recovery code isn’t right, or it was already used.',
         );
         setCode('');

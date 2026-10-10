@@ -19,7 +19,7 @@ export function BookingTerms({ booking }: { booking: ServiceMenu['booking'] }) {
         <CalendarCheck className="mt-0.5 size-4 shrink-0 text-ok" aria-hidden />
         {booking.confirmationMode === 'automatic'
           ? 'Bookings are confirmed straight away'
-          : 'The business confirms each booking — you’ll be told as soon as it does'}
+          : 'The business confirms each booking. You’ll be told as soon as it does'}
       </li>
       <li className="flex items-start gap-2">
         <Clock3 className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />
@@ -58,7 +58,7 @@ export function ServicesMenu({ menu, slug }: { menu: ServiceMenu; slug: string }
           aria-label={single ? undefined : group.name}
           className="flex flex-col gap-3"
         >
-          {!single && <h3 className="font-display text-lg font-semibold">{group.name}</h3>}
+          {!single && <h3 className="text-lg tracking-[-0.015em] font-semibold">{group.name}</h3>}
           <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface">
             {group.services.map((s) => (
               <li key={s.id} className="flex items-start justify-between gap-4 p-4">

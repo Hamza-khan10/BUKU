@@ -2,7 +2,7 @@ import type { ComponentProps } from 'react';
 import { cn } from '@/lib/cn';
 
 export function Card({ className, ...props }: ComponentProps<'div'>) {
-  return <div className={cn('rounded-lg border border-line bg-surface shadow-soft', className)} {...props} />;
+  return <div className={cn('rounded-xl border border-line bg-surface shadow-soft', className)} {...props} />;
 }
 
 export function CardHeader({ className, ...props }: ComponentProps<'div'>) {
@@ -10,7 +10,7 @@ export function CardHeader({ className, ...props }: ComponentProps<'div'>) {
 }
 
 export function CardTitle({ className, ...props }: ComponentProps<'h3'>) {
-  return <h3 className={cn('font-display text-lg font-semibold tracking-tight', className)} {...props} />;
+  return <h3 className={cn('text-lg font-semibold tracking-[-0.015em]', className)} {...props} />;
 }
 
 export function CardDescription({ className, ...props }: ComponentProps<'p'>) {

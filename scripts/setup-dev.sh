@@ -38,12 +38,6 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
   chmod 600 .env
 
-# The web app's server settings (apps/web/.env.local), sharing the gateway key (D-084).
-if [[ ! -f apps/web/.env.local ]]; then
-  sed "s/^WEB_GATEWAY_KEY=$/WEB_GATEWAY_KEY=$(get_value WEB_GATEWAY_KEY)/" apps/web/.env.example > apps/web/.env.local
-  chmod 600 apps/web/.env.local
-  ok "created apps/web/.env.local"
-fi
   ok "created .env from .env.example (mode 600)"
 fi
 
@@ -76,13 +70,41 @@ b64_32(){ openssl rand -base64 32; }
 set_if_empty POSTGRES_SUPERUSER_PASSWORD "$(hex 24)"
 set_if_empty BUKU_MIGRATOR_PASSWORD      "$(hex 24)"
 set_if_empty BUKU_APP_PASSWORD           "$(hex 24)"
+set_if_empty BUKU_DB_PASSWORD_AUTH         "$(hex 24)"
+set_if_empty BUKU_DB_PASSWORD_BOOKING      "$(hex 24)"
+set_if_empty BUKU_DB_PASSWORD_QUEUE        "$(hex 24)"
+set_if_empty BUKU_DB_PASSWORD_NOTIFICATION "$(hex 24)"
+set_if_empty BUKU_DB_PASSWORD_BUSINESS     "$(hex 24)"
+set_if_empty BUKU_DB_PASSWORD_BILLING      "$(hex 24)"
+set_if_empty BUKU_DB_PASSWORD_SEARCH       "$(hex 24)"
+set_if_empty BUKU_DB_PASSWORD_ADS          "$(hex 24)"
+set_if_empty BUKU_DB_PASSWORD_ANALYTICS    "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_ADMIN        "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_TOOLS        "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_AUTH         "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_BOOKING      "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_QUEUE        "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_NOTIFICATION "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_BUSINESS     "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_SEARCH       "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_ADS          "$(hex 24)"
+set_if_empty KAFKA_PASSWORD_ANALYTICS    "$(hex 24)"
 set_if_empty VALKEY_PASSWORD             "$(hex 24)"
+set_if_empty VALKEY_PASSWORD_AUTH        "$(hex 24)"
+set_if_empty VALKEY_PASSWORD_BOOKING     "$(hex 24)"
+set_if_empty VALKEY_PASSWORD_QUEUE       "$(hex 24)"
+set_if_empty VALKEY_PASSWORD_NOTIFICATION "$(hex 24)"
+set_if_empty VALKEY_PASSWORD_BUSINESS    "$(hex 24)"
+set_if_empty VALKEY_PASSWORD_BILLING     "$(hex 24)"
+set_if_empty VALKEY_PASSWORD_ADS         "$(hex 24)"
+set_if_empty VALKEY_PASSWORD_KONG        "$(hex 24)"
 set_if_empty CLICKHOUSE_PASSWORD         "$(hex 24)"
 set_if_empty S3_ACCESS_KEY_ID            "buku$(hex 8)"
 set_if_empty S3_SECRET_ACCESS_KEY        "$(hex 24)"
 set_if_empty PII_ENCRYPTION_KEYS         "k1:$(b64_32)"
 set_if_empty PII_BLIND_INDEX_KEY         "$(b64_32)"
 set_if_empty WEB_GATEWAY_KEY             "$(hex 32)"
+set_if_empty ADMIN_GATEWAY_KEY           "$(hex 32)"
 
 if [[ -z "$(get_value JWT_PRIVATE_KEY)" ]]; then
   tmpd=$(mktemp -d); trap 'rm -rf "$tmpd"' EXIT
@@ -96,6 +118,19 @@ if [[ -z "$(get_value JWT_PRIVATE_KEY)" ]]; then
 fi
 chmod 600 .env
 
+# The web servers' settings, sharing the gateway keys — created only now that the keys exist:
+# the website's (apps/web/.env.local, D-084) and the admin app's (apps/admin/.env.local, D-091).
+if [[ ! -f apps/web/.env.local ]]; then
+  sed "s/^WEB_GATEWAY_KEY=$/WEB_GATEWAY_KEY=$(get_value WEB_GATEWAY_KEY)/" apps/web/.env.example > apps/web/.env.local
+  chmod 600 apps/web/.env.local
+  ok "created apps/web/.env.local"
+fi
+if [[ ! -f apps/admin/.env.local ]]; then
+  sed "s/^ADMIN_GATEWAY_KEY=$/ADMIN_GATEWAY_KEY=$(get_value ADMIN_GATEWAY_KEY)/" apps/admin/.env.example > apps/admin/.env.local
+  chmod 600 apps/admin/.env.local
+  ok "created apps/admin/.env.local"
+fi
+
 bold "3/3 Dependencies"
 pnpm install --frozen-lockfile
 pnpm db:generate >/dev/null
@@ -107,3 +142,4 @@ echo "  pnpm dev          # start the stack (first run builds images: a few minu
 echo "  pnpm health       # check every component"
 echo "  pnpm verify       # full verification"
 echo "  pnpm web          # the website on http://localhost:3000 (needs the stack)"
+echo "  pnpm admin        # the admin app on http://localhost:3200 (needs the stack)"

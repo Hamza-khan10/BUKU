@@ -1,6 +1,5 @@
-import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
-import { apiAvailable } from './helpers';
+import { apiAvailable, sidewaysOverflow } from './helpers';
 
 /**
  * Every page fits the screen: nothing makes a page scroll sideways, from a
@@ -29,10 +28,6 @@ const DATA_PAGES = [
   '/for-business',
 ];
 
-async function overflow(page: Page): Promise<number> {
-  return page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-}
-
 for (const width of [320, 390]) {
   test.describe(`At ${width} px wide`, () => {
     test.use({ viewport: { width, height: 800 } });
@@ -53,7 +48,7 @@ for (const width of [320, 390]) {
         // live queue stream open, so the network is never idle there.
         await page.goto(path);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
-        expect([path, await overflow(page)]).toEqual([path, 0]);
+        expect([path, await sidewaysOverflow(page)]).toEqual([path, 0]);
       }
     });
   });

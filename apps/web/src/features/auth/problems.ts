@@ -31,5 +31,16 @@ export function problemFrom(error: unknown, fallback: string): Problem {
       reference,
     };
   }
+  if (error.code === 'RATE_LIMITED') {
+    const seconds = waitSeconds(error);
+    return {
+      title: 'Too many tries in a short time',
+      detail:
+        seconds && seconds > 60
+          ? `Please try again at ${clockIn(seconds)}.`
+          : 'Please wait a minute and try again.',
+      reference,
+    };
+  }
   return { title: error.message, reference };
 }

@@ -16,7 +16,7 @@ export default async function VisitsPage({ searchParams }: PageProps<'/account/a
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h1 className="font-display text-4xl font-bold tracking-tight">Your visits</h1>
+        <h1 className="text-4xl font-semibold tracking-[-0.03em]">Your visits</h1>
         <nav aria-label="Which visits" className="flex rounded-md bg-sunken p-1">
           {SCOPES.map((s) => (
             <Link

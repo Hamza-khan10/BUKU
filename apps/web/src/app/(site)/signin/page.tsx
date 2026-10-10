@@ -80,7 +80,7 @@ export default async function SignInPage({ searchParams }: PageProps<'/signin'>)
         {error && <SignInProblem error={error} next={next} until={dayLabel(first(params.until))} />}
         {google && error !== 'deletion-pending' && <GoogleButton next={next} />}
         {google && dev && (
-          <p className="flex items-center gap-3 text-xs font-medium tracking-wide text-ink-3 uppercase">
+          <p className="flex items-center gap-3 text-sm text-ink-3">
             <span className="h-px flex-1 bg-line" aria-hidden />
             Or, on this development site
             <span className="h-px flex-1 bg-line" aria-hidden />

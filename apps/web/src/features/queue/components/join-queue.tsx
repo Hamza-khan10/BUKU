@@ -30,7 +30,7 @@ function joinProblem(err: unknown, radiusMeters: number): Problem {
     case 'QUEUE_PAUSED':
       return {
         title: 'The queue is paused for now.',
-        detail: 'No new sign-ups from phones — try again soon.',
+        detail: 'No new sign-ups from phones right now. Try again soon.',
       };
     case 'QUEUE_CLOSED':
       return { title: 'The queue has closed.' };

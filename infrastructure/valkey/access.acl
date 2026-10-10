@@ -1,0 +1,25 @@
+# Valkey users and the keys each may touch (D-092).
+#
+# Each service signs in as buku-<name> (password VALKEY_PASSWORD_<NAME>) and may use only the
+# keys and channels listed on its line: its own rate-limit counters and state, and — for every
+# service — reading (never writing) the sign-out list auth keeps (auth:rev:*), which each checks
+# on every request. A service that is taken over can't read another's state, clear its rate
+# limits, or forge a sign-out. Every user also gets the same commands: reading and writing its
+# own keys, scripts, transactions and connection set-up; never KEYS, FLUSH*, CONFIG, DEBUG,
+# SELECT, or anything else marked dangerous (start.sh). The default user is the admin (tools,
+# health checks and tests from this machine), with VALKEY_PASSWORD.
+#
+# Read by start.sh when Valkey starts. packages/common/test/valkey-access.test.ts checks it
+# against the key prefixes each service's code uses.
+#
+# user          keys and channels (%R~ = read only)
+
+auth            ~auth:rev:* ~mfa:* ~rl:auth:* ~media:upload:avatar:*
+booking         %R~auth:rev:* ~rl:booking:*
+queue           %R~auth:rev:* ~rl:queue:* &queue:changes +@pubsub
+notification    %R~auth:rev:* ~rl:notif:* ~lock:notification:* ~wa:*
+business        %R~auth:rev:* ~rl:biz:* ~media:upload:business_photo:* ~media:upload:business_logo:* ~media:upload:staff_photo:*
+billing         %R~auth:rev:* ~rl:billing:*
+ads             %R~auth:rev:*
+# The gateway's rate-limit counters, in database 1.
+kong            ~ratelimit:* +select

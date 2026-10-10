@@ -20,6 +20,7 @@ import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js
 import { buildBookingApp } from '../src/app.js';
 import { bookingEventHandler } from '../src/events/handlers.js';
 import { todayIn } from '../src/schedules/schedule-service.js';
+import type { AppointmentService } from '../src/appointments/appointment-service.js';
 import type { StaffService } from '../src/staff/staff-service.js';
 
 /**
@@ -29,6 +30,7 @@ import type { StaffService } from '../src/staff/staff-service.js';
 
 let app: Express;
 let staffService: StaffService;
+let appointmentService: AppointmentService;
 let db: Database;
 let redis: Redis;
 let signer: JwtSigner;
@@ -92,7 +94,11 @@ beforeAll(async () => {
     secretAccessKey: testEnv.s3.secretAccessKey,
     forcePathStyle: true,
   });
-  ({ app, staff: staffService } = buildBookingApp({
+  ({
+    app,
+    staff: staffService,
+    appointments: appointmentService,
+  } = buildBookingApp({
     db,
     redis,
     verifier,
@@ -305,7 +311,7 @@ describe('Staff profiles', () => {
     const { owner, b, member, base } = await business();
     const ali = await member('staff');
     const s = await post(`${base}/staff`, owner, { displayName: 'Ali', userId: ali.id });
-    const handle = bookingEventHandler({ staff: staffService });
+    const handle = bookingEventHandler({ staff: staffService, appointments: appointmentService });
     const event = createEvent({
       type: TOPICS.BUSINESSES_MEMBER_REMOVED,
       source: 'auth-service',

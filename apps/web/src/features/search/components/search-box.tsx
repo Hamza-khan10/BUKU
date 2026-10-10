@@ -142,8 +142,8 @@ export function SearchBox({
       </label>
       <div
         className={cn(
-          'flex items-center gap-2 rounded-full border border-control bg-surface pr-1.5 pl-4 shadow-soft transition-shadow focus-within:border-focus focus-within:ring-3 focus-within:ring-focus/20',
-          big ? 'h-14' : 'h-12',
+          'flex items-center gap-2 rounded-full border border-control bg-surface pr-1.5 pl-5 shadow-soft transition-[border-color,box-shadow] duration-200 focus-within:border-focus focus-within:ring-4 focus-within:ring-focus/15',
+          big ? 'h-16' : 'h-12',
         )}
       >
         <Search className="size-5 shrink-0 text-ink-3" aria-hidden />
@@ -161,7 +161,7 @@ export function SearchBox({
           maxLength={100}
           // Only where searching is the page's whole purpose (the explore page).
           autoFocus={autoFocus}
-          placeholder="Haircut, dentist, passport office…"
+          placeholder="Haircut, dentist…"
           value={value}
           onChange={(e) => {
             setValue(removeDisallowed(e.target.value, 'line'));
@@ -181,8 +181,8 @@ export function SearchBox({
         <button
           type="submit"
           className={cn(
-            'shrink-0 rounded-full bg-brand font-semibold text-on-brand transition-colors hover:bg-brand-hover',
-            big ? 'h-11 px-6' : 'h-9 px-4 text-sm',
+            'shrink-0 rounded-full bg-brand font-semibold text-on-brand transition-[background-color,transform] duration-300 ease-(--ease-out) hover:bg-brand-hover active:scale-[0.96] active:duration-100',
+            big ? 'h-12 px-7' : 'h-9 px-4 text-sm',
           )}
         >
           Search
@@ -195,7 +195,8 @@ export function SearchBox({
         aria-label="Suggestions"
         hidden={!showList}
         onMouseDown={() => window.clearTimeout(blurTimer.current)}
-        className="absolute inset-x-0 top-full z-30 mt-2 max-h-96 overflow-y-auto rounded-lg border border-line bg-surface p-1.5 shadow-lift"
+        data-lenis-prevent
+        className="absolute inset-x-0 top-full z-30 mt-2 max-h-96 overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-lift"
       >
         {shown.map((o, i) => (
           <li
@@ -205,7 +206,7 @@ export function SearchBox({
             aria-selected={i === active}
             onMouseEnter={() => setActive(i)}
             onClick={() => go(o.href)}
-            className="flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 aria-selected:bg-sunken"
+            className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 aria-selected:bg-sunken"
           >
             {createElement(ICONS[o.kind], { className: 'size-4 shrink-0 text-ink-3', 'aria-hidden': true })}
             <span className="flex min-w-0 flex-col">

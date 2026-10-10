@@ -144,7 +144,7 @@ function MoveChoices({ receipt: r }: { receipt: Receipt }) {
         await queryClient.invalidateQueries({ queryKey: availabilityKey });
         setProblem({
           title: 'That time was just taken.',
-          detail: 'The free times are up to date — choose another.',
+          detail: 'The free times are up to date. Choose another.',
         });
       } else if (code === 'CANCELLATION_WINDOW_PASSED') {
         await queryClient.invalidateQueries({ queryKey: RECEIPT_KEY(r.id) });
@@ -163,7 +163,7 @@ function MoveChoices({ receipt: r }: { receipt: Receipt }) {
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-3">
         {back}
-        <h1 className="font-display text-4xl font-bold tracking-tight">Move your visit</h1>
+        <h1 className="text-4xl font-semibold tracking-[-0.03em]">Move your visit</h1>
         <p className="text-ink-2">
           {r.service.name} at {r.business.name}. Now:{' '}
           <span className="font-medium text-ink">
@@ -237,7 +237,7 @@ function MoveChoices({ receipt: r }: { receipt: Receipt }) {
 
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-5 shadow-soft">
-            <h2 className="font-display text-xl font-semibold text-ink">The new time</h2>
+            <h2 className="text-xl tracking-[-0.02em] font-semibold text-ink">The new time</h2>
             <p className="text-ink-2">
               {slot && day ? (
                 <span className="font-medium text-ink">

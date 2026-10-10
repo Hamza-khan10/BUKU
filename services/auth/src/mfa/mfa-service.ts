@@ -37,6 +37,9 @@ const CHALLENGE_SECONDS = 300;
 const MAX_FAILURES = 5;
 const LOCK_SECONDS = 15 * 60;
 
+/** Proof of the second factor: a code from the app, or one of the recovery codes (used up). */
+export type SecondFactor = { code?: string | undefined; recoveryCode?: string | undefined };
+
 export interface MfaChallenge {
   mfaRequired: true;
   mfaToken: string;
@@ -205,8 +208,9 @@ export class MfaService {
     return this.deps.sessions.markMfa(user, sessionId);
   }
 
-  async newRecoveryCodes(userId: string, code: string, ctx: RequestContext) {
-    await this.checkSecondFactor(userId, { code }, ctx);
+  /** New recovery codes (the old ones stop working), with a current code or a recovery code. */
+  async newRecoveryCodes(userId: string, proof: SecondFactor, ctx: RequestContext) {
+    await this.checkSecondFactor(userId, proof, ctx);
     const codes = newRecoveryCodes();
     await this.deps.db.userMfa.update({
       where: { userId },
@@ -222,12 +226,15 @@ export class MfaService {
     return { recoveryCodes: codes };
   }
 
-  /** Turn it off (needs a current code). Platform admins can't. */
-  async disable(user: { id: string; role: Role }, code: string, ctx: RequestContext) {
+  /**
+   * Turn it off, with a current code — or a recovery code, for someone who lost
+   * the phone with the app (then they can set up a new one). Platform admins can't.
+   */
+  async disable(user: { id: string; role: Role }, proof: SecondFactor, ctx: RequestContext) {
     if (user.role === 'super_admin') {
       throw AppError.forbidden('Platform admins must keep two-step sign-in on');
     }
-    await this.checkSecondFactor(user.id, { code }, ctx);
+    await this.checkSecondFactor(user.id, proof, ctx);
     await this.deps.db.$transaction(async (tx) => {
       await tx.userMfa.delete({ where: { userId: user.id } });
       await recordAudit(tx, {
@@ -243,11 +250,7 @@ export class MfaService {
   // ── internals ─────────────────────────────────────────────────────────────
 
   /** A valid, unused code — or a recovery code (used up). Failures count towards a lock. */
-  private async checkSecondFactor(
-    userId: string,
-    input: { code?: string | undefined; recoveryCode?: string | undefined },
-    ctx: RequestContext,
-  ): Promise<void> {
+  private async checkSecondFactor(userId: string, input: SecondFactor, ctx: RequestContext): Promise<void> {
     await this.assertNotLocked(userId);
     const m = await this.deps.db.userMfa.findUnique({ where: { userId } });
     if (!m?.confirmedAt) throw AppError.badRequest('Two-step sign-in is not on');

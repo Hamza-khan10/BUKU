@@ -11,6 +11,7 @@ import { Dialog, DialogClose, DialogContent, DialogTrigger } from '@/components/
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/states';
 import { Ticket, type TicketProps } from '@/components/ui/ticket';
+import { LiveBoard } from './live-board';
 import { toast } from '@/components/ui/toaster';
 import { problemFrom } from '@/features/auth/problems';
 import { useMinute } from '@/features/booking/notice';
@@ -85,9 +86,9 @@ function LiveTicket({ ticket, joined }: { ticket: QueueTicketData; joined: boole
   // Their turn: say it in the tab's title (it may be in the background), and buzz phones that can.
   useEffect(() => {
     const before = document.title;
-    if (phase === 'called') document.title = `It’s your turn — ${ticket.ticket} · BUKU`;
+    if (phase === 'called') document.title = `It’s your turn: ${ticket.ticket} · BUKU`;
     else if (place?.phase === 'waiting')
-      document.title = `${place.ahead === 0 ? 'You’re next' : `${place.ahead} ahead`} — ${ticket.ticket} · BUKU`;
+      document.title = `${place.ahead === 0 ? 'You’re next' : `${place.ahead} ahead`}: ${ticket.ticket} · BUKU`;
     if (phase === 'called' && previous.current !== 'called') {
       try {
         navigator.vibrate?.([200, 100, 200]);
@@ -137,7 +138,7 @@ function TicketCard({
     waiting: ahead === 0 ? 'You’re next' : ahead === null ? 'Waiting' : `${ahead} ahead of you`,
     called: 'Go to the counter',
     serving: 'You’re at the counter',
-    completed: 'All done — thanks for visiting',
+    completed: 'All done. Thanks for visiting',
     left: 'You left the queue',
     no_show: 'Your turn passed',
   }[status];
@@ -166,17 +167,21 @@ function TicketCard({
         >
           <ArrowLeft className="size-4" aria-hidden /> {t.business.name}
         </Link>
-        <h1 className="font-display text-4xl font-bold tracking-tight">
+        <h1 className="text-4xl font-semibold tracking-[-0.03em]">
           {joined && status === 'waiting' ? 'You’re in the queue' : 'Your ticket'}
         </h1>
         {active && (
           <p className="text-ink-2" aria-live="polite">
             {live
-              ? 'This page updates by itself — keep it open.'
+              ? 'This page updates by itself. Keep it open.'
               : 'Reconnecting… the numbers may be a little behind.'}
           </p>
         )}
       </header>
+
+      {(status === 'waiting' || status === 'called') && (
+        <LiveBoard ahead={ahead ?? null} code={t.ticket} called={status === 'called'} />
+      )}
 
       <Ticket
         fresh={joined}

@@ -85,8 +85,13 @@ jobs:
         run: bash scripts/setup-dev.sh
       - name: Start Postgres, Valkey and Kafka
         run: docker compose -f docker-compose.dev.yml up -d --wait postgres valkey kafka
+      - name: Kafka users and their permissions (D-092)
+        run: docker compose -f docker-compose.dev.yml run --rm kafka-access
       - name: Create Kafka topics from the registry
-        run: KAFKA_BROKERS=localhost:9092 pnpm kafka:topics
+        # Signs in as the admin user, with the throwaway password setup generated.
+        run: |
+          set -a; . ./.env; set +a
+          KAFKA_BROKERS=localhost:9092 KAFKA_SASL_USERNAME=buku-admin KAFKA_SASL_PASSWORD="$KAFKA_PASSWORD_ADMIN" pnpm kafka:topics
       - name: Start object storage and create buckets
         run: docker compose -f docker-compose.dev.yml run --rm s3-init
       - name: Apply migrations to a fresh database
@@ -120,12 +125,26 @@ jobs:
         run: pnpm --filter @buku/web exec playwright install --with-deps chromium
       - name: Browser tests (desktop and phone, WCAG 2.2 AA, CSP, clean text)
         run: pnpm --filter @buku/web e2e
+      # The admin app (D-091) in the same job: built, started, and its browser tests run (those
+      # that need the API stack skip themselves here). Placeholder settings: no real key in CI.
+      - name: Admin app build
+        run: pnpm --filter @buku/admin build
+        env:
+          APP_URL: http://localhost:3200
+          ADMIN_GATEWAY_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
+      - name: Admin app browser tests
+        run: pnpm --filter @buku/admin e2e
+        env:
+          APP_URL: http://localhost:3200
+          ADMIN_GATEWAY_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
       - name: Test report on failure
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: web-e2e-report
-          path: apps/web/playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/admin/playwright-report
           retention-days: 14
 
   images:

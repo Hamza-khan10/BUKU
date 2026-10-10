@@ -44,8 +44,8 @@ export function LegalDoc({
 
         <article className="min-w-0">
           <header className="flex flex-col gap-3">
-            <p className="text-sm font-semibold tracking-wide text-brand-ink uppercase">Legal</p>
-            <h1 className="font-display text-4xl font-bold tracking-tight">{title}</h1>
+            <p className="text-sm font-medium text-brand-ink">Legal</p>
+            <h1 className="text-4xl font-semibold tracking-[-0.03em]">{title}</h1>
             <p className="text-sm text-ink-3">
               Version {version} · {reviewed ? 'In effect' : 'Draft — not yet in effect'}
             </p>
@@ -62,7 +62,7 @@ export function LegalDoc({
             aria-labelledby="in-short"
             className="mt-8 max-w-[70ch] rounded-lg bg-surface p-6 shadow-soft"
           >
-            <h2 id="in-short" className="font-display text-lg font-semibold">
+            <h2 id="in-short" className="text-lg tracking-[-0.015em] font-semibold">
               In short
             </h2>
             <ul className="mt-3 flex list-disc flex-col gap-2 pl-5 text-ink-2">

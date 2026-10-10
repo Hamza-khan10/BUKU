@@ -21,7 +21,7 @@ interface Errors {
 }
 
 const MESSAGES = {
-  business: 'Enter your business’s handle — the end of its BUKU link, like salt-and-pepper.',
+  business: 'Enter your business’s handle: the end of its BUKU link, like salt-and-pepper.',
   username: 'Usernames are 3 to 40 letters, digits, dots, dashes or underscores.',
   password: 'Enter your password.',
 };
@@ -112,7 +112,7 @@ export function BusinessSignInForm({
       <Field
         label="Business"
         required
-        hint="Its handle — the end of its BUKU link. You can paste the whole link."
+        hint="Its handle: the end of its BUKU link. You can paste the whole link."
         error={errors.business}
       >
         <Input

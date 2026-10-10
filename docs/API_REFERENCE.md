@@ -168,7 +168,10 @@ Requires that this session signed in within the last 10 minutes, otherwise
 ```
 
 Immediately: every device is signed out (`SESSION_REVOKED` / `account_deleted`), push
-notifications stop, and other services are told (`users.deleted`) to cancel upcoming bookings.
+notifications stop, and other services are told (`users.deleted`): booking-service cancels every
+visit still to come (as the customer, so the business is told; ones they've arrived for stay), and
+queue-service gives up their places in line (`queue.entry.left`, reason `account_closed`). A
+restored account's bookings stay cancelled.
 Until `purgeAfter` the person can restore the account by signing in (see above). After it,
 personal data is erased for good; appointment records remain for the businesses, anonymized.
 
@@ -194,6 +197,11 @@ The response is the same as any sign-in. `user.account` tells the app what kind 
   screen.
 - A password change returns `{ "signInAgain": true }` and ends **every** session of the account,
   including the current one; the app signs in again with the new password.
+- A new password seen in a known data breach is refused: `422 PASSWORD_BREACHED`. The check uses
+  Have I Been Pwned's range API (only the first 5 characters of the password's SHA-1 leave the
+  server, with padding); if it can't be reached in time, the password is allowed — the length and
+  common-password rules have already been applied — and `security_events_total{event="breach_check_unavailable"}`
+  counts it. A wrong `currentPassword` counts towards the same lock as sign-in.
 - Wrong business, username or password all return the same `401 INVALID_CREDENTIALS`.
 - 5 wrong passwords in a row lock sign-in for 15 minutes (`429 ACCOUNT_LOCKED`,
   `details.retryAfterSeconds`). The owner or a manager can unlock at once by resetting the password.
@@ -1062,8 +1070,8 @@ rate is of visits that happened or were missed.
 | `POST /v1/auth/mfa/confirm` `{ code }`        | ✔                  | Turns it on: `{ recoveryCodes[10], session: { accessToken } }`                   |
 | `POST /v1/auth/mfa/verify`                    | — (the `mfaToken`) | Answer a sign-in challenge: `{ mfaToken, code }` or `{ mfaToken, recoveryCode }` |
 | `POST /v1/auth/mfa/step-up` `{ code }`        | ✔                  | Mark the current session as having passed it (new access token)                  |
-| `POST /v1/auth/mfa/recovery-codes` `{ code }` | ✔                  | Replace the recovery codes                                                       |
-| `DELETE /v1/auth/mfa` `{ code }`              | ✔ (not admins)     | Turn it off                                                                      |
+| `POST /v1/auth/mfa/recovery-codes` `{ code }` | ✔                  | Replace the recovery codes; `{ recoveryCode }` instead works too (used up)       |
+| `DELETE /v1/auth/mfa` `{ code }`              | ✔ (not admins)     | Turn it off; `{ recoveryCode }` instead works too, for a lost phone              |
 
 With it on, `POST /v1/auth/oauth/*` and `/business-login` answer
 `{ mfaRequired: true, mfaToken, expiresAt }` (5 minutes) instead of a session; the app asks for

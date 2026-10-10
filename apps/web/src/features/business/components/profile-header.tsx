@@ -2,16 +2,15 @@ import { BadgeCheck, CircleHelp, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Container } from '@/components/ui/layout';
 import { Tooltip } from '@/components/ui/tooltip';
-import { CategoryIcon } from '@/features/categories/icons';
 import { openLabel, openState, wallClock } from '@/lib/format';
 import type { BusinessProfile } from '../types';
 import { RatingInline } from './rating';
 
 /**
- * The top of a business page: its own cover photo (or, without one, a quiet
- * pattern with its category's icon — never a stock picture), logo, name,
- * and the facts people decide on: verified or not, rating, how reliably it
- * keeps bookings, open now.
+ * The top of a business page: its own cover photo when it has one (never a
+ * stock picture, and no invented banner when it hasn't), logo or initial,
+ * name, and the facts people decide on: verified or not, rating, how
+ * reliably it keeps bookings, open now.
  */
 export function ProfileHeader({ business }: { business: BusinessProfile }) {
   const cover = business.photos.find((p) => p.isPrimary) ?? business.photos[0];
@@ -21,39 +20,43 @@ export function ProfileHeader({ business }: { business: BusinessProfile }) {
 
   return (
     <header>
-      <div className="relative h-44 overflow-hidden bg-night sm:h-64">
-        {cover ? (
-          // Alt text is the business's own description of its photo; without one the photo is decoration.
-          <img
-            src={cover.url}
-            alt={cover.altText ?? ''}
-            className="size-full object-cover"
-            fetchPriority="high"
-            decoding="async"
-          />
-        ) : (
-          <div
-            aria-hidden
-            className="size-full bg-[radial-gradient(circle_at_20%_30%,color-mix(in_srgb,var(--brand)_55%,transparent),transparent_45%),radial-gradient(circle_at_85%_70%,color-mix(in_srgb,var(--wait)_35%,transparent),transparent_40%)]"
-          />
-        )}
-        <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-night/55 to-transparent" />
-      </div>
+      {cover && (
+        <Container className="pt-6">
+          <div className="relative h-52 overflow-hidden rounded-2xl bg-sunken sm:h-80">
+            {/* Alt text is the business's own description of its photo; without one the photo is decoration. */}
+            <img
+              src={cover.url}
+              alt={cover.altText ?? ''}
+              className="size-full object-cover"
+              fetchPriority="high"
+              decoding="async"
+            />
+          </div>
+        </Container>
+      )}
 
-      <Container className="relative -mt-14 sm:-mt-16">
-        <div className="flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-lift sm:flex-row sm:items-end sm:p-6">
-          <span className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-lg border-4 border-surface bg-brand-soft text-brand-ink shadow-soft sm:size-24">
+      <Container className={cover ? 'relative -mt-12 sm:-mt-14' : 'pt-10 sm:pt-14'}>
+        <div
+          className={
+            cover
+              ? 'mx-3 flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-lift sm:mx-6 sm:flex-row sm:items-end sm:p-6'
+              : 'flex flex-col gap-5 sm:flex-row sm:items-end'
+          }
+        >
+          <span className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line bg-surface text-ink-2 shadow-soft sm:size-24">
             {business.logoUrl ? (
               <img src={business.logoUrl} alt="" className="size-full object-cover" />
             ) : (
-              <CategoryIcon slug={business.category.slug} className="size-9" />
+              <span aria-hidden className="text-4xl font-semibold tracking-[-0.04em] text-ink/80">
+                {[...business.name.trim()][0]?.toUpperCase()}
+              </span>
             )}
           </span>
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             <p className="text-sm font-medium text-ink-3">
               {business.category.name} · {business.address.city}
             </p>
-            <h1 className="font-display text-3xl leading-tight font-bold tracking-tight break-words sm:text-4xl">
+            <h1 className="text-3xl leading-tight font-semibold tracking-[-0.03em] break-words sm:text-4xl">
               {business.name}
             </h1>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">

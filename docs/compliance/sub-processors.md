@@ -16,6 +16,7 @@ require it). Reviewed yearly under the [vendor management policy](policies/vendo
 | Mapbox                       | Maps and places in the apps                                   | Approximate location of map views                       | US                      | SOC 2, DPA                    |
 | Vercel                       | Hosting the web app                                           | Request metadata (IP, browser)                          | Global edge             | SOC 2 Type II, DPA            |
 | GitHub                       | Source code and CI (no customer data)                         | None (team members only)                                | US                      | SOC 2 Type II                 |
+| Have I Been Pwned            | Checking new passwords against known data breaches            | None (5 characters of a password hash, padded)          | Global (Cloudflare)     | Public k-anonymity API        |
 
 Not sub-processors: the businesses themselves (they are independent controllers of their own
 customer relationships within BUKU).

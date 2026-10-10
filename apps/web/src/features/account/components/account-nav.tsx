@@ -3,21 +3,39 @@
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect, useRef } from 'react';
 import { cn } from '@/lib/cn';
 
-/** The account area's own pages (more join as they're built: reviews, notifications, settings). */
+/** The account area's own pages. */
 const PAGES: { href: Route; label: string }[] = [
   { href: '/account', label: 'Overview' },
   { href: '/account/appointments', label: 'Visits' },
   { href: '/account/reviews', label: 'Reviews' },
+  { href: '/account/notifications', label: 'Notifications' },
+  { href: '/account/plan', label: 'Plan' },
+  { href: '/account/settings', label: 'Settings' },
 ];
 
 export function AccountNav() {
   const pathname = usePathname();
+  const nav = useRef<HTMLElement>(null);
+  // On a narrow screen the tabs scroll sideways: keep the current one in view.
+  useEffect(() => {
+    const strip = nav.current;
+    const current = strip?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!strip || !current) return;
+    // Centred where it can be (the browser stops at either end).
+    strip.scrollLeft = current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
+  }, [pathname]);
   return (
-    <nav aria-label="Your account" className="-mx-1 flex gap-1 overflow-x-auto border-b border-line">
+    <nav
+      ref={nav}
+      aria-label="Your account"
+      className="relative -mx-1 flex gap-1 overflow-x-auto border-b border-line"
+    >
       {PAGES.map(({ href, label }) => {
-        const current = pathname === href;
+        const current =
+          href === '/account' ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
         return (
           <Link
             key={href}

@@ -16,11 +16,15 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
 import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
+import { createEvent, TOPICS } from '@buku/kafka';
 import { buildQueueApp } from '../src/app.js';
+import { queueEventHandler } from '../src/events/handlers.js';
+import type { QueueService } from '../src/queue-service.js';
 
 /** The virtual queue against the real database (incl. PostGIS distances and the one-ticket rule). */
 
 let app: Express;
+let queueService: QueueService;
 let db: Database;
 let redis: Redis;
 let subscriber: Redis;
@@ -94,7 +98,7 @@ beforeAll(async () => {
     keys: [{ keyId: 'k1', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }],
   });
   subscriber = createRedisClient({ url: testEnv.redisUrl, connectionName: 'queue-int-test-live' });
-  ({ app } = buildQueueApp({
+  ({ app, queue: queueService } = buildQueueApp({
     db,
     redis,
     subscriber,
@@ -264,6 +268,34 @@ describe('Serving the line', () => {
     expect(await alertsFor(last)).toEqual([10, 5, 4, 3, 2, 1, 0]);
     // Events carry the ticket and ids, never names.
     expect(JSON.stringify(await events(last))).not.toContain(people.at(-1)!.name);
+  });
+
+  it('closing an account gives up its place in line (the people behind move up), once', async () => {
+    const s = await shop();
+    const leaving = await person();
+    const t = await join(leaving, s);
+    const behind = await person();
+    const next = await join(behind, s);
+    expect(next.body.data.ahead).toBe(1);
+
+    const handle = queueEventHandler({ queue: queueService });
+    const event = createEvent({
+      type: TOPICS.USERS_DELETED,
+      source: 'auth-service',
+      subject: leaving.id,
+      data: { userId: leaving.id, purgeAfter: new Date(Date.now() + 30 * 86_400_000).toISOString() },
+    });
+    const ctx = { topic: event.type, partition: 0, offset: '0', key: null, attempt: 1 };
+    await handle(event, ctx);
+    await handle(event, ctx); // delivered twice: nothing more happens
+
+    const gone = await db.queueEntry.findUniqueOrThrow({ where: { id: t.body.data.id } });
+    expect([gone.status, gone.leftAt]).toEqual(['left', expect.any(Date)]);
+    const left = (await events(t.body.data.id)).filter((e) => e.topic === 'queue.entry.left');
+    expect(left).toHaveLength(1);
+    expect((left[0]!.payload as { data: { reason: string } }).data.reason).toBe('account_closed');
+    const mine = await request(app).get(`/v1/queue/tickets/${next.body.data.id}`).set(behind.auth);
+    expect(mine.body.data.ahead).toBe(0);
   });
 
   it('closing the queue tells everyone still waiting', async () => {

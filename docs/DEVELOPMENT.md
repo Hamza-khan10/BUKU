@@ -60,10 +60,37 @@ containers restart within a second. After changing `package.json`/`pnpm-lock.yam
 5. Add/adjust integration tests in `packages/database/test`.
    CI fails if `schema.prisma` and the migrations disagree.
 
+### Give a service access to a table
+
+Every service signs in to Postgres as its own role (D-092). A new table is usable by no service
+until it is added to `packages/database/src/access.ts`: the owning service under `owns`, others
+under `reads` (whole table or listed columns) or, rarely, `updates`/`inserts`/`deletes`. Then
+`pnpm test` (checks every table has an owner) and
+`docker compose -f docker-compose.dev.yml up -d --force-recreate db-access` (applies the roles).
+A "permission denied" in a service's log means the map is missing something; find which with
+`docker logs buku-postgres-1 2>&1 | grep -A1 "permission denied"`. Triggers run with the rights
+of whoever fired them: a trigger function that writes another service's table is made
+`SECURITY DEFINER` in its migration.
+
+### Use a new Valkey key
+
+Each service signs in to Valkey as its own user and may touch only the key prefixes on its line
+in `infrastructure/valkey/access.acl` (D-092); every service may read `auth:rev:*`, only auth
+writes it. A new prefix (or a new rate limit's `keyPrefix`) goes on the service's line; `pnpm
+test` checks the code against the list, and restarting Valkey applies it. "NOPERM" in a service's
+log means the line is missing something. Tools from this machine use the admin
+(`VALKEY_PASSWORD`).
+
 ### Add a Kafka topic
 
 Add it to `TOPIC_SPECS` in `packages/kafka/src/topics.ts`, then `pnpm kafka:topics`
 (or restart the stack). Never use raw topic strings in code — use `TOPICS.X`.
+
+Then say who publishes and who reads it in `infrastructure/kafka/access.conf` (D-092): each
+service signs in to Kafka as its own user and may use only the topics listed there (`pnpm test`
+checks the list against the code). Restarting the stack applies it (the `kafka-access` job). A
+service's log saying "Topic authorization failed" means the list is missing something. From this
+machine, tools sign in as `buku-admin` with `KAFKA_PASSWORD_ADMIN` from `.env`.
 
 ### Publish an event from a service
 
@@ -126,9 +153,34 @@ Then the web app's own variables (from `apps/web/.env.example`), for Production 
 `APP_URL` (the site's https address), `API_URL` (the public API address, once it is deployed),
 `WEB_GATEWAY_KEY` (the same value as the API's), `WEB_CLIENT_IP_HEADER=x-real-ip`,
 `DEV_SIGN_IN=false`, `ALLOW_INDEXING=false` until launch, the `LEGAL_*` / `*_EMAIL` details
-when they exist, and `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` once Google sign-in is set up
-(below). Until the API is online, pages that only describe BUKU work, and pages that need live
+when they exist, `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` once Google sign-in is set up
+(below), and with the API: `MEDIA_ORIGIN` (the CDN that serves public photos) and
+`STORAGE_ORIGIN` (the API's `S3_PUBLIC_ENDPOINT`: profile pictures load from it and are
+uploaded straight to it — its private bucket's CORS must allow `PUT` from the site's address,
+as `infrastructure/s3/init.sh` does in development). Until the API is online, pages that only describe BUKU work, and pages that need live
 data show their "isn't loading" state. Previews are behind Vercel's login by default.
+
+### Work on the admin app (apps/admin)
+
+Platform operators use a separate app (D-091), never the website. Copy `apps/admin/.env.example` to
+`apps/admin/.env.local` and set `ADMIN_GATEWAY_KEY` to the root `.env`'s value (`pnpm bootstrap`
+generates it for Kong). With the stack up, `pnpm admin` and open http://localhost:3200. In
+development any email signs in as an admin; two-step sign-in must be set up before anything else
+shows. Browser tests: `pnpm admin:e2e`.
+
+### Deploy the admin app
+
+A **second** Vercel project, on its own domain (e.g. `admin.buku.app`) — never the website's
+project or domain, so the two never share cookies. Same settings as the website, with **Root
+Directory** `apps/admin`, plus its variables (from `apps/admin/.env.example`): `APP_URL` (its own
+https address), `API_URL`, `ADMIN_GATEWAY_KEY` (the same value as Kong's — a secret that exists
+only in Kong and here), `ADMIN_CLIENT_IP_HEADER=x-real-ip`, `DEV_SIGN_IN=false`, and
+`ADMIN_GOOGLE_CLIENT_ID` / `ADMIN_GOOGLE_CLIENT_SECRET` from a **separate** Google OAuth client
+(same steps as the website's below, redirect URI `https://<admin domain>/api/auth/google/callback`;
+add its id to the API's `GOOGLE_CLIENT_IDS`). Admins sign in with Google accounts that already
+exist and were made admins with `pnpm admin:role`; the admin app never creates an account. Consider
+Vercel's deployment protection or an IP allow-list for the whole project: the app is for a handful
+of people.
 
 ### Set up Sign in with Google
 

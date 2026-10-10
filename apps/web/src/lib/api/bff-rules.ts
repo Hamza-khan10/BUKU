@@ -1,36 +1,16 @@
+import { gatewayPathFor } from '@buku/web-security/gateway-path';
+import { checkSameOrigin as sharedSameOrigin } from '@buku/web-security/same-origin';
+
 /**
  * Rules for the web server's API pass-through (`/api/v1/*` → gateway `/v1/*`).
  * Pure functions, so every rule is unit-tested on its own.
  */
 
-/** The header our own scripts send; a page on another site can't send it without our permission. */
-export const CSRF_HEADER = 'x-buku-csrf';
+export { CSRF_HEADER, type Refusal } from '@buku/web-security/same-origin';
 
-export type Refusal = { status: number; code: string; message: string };
-
-/**
- * Only our own pages may use the pass-through: the request must carry our
- * header (cross-site pages can't add custom headers without a CORS grant,
- * which we never give), and — where the browser says — come from our origin.
- */
-export function checkSameOrigin(method: string, headers: Headers, appOrigin: string): Refusal | null {
-  const refuse = {
-    status: 403,
-    code: 'FORBIDDEN',
-    message: 'This request didn’t come from the BUKU website.',
-  };
-  if (headers.get(CSRF_HEADER) !== '1') return refuse;
-  const site = headers.get('sec-fetch-site');
-  if (site && site !== 'same-origin') return refuse;
-  const origin = headers.get('origin');
-  if (origin && origin !== appOrigin) return refuse;
-  if (method !== 'GET' && method !== 'HEAD' && !origin && !site) return refuse;
-  return null;
-}
-
-// A path segment: ordinary URL characters only. No "..", no empty segments,
-// no encoded slashes or backslashes that could change which route is reached.
-const SEGMENT = /^[A-Za-z0-9._~@:+-]{1,200}$/;
+/** Only this website's own pages may use the pass-through (the shared same-origin rule). */
+export const checkSameOrigin = (method: string, headers: Headers, appOrigin: string) =>
+  sharedSameOrigin(method, headers, appOrigin, 'the BUKU website');
 
 /**
  * Calls that need a token only the web server holds (see /api/session): the
@@ -38,17 +18,13 @@ const SEGMENT = /^[A-Za-z0-9._~@:+-]{1,200}$/;
  */
 const SERVER_ONLY = new Set(['auth/refresh', 'auth/logout', 'auth/mfa/verify']);
 
-/** The gateway path for `/api/v1/<segments>`, or a refusal. */
-export function gatewayPath(segments: readonly string[]): { path: string } | Refusal {
-  const notFound = { status: 404, code: 'NOT_FOUND', message: 'We couldn’t find that.' };
-  if (segments.length === 0 || segments.length > 12) return notFound;
-  for (const s of segments) {
-    if (!SEGMENT.test(s) || s === '.' || s === '..') return notFound;
-  }
-  const joined = segments.join('/');
-  if (SERVER_ONLY.has(joined)) return notFound;
-  return { path: `/v1/${joined}` };
-}
+/**
+ * The gateway path for `/api/v1/<segments>`, or a refusal. Platform admin tools
+ * are never passed on from this site, whatever its session (D-091): they answer
+ * only the separate admin app.
+ */
+export const gatewayPath = (segments: readonly string[]) =>
+  gatewayPathFor(segments, { serverOnly: SERVER_ONLY, allowed: (s) => s[0] !== 'admin' });
 
 /** Successful calls after which this browser's session is over. */
 export function endsSession(method: string, path: string): boolean {

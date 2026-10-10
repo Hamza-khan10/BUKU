@@ -668,3 +668,83 @@ through the page's JavaScript; here the page never sees a token at all. New acco
 under the terms version the sign-in page states ("By signing in you agree…"). The button appears
 only where the web server has both the client id and secret; the API's `GOOGLE_CLIENT_IDS` must
 include the same id.
+
+**D-091 · Platform admin tools live in a separate admin app, reachable only through it.** The
+public website never offers an admin sign-in and never passes an admin call on: its API
+pass-through refuses every `/v1/admin` path, whatever the session's role, so a script injected
+into the public site — or a stolen customer session — can't reach admin tools through it. Admins
+use a separate app on its own address (admin.<domain>), with its own sign-in, its own
+HttpOnly cookies on that origin only, two-step sign-in always required, and no link from the
+public site. At the gateway, every `/v1/admin` path answers only requests carrying the admin
+app's server key (`ADMIN_GATEWAY_KEY`, 64 hex, different from the website's key, held only by
+Kong and the admin app's server): without it the route doesn't exist (404, before any token
+check), so even a valid admin token used from anywhere else gets nothing. With no key configured,
+admin routes are closed to everyone. The services still require the admin role and a session that
+passed two-step sign-in (D-081) — three independent locks: the admin app's key, the token's role,
+and its two-step claim. Why not a hidden `/admin` path on the public site: it would share the
+site's domain, cookies, code and attack surface; one cross-site scripting bug on any public page
+would be one step from the admin tools.
+
+**D-092 · A service that is taken over must not be able to take the rest.** Each service gets
+only the access its own job needs, at every layer, so a bug or a stolen dependency in one service
+can't reach the others' data or powers:
+
+- **Network.** Every service is on a network of its own, shared only with the data stores it uses
+  and with Kong (its one way in). Services can't reach each other at all; the one call between
+  them (notification asking booking for free times) goes through the gateway's public route,
+  with its checks. Networks of services that never call the internet (booking, queue, business,
+  search, ads, analytics) are internal: nothing can be sent out from them either. Kong's admin API
+  — which in DB-less mode can replace the whole gateway configuration — listens only inside the
+  Kong container, and is off in production.
+- **Database.** Each service signs in to Postgres as its own role (`buku_svc_<name>`), granted
+  exactly what `packages/database/src/access.ts` lists and nothing else: it changes only the
+  tables it owns, reads only the others it needs, and other services' columns only where its job
+  needs them (an account's deletion clearing the words people wrote). No other service can read
+  credentials, contact hashes or sign-in lock state — `users` is readable to them column by
+  column. The shared outbox is row-limited: a service sees and publishes only its own events
+  (row-level security). Trigger functions that keep derived figures up to date (search text, a
+  business's rating) run as their owner, and old rows are cleared by a database function with
+  fixed periods, so no service needs delete rights on others' tables to do upkeep. The audit log
+  can be appended to and changed by no one. A new table is usable by no service until it is
+  added to the map (a test checks every table has an owner and every name exists). The roles are
+  applied by the `db-access` job at start-up (`apply-access.ts`, each with its own password,
+  `BUKU_DB_PASSWORD_<SERVICE>`); migrations and seeds keep their own role.
+- **Events.** Each service signs in to Kafka as its own user (SCRAM-SHA-512), allowed to publish
+  only its own topics and to read only what it consumes, as its own consumer groups
+  (`infrastructure/kafka/access.conf`; a test checks it against the topics each service's code
+  uses, and that each kind of event has one publisher). Nobody can forge another service's
+  events — a forged `users.deleted` would cancel someone's bookings — or read events it has no
+  use for, and nothing connects without signing in. The broker's only password-less listeners
+  are bound to 127.0.0.1 inside its own container, used by the broker itself and the
+  `kafka-access` job that applies the plan.
+- **Cache.** Each service signs in to Valkey as its own user, limited to its own keys
+  (`infrastructure/valkey/access.acl`; a test checks it against the keys each service's code
+  uses): every service reads the sign-out list auth keeps, only auth writes it, so no service can
+  forge or lift a sign-out, read another's two-step state, or clear another's rate limits. No
+  service user may list keys, flush, change the configuration or switch databases; the gateway
+  has its own user for its rate-limit counters. The users are written at every Valkey start, so
+  a restart never loses them.
+
+Proven by the acceptance run: from inside a service, the others, the gateway admin API and (for
+internal networks) the internet can't be reached, while the public gateway can. The acceptance
+run and every browser test pass with each service on its own database role, with no "permission
+denied" in the database's log.
+
+**D-093 · A premium redesign: porcelain, graphite and one emerald accent.** The owner asked for a
+website that "attracts people on its own": luxury, modern, trustworthy, crafted, suited to
+booking and queueing, not "a gradient of colours", using Apple's design principles, Lenis, GSAP
+and React Bits. The first design (warm paper, coral, Bricolage + Inter) had become the commonest
+generated look, so it is replaced rather than polished (WEB_PLAN §2):
+
+- **Colour:** graphite on cool porcelain; emerald is the only accent and means "go"; amber means
+  waiting; red is errors only. Every pair checked against WCAG 2.2 AA in both themes.
+- **Type:** Instrument Sans for everything (chosen from a rendered specimen of six against the
+  brand's own content), a monospace only for codes read aloud.
+- **Motion:** springs that can be interrupted, feedback on press, one orchestrated moment per
+  page. Lenis for smooth wheel scrolling, GSAP for the one scroll-told story, Motion for
+  interface state; never two of them on the same element. All of it off under reduced motion.
+- **React Bits** components are adapted into `src/components/motion/` (MIT + Commons Clause:
+  allowed as part of the site; never redistributed on their own), with their CSS in the site's
+  stylesheet and real accessible text.
+- **No fake content:** no stock or placeholder photos. Businesses' own pictures where they exist;
+  otherwise designed, honest stand-ins (the business's initial, its category).

@@ -79,7 +79,10 @@ export function NewPasswordForm({
       setBusy(false);
       if (err instanceof ApiError && err.code === 'INVALID_CREDENTIALS' && !current) {
         setErrors({ current: 'That isn’t the temporary password. Check it with your business.' });
-      } else if (err instanceof ApiError && err.code === 'PASSWORD_TOO_WEAK') {
+      } else if (
+        err instanceof ApiError &&
+        (err.code === 'PASSWORD_TOO_WEAK' || err.code === 'PASSWORD_BREACHED')
+      ) {
         setErrors({ password: sentence(err.message) });
       } else {
         setErrors({ form: problemFrom(err, 'Your password couldn’t be changed. Please try again.') });
@@ -112,9 +115,9 @@ export function NewPasswordForm({
   return (
     <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <h2 className="font-display text-xl font-semibold text-ink">Choose your own password</h2>
+        <h2 className="text-xl tracking-[-0.02em] font-semibold text-ink">Choose your own password</h2>
         <p className="text-sm text-ink-2">
-          The password your business gave you is temporary. Choose one that only you know — then you’re in.
+          The password your business gave you is temporary. Choose one that only you know, and you’re in.
         </p>
       </div>
       <ProblemAlert problem={errors.form} />

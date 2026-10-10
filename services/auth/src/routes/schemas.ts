@@ -115,8 +115,17 @@ const zCode = z
   .trim()
   .regex(/^\d{6}$/, 'a 6-digit code');
 export const MfaCodeBody = zBody({ code: zCode });
+const zRecoveryCode = z.string().trim().min(8).max(20);
+/**
+ * A current code from the app, or one of the recovery codes — so someone who
+ * lost the phone with the app can still turn it off or get new codes.
+ */
+export const MfaSecondFactorBody = zBody({
+  code: zCode.optional(),
+  recoveryCode: zRecoveryCode.optional(),
+}).refine((b) => Boolean(b.code) !== Boolean(b.recoveryCode), 'give either `code` or `recoveryCode`');
 export const MfaVerifyBody = zBody({
   mfaToken: z.string().min(20).max(200),
   code: zCode.optional(),
-  recoveryCode: z.string().trim().min(8).max(20).optional(),
+  recoveryCode: zRecoveryCode.optional(),
 }).refine((b) => Boolean(b.code) !== Boolean(b.recoveryCode), 'give either `code` or `recoveryCode`');

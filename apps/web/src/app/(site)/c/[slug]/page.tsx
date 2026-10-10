@@ -20,7 +20,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (!node) return { title: 'Category not found' };
   return {
     title: node.name,
-    description: `${node.name} on BUKU: book a time or join the queue — see who’s open now and top rated.`,
+    description: `${node.name} on BUKU: book a time or join the queue, and see who’s open now and top rated.`,
   };
 }
 
@@ -55,7 +55,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           <span className="grid size-14 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand-ink">
             <CategoryIcon slug={node.slug} className="size-7" />
           </span>
-          <h1 className="font-display text-4xl font-bold tracking-tight">
+          <h1 className="text-4xl font-semibold tracking-[-0.03em]">
             {node.name}
             {filters.city && <span className="text-ink-3"> in {filters.city}</span>}
           </h1>

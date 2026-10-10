@@ -13,6 +13,7 @@ import type { RequestContext } from '../http/context.js';
 import type { MfaService } from '../mfa/mfa-service.js';
 import { auditCtx, type DeviceInfo, type SessionService } from '../sessions/session-service.js';
 import type { SignInResult, UserService } from '../users/user-service.js';
+import type { BreachedPasswords } from './breached-passwords.js';
 
 /**
  * Password sign-in for employee accounts (D-034): business + username +
@@ -50,6 +51,8 @@ export class PasswordAuthService {
       users: UserService;
       sessions: SessionService;
       mfa: Pick<MfaService, 'beginSession'>;
+      /** New passwords are checked against known data breaches. */
+      breaches: BreachedPasswords;
       settings: PasswordAuthSettings;
     },
   ) {}
@@ -138,6 +141,17 @@ export class PasswordAuthService {
     }
     if (user.username && input.newPassword.toLowerCase().includes(user.username)) {
       throw new AppError('Your password must not contain your username', ErrorCodes.PASSWORD_TOO_WEAK, 422);
+    }
+    // Known to attackers if it was in a breach. If the check can't be reached, the password is
+    // allowed (the owner's choice: nobody is stuck); our own rules have already been applied.
+    const seen = await this.deps.breaches.timesSeen(input.newPassword);
+    if (seen === null) recordSecurityEvent('breach_check_unavailable');
+    else if (seen > 0) {
+      throw new AppError(
+        'This password has appeared in a data breach, so attackers try it first. Please choose another.',
+        ErrorCodes.PASSWORD_BREACHED,
+        422,
+      );
     }
 
     const passwordHash = await hashPassword(input.newPassword);

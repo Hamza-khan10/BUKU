@@ -47,11 +47,11 @@ export default tseslint.config(
     },
   },
   {
-    // The web app (Next.js + React): hooks and React Compiler rules, browser globals.
+    // The web apps (Next.js + React: the website and the admin app): hooks and React Compiler rules, browser globals.
     // (Not the Next.js ESLint plugin: it pulls in a package with an unfixed high advisory,
     // GHSA-vfj7-8cjw-p6xm. Its rule that matters here — internal links through <Link>, so
     // navigation stays client-side and prefetched — is the selector below.)
-    files: ['apps/web/**/*.{ts,tsx}'],
+    files: ['apps/web/**/*.{ts,tsx}', 'apps/admin/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
     rules: {

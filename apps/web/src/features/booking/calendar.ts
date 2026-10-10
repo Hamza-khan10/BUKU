@@ -52,7 +52,7 @@ export function icsFor(r: Receipt, receiptUrl: string, now: Date): string {
     `SUMMARY:${icsText(what)}`,
     `LOCATION:${icsText(`${r.business.address.line}, ${r.business.address.city}`)}`,
     `DESCRIPTION:${icsText(
-      `${r.staff ? `With ${r.staff.displayName}. ` : ''}Booking code ${r.code} — show it at the front desk.\n${receiptUrl}`,
+      `${r.staff ? `With ${r.staff.displayName}. ` : ''}Booking code ${r.code}: show it at the front desk.\n${receiptUrl}`,
     )}`,
     `URL:${receiptUrl}`,
     // A request the business hasn't confirmed yet is tentative.

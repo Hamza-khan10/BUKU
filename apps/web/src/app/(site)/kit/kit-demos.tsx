@@ -24,9 +24,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-5">
-      <h2 className="border-b border-line pb-2 font-display text-2xl font-semibold tracking-tight">
-        {title}
-      </h2>
+      <h2 className="border-b border-line pb-2 text-2xl font-semibold tracking-[-0.025em]">{title}</h2>
       {children}
     </section>
   );
@@ -39,9 +37,9 @@ const SWATCHES = [
   ['ink', 'Text'],
   ['ink-2', 'Secondary text'],
   ['ink-3', 'Muted text'],
-  ['brand', 'Coral — the next step'],
-  ['ok', 'Mint — confirmed, open'],
-  ['wait', 'Amber — almost your turn'],
+  ['brand', 'Emerald: go, the next step'],
+  ['ok', 'Emerald: confirmed, open'],
+  ['wait', 'Amber: waiting, almost your turn'],
   ['focus', 'Focus'],
   ['danger', 'Errors only'],
 ] as const;
@@ -73,10 +71,10 @@ export function KitDemos() {
 
       <Section title="Type">
         <div className="flex flex-col gap-3">
-          <p className="font-display text-5xl font-bold tracking-tight">Know exactly when.</p>
-          <p className="font-display text-2xl font-semibold">Headings: Bricolage Grotesque</p>
+          <p className="text-5xl font-semibold tracking-[-0.035em]">Know exactly when.</p>
+          <p className="text-2xl font-semibold tracking-[-0.025em]">Instrument Sans, for everything</p>
           <p className="max-w-2xl text-lg text-ink-2">
-            Text: Inter — legible at every size. Names in other scripts fall back to the device’s fonts: عائشہ
+            One family, set tighter as it grows. Names in other scripts fall back to the device’s fonts: عائشہ
             خان · देवनागरी · 李雷.
           </p>
           <p className="font-mono text-xl tabular">BK-7KQ2MX · A-023 · 10:30</p>
@@ -208,7 +206,7 @@ export function KitDemos() {
             when="3 people ahead of you · about 20 min"
             code="A-023"
             codeLabel="Your ticket"
-            status={{ label: 'In the queue — updates live', tone: 'wait', live: true }}
+            status={{ label: 'In the queue, updating live', tone: 'wait', live: true }}
           />
         </div>
       </Section>

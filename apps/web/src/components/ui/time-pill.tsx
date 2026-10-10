@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn';
 
 /**
  * Free times to pick from. Taken times simply aren't shown (no greyed-out
- * clutter); the chosen one fills coral. A radio group underneath: Tab reaches
+ * clutter); the chosen one fills emerald. A radio group underneath: Tab reaches
  * the group, arrow keys move between times, screen readers say "3 of 12".
  */
 export function TimePills({
@@ -23,8 +23,8 @@ export function TimePill({ className, ...props }: ComponentProps<typeof RadioGro
   return (
     <RadioGroup.Item
       className={cn(
-        'tabular h-11 min-w-[5.5rem] rounded-full border border-line bg-surface px-4 font-mono text-sm font-medium text-ink',
-        'transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.97]',
+        'tabular h-11 min-w-[5.5rem] rounded-full border border-line bg-surface px-4 text-[0.95rem] font-medium text-ink',
+        'transition-[background-color,border-color,color,transform] duration-300 ease-(--ease-out) active:scale-[0.96] active:duration-100',
         'hover:border-brand hover:text-brand-ink',
         'data-[state=checked]:border-brand data-[state=checked]:bg-brand data-[state=checked]:text-on-brand data-[state=checked]:shadow-soft',
         className,

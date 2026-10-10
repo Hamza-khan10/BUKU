@@ -15,6 +15,7 @@ import {
   EventProducer,
   kafkaConnectionFromEnv,
   startConsumer,
+  OutboxRelay,
 } from '@buku/kafka';
 import { storageFromEnv } from '@buku/media';
 import { buildBookingApp } from './app.js';
@@ -44,7 +45,7 @@ const readiness = new Readiness()
     producer.isConnected ? Promise.resolve() : Promise.reject(new Error('producer not connected')),
   );
 
-const { app, staff } = buildBookingApp({
+const { app, staff, appointments } = buildBookingApp({
   db,
   redis,
   verifier,
@@ -59,14 +60,19 @@ const { app, staff } = buildBookingApp({
   },
 });
 
-// Reacts to other services' events (e.g. an employee left → no longer bookable).
+// Reacts to other services' events (an employee left → no longer bookable; an account closed →
+// its upcoming visits cancelled).
 const consumer = await startConsumer({
   kafka,
   groupId: consumerGroupId(env.SERVICE_NAME),
   topics: CONSUMED_TOPICS,
-  handler: bookingEventHandler({ staff }),
+  handler: bookingEventHandler({ staff, appointments }),
   producer,
 });
+
+// Publishes this service's committed outbox events (bookings.*, reviews.*): each service its own (D-092).
+const relay = new OutboxRelay({ db, producer, source: 'booking-service' });
+relay.start();
 
 // Hooks run in REVERSE order on shutdown: stop producing before closing stores.
 const hooks: ShutdownHook[] = [
@@ -78,6 +84,7 @@ const hooks: ShutdownHook[] = [
     },
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
+  { name: 'outbox-relay', fn: () => relay.stop() },
   { name: 'kafka-consumer', fn: () => consumer.stop() },
 ];
 

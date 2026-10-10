@@ -64,11 +64,11 @@ export function DayChoice({
                 aria-label={`${d.label}: ${free === 0 ? 'no free times' : `${free} free ${free === 1 ? 'time' : 'times'}`}`}
                 className={cn(choiceCard, 'flex-col items-center gap-0 px-1 py-2 text-center')}
               >
-                <span className="text-xs font-medium text-ink-3 uppercase">{d.weekday}</span>
-                <span className="font-display text-xl font-semibold text-ink tabular">{d.day}</span>
+                <span className="text-xs font-medium text-ink-3">{d.weekday}</span>
+                <span className="text-xl tracking-[-0.02em] font-semibold text-ink tabular">{d.day}</span>
                 <span className="text-xs text-ink-3">{d.month}</span>
                 <span className={cn('mt-1 text-xs font-medium', free ? 'text-ok' : 'text-ink-3')}>
-                  {free ? `${free} free` : '—'}
+                  {free ? `${free} free` : 'None free'}
                 </span>
               </RadioGroup.Item>
             );

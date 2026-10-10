@@ -15,8 +15,10 @@ import type { Database } from './index.js';
  * | Published outbox events                  | 7 days after publishing         | rows deleted                |
  * | Sign-in sessions (refresh tokens)        | 30 days after they expire       | rows deleted                |
  *
- * The monthly periods are fixed in the database function, so this job (the
- * app role) can run them but never shorten them. Each run is recorded in the
+ * Every period is fixed in a database function (drop_expired_partitions,
+ * delete_expired_rows), so this job can run them but never shorten them — and
+ * needs no delete rights of its own on other services' tables (D-092). Rows
+ * are deleted in batches so no statement holds locks for long. Each run is recorded in the
  * audit log with what was removed.
  */
 export const RETENTION = {
@@ -25,7 +27,6 @@ export const RETENTION = {
   expiredSessionsDays: 30,
 } as const;
 
-const DAY = 86_400_000;
 const BATCH = 5000;
 
 export interface RetentionResult {
@@ -36,17 +37,7 @@ export interface RetentionResult {
   sessions: number;
 }
 
-/** Deletes in batches so no single statement holds locks for long. */
-async function deleteInBatches(run: () => Promise<number>): Promise<number> {
-  let total = 0;
-  for (;;) {
-    const n = await run();
-    total += n;
-    if (n < BATCH) return total;
-  }
-}
-
-export async function applyRetention(db: Database, now = new Date()): Promise<RetentionResult> {
+export async function applyRetention(db: Database): Promise<RetentionResult> {
   // One replica at a time drops partitions (the lock ends with the transaction;
   // the row deletes below are safe to repeat if two replicas ever overlap).
   const dropped = await db.$transaction(async (tx) => {
@@ -60,25 +51,21 @@ export async function applyRetention(db: Database, now = new Date()): Promise<Re
   if (dropped === null)
     return { ran: false, droppedPartitions: [], processedEvents: 0, outboxEvents: 0, sessions: 0 };
 
-  const processedBefore = new Date(now.getTime() - RETENTION.processedEventsDays * DAY);
-  const outboxBefore = new Date(now.getTime() - RETENTION.publishedOutboxDays * DAY);
-  const sessionsBefore = new Date(now.getTime() - RETENTION.expiredSessionsDays * DAY);
-
-  const processedEvents = await deleteInBatches(
-    () =>
-      db.$executeRaw`DELETE FROM processed_events WHERE ctid IN (
-        SELECT ctid FROM processed_events WHERE processed_at < ${processedBefore} LIMIT ${BATCH})`,
-  );
-  const outboxEvents = await deleteInBatches(
-    () =>
-      db.$executeRaw`DELETE FROM outbox_events WHERE ctid IN (
-        SELECT ctid FROM outbox_events WHERE published_at < ${outboxBefore} LIMIT ${BATCH})`,
-  );
-  const sessions = await deleteInBatches(
-    () =>
-      db.$executeRaw`DELETE FROM refresh_tokens WHERE ctid IN (
-        SELECT ctid FROM refresh_tokens WHERE expires_at < ${sessionsBefore} LIMIT ${BATCH})`,
-  );
+  // The periods are fixed in the database function: this job can run it, never shorten them.
+  let processedEvents = 0;
+  let outboxEvents = 0;
+  let sessions = 0;
+  for (;;) {
+    const [row] = await db.$queryRaw<{ processed_events: bigint; outbox_events: bigint; sessions: bigint }[]>`
+      SELECT * FROM delete_expired_rows(${BATCH}::int)`;
+    const p = Number(row?.processed_events ?? 0);
+    const o = Number(row?.outbox_events ?? 0);
+    const s = Number(row?.sessions ?? 0);
+    processedEvents += p;
+    outboxEvents += o;
+    sessions += s;
+    if (p < BATCH && o < BATCH && s < BATCH) break;
+  }
 
   const result = {
     ran: true,

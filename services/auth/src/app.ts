@@ -23,6 +23,7 @@ import { SessionService } from './sessions/session-service.js';
 import { DataRightsService } from './users/data-rights.js';
 import { AvatarService } from './users/avatar-service.js';
 import { UserService } from './users/user-service.js';
+import type { BreachedPasswords } from './members/breached-passwords.js';
 
 /**
  * Everything auth-service needs, injected. `index.ts` builds the real
@@ -41,6 +42,8 @@ export interface AuthAppDeps {
   pictureUploads: PictureUploads;
   mediaLinks: MediaLinks;
   identity: { google: OidcVerifier | null; apple: OidcVerifier | null };
+  /** Checks new passwords against known data breaches (Have I Been Pwned). */
+  breaches: BreachedPasswords;
   settings: {
     termsVersion: string;
     devLoginEnabled: boolean;
@@ -103,6 +106,7 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
     users,
     sessions,
     mfa,
+    breaches: deps.breaches,
     settings: { maxAttempts: settings.memberLoginMaxAttempts, lockoutMinutes: settings.memberLockoutMinutes },
   });
   const members = new MemberService({

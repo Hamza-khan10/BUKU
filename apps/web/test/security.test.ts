@@ -33,6 +33,25 @@ describe('Content-Security-Policy', () => {
     expect(csp).not.toMatch(/img-src[^;]*\*/);
   });
 
+  it('object storage: pictures from it, uploads to it — and nowhere else', () => {
+    const csp = buildCsp({
+      nonce: 'n',
+      dev: false,
+      mediaOrigin: 'https://media.buku.app',
+      storageOrigin: 'https://fra1.digitaloceanspaces.com',
+    });
+    expect(csp).toContain("connect-src 'self' https://fra1.digitaloceanspaces.com;");
+    expect(csp).toMatch(/img-src [^;]*https:\/\/media\.buku\.app https:\/\/fra1\.digitaloceanspaces\.com/);
+    // In development both are the same address: named once.
+    const dev = buildCsp({
+      nonce: 'n',
+      dev: true,
+      mediaOrigin: 'http://localhost:9100',
+      storageOrigin: 'http://localhost:9100',
+    });
+    expect(dev.match(/localhost:9100/g)).toHaveLength(3); // img-src, media-src, connect-src
+  });
+
   it('nonces are fresh and long enough', () => {
     const a = newNonce();
     expect(a).not.toBe(newNonce());
@@ -91,6 +110,10 @@ describe('API pass-through: which gateway path', () => {
     expect(gatewayPath(['auth', 'logout'])).toMatchObject({ status: 404 });
     expect(gatewayPath(['auth', 'mfa', 'verify'])).toMatchObject({ status: 404 });
     expect(gatewayPath(['auth', 'mfa'])).toEqual({ path: '/v1/auth/mfa' });
+    // Admin tools only through the separate admin app, whatever this site's session is.
+    expect(gatewayPath(['admin', 'access-review'])).toMatchObject({ status: 404 });
+    expect(gatewayPath(['admin', 'billing', 'plans'])).toMatchObject({ status: 404 });
+    expect(gatewayPath(['admin'])).toMatchObject({ status: 404 });
     expect(gatewayPath(Array.from({ length: 13 }, () => 'a'))).toMatchObject({ status: 404 });
   });
 

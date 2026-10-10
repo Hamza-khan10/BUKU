@@ -22,16 +22,16 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'flex flex-col items-center gap-3 rounded-lg border border-dashed border-line px-6 py-12 text-center',
+        'flex flex-col items-center gap-3 rounded-xl bg-sunken/70 px-6 py-14 text-center',
         className,
       )}
     >
       {Icon && (
-        <span className="grid size-12 place-items-center rounded-full bg-sunken text-ink-2">
+        <span className="grid size-12 place-items-center rounded-full bg-surface text-ink-2 shadow-soft">
           <Icon className="size-6" aria-hidden />
         </span>
       )}
-      <h3 className="font-display text-lg font-semibold">{title}</h3>
+      <h3 className="text-lg font-semibold tracking-[-0.015em]">{title}</h3>
       {children && <div className="max-w-md text-sm text-ink-2">{children}</div>}
       {action && <div className="mt-2">{action}</div>}
     </div>
@@ -58,7 +58,7 @@ export function ErrorState({
 }) {
   return (
     <div role="alert" className={cn('flex flex-col items-center gap-3 px-6 py-12 text-center', className)}>
-      <h2 className="font-display text-xl font-semibold">{title}</h2>
+      <h2 className="text-xl font-semibold tracking-[-0.02em]">{title}</h2>
       <p className="max-w-md text-ink-2">{message}</p>
       {action && <div className="mt-2">{action}</div>}
       {reference && (

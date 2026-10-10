@@ -20,7 +20,11 @@ import {
  * Each test uses a fresh consumer group and filters by its own event ids, so
  * tests are independent of whatever else is on the topic.
  */
-const kafka = createKafka({ brokers: testEnv.kafkaBrokers.split(','), clientId: 'int-test' });
+const kafka = createKafka({
+  brokers: testEnv.kafkaBrokers.split(','),
+  clientId: 'int-test',
+  sasl: testEnv.kafkaSasl,
+});
 const producer = new EventProducer(kafka);
 let db: Database;
 const consumers: RunningConsumer[] = [];
@@ -185,9 +189,9 @@ describe('transactional outbox', () => {
       })
       .catch(() => undefined);
 
-    // Other test files leave events in the shared test outbox too, and the relay
-    // publishes the oldest first (100 per round): run it until OUR event is out.
-    const relay = new OutboxRelay({ db, producer, pollIntervalMs: 100 });
+    // Each service's relay publishes only that service's events (D-092): this one, 'int-test'.
+    // Earlier runs may have left 'int-test' events too: run it until OUR event is out.
+    const relay = new OutboxRelay({ db, producer, source: 'int-test', pollIntervalMs: 100 });
     const isPublished = async () =>
       (await db.outboxEvent.findFirst({ where: { aggregateId: committed.subject } }))?.publishedAt != null;
     for (let i = 0; i < 50 && !(await isPublished()); i++) await relay.runOnce();
@@ -202,6 +206,35 @@ describe('transactional outbox', () => {
     });
     expect(rows.map((r) => r.aggregateId)).toEqual([committed.subject]);
     expect(rows[0]!.publishedAt).not.toBeNull();
+  });
+
+  it('a service’s relay never publishes another service’s events (D-092)', async () => {
+    const theirs = createEvent({
+      type: TOPICS.BUSINESSES_UPDATED,
+      source: 'other-int-test',
+      subject: newSubject(),
+      data: {},
+    });
+    await db.$transaction(async (tx) => {
+      await enqueueEvent(tx, theirs, 'business');
+    });
+    const row = await db.outboxEvent.findFirstOrThrow({ where: { aggregateId: theirs.subject } });
+    expect(row.source).toBe('other-int-test');
+
+    const mine = new OutboxRelay({ db, producer, source: 'int-test', pollIntervalMs: 100 });
+    for (let i = 0; i < 5; i++) await mine.runOnce();
+    expect((await db.outboxEvent.findFirstOrThrow({ where: { id: row.id } })).publishedAt).toBeNull();
+
+    // Its own relay does.
+    const own = new OutboxRelay({ db, producer, source: 'other-int-test', pollIntervalMs: 100 });
+    for (
+      let i = 0;
+      i < 50 && !(await db.outboxEvent.findFirstOrThrow({ where: { id: row.id } })).publishedAt;
+      i++
+    ) {
+      await own.runOnce();
+    }
+    expect((await db.outboxEvent.findFirstOrThrow({ where: { id: row.id } })).publishedAt).not.toBeNull();
   });
 });
 

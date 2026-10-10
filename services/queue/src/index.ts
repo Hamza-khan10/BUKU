@@ -9,9 +9,17 @@ import {
   type ShutdownHook,
 } from '@buku/common';
 import { createDatabaseClient, pingDatabase } from '@buku/database';
-import { createKafka, EventProducer, kafkaConnectionFromEnv } from '@buku/kafka';
+import {
+  consumerGroupId,
+  createKafka,
+  EventProducer,
+  kafkaConnectionFromEnv,
+  startConsumer,
+  OutboxRelay,
+} from '@buku/kafka';
 import { Env } from './config.js';
 import { buildQueueApp } from './app.js';
+import { CONSUMED_TOPICS, queueEventHandler } from './events/handlers.js';
 
 const env = loadConfig(Env);
 
@@ -22,7 +30,8 @@ const db = createDatabaseClient({
   applicationName: env.SERVICE_NAME,
 });
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
-const producer = new EventProducer(createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env)));
+const kafka = createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env));
+const producer = new EventProducer(kafka);
 const verifier = await createJwtVerifierFromEnv(env);
 await producer.connect();
 
@@ -36,7 +45,7 @@ const readiness = new Readiness()
 
 // A subscribed Valkey connection can't run other commands: live updates get their own.
 const subscriber = createRedisClient({ url: env.REDIS_URL, connectionName: `${env.SERVICE_NAME}-live` });
-const { app, live } = buildQueueApp({
+const { app, live, queue } = buildQueueApp({
   db,
   redis,
   subscriber,
@@ -53,6 +62,19 @@ const { app, live } = buildQueueApp({
 
 await live.start();
 
+// Reacts to other services' events (an account closed → its places in line given up).
+const consumer = await startConsumer({
+  kafka,
+  groupId: consumerGroupId(env.SERVICE_NAME),
+  topics: CONSUMED_TOPICS,
+  handler: queueEventHandler({ queue }),
+  producer,
+});
+
+// Publishes this service's committed outbox events (queue.*): each service its own (D-092).
+const relay = new OutboxRelay({ db, producer, source: 'queue-service' });
+relay.start();
+
 // Hooks run in REVERSE order on shutdown: stop producing before closing stores.
 const hooks: ShutdownHook[] = [
   { name: 'postgres', fn: () => db.$disconnect() },
@@ -63,6 +85,8 @@ const hooks: ShutdownHook[] = [
     },
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
+  { name: 'outbox-relay', fn: () => relay.stop() },
+  { name: 'kafka-consumer', fn: () => consumer.stop() },
   {
     name: 'valkey-live',
     fn: async () => {

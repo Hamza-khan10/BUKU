@@ -624,6 +624,75 @@ async function authorizationScan(ctx: { shop: Shop; stranger: Person; customer: 
   await step(`a customer on all ${adminRoutes.length} admin routes: 403`, () => {
     expect(!adminProblems.length, adminProblems.join('\n      '));
   });
+
+  // D-091: admin routes answer only the admin app's server. Without its key they don't exist,
+  // whoever is signed in — so a session stolen from anywhere else can't reach them.
+  const keylessProblems: string[] = [];
+  for (const r of adminRoutes) {
+    const res = await call(r.method, fill(r.path, ctx.shop), {
+      token: ctx.customer.token,
+      asAdminApp: false,
+      ...(r.method === 'GET' || r.method === 'DELETE' ? {} : { body: {} }),
+    });
+    if (res.status !== 404) keylessProblems.push(`${r.method} ${r.path} → ${show(res)}`);
+  }
+  await step(`without the admin app's key: all ${adminRoutes.length} admin routes are unknown (404)`, () => {
+    expect(!keylessProblems.length, keylessProblems.join('\n      '));
+  });
+
+  // D-092: a service that is taken over can't reach the others, the gateway's admin API, or (for
+  // services that never call outside) the internet — only the gateway's public routes.
+  await step(
+    'services are walled off from each other, from the gateway admin API and from the internet',
+    () => {
+      const fromSearch = reach('search', [
+        'http://booking-service:3002/health',
+        'http://auth-service:3001/health',
+        'http://kong:8001/status',
+        'https://example.com/',
+        'http://kong:8000/v1/categories',
+      ]);
+      const fromBooking = reach('booking', ['http://queue-service:3003/health', 'https://example.com/']);
+      const problems = Object.entries({ ...fromSearch, ...fromBooking })
+        .filter(([url, answer]) => (url === 'http://kong:8000/v1/categories') !== (answer === 'reached'))
+        .map(([url, answer]) => `${url} → ${answer}`);
+      expect(!problems.length, problems.join('\n      '));
+    },
+  );
+
+  // D-092: each service signs in to Kafka as itself, publishes only its own events and sees only
+  // the topics it uses; without its password nothing connects.
+  await step('Kafka: a service can’t forge another’s events or read its topics, and must sign in', () => {
+    const answers = {
+      search: kafkaProbe('search', {
+        own: 'analytics.search',
+        other: 'users.deleted',
+        forge: 'bookings.created',
+      }),
+      booking: kafkaProbe('booking', {
+        own: 'bookings.created',
+        other: 'payments.completed',
+        forge: 'users.deleted',
+      }),
+    };
+    const problems = Object.entries(answers).flatMap(([service, r]) =>
+      Object.entries(r)
+        .filter(([what, answer]) => (what === 'sees its own topic') !== (answer === 'allowed'))
+        .map(([what, answer]) => `${service} ${what} → ${answer}`),
+    );
+    expect(!problems.length, problems.join('\n      '));
+  });
+
+  // D-092: each service signs in to Valkey as itself, limited to its own keys; every service
+  // reads the sign-out list, only auth writes it.
+  await step('Valkey: a service can’t touch another’s keys, forge a sign-out, or run admin commands', () => {
+    const answers = valkeyProbe('booking');
+    const allowed = new Set(['reads the sign-out list', 'uses its own rate-limit counters']);
+    const problems = Object.entries(answers)
+      .filter(([what, answer]) => allowed.has(what) !== (answer === 'allowed'))
+      .map(([what, answer]) => `booking ${what} → ${answer}`);
+    expect(!problems.length, problems.join('\n      '));
+  });
 }
 
 const PORTS: Record<string, number> = {
@@ -636,35 +705,171 @@ const PORTS: Record<string, number> = {
   billing: 3009,
 };
 
-/** Calls each service by its internal address from inside a service container; returns what didn't answer 401. */
+/** Runs a small script inside a container (Node is in every service image); returns its last line. */
+function inside(container: string, script: string): string {
+  const out = execFileSync('docker', ['exec', '-i', container, 'node', '--input-type=module', '-'], {
+    input: script,
+    encoding: 'utf8',
+  });
+  return out.trim().split('\n').at(-1)!;
+}
+
+/**
+ * Calls each service on its own port from inside its own container (services
+ * can't reach each other, D-092); returns what didn't answer 401.
+ */
 function directScan(routes: Route[]): string[] {
-  const targets = routes.map((r) => ({
-    label: `${r.method} ${r.path} (${r.service})`,
-    method: r.method,
-    url: `http://${r.service}-service:${PORTS[r.service]}${r.path}`,
-  }));
+  const bad: string[] = [];
+  for (const service of [...new Set(routes.map((r) => r.service))]) {
+    const targets = routes
+      .filter((r) => r.service === service)
+      .map((r) => ({
+        label: `${r.method} ${r.path} (${r.service})`,
+        method: r.method,
+        url: `http://localhost:${PORTS[r.service]}${r.path}`,
+      }));
+    const script = `
+      const targets = ${JSON.stringify(targets)};
+      const bad = [];
+      for (const t of targets) {
+        const res = await fetch(t.url, {
+          method: t.method,
+          headers: { 'content-type': 'application/json' },
+          body: t.method === 'GET' || t.method === 'DELETE' ? undefined : '{}',
+        });
+        if (res.status !== 401) bad.push(t.label + ' -> ' + res.status);
+        await res.body?.cancel();
+      }
+      console.log(JSON.stringify(bad));`;
+    bad.push(...(JSON.parse(inside(`buku-${service}-service-1`, script)) as string[]));
+  }
+  return bad;
+}
+
+/**
+ * From inside a service, what it can reach (D-092): another service's port, the
+ * gateway's admin API, the internet. Each answer is "reached" or the error code.
+ */
+function reach(fromService: string, urls: string[]): Record<string, string> {
   const script = `
-    const targets = ${JSON.stringify(targets)};
-    const bad = [];
-    for (const t of targets) {
-      const res = await fetch(t.url, {
-        method: t.method,
-        headers: { 'content-type': 'application/json' },
-        body: t.method === 'GET' || t.method === 'DELETE' ? undefined : '{}',
-      });
-      if (res.status !== 401) bad.push(t.label + ' -> ' + res.status);
-      await res.body?.cancel();
+    const urls = ${JSON.stringify(urls)};
+    const out = {};
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+        await res.body?.cancel();
+        out[url] = 'reached';
+      } catch (err) {
+        out[url] = err?.cause?.code ?? err?.name ?? 'failed';
+      }
     }
-    console.log(JSON.stringify(bad));`;
-  const out = execFileSync(
-    'docker',
-    ['exec', '-i', 'buku-search-service-1', 'node', '--input-type=module', '-'],
-    {
-      input: script,
-      encoding: 'utf8',
-    },
-  );
-  return JSON.parse(out.trim().split('\n').at(-1)!) as string[];
+    console.log(JSON.stringify(out));`;
+  return JSON.parse(inside(`buku-${fromService}-service-1`, script)) as Record<string, string>;
+}
+
+/**
+ * From inside a service, with its own Kafka user (D-092): can it see its own topic, see another's,
+ * publish another's event, or connect with a wrong password or none? Each answer is "allowed" or
+ * the refusal. Nothing is ever published: the one publish tried is one that must be refused.
+ */
+function kafkaProbe(
+  fromService: string,
+  topics: { own: string; other: string; forge: string },
+): Record<string, string> {
+  const script = `
+    import { createRequire } from 'node:module';
+    const { KafkaJS } = createRequire('/app/packages/kafka/package.json')('@confluentinc/kafka-javascript');
+    const topics = ${JSON.stringify(topics)};
+    const user = { username: process.env.KAFKA_SASL_USERNAME, password: process.env.KAFKA_SASL_PASSWORD };
+    const kafka = (sasl) =>
+      new KafkaJS.Kafka({
+        kafkaJS: {
+          brokers: [process.env.KAFKA_BROKERS],
+          clientId: 'acceptance-isolation',
+          ...(sasl ? { sasl: { mechanism: 'scram-sha-512', ...sasl } } : {}),
+          connectionTimeout: 4000,
+          requestTimeout: 6000,
+          retry: { retries: 0 },
+          logLevel: KafkaJS.logLevel.NOTHING,
+        },
+        'message.timeout.ms': 6000,
+      });
+    const out = {};
+    const attempt = async (label, fn) => {
+      try {
+        await fn();
+        out[label] = 'allowed';
+      } catch (err) {
+        out[label] = String(err?.message ?? err).slice(0, 80);
+      }
+    };
+    const see = (sasl, topic) => async () => {
+      const admin = kafka(sasl).admin();
+      await admin.connect();
+      try {
+        await admin.fetchTopicMetadata({ topics: [topic], timeout: 6000 });
+      } finally {
+        await admin.disconnect();
+      }
+    };
+    const publish = (topic) => async () => {
+      const producer = kafka(user).producer();
+      await producer.connect();
+      try {
+        await producer.send({ topic, messages: [{ value: 'acceptance: must be refused' }] });
+      } finally {
+        await producer.disconnect();
+      }
+    };
+    await attempt('sees its own topic', see(user, topics.own));
+    await attempt('sees ' + topics.other, see(user, topics.other));
+    await attempt('publishes ' + topics.forge, publish(topics.forge));
+    await attempt('connects with a wrong password', see({ ...user, password: 'x'.repeat(48) }, topics.own));
+    await attempt('connects without signing in', see(null, topics.own));
+    console.log(JSON.stringify(out));`;
+  return JSON.parse(inside(`buku-${fromService}-service-1`, script)) as Record<string, string>;
+}
+
+/**
+ * From inside a service, with its own Valkey user (D-092): what it may do with the sign-out list,
+ * its own keys, another service's keys, admin commands and a wrong password. Each answer is
+ * "allowed" or the refusal. The one write tried on a key of its own is removed again.
+ */
+function valkeyProbe(fromService: string): Record<string, string> {
+  const script = `
+    import { createRequire } from 'node:module';
+    const { Redis } = createRequire('/app/packages/common/package.json')('ioredis');
+    const url = new URL(process.env.REDIS_URL);
+    const open = (password) =>
+      new Redis({ host: url.hostname, port: Number(url.port), username: decodeURIComponent(url.username),
+        password, lazyConnect: true, maxRetriesPerRequest: 0, retryStrategy: () => null, enableOfflineQueue: false });
+    const redis = open(decodeURIComponent(url.password));
+    await redis.connect();
+    const out = {};
+    const attempt = async (label, fn) => {
+      try {
+        await fn();
+        out[label] = 'allowed';
+      } catch (err) {
+        out[label] = String(err?.message ?? err).slice(0, 80);
+      }
+    };
+    const own = 'rl:${fromService}:acceptance-isolation';
+    await attempt('reads the sign-out list', () => redis.get('auth:rev:none'));
+    await attempt('uses its own rate-limit counters', async () => { await redis.set(own, '1', 'EX', 5); await redis.del(own); });
+    await attempt('writes the sign-out list', () => redis.set('auth:rev:user:acceptance-isolation', '1', 'EX', 5));
+    await attempt('reads auth’s two-step state', () => redis.get('mfa:fail:acceptance-isolation'));
+    await attempt('clears auth’s sign-in limits', () => redis.del('rl:auth:signin:acceptance-isolation'));
+    await attempt('lists every key', () => redis.keys('*'));
+    await attempt('switches to the gateway’s database', () => redis.select(1));
+    await attempt('reads the server configuration', () => redis.config('GET', '*'));
+    await redis.quit();
+    const wrong = open('x'.repeat(48));
+    wrong.on('error', () => undefined); // the refusal is the answer, not something to log
+    await attempt('connects with a wrong password', () => wrong.connect());
+    wrong.disconnect();
+    console.log(JSON.stringify(out));`;
+  return JSON.parse(inside(`buku-${fromService}-service-1`, script)) as Record<string, string>;
 }
 
 main().catch((err: unknown) => {

@@ -34,7 +34,7 @@ function Unavailable({ what, reference }: { what: string; reference: string | un
 function Block({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
     <section aria-labelledby={id} className="flex scroll-mt-24 flex-col gap-4">
-      <h2 id={id} className="font-display text-2xl font-semibold tracking-tight">
+      <h2 id={id} className="text-2xl font-semibold tracking-[-0.025em]">
         {title}
       </h2>
       {children}
@@ -48,9 +48,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const b = page.business;
   const description =
     b.description ??
-    `${b.name} — ${b.category.name.toLowerCase()} in ${b.address.city}. See services, prices and opening hours on BUKU.`;
+    `${b.name}, ${b.category.name.toLowerCase()} in ${b.address.city}. See services, prices and opening hours on BUKU.`;
   return {
-    title: `${b.name} — ${b.category.name} in ${b.address.city}`,
+    title: `${b.name}: ${b.category.name} in ${b.address.city}`,
     description: description.slice(0, 300),
     alternates: { canonical: `/b/${b.slug}` },
     openGraph: {

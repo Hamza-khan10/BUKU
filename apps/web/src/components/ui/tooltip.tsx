@@ -15,7 +15,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
         <RadixTooltip.Portal>
           <RadixTooltip.Content
             sideOffset={6}
-            className="z-50 max-w-64 rounded-sm bg-ink px-2.5 py-1.5 text-xs text-canvas shadow-lift animate-rise"
+            className="z-50 max-w-64 rounded-md bg-ink px-3 py-1.5 text-xs text-canvas shadow-lift animate-rise"
           >
             {content}
             <RadixTooltip.Arrow className="fill-ink" />

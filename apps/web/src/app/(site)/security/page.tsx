@@ -7,7 +7,7 @@ import { siteFacts } from '@/lib/site';
 
 export const metadata = {
   title: 'Security',
-  description: 'How BUKU protects accounts and data, in plain words — and how to report a vulnerability.',
+  description: 'How BUKU protects accounts and data, in plain words, and how to report a vulnerability.',
 };
 
 /** Each claim is a control that exists and is tested (docs/SECURITY.md, docs/compliance). */
@@ -24,7 +24,7 @@ const CONTROLS: { Icon: LucideIcon; title: string; points: string[] }[] = [
     Icon: KeyRound,
     title: 'Signing in',
     points: [
-      'Customers sign in with Google — BUKU never holds a password for them.',
+      'Customers sign in with Google. BUKU never holds a password for them.',
       'Business staff passwords are stored only as Argon2id hashes; repeated wrong passwords lock the account for a while.',
       'On this website, sign-in tokens live in cookies that its scripts can’t read.',
       'You can see every device you’re signed in on, and sign any of them out.',
@@ -50,7 +50,7 @@ const CONTROLS: { Icon: LucideIcon; title: string; points: string[] }[] = [
     Icon: ShieldCheck,
     title: 'Only what each person needs',
     points: [
-      'Businesses see a customer’s name, booking and a reliability label — never contact details.',
+      'Businesses see a customer’s name, booking and a reliability label. Never contact details.',
       'Each team member’s role decides what they can do, and the system checks it on every request.',
       'Everything people type is checked before it’s stored; pages only run BUKU’s own scripts.',
     ],
@@ -72,7 +72,7 @@ export default function SecurityPage() {
       <PageHeading
         eyebrow="Security"
         title="How we keep BUKU safe"
-        description="What we actually do to protect your account and your data — no jargon, no vague promises."
+        description="What we actually do to protect your account and your data. No jargon, no vague promises."
       />
       <ul className="grid gap-4 md:grid-cols-2">
         {CONTROLS.map(({ Icon, title, points }) => (
@@ -84,7 +84,7 @@ export default function SecurityPage() {
               <span className="grid size-11 place-items-center rounded-md bg-ok-soft text-ok">
                 <Icon className="size-5" aria-hidden />
               </span>
-              <h2 className="font-display text-xl font-semibold">{title}</h2>
+              <h2 className="text-xl tracking-[-0.02em] font-semibold">{title}</h2>
             </span>
             <ul className="flex list-disc flex-col gap-2 pl-5 text-ink-2">
               {points.map((p) => (

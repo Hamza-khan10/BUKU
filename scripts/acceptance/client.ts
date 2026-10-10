@@ -7,6 +7,8 @@
 import { execFileSync } from 'node:child_process';
 
 export const API = process.env.ACCEPTANCE_API ?? 'http://localhost:8000';
+/** The admin app's gateway key (D-091), from the root .env. */
+const ADMIN_KEY = process.env.ADMIN_GATEWAY_KEY ?? '';
 
 export interface Res {
   status: number;
@@ -30,7 +32,14 @@ async function pace() {
 export async function call(
   method: string,
   path: string,
-  opts: { token?: string | undefined; body?: unknown; paced?: boolean; timeoutMs?: number } = {},
+  opts: {
+    token?: string | undefined;
+    body?: unknown;
+    paced?: boolean;
+    timeoutMs?: number;
+    /** Admin routes: send the admin app's key (default), or false to call as anyone else would. */
+    asAdminApp?: boolean;
+  } = {},
 ): Promise<Res> {
   for (let attempt = 0; ; attempt++) {
     if (opts.paced !== false) await pace();
@@ -38,6 +47,8 @@ export async function call(
       method,
       headers: {
         ...(opts.token && { Authorization: `Bearer ${opts.token}` }),
+        // Admin routes answer only the admin app's server (D-091): acting as it here.
+        ...(path.startsWith('/v1/admin') && opts.asAdminApp !== false && { 'X-BUKU-Admin-Key': ADMIN_KEY }),
         ...(opts.body !== undefined && { 'Content-Type': 'application/json' }),
       },
       ...(opts.body !== undefined && { body: JSON.stringify(opts.body) }),

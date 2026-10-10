@@ -55,7 +55,7 @@ test.describe('Reviews', () => {
 
     await expect(page).toHaveURL((url) => url.pathname === '/account/reviews');
     await expect(
-      page.getByText(`Thank you — your review is on ${possessive(place.name)} page.`),
+      page.getByText(`Thank you. Your review is on ${possessive(place.name)} page.`),
     ).toBeVisible();
     const item = page.getByRole('article').filter({ hasText: place.name });
     // Contact details never reach the page.

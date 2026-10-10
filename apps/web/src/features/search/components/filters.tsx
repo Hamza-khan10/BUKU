@@ -42,7 +42,7 @@ export function FilterChips({
           >
             {on && <Check className="size-4" aria-hidden />}
             {label}
-            <span className="sr-only">{on ? ' (on — select to turn off)' : ' (off)'}</span>
+            <span className="sr-only">{on ? ' (on, select to turn off)' : ' (off)'}</span>
           </Link>
         </li>
       ))}

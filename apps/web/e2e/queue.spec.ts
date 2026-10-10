@@ -53,7 +53,7 @@ test.describe('Walk-in queue', () => {
 
     await expect(page).toHaveURL(/\/queue\/[0-9a-f-]{36}\?joined=1$/);
     await expect(page.getByRole('heading', { name: 'You’re in the queue' })).toBeVisible();
-    await expect(page.getByText('This page updates by itself — keep it open.')).toBeVisible();
+    await expect(page.getByText('This page updates by itself. Keep it open.')).toBeVisible();
     const entryId = new URL(page.url()).pathname.split('/').pop()!;
     const code = (await page
       .getByText(/^[A-Z]{1,3}-\d{3}$/)
@@ -75,7 +75,7 @@ test.describe('Walk-in queue', () => {
     await expect(page.getByText('It’s your turn', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Go to the counter')).toBeVisible();
     await expect(page.getByText(/^Please be there by /)).toBeVisible();
-    await expect(page).toHaveTitle(new RegExp(`It’s your turn — ${code}`));
+    await expect(page).toHaveTitle(new RegExp(`It’s your turn: ${code}`));
   });
 
   test('too far away: says how far, and where joining works', async ({ page, context }) => {

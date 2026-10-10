@@ -1,0 +1,90 @@
+@import 'tailwindcss';
+
+/*
+ * The admin app's tokens: a calm, plain operator console that never looks like
+ * the public website (so nobody mistakes one for the other). Every text and
+ * background pair meets WCAG 2.2 AA; the device's light or dark setting applies.
+ */
+
+:root {
+  color-scheme: light dark;
+  --canvas: #f3f4f6;
+  --surface: #ffffff;
+  --sunken: #e9ebee;
+  --line: #d6d9de;
+  --ink: #111827;
+  --ink-2: #374151;
+  --ink-3: #5b6472;
+  --brand: #1d4e89;
+  --brand-ink: #ffffff;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --ok: #1a7f4b;
+  --ok-soft: #e6f4ec;
+  --wait: #8a5a00;
+  --wait-soft: #fdf3dc;
+  --focus: #2563eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #0f141b;
+    --surface: #161c25;
+    --sunken: #1d2531;
+    --line: #2c3645;
+    --ink: #eef1f5;
+    --ink-2: #c8cfd9;
+    --ink-3: #9aa4b2;
+    --brand: #8fb7ff;
+    --brand-ink: #0b1a33;
+    --danger: #ff9b91;
+    --danger-soft: #3a1714;
+    --ok: #7fd6a5;
+    --ok-soft: #12301f;
+    --wait: #f2c46d;
+    --wait-soft: #33270d;
+    --focus: #8fb7ff;
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-wait: var(--wait);
+  --color-wait-soft: var(--wait-soft);
+  --color-focus: var(--focus);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

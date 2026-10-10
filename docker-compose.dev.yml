@@ -18,7 +18,7 @@
 #     capabilities dropped, no privilege escalation.
 #
 # Endpoints (host):
-#   API gateway   http://localhost:8000        Kong admin   http://localhost:8001
+#   API gateway   http://localhost:8000        (Kong admin: inside its container only, D-092)
 #   Mailpit UI    http://localhost:8025        S3 console   http://localhost:9101
 #   Postgres      localhost:5432               Valkey       localhost:6379
 #   Kafka         localhost:9092               Elasticsearch http://localhost:9200
@@ -28,14 +28,38 @@
 
 name: buku
 
+# ── Networks: each service sees only what it needs (D-092) ─────────────────
+# Every service has a network of its own, shared only with the data stores it
+# uses and with Kong (its one way in). Services can't reach each other: a
+# compromised service can't call another's internal port, and the only route
+# between them is the public gateway, with its checks. Networks marked internal
+# have no way out to the internet: services that never call outside can't send
+# anything out either. Containers with host ports also join "published".
 networks:
-  buku:
-    driver: bridge
+  published: {}
+  kong-cache: { internal: true }
+  migrate: { internal: true }
+  kafka-admin: { internal: true }
+  s3-admin: { internal: true }
+  es-admin: { internal: true }
+  tools: {}
+  # Outside calls needed: Google sign-in and leaked-password checks (auth),
+  # email/push/WhatsApp (notification), Paddle (billing).
+  svc-auth: {}
+  svc-notification: {}
+  svc-billing: {}
+  svc-booking: { internal: true }
+  svc-queue: { internal: true }
+  svc-business: { internal: true }
+  svc-search: { internal: true }
+  svc-ads: { internal: true }
+  svc-analytics: { internal: true }
 
 volumes:
   postgres-data:
   valkey-data:
   kafka-data:
+  kafka-access-state:
   elasticsearch-data:
   clickhouse-data:
   s3-data:
@@ -47,12 +71,10 @@ x-logging: &logging
 
 x-infra: &infra
   restart: unless-stopped
-  networks: [buku]
   logging: *logging
 
 x-oneshot: &oneshot
   restart: 'no'
-  networks: [buku]
   logging: *logging
 
 # One image for every Node workload, built once from docker/node/Dockerfile.dev.
@@ -84,6 +106,8 @@ x-service-env: &service-env
   LOG_PRETTY: 'true'
   TRUST_PROXY_HOPS: '1'
   KAFKA_BROKERS: kafka:29092
+  # Each service signs in as its own Kafka user (D-092; infrastructure/kafka/access.conf).
+  KAFKA_SASL_MECHANISM: scram-sha-512
   JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?run pnpm bootstrap}
   JWT_KEY_ID: ${JWT_KEY_ID:?run pnpm bootstrap}
   JWT_ISSUER: ${JWT_ISSUER:-https://auth.buku.local}
@@ -113,12 +137,27 @@ x-needs-core: &needs-core
   postgres: { condition: service_healthy }
   kafka-init: { condition: service_completed_successfully }
   db-migrate: { condition: service_completed_successfully }
+  db-access: { condition: service_completed_successfully }
 
 services:
   # ═════════════════════════════ DATA STORES ═════════════════════════════
 
   postgres:
     <<: *infra
+    networks:
+      [
+        published,
+        migrate,
+        svc-auth,
+        svc-booking,
+        svc-queue,
+        svc-notification,
+        svc-business,
+        svc-billing,
+        svc-search,
+        svc-ads,
+        svc-analytics,
+      ]
     build: { context: docker/postgres }
     image: buku/postgres:local
     shm_size: 256mb
@@ -153,27 +192,37 @@ services:
 
   valkey:
     <<: *infra
+    networks:
+      [
+        published,
+        kong-cache,
+        tools,
+        svc-auth,
+        svc-booking,
+        svc-queue,
+        svc-notification,
+        svc-business,
+        svc-billing,
+        svc-ads,
+      ]
     image: valkey/valkey:8.1.4-alpine
     # noeviction: this instance holds booking locks, queue state and BullMQ
     # jobs. An LRU policy would silently DELETE them under memory pressure.
-    entrypoint: ['/bin/sh', '-c']
-    command:
-      - |
-        umask 077
-        printf 'requirepass %s\n' "$$VALKEY_PASSWORD" > /tmp/auth.conf
-        exec valkey-server /tmp/auth.conf \
-          --maxmemory 384mb \
-          --maxmemory-policy noeviction \
-          --appendonly yes \
-          --appendfsync everysec \
-          --save 900 1 --save 300 100 --save 60 10000 \
-          --rename-command FLUSHALL '' \
-          --rename-command FLUSHDB '' \
-          --rename-command DEBUG ''
+    # Each service signs in as its own user, limited to its own keys (D-092;
+    # infrastructure/valkey/access.acl). The default user is the admin.
+    entrypoint: ['/bin/sh', '/access/start.sh']
     environment:
       VALKEY_PASSWORD: ${VALKEY_PASSWORD:?run pnpm bootstrap}
       REDISCLI_AUTH: ${VALKEY_PASSWORD}
-    volumes: [valkey-data:/data]
+      VALKEY_PASSWORD_AUTH: ${VALKEY_PASSWORD_AUTH:?run pnpm bootstrap}
+      VALKEY_PASSWORD_BOOKING: ${VALKEY_PASSWORD_BOOKING:?run pnpm bootstrap}
+      VALKEY_PASSWORD_QUEUE: ${VALKEY_PASSWORD_QUEUE:?run pnpm bootstrap}
+      VALKEY_PASSWORD_NOTIFICATION: ${VALKEY_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
+      VALKEY_PASSWORD_BUSINESS: ${VALKEY_PASSWORD_BUSINESS:?run pnpm bootstrap}
+      VALKEY_PASSWORD_BILLING: ${VALKEY_PASSWORD_BILLING:?run pnpm bootstrap}
+      VALKEY_PASSWORD_ADS: ${VALKEY_PASSWORD_ADS:?run pnpm bootstrap}
+      VALKEY_PASSWORD_KONG: ${VALKEY_PASSWORD_KONG:?run pnpm bootstrap}
+    volumes: [valkey-data:/data, ./infrastructure/valkey:/access:ro]
     ports: ['127.0.0.1:6379:6379']
     healthcheck:
       test: ['CMD-SHELL', 'valkey-cli ping | grep -q PONG']
@@ -184,16 +233,43 @@ services:
 
   kafka:
     <<: *infra
+    networks:
+      [
+        published,
+        kafka-admin,
+        tools,
+        svc-auth,
+        svc-booking,
+        svc-queue,
+        svc-notification,
+        svc-business,
+        svc-search,
+        svc-ads,
+        svc-analytics,
+      ]
     image: apache/kafka:4.3.1
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENERS: CONTROLLER://:9093,INTERNAL://:29092,EXTERNAL://:9092
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # Signing in (D-092): services and jobs (INTERNAL) and this machine (EXTERNAL) sign in
+      # with SCRAM-SHA-512, each as its own user, allowed only what
+      # infrastructure/kafka/access.conf lists (the kafka-access job applies it). The controller
+      # and LOCAL listeners need no password and are bound to 127.0.0.1 inside this container:
+      # only the broker itself, its health check and the kafka-access job (which shares this
+      # container's network) reach them.
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@127.0.0.1:9093
+      KAFKA_LISTENERS: CONTROLLER://127.0.0.1:9093,LOCAL://127.0.0.1:29093,INTERNAL://:29092,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: LOCAL://127.0.0.1:29093,INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,LOCAL:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: LOCAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-512
+      KAFKA_LISTENER_NAME_INTERNAL_SCRAM___SHA___512_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required;
+      KAFKA_LISTENER_NAME_EXTERNAL_SCRAM___SHA___512_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required;
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'false'
+      # The password-less local listeners (the broker itself, the kafka-access job) and the admin.
+      KAFKA_SUPER_USERS: User:ANONYMOUS;User:buku-admin
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       # Topics are created explicitly from the registry — a typo in a topic
       # name must fail loudly, not silently create a new empty topic.
@@ -213,7 +289,7 @@ services:
       test:
         [
           'CMD-SHELL',
-          '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 > /dev/null 2>&1',
+          '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:29093 > /dev/null 2>&1',
         ]
       interval: 10s
       timeout: 10s
@@ -223,6 +299,7 @@ services:
 
   elasticsearch:
     profiles: [elasticsearch]
+    networks: [published, es-admin, tools, svc-search]
     <<: *infra
     image: docker.elastic.co/elasticsearch/elasticsearch:9.5.3
     environment:
@@ -253,6 +330,7 @@ services:
 
   clickhouse:
     profiles: [analytics]
+    networks: [published, svc-analytics]
     <<: *infra
     image: clickhouse/clickhouse-server:26.3.36-alpine
     environment:
@@ -277,6 +355,7 @@ services:
   # S3-compatible object storage (production: DigitalOcean Spaces).
   s3:
     <<: *infra
+    networks: [published, s3-admin, svc-auth, svc-booking, svc-business, svc-search]
     image: rustfs/rustfs:1.0.0
     environment:
       RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID:?run pnpm bootstrap}
@@ -292,6 +371,7 @@ services:
   # Catches every outgoing email in dev (production: AWS SES via SMTP).
   mailpit:
     <<: *infra
+    networks: [published, svc-notification]
     image: axllent/mailpit:v1.31.3
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: 'true'
@@ -302,12 +382,41 @@ services:
 
   # ═════════════════════════════ ONE-SHOT SETUP JOBS ═════════════════════════════
 
+  # Kafka's users and their permissions (D-092; infrastructure/kafka/access.conf). Runs in the
+  # broker's own network namespace, so it reaches the password-less local listener.
+  kafka-access:
+    <<: *oneshot
+    image: apache/kafka:4.3.1
+    network_mode: service:kafka
+    entrypoint: ['bash', '/access/apply-access.sh']
+    environment:
+      KAFKA_PASSWORD_ADMIN: ${KAFKA_PASSWORD_ADMIN:?run pnpm bootstrap}
+      KAFKA_PASSWORD_TOOLS: ${KAFKA_PASSWORD_TOOLS:?run pnpm bootstrap}
+      KAFKA_PASSWORD_AUTH: ${KAFKA_PASSWORD_AUTH:?run pnpm bootstrap}
+      KAFKA_PASSWORD_BOOKING: ${KAFKA_PASSWORD_BOOKING:?run pnpm bootstrap}
+      KAFKA_PASSWORD_QUEUE: ${KAFKA_PASSWORD_QUEUE:?run pnpm bootstrap}
+      KAFKA_PASSWORD_NOTIFICATION: ${KAFKA_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
+      KAFKA_PASSWORD_BUSINESS: ${KAFKA_PASSWORD_BUSINESS:?run pnpm bootstrap}
+      KAFKA_PASSWORD_SEARCH: ${KAFKA_PASSWORD_SEARCH:?run pnpm bootstrap}
+      KAFKA_PASSWORD_ADS: ${KAFKA_PASSWORD_ADS:?run pnpm bootstrap}
+      KAFKA_PASSWORD_ANALYTICS: ${KAFKA_PASSWORD_ANALYTICS:?run pnpm bootstrap}
+    volumes:
+      - ./infrastructure/kafka:/access:ro
+      # What was applied last (a fingerprint), so an unchanged plan isn't applied again.
+      - kafka-access-state:/home/appuser
+    depends_on:
+      kafka: { condition: service_healthy }
+
   kafka-init:
     <<: [*oneshot, *node-image, *node-hardening]
+    networks: [kafka-admin]
     working_dir: /app/packages/kafka
     command: ['/app/node_modules/.bin/tsx', 'scripts/sync-topics.ts']
     environment:
       KAFKA_BROKERS: kafka:29092
+      KAFKA_SASL_MECHANISM: scram-sha-512
+      KAFKA_SASL_USERNAME: buku-admin
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_ADMIN:?run pnpm bootstrap}
       KAFKA_REPLICATION_FACTOR: '1'
       KAFKA_MIN_INSYNC_REPLICAS: '1'
     volumes:
@@ -316,10 +425,11 @@ services:
         ./packages/kafka/scripts:/app/packages/kafka/scripts:ro,
       ]
     depends_on:
-      kafka: { condition: service_healthy }
+      kafka-access: { condition: service_completed_successfully }
 
   db-migrate:
     <<: [*oneshot, *node-image, *node-hardening]
+    networks: [migrate]
     working_dir: /app/packages/database
     command:
       ['sh', '-c', 'node_modules/.bin/prisma migrate deploy && /app/node_modules/.bin/tsx prisma/seed.ts']
@@ -335,8 +445,36 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
 
+  # Each service's own database role, with exactly its rights (D-092; packages/database/src/
+  # access.ts). Runs after every migration, as the admin: roles, passwords, grants.
+  db-access:
+    <<: [*oneshot, *node-image, *node-hardening]
+    networks: [migrate]
+    working_dir: /app/packages/database
+    command: ['/app/node_modules/.bin/tsx', 'scripts/apply-access.ts']
+    environment:
+      NODE_ENV: development
+      DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku
+      BUKU_DB_PASSWORD_AUTH: ${BUKU_DB_PASSWORD_AUTH:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_BOOKING: ${BUKU_DB_PASSWORD_BOOKING:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_QUEUE: ${BUKU_DB_PASSWORD_QUEUE:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_NOTIFICATION: ${BUKU_DB_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_BUSINESS: ${BUKU_DB_PASSWORD_BUSINESS:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_BILLING: ${BUKU_DB_PASSWORD_BILLING:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_SEARCH: ${BUKU_DB_PASSWORD_SEARCH:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_ADS: ${BUKU_DB_PASSWORD_ADS:?run pnpm bootstrap}
+      BUKU_DB_PASSWORD_ANALYTICS: ${BUKU_DB_PASSWORD_ANALYTICS:?run pnpm bootstrap}
+    volumes:
+      - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
+      - ./packages/database/src:/app/packages/database/src:ro
+      - ./packages/database/scripts:/app/packages/database/scripts:ro
+    depends_on:
+      db-migrate: { condition: service_completed_successfully }
+
   elasticsearch-init:
     profiles: [elasticsearch]
+    networks: [es-admin]
     <<: *oneshot
     image: curlimages/curl:8.22.0
     user: curl_user
@@ -351,6 +489,7 @@ services:
 
   s3-init:
     <<: *oneshot
+    networks: [s3-admin]
     image: amazon/aws-cli:2.37.6
     entrypoint: ['/bin/sh', '/init/init.sh']
     environment:
@@ -368,13 +507,18 @@ services:
 
   auth-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-auth]
     working_dir: /app/services/auth
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: [*service-env, *s3-env]
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_auth:${BUKU_DB_PASSWORD_AUTH:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: auth-service
+      KAFKA_SASL_USERNAME: buku-auth
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_AUTH:?run pnpm bootstrap}
       PORT: '3001'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-auth:${VALKEY_PASSWORD_AUTH:?run pnpm bootstrap}@valkey:6379/0
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?run pnpm bootstrap}
       # Local development only: sign in as any email without Google
       # (POST /v1/auth/dev/login). auth-service refuses this in production.
@@ -410,13 +554,18 @@ services:
 
   booking-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-booking]
     working_dir: /app/services/booking
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: [*service-env, *s3-env]
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_booking:${BUKU_DB_PASSWORD_BOOKING:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: booking-service
+      KAFKA_SASL_USERNAME: buku-booking
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_BOOKING:?run pnpm bootstrap}
       PORT: '3002'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-booking:${VALKEY_PASSWORD_BOOKING:?run pnpm bootstrap}@valkey:6379/0
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
@@ -442,13 +591,18 @@ services:
 
   queue-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-queue]
     working_dir: /app/services/queue
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_queue:${BUKU_DB_PASSWORD_QUEUE:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: queue-service
+      KAFKA_SASL_USERNAME: buku-queue
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_QUEUE:?run pnpm bootstrap}
       PORT: '3003'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-queue:${VALKEY_PASSWORD_QUEUE:?run pnpm bootstrap}@valkey:6379/0
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
@@ -473,13 +627,18 @@ services:
 
   notification-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-notification]
     working_dir: /app/services/notification
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_notification:${BUKU_DB_PASSWORD_NOTIFICATION:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: notification-service
+      KAFKA_SASL_USERNAME: buku-notification
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
       PORT: '3004'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-notification:${VALKEY_PASSWORD_NOTIFICATION:?run pnpm bootstrap}@valkey:6379/0
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'
       EMAIL_FROM: 'BUKU <noreply@buku.app>'
@@ -488,7 +647,8 @@ services:
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3000}
       PUBLIC_API_URL: http://localhost:8000
-      BOOKING_SERVICE_URL: http://booking-service:3002
+      # Free times for suggestions: booking's public route, through the gateway (D-092).
+      GATEWAY_URL: http://kong:8000
       # Push: `log` writes what would be sent to the log; `expo` sends to the Expo app.
       PUSH_PROVIDER: ${PUSH_PROVIDER:-log}
       EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
@@ -524,13 +684,18 @@ services:
 
   business-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-business]
     working_dir: /app/services/business
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: [*service-env, *s3-env]
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_business:${BUKU_DB_PASSWORD_BUSINESS:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: business-service
+      KAFKA_SASL_USERNAME: buku-business
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_BUSINESS:?run pnpm bootstrap}
       PORT: '3008'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-business:${VALKEY_PASSWORD_BUSINESS:?run pnpm bootstrap}@valkey:6379/0
       BUSINESS_TERMS_VERSION: '1.0'
       MAX_BUSINESSES_PER_OWNER: '5'
       PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS}
@@ -563,13 +728,16 @@ services:
 
   billing-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-billing]
     working_dir: /app/services/billing
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_billing:${BUKU_DB_PASSWORD_BILLING:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: billing-service
       PORT: '3009'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-billing:${VALKEY_PASSWORD_BILLING:?run pnpm bootstrap}@valkey:6379/0
       # Online checkout (Paddle sandbox). Empty → checkout unavailable, everything else works.
       PADDLE_ENVIRONMENT: ${PADDLE_ENVIRONMENT:-sandbox}
       PADDLE_API_KEY: ${PADDLE_API_KEY:-}
@@ -598,11 +766,16 @@ services:
 
   search-service:
     <<: [*infra, *node-image, *node-hardening]
+    networks: [svc-search]
     working_dir: /app/services/search
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: [*service-env, *s3-env]
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_search:${BUKU_DB_PASSWORD_SEARCH:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: search-service
+      KAFKA_SASL_USERNAME: buku-search
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_SEARCH:?run pnpm bootstrap}
       PORT: '3005'
       # Postgres full text + PostGIS, always current (D-076). Elasticsearch is
       # reserved for later and refused until built.
@@ -630,14 +803,19 @@ services:
 
   ads-service:
     profiles: [ads]
+    networks: [svc-ads]
     <<: [*infra, *node-image, *node-hardening]
     working_dir: /app/services/ads
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_ads:${BUKU_DB_PASSWORD_ADS:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: ads-service
+      KAFKA_SASL_USERNAME: buku-ads
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_ADS:?run pnpm bootstrap}
       PORT: '3006'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-ads:${VALKEY_PASSWORD_ADS:?run pnpm bootstrap}@valkey:6379/0
       AD_ATTRIBUTION_WINDOW_DAYS: '7'
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
@@ -662,12 +840,17 @@ services:
 
   analytics-service:
     profiles: [analytics]
+    networks: [svc-analytics]
     <<: [*infra, *node-image, *node-hardening]
     working_dir: /app/services/analytics
     command: ['/app/node_modules/.bin/tsx', 'watch', '--clear-screen=false', 'src/index.ts']
     environment:
       <<: *service-env
+      # Its own database role (D-092): only what packages/database/src/access.ts allows.
+      DATABASE_URL: postgresql://buku_svc_analytics:${BUKU_DB_PASSWORD_ANALYTICS:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: analytics-service
+      KAFKA_SASL_USERNAME: buku-analytics
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_ANALYTICS:?run pnpm bootstrap}
       PORT: '3007'
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: buku_analytics
@@ -698,6 +881,20 @@ services:
 
   kong:
     <<: *infra
+    networks:
+      [
+        published,
+        kong-cache,
+        svc-auth,
+        svc-booking,
+        svc-queue,
+        svc-notification,
+        svc-business,
+        svc-billing,
+        svc-search,
+        svc-ads,
+        svc-analytics,
+      ]
     image: kong:3.9.3
     environment:
       KONG_DATABASE: 'off'
@@ -709,10 +906,15 @@ services:
       JWT_PREVIOUS_KEY_ID: ${JWT_PREVIOUS_KEY_ID:-}
       # The web app's server key: lets it pass on its visitors' addresses (D-084).
       WEB_GATEWAY_KEY: ${WEB_GATEWAY_KEY:-}
+      # The admin app's server key: the only way to reach /v1/admin (D-091).
+      ADMIN_GATEWAY_KEY: ${ADMIN_GATEWAY_KEY:-}
       KONG_PROXY_LISTEN: '0.0.0.0:8000'
-      # Admin API: dev convenience only, localhost-bound. Disabled in prod.
-      KONG_ADMIN_LISTEN: '0.0.0.0:8001'
-      KONG_STATUS_LISTEN: '0.0.0.0:8100'
+      # Admin API: inside this container only (D-092). In DB-less mode it can replace the whole
+      # gateway configuration, so nothing on any network may reach it. To look at it while debugging:
+      # docker exec buku-kong-1 resty -e 'print(require("resty.http").new():request_uri("http://127.0.0.1:8001/status").body)'
+      # Off entirely in production.
+      KONG_ADMIN_LISTEN: '127.0.0.1:8001'
+      KONG_STATUS_LISTEN: '127.0.0.1:8100'
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
@@ -720,7 +922,8 @@ services:
       # Don't advertise the gateway product/version in response headers.
       KONG_HEADERS: 'off'
       KONG_NGINX_PROXY_SERVER_TOKENS: 'off'
-      KONG_REDIS_PASSWORD: ${VALKEY_PASSWORD}
+      # Kong's own Valkey user: only its rate-limit counters (D-092).
+      KONG_REDIS_PASSWORD: ${VALKEY_PASSWORD_KONG:?run pnpm bootstrap}
       # Re-resolve service hostnames every 5s. Docker DNS answers carry a long
       # TTL; without this Kong keeps routing to a replaced container's old IP
       # (504s after every service restart or deploy).
@@ -732,7 +935,7 @@ services:
     volumes:
       - ./infrastructure/kong/kong.template.yml:/kong/kong.template.yml:ro
       - ./infrastructure/kong/render-config.sh:/kong/render-config.sh:ro
-    ports: ['127.0.0.1:8000:8000', '127.0.0.1:8001:8001']
+    ports: ['127.0.0.1:8000:8000']
     depends_on:
       valkey: { condition: service_healthy }
       auth-service: { condition: service_healthy }
@@ -756,6 +959,7 @@ services:
 
   kibana:
     <<: *infra
+    networks: [tools]
     profiles: [elasticsearch]
     image: docker.elastic.co/kibana/kibana:9.5.3
     environment:
@@ -767,11 +971,16 @@ services:
 
   kafka-ui:
     <<: *infra
+    networks: [tools]
     profiles: [tools]
     image: kafbat/kafka-ui:v1.5.0
     environment:
       KAFKA_CLUSTERS_0_NAME: buku-local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      # Signs in as buku-tools: may look at topics and groups, change nothing (D-092).
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="buku-tools" password="${KAFKA_PASSWORD_TOOLS:?run pnpm bootstrap}";
       DYNAMIC_CONFIG_ENABLED: 'false'
     ports: ['127.0.0.1:8080:8080']
     depends_on:
@@ -780,6 +989,7 @@ services:
 
   redis-insight:
     <<: *infra
+    networks: [tools]
     profiles: [tools]
     image: redis/redisinsight:3.8.0
     ports: ['127.0.0.1:5540:5540']

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
 /**
- * BUKU's signature: a receipt or queue ticket that looks like a real one —
+ * BUKU's signature: a receipt or queue ticket that looks like a real one:
  * the main part says what and when, a perforated stub carries the code (and
  * the QR the front desk scans), a band on top says where things stand.
  * People already trust paper tickets; this borrows that trust (WEB_PLAN §2).
@@ -70,7 +70,7 @@ export function Ticket({
       <div className="flex flex-col sm:flex-row">
         <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">
           <p className="text-sm font-medium text-ink-3">{place}</p>
-          <h3 className="font-display text-2xl leading-tight font-semibold tracking-tight">{title}</h3>
+          <h3 className="text-[1.65rem] leading-[1.1] font-semibold tracking-[-0.025em]">{title}</h3>
           <p className="tabular text-lg font-medium text-ink">{when}</p>
           {details && <div className="flex flex-col gap-1 text-sm text-ink-2">{details}</div>}
         </div>
@@ -84,7 +84,7 @@ export function Ticket({
         </div>
 
         <div className="flex flex-col items-center justify-center gap-2 p-5 sm:w-48">
-          <p className="text-xs font-medium tracking-wide text-ink-3 uppercase">{codeLabel}</p>
+          <p className="text-xs font-medium text-ink-3">{codeLabel}</p>
           <p className="font-mono text-2xl font-bold tracking-wider text-ink">{code}</p>
           {qr && (
             <div role="img" aria-label={`QR code for ${code}`} className="rounded-md bg-white p-2">

@@ -11,9 +11,13 @@ export default defineConfig({
   test: {
     projects: [
       {
-        // The web app imports its own source as "@/…" (apps/web/tsconfig.json).
+        // The website imports its own source as "@/…" (apps/web/tsconfig.json).
         resolve: {
-          alias: [{ find: /^@\//, replacement: fileURLToPath(new URL('./apps/web/src/', import.meta.url)) }],
+          alias: [
+            { find: /^@\//, replacement: fileURLToPath(new URL('./apps/web/src/', import.meta.url)) },
+            // The admin app imports its own source as "@admin/…" (apps/admin/tsconfig.json).
+            { find: /^@admin\//, replacement: fileURLToPath(new URL('./apps/admin/src/', import.meta.url)) },
+          ],
         },
         test: {
           name: 'unit',

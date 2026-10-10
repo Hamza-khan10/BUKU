@@ -67,12 +67,12 @@ export function Switch({
         id={id}
         aria-describedby={description ? `${id}-d` : undefined}
         className={cn(
-          'relative h-7 w-12 shrink-0 rounded-full bg-control transition-colors duration-150',
+          'relative h-[1.9rem] w-[3.15rem] shrink-0 rounded-full bg-control transition-colors duration-200',
           'data-[state=checked]:bg-ok disabled:opacity-55',
         )}
         {...props}
       >
-        <RadixSwitch.Thumb className="block size-6 translate-x-0.5 rounded-full bg-surface shadow-soft transition-transform duration-150 data-[state=checked]:translate-x-[1.375rem]" />
+        <RadixSwitch.Thumb className="block size-[1.65rem] translate-x-0.5 rounded-full bg-white shadow-[0_2px_6px_rgb(0_0_0/0.2)] transition-transform duration-400 ease-(--ease-spring) data-[state=checked]:translate-x-[1.375rem]" />
       </RadixSwitch.Root>
     </div>
   );

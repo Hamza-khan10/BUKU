@@ -127,6 +127,11 @@ beforeAll(async () => {
     cipher,
     indexer,
     revocations: createRevocationStore(redis),
+    // A stand-in for Have I Been Pwned: tests say which passwords are "breached", or that it's down.
+    breaches: {
+      timesSeen: (password: string) =>
+        Promise.resolve(breachCheckDown ? null : (breached.get(password) ?? 0)),
+    },
     storage,
     pictureUploads: new PictureUploads(storage, redis, { privateBucket: testEnv.s3.privateBucket }),
     mediaLinks: new MediaLinks(storage, {
@@ -169,6 +174,10 @@ afterAll(async () => {
   await db.$disconnect();
   await redis.quit();
 });
+
+/** Passwords the breach check reports as seen, and whether it's unreachable (see deps.breaches). */
+const breached = new Map<string, number>();
+let breachCheckDown = false;
 
 describe('Sign in with Google', () => {
   it('creates an account (201), encrypts the email, emits users.registered, returns tokens', async () => {
@@ -1135,6 +1144,54 @@ describe('Business team: employee accounts', () => {
     expect(wrongCurrent.status).toBe(403);
   });
 
+  it('refuses a password seen in a data breach; if the check is down, our own rules still decide', async () => {
+    const o = await owner();
+    const e = await employee(o, 'staff');
+    const leaked = pw();
+    breached.set(leaked, 52);
+    try {
+      const refused = await post('/v1/auth/password')
+        .set(bearer(e.accessToken))
+        .send({ currentPassword: NEW_PASSWORD, newPassword: leaked });
+      expect([refused.status, refused.body.error.code]).toEqual([422, 'PASSWORD_BREACHED']);
+      // Unreachable: allowed (the owner's choice), still checked against our own rules first.
+      breachCheckDown = true;
+      const weak = await post('/v1/auth/password')
+        .set(bearer(e.accessToken))
+        .send({ currentPassword: NEW_PASSWORD, newPassword: 'password123' });
+      expect(weak.status).toBe(400);
+      const allowed = await post('/v1/auth/password')
+        .set(bearer(e.accessToken))
+        .send({ currentPassword: NEW_PASSWORD, newPassword: leaked });
+      expect(allowed.status).toBe(200);
+    } finally {
+      breached.clear();
+      breachCheckDown = false;
+    }
+  });
+
+  it('guessing the current password through "change password" locks the account too', async () => {
+    const o = await owner();
+    const e = await employee(o, 'staff');
+    const statuses: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      statuses.push(
+        (
+          await post('/v1/auth/password')
+            .set(bearer(e.accessToken))
+            .send({ currentPassword: pw(), newPassword: pw() })
+        ).status,
+      );
+    }
+    expect(statuses).toEqual([403, 403, 403, 403, 429]);
+    // Locked: even the right password is refused until the lock ends or the business resets it.
+    const right = await post('/v1/auth/password')
+      .set(bearer(e.accessToken))
+      .send({ currentPassword: NEW_PASSWORD, newPassword: pw() });
+    expect(right.status).toBe(429);
+    expect((await login(o.business.slug, e.username, NEW_PASSWORD)).status).toBe(429);
+  });
+
   it('employee accounts cannot delete themselves; Google accounts have no password to change', async () => {
     const o = await owner();
     const e = await employee(o, 'staff');
@@ -1439,5 +1496,37 @@ describe('Two-step sign-in (D-081)', () => {
     ).toBe(2);
     const secret = await db.userMfa.findUnique({ where: { userId: me.user.id } });
     expect(secret).toBeNull();
+  });
+
+  it('lost the phone: a recovery code gets new codes or turns it off, and works only once', async () => {
+    const me = await withMfa();
+    const renewed = await request(app)
+      .post('/v1/auth/mfa/recovery-codes')
+      .set(bearer(me.accessToken))
+      .send({ recoveryCode: me.recoveryCodes[0] });
+    expect(renewed.status).toBe(200);
+    const fresh = renewed.body.data.recoveryCodes as string[];
+    expect(fresh).toHaveLength(10);
+    // The old codes are gone, the one just used included.
+    const old = await request(app)
+      .delete('/v1/auth/mfa')
+      .set(bearer(me.accessToken))
+      .send({ recoveryCode: me.recoveryCodes[1] });
+    expect([old.status, old.body.error.code]).toEqual([401, 'MFA_INVALID_CODE']);
+    // Exactly one of the two: a code or a recovery code.
+    const both = await request(app)
+      .delete('/v1/auth/mfa')
+      .set(bearer(me.accessToken))
+      .send({ code: codeFor(me.secret, 1), recoveryCode: fresh[0] });
+    expect(both.status).toBe(400);
+
+    const off = await request(app)
+      .delete('/v1/auth/mfa')
+      .set(bearer(me.accessToken))
+      .send({ recoveryCode: fresh[0] });
+    expect(off.status).toBe(204);
+    expect(await db.userMfa.findUnique({ where: { userId: me.user.id } })).toBeNull();
+    // Then a new phone can be set up.
+    expect((await request(app).post('/v1/auth/mfa/setup').set(bearer(me.accessToken))).status).toBe(200);
   });
 });

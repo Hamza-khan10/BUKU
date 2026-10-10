@@ -84,7 +84,7 @@ const { app, notifier, scheduler, suggestions, handler } = buildNotificationApp(
   cipher: createFieldCipher(parseKeyring(env.PII_ENCRYPTION_KEYS, env.PII_ENCRYPTION_ACTIVE_KEY_ID)),
   indexer: createBlindIndexer(Buffer.from(env.PII_BLIND_INDEX_KEY, 'base64')),
   urls: { webAppUrl: env.WEB_APP_URL, publicApiUrl: env.PUBLIC_API_URL },
-  openings: new HttpOpeningsFinder(env.BOOKING_SERVICE_URL),
+  openings: new HttpOpeningsFinder(env.GATEWAY_URL),
   whatsappConfig: {
     businessNumber: env.WHATSAPP_BUSINESS_NUMBER,
     templateLanguage: env.WHATSAPP_TEMPLATE_LANGUAGE,

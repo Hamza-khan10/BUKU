@@ -482,6 +482,71 @@ The detailed plan — every page, its data and edge cases, the design system and
   reply, until when it can change, and plainly when moderators hid it. Names ending in "s" take a
   plain apostrophe across the site ("Fade Masters’ notice period"). There are no favourites: the
   API has none, so the site doesn't offer them.
+- **3.4d-2 Notifications — ✅ done.** `/account/notifications`: the inbox — every message BUKU
+  sent the account, newest first, unread ones marked; opening one marks it read and goes where it
+  leads (a booking, its review, a queue ticket, a suggested booking pre-filled; messages about
+  screens the site doesn't have yet are shown without a link); remove one; mark all read. The
+  header shows how many are unread. `/account/notifications/settings`: only the ways BUKU reaches
+  someone on the website today — email (booking updates, reminders, business alerts for teams)
+  and suggestions as an explicit opt-in (inbox, and by email only if also chosen; turning
+  suggestions off turns the emailed ones off too); each switch saves at once and puts itself back
+  if saving fails; what's always sent is listed with why. App push settings come with the app,
+  WhatsApp once it's set up.
+- **3.4d-3a Your details — ✅ done.** `/account/settings` (a Settings tab, and in the account
+  menu): the profile picture — private, only ever shown to the person themself (D-051); checked in
+  the browser first (JPEG, PNG or WebP, up to 10 MB), sent straight to storage by a signed link,
+  then cleaned by the API (no location or camera details survive); removing asks first, since a
+  picture from Google doesn't come back by itself — the name businesses see and the account's
+  time zone (with this device's offered when they differ, and what it's used for: notices about
+  the person's own plan; visit times are always the business's), saved together; and how the
+  account signs in, read-only. The Content-Security-Policy names object storage
+  (`STORAGE_ORIGIN`) for pictures and uploads only. No phone number yet: its only use is
+  WhatsApp, which isn't live.
+- **3.4d-3b Sign-in and security — ✅ done.** On `/account/settings`: two-step sign-in — off,
+  with a way to turn it on; on, since when and how many recovery codes are left, new codes, and
+  turning it off (platform admins can't) — each proved with a code from the app or, for a lost
+  phone, a recovery code (the API took only app codes before: someone who lost the phone could
+  never turn it off, fixed in auth). `/account/settings/two-step`: what it is and what's needed,
+  then the app (QR code, or the key in groups of four), a code to prove it works, then the
+  recovery codes shown once — copy, download as a text file, and say they're kept before going
+  on. "Where you're signed in": every device, this browser first, since when, last active, a
+  shortened network address; sign any other one out (its session ends at the API), or everywhere.
+- **3.4d-3c Your data — ✅ done.** On `/account/settings`: download a copy of everything BUKU
+  keeps (the API's export, saved as a JSON file); deleting the account is one step away, except for
+  employee accounts (their business closes them). `/account/settings/delete` says what happens
+  before asking: signed out everywhere at once, visits still to come cancelled and the businesses
+  told, queues left (the API didn't do this before: nobody consumed `users.deleted` — fixed in
+  booking and queue), 30 days to change one's mind (cancelled visits stay cancelled), then what's
+  removed for good and what businesses keep; a copy of the data first; an optional reason; the word
+  DELETE typed; then, if any visits still to come or a queue place would be cancelled, a pop-up lists
+  them ("These will be cancelled") and asks once more: keep the account, or cancel them and delete.
+  A sign-in older than the API's window is asked to sign in again first, and comes straight back. `/goodbye` says the day the details are removed and how to restore before then.
+- **3.4d-4 Your plan — ✅ done.** `/account/plan` (a Plan tab) says only what's true of the plan
+  now: while paid plans are switched off, that everything is free with no limits; otherwise the
+  plan, what's used of its limits (in total), a free trial when one is offered (no card, once, back
+  to the free plan after — nothing charged), a trial's end date, a plan given by BUKU and until
+  when, and a plan bought in the app managed in its store. A plan bought on the website: renews or
+  ends on a date, a failed payment said first, payment details and receipts on the payment
+  provider's own pages (only ever its https address), stop renewing (asks first) or keep it
+  renewing. No "buy" button: buying online needs the payment provider set up (the owner's Paddle
+  account), so the page says plans can't be bought on the website yet.
+- **Hardening before 3.4d ships (owner's request, 2026-10-06) — in progress.** Deleting an account
+  lists what it cancels first; the API refuses passwords seen in data breaches (Have I Been Pwned,
+  k-anonymity; allowed if unreachable); the public sign-in offers no admin role and its API
+  pass-through refuses every admin path; browser tests prove tokens are HttpOnly only, admin is
+  enforced on the server, and sign-in is rate-limited. **Separate admin app (D-091) — foundation
+  done:** `apps/admin` on its own address (port 3200 in development), its own `buku_admin_…`
+  cookies, platform admins only (any other account is signed out at once), two-step sign-in set
+  up before anything shows, the access review as its first page; Kong answers `/v1/admin` only to
+  the admin app's key (`ADMIN_GATEWAY_KEY`); both web servers share `@buku/web-security`. The
+  operator tools themselves (3.6) build on it. **Services walled off from each other (D-092) — in
+  progress:** each service on a network of its own (only Kong and its own data stores), the
+  gateway admin API closed, each service publishing only its own outbox events, and each signing
+  in to Postgres as its own role with only the tables and columns its job needs (no one else
+  reads credentials; the audit log is append-only), and signing in to Kafka as its own user,
+  allowed to publish only its own events and read only what it consumes (nothing connects
+  without signing in), and signing in to Valkey as its own user, limited to its own keys (only
+  auth writes the sign-out list). Proven from inside the services by the acceptance run.
 
 ## Phase 4 — Mobile app (Expo)
 

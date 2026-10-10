@@ -135,7 +135,7 @@ export function NearMe({ filters }: { filters: Filters }) {
       {state.kind === 'error' && <Alert tone="wait" title={state.message} />}
       {state.kind === 'done' && (
         <section aria-labelledby="near-me" className="flex flex-col gap-4">
-          <h2 id="near-me" className="font-display text-2xl font-semibold" aria-live="polite">
+          <h2 id="near-me" className="text-2xl font-semibold tracking-[-0.025em]" aria-live="polite">
             {state.items.length === 0
               ? 'Nothing within 10 km matches'
               : `${state.items.length} ${state.items.length === 1 ? 'place' : 'places'} within 10 km`}

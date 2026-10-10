@@ -1,12 +1,13 @@
 @import 'tailwindcss';
 
 /*
- * BUKU design tokens (WEB_PLAN §2). Components use these semantic names only —
- * never raw colours — so light and dark themes are one switch.
+ * BUKU design tokens (WEB_PLAN §2, D-093). Components use these semantic names
+ * only, never raw colours, so light and dark are one switch.
  *
- * Every text/background pair below meets WCAG 2.2 AA (≥ 4.5:1, checked
- * numerically); control borders meet 3:1. Coral is the only loud colour, so the
- * eye always finds the next action.
+ * Graphite on porcelain, cool and quiet. Emerald is the only accent and means
+ * "go" (book, join, available, confirmed); amber means waiting; red is errors
+ * only. Every text pair meets WCAG 2.2 AA (checked numerically); control
+ * borders meet 3:1.
  *
  * Theme: <html data-theme="light|dark"> when the person chose one (a cookie the
  * server reads, so there is no flash); otherwise the device's setting.
@@ -25,73 +26,85 @@
 
 :root {
   color-scheme: light;
-  --canvas: #fbf8f3; /* warm paper: calm, unhurried */
-  --surface: #ffffff;
-  --sunken: #f4efe7;
-  --ink: #0e1525; /* trust, seriousness */
-  --ink-2: #4b5565;
-  --ink-3: #626b7c;
-  --line: #e3dbcd; /* dividers */
-  --control: #858b97; /* input borders (3:1) */
-  --brand: #d4432a; /* coral: the "book / join" moment */
-  --brand-hover: #bd3a23;
-  --brand-ink: #b83a22; /* coral as text */
-  --brand-soft: #fceae5;
-  --ok: #0b7350; /* available, confirmed, open now */
-  --ok-soft: #e4f4ec;
-  --wait: #f2a516; /* anticipation: queue progress, almost your turn */
-  --wait-ink: #8f5400;
-  --wait-soft: #fdf1d8;
-  --focus: #4338ca;
+  --canvas: #f4f5f3; /* porcelain */
+  --surface: #fcfdfc;
+  --sunken: #eceeeb;
+  --ink: #131815; /* graphite */
+  --ink-2: #47504b;
+  --ink-3: #5c6560;
+  --line: #dde1de; /* hairlines */
+  --control: #7f8782; /* input borders (3:1) */
+  --brand: #0b6b4f; /* emerald: go */
+  --brand-hover: #08583f;
+  --brand-ink: #09634a; /* emerald as text */
+  --brand-soft: #e1efe8;
+  --on-brand: #fcfdfc;
+  --ok: #0b6b4f; /* available, confirmed, open now: the same "go" */
+  --ok-soft: #e1efe8;
+  --wait: #e9a23b; /* waiting: queue progress, almost your turn */
+  --wait-ink: #7f4f00;
+  --wait-soft: #faefd9;
+  --focus: #0b6b4f;
   --danger: #b42318; /* errors only */
-  --danger-soft: #fcebe9;
-  --shadow-color: 32 24 12;
+  --danger-soft: #fbeae8;
+  --shadow-color: 19 24 21; /* shadows tinted to the page, never black */
+  --material: rgb(244 245 243 / 0.72); /* the header's glass */
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --canvas: #0e1525;
-    --surface: #151e33;
-    --sunken: #0a101d;
-    --ink: #f6f2ec;
-    --ink-2: #c5cbd6;
-    --ink-3: #9aa3b2;
-    --line: #27324b;
-    --control: #64718f;
-    --brand-ink: #ff8c73;
-    --brand-soft: #3a1a14;
-    --ok: #3dd69d;
-    --ok-soft: #0e2c24;
-    --wait-ink: #f7c25a;
-    --wait-soft: #2d2410;
-    --focus: #9da4ff;
+    --canvas: #0b0f0d;
+    --surface: #121815;
+    --sunken: #080b0a;
+    --ink: #edf2ef;
+    --ink-2: #b9c2bd;
+    --ink-3: #8e9893;
+    --line: #242c28;
+    --control: #66716b;
+    --brand: #3fc495;
+    --brand-hover: #5ed3a8;
+    --brand-ink: #5ed3a8;
+    --brand-soft: #10271f;
+    --on-brand: #06140f;
+    --ok: #3fc495;
+    --ok-soft: #10271f;
+    --wait: #f2b655;
+    --wait-ink: #f5c878;
+    --wait-soft: #2a2010;
+    --focus: #3fc495;
     --danger: #ff8a80;
     --danger-soft: #3a1614;
     --shadow-color: 0 0 0;
+    --material: rgb(11 15 13 / 0.7);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --canvas: #0e1525;
-  --surface: #151e33;
-  --sunken: #0a101d;
-  --ink: #f6f2ec;
-  --ink-2: #c5cbd6;
-  --ink-3: #9aa3b2;
-  --line: #27324b;
-  --control: #64718f;
-  --brand-ink: #ff8c73;
-  --brand-soft: #3a1a14;
-  --ok: #3dd69d;
-  --ok-soft: #0e2c24;
-  --wait-ink: #f7c25a;
-  --wait-soft: #2d2410;
-  --focus: #9da4ff;
+  --canvas: #0b0f0d;
+  --surface: #121815;
+  --sunken: #080b0a;
+  --ink: #edf2ef;
+  --ink-2: #b9c2bd;
+  --ink-3: #8e9893;
+  --line: #242c28;
+  --control: #66716b;
+  --brand: #3fc495;
+  --brand-hover: #5ed3a8;
+  --brand-ink: #5ed3a8;
+  --brand-soft: #10271f;
+  --on-brand: #06140f;
+  --ok: #3fc495;
+  --ok-soft: #10271f;
+  --wait: #f2b655;
+  --wait-ink: #f5c878;
+  --wait-soft: #2a2010;
+  --focus: #3fc495;
   --danger: #ff8a80;
   --danger-soft: #3a1614;
   --shadow-color: 0 0 0;
+  --material: rgb(11 15 13 / 0.7);
 }
 
 @theme inline {
@@ -107,6 +120,7 @@
   --color-brand-hover: var(--brand-hover);
   --color-brand-ink: var(--brand-ink);
   --color-brand-soft: var(--brand-soft);
+  --color-on-brand: var(--on-brand);
   --color-ok: var(--ok);
   --color-ok-soft: var(--ok-soft);
   --color-wait: var(--wait);
@@ -115,28 +129,53 @@
   --color-focus: var(--focus);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
-  /* Fixed colours that don't follow the theme: text on coral/amber, and dark backdrops
-     (covers, the dimmed page behind dialogs). */
-  --color-night: #0e1525;
-  --color-on-brand: #ffffff;
-  --color-on-wait: #0e1525;
+  /* Fixed colours that don't follow the theme: text on amber, and the dark backdrop
+     behind dialogs and pictures. */
+  --color-night: #0b0f0d;
+  --color-on-wait: #131815;
 
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
-  --font-display: var(--font-bricolage), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* One family for everything (Instrument Sans); a monospace only for codes read aloud. */
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  --font-display: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
+  /* Shape: pills for buttons, chips and times; 12px inputs; 16px pictures; 20px panels. */
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
-  --radius-xl: 1.5rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.75rem;
 
-  --shadow-soft: 0 1px 2px rgb(var(--shadow-color) / 0.06), 0 4px 16px rgb(var(--shadow-color) / 0.06);
-  --shadow-lift: 0 2px 4px rgb(var(--shadow-color) / 0.08), 0 12px 32px rgb(var(--shadow-color) / 0.12);
+  --shadow-soft:
+    0 1px 1px rgb(var(--shadow-color) / 0.04), 0 2px 6px rgb(var(--shadow-color) / 0.04),
+    0 12px 32px -8px rgb(var(--shadow-color) / 0.1);
+  --shadow-lift:
+    0 1px 2px rgb(var(--shadow-color) / 0.05), 0 8px 20px -4px rgb(var(--shadow-color) / 0.1),
+    0 28px 56px -12px rgb(var(--shadow-color) / 0.18);
+
+  /* Critically damped (no overshoot) for almost everything; a little bounce only after a flick. */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: linear(
+    0,
+    0.009,
+    0.035 2.1%,
+    0.141 4.4%,
+    0.723 15.5%,
+    0.938 20.7%,
+    1.017 24.8%,
+    1.051,
+    1.064 30.3%,
+    1.059 33.4%,
+    1.008 45.1%,
+    0.993 52.5%,
+    1.001 72.4%,
+    1
+  );
 
   --animate-live: live 1.8s ease-out infinite;
   --animate-shimmer: shimmer 1.6s linear infinite;
-  --animate-print: print 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-  --animate-rise: rise 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-print: print 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-rise: rise 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* "This updates by itself": a soft ring that keeps expanding. */
@@ -190,14 +229,16 @@
 
   body {
     @apply bg-canvas font-sans text-ink antialiased;
-    font-feature-settings: 'cv11', 'ss01';
+    font-feature-settings: 'kern';
     min-height: 100dvh;
   }
 
+  /* Apple-style type: tighter as it grows, slightly open when small. */
   h1,
   h2,
   h3 {
     text-wrap: balance;
+    letter-spacing: -0.022em;
   }
 
   p {
@@ -213,12 +254,160 @@
   :focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: 6px;
   }
 
   /* Numbers that count (times, positions, prices) don't jump while changing. */
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* The header's material: content scrolls under it, blurred (WEB_PLAN §2). */
+  .material-bar {
+    background: var(--material);
+    backdrop-filter: blur(20px) saturate(170%);
+    -webkit-backdrop-filter: blur(20px) saturate(170%);
+  }
+
+  /* The split-flap board: a station's departure board, for "now serving" and times. */
+  .flap {
+    display: inline-flex;
+    gap: var(--flap-gap, 0.08em);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  .flap-tile {
+    position: relative;
+    width: 0.74em;
+    height: 1.12em;
+    border-radius: 0.12em;
+    perspective: 480px;
+    background: var(--flap-tile, #161d19);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.07),
+      inset 0 -2px 4px rgb(0 0 0 / 0.35),
+      0 6px 14px -6px rgb(0 0 0 / 0.45);
+  }
+  .flap-tile::after {
+    /* The hinge across the middle. */
+    content: '';
+    position: absolute;
+    inset: calc(50% - 0.5px) 0 auto;
+    height: 1px;
+    background: rgb(0 0 0 / 0.55);
+    box-shadow: 0 1px 0 rgb(255 255 255 / 0.06);
+    z-index: 3;
+  }
+  .flap-half,
+  .flap-leaf {
+    position: absolute;
+    inset-inline: 0;
+    height: 50%;
+    overflow: hidden;
+    border-radius: inherit;
+    background: var(--flap-tile, #161d19);
+    backface-visibility: hidden;
+  }
+  .flap-half-top,
+  .flap-leaf-front {
+    top: 0;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+  .flap-half-bottom,
+  .flap-leaf-back {
+    bottom: 0;
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+    background: color-mix(in srgb, var(--flap-tile, #161d19) 88%, black);
+  }
+  .flap-char {
+    position: absolute;
+    inset-inline: 0;
+    height: 200%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--flap-ink, #edf2ef);
+  }
+  .flap-half-top .flap-char,
+  .flap-leaf-front .flap-char {
+    top: 0;
+  }
+  .flap-half-bottom .flap-char,
+  .flap-leaf-back .flap-char {
+    bottom: 0;
+  }
+  .flap-leaf {
+    z-index: 2;
+  }
+  .flap-leaf-front {
+    transform-origin: center bottom;
+    animation: flap-front var(--flap-ms, 110ms) cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+  .flap-leaf-back {
+    transform-origin: center top;
+    transform: rotateX(90deg);
+    animation: flap-back var(--flap-ms, 110ms) cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+}
+
+/* Lenis (smooth wheel scrolling on desktop; off under reduced motion). */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* A side sheet enters from the side it lives on (and the eye expects it to leave that way). */
+@keyframes sheet-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes flap-front {
+  from {
+    transform: rotateX(0deg);
+    filter: brightness(1.06);
+  }
+  to {
+    transform: rotateX(-90deg);
+    filter: brightness(0.55);
+  }
+}
+
+@keyframes flap-back {
+  0%,
+  45% {
+    transform: rotateX(90deg);
+    filter: brightness(0.6);
+  }
+  to {
+    transform: rotateX(0deg);
+    filter: brightness(1);
+  }
+}
+
+/* Asked for less transparency: the header becomes solid. */
+@media (prefers-reduced-transparency: reduce) {
+  .material-bar {
+    background: var(--canvas);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }
 
