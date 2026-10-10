@@ -22,7 +22,7 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
   return (
     <section aria-label={title} className="flex flex-col gap-4">
       <div className="flex items-end justify-between gap-4">
-        <h2 className="font-display text-2xl font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-2xl font-semibold tracking-[-0.025em]">{title}</h2>
         {action}
       </div>
       {children}
@@ -72,9 +72,7 @@ export function AccountHome() {
 
   return (
     <div className="flex flex-col gap-12">
-      <h1 className="font-display text-4xl font-bold tracking-tight">
-        {first ? `Hi, ${first}` : 'Your account'}
-      </h1>
+      <h1 className="text-4xl font-semibold tracking-[-0.03em]">{first ? `Hi, ${first}` : 'Your account'}</h1>
 
       {queueTicket.data && (
         <Section title="Your place in a queue">
@@ -87,12 +85,12 @@ export function AccountHome() {
               <span className="truncate font-medium text-ink">{queueTicket.data.business.name}</span>
               <span className="text-sm text-ink-2">
                 {queueTicket.data.status === 'called'
-                  ? 'It’s your turn — open your ticket'
+                  ? 'It’s your turn. Open your ticket'
                   : queueTicket.data.status === 'serving'
                     ? 'You’re being served'
                     : queueTicket.data.ahead === 0
-                      ? 'You’re next — open your ticket'
-                      : `${queueTicket.data.ahead ?? '…'} ahead of you — open your ticket`}
+                      ? 'You’re next. Open your ticket'
+                      : `${queueTicket.data.ahead ?? '…'} ahead of you. Open your ticket`}
               </span>
             </span>
           </Link>
@@ -138,7 +136,7 @@ export function AccountHome() {
               href={`/appointments/${next.id}` as Route}
               className="w-fit text-sm font-medium text-brand-ink underline-offset-4 hover:underline"
             >
-              Open this booking — move it, cancel it, add it to your calendar
+              Open this booking to move it, cancel it or add it to your calendar
             </Link>
           </div>
         ) : (
@@ -184,12 +182,12 @@ export function AccountHome() {
           <Skeleton className="h-32 max-w-xl" />
         ) : reliability.data ? (
           <div className="flex max-w-xl flex-col gap-3 rounded-lg border border-line bg-surface p-5">
-            <p className="flex items-center gap-2 font-display text-2xl font-semibold text-ink">
+            <p className="flex items-center gap-2 text-2xl font-semibold tracking-[-0.025em] text-ink">
               <ShieldCheck className="size-6 text-ok" aria-hidden /> {reliability.data.label}
             </p>
             <p className="text-sm text-ink-2">
               Businesses see only this:{' '}
-              <span className="font-medium text-ink">“{reliability.data.businessesSee}”</span> — never your
+              <span className="font-medium text-ink">“{reliability.data.businessesSee}”</span>, never your
               history.
             </p>
             <p className="text-sm text-ink-3">

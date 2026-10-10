@@ -9,7 +9,7 @@ import { money } from '@/lib/format';
 
 export const metadata = {
   title: 'Pricing',
-  description: 'BUKU’s plans for customers and businesses — what each includes and what it costs.',
+  description: 'BUKU’s plans for customers and businesses: what each includes and what it costs.',
 };
 
 /**
@@ -21,7 +21,7 @@ export const metadata = {
 
 function BillingOff({ who }: { who: string }) {
   return (
-    <Alert tone="ok" title={`Right now, everything is included for ${who} — at no cost`}>
+    <Alert tone="ok" title={`Right now, everything is included for ${who}, at no cost`}>
       Paid plans aren’t switched on yet. These are the plans and prices that will apply when they are.
     </Alert>
   );
@@ -73,7 +73,7 @@ export default async function PricingPage() {
           aria-labelledby="customers-title"
           className="flex scroll-mt-24 flex-col gap-6"
         >
-          <h2 id="customers-title" className="font-display text-3xl font-bold tracking-tight">
+          <h2 id="customers-title" className="text-3xl font-semibold tracking-[-0.03em]">
             For people booking and queueing
           </h2>
           {!user.billingEnabled && <BillingOff who="everyone" />}
@@ -87,7 +87,7 @@ export default async function PricingPage() {
           <div className="flex flex-col gap-1 text-sm text-ink-3">
             {user.trial && (
               <p>
-                Try {user.trial.plan.name} free for {user.trial.days} days — once per account, whenever you
+                Try {user.trial.plan.name} free for {user.trial.days} days, once per account, whenever you
                 like.
               </p>
             )}
@@ -108,7 +108,7 @@ export default async function PricingPage() {
           aria-labelledby="businesses-title"
           className="flex scroll-mt-24 flex-col gap-6"
         >
-          <h2 id="businesses-title" className="font-display text-3xl font-bold tracking-tight">
+          <h2 id="businesses-title" className="text-3xl font-semibold tracking-[-0.03em]">
             For businesses
           </h2>
           {!business.billingEnabled && <BillingOff who="businesses" />}
@@ -123,7 +123,7 @@ export default async function PricingPage() {
           <div className="flex flex-col gap-1 text-sm text-ink-3">
             {business.trial && (
               <p>
-                Try {business.trial.plan.name} free for {business.trial.days} days — once per business.
+                Try {business.trial.plan.name} free for {business.trial.days} days, once per business.
               </p>
             )}
             {taxNote(business) && <p>{taxNote(business)}</p>}
@@ -132,7 +132,7 @@ export default async function PricingPage() {
       )}
 
       <section aria-labelledby="questions" className="flex flex-col gap-3">
-        <h2 id="questions" className="font-display text-2xl font-semibold">
+        <h2 id="questions" className="text-2xl font-semibold tracking-[-0.025em]">
           Good to know
         </h2>
         <ul className="flex max-w-3xl list-disc flex-col gap-2 pl-5 text-ink-2">

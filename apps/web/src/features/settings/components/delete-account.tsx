@@ -68,7 +68,7 @@ export function DeleteAccount() {
   if (me.data.account.type === 'employee') {
     return (
       <Alert title="Your business closes this account">
-        It was made by your business, so they close it — for example when you leave the team.
+        It was made by your business, so they close it, for example when you leave the team.
       </Alert>
     );
   }
@@ -133,7 +133,7 @@ export function DeleteAccount() {
   return (
     <div className="flex max-w-2xl flex-col gap-8">
       <section aria-label="What happens" className="flex flex-col gap-4">
-        <h2 className="font-display text-2xl font-semibold">What happens</h2>
+        <h2 className="text-2xl font-semibold tracking-[-0.025em]">What happens</h2>
         <ul className="flex list-disc flex-col gap-2 pl-5 text-ink-2">
           <li>You’re signed out on every device straight away.</li>
           <li>

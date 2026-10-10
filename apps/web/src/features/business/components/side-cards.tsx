@@ -18,7 +18,7 @@ export function SideCard({
       aria-label={title}
       className={cn('rounded-lg border border-line bg-surface p-5 shadow-soft', className)}
     >
-      <h2 className="mb-3 font-display text-lg font-semibold">{title}</h2>
+      <h2 className="mb-3 text-lg tracking-[-0.015em] font-semibold">{title}</h2>
       {children}
     </section>
   );

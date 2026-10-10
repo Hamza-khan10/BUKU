@@ -46,7 +46,7 @@ export function RecoveryCodes({
 
   return (
     <div className="flex flex-col gap-4">
-      <Alert tone="wait" title="Save these now — they won’t be shown again">
+      <Alert tone="wait" title="Save these now. They won’t be shown again">
         If you lose the phone with your app, each code lets you sign in once. With one you can also turn
         two-step sign-in off, or get new codes.
       </Alert>

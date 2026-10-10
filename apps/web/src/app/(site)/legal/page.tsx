@@ -29,7 +29,7 @@ export default function LegalIndex() {
                 className="group flex h-full items-start justify-between gap-4 rounded-lg border border-line bg-surface p-5 shadow-soft transition-shadow hover:shadow-lift"
               >
                 <span className="flex flex-col gap-1">
-                  <span className="font-display text-lg font-semibold">{doc.title}</span>
+                  <span className="text-lg tracking-[-0.015em] font-semibold">{doc.title}</span>
                   <span className="text-sm text-ink-2">{doc.description}</span>
                 </span>
                 <ChevronRight

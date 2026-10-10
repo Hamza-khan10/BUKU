@@ -193,12 +193,12 @@ export function BookingFlow({
         await queryClient.invalidateQueries({ queryKey: availabilityKey });
         setProblem({
           title: 'That time was just taken.',
-          detail: 'The free times below are up to date — choose another.',
+          detail: 'The free times below are up to date. Choose another.',
         });
       } else if (code === 'APPOINTMENT_OVERLAP') {
         setProblem({
           title: 'You already have a visit booked at that time.',
-          detail: 'Choose another time — BUKU never books you twice at once.',
+          detail: 'Choose another time: BUKU never books you twice at once.',
         });
       } else if (code === 'BOOKING_NOT_ALLOWED') {
         setProblem({

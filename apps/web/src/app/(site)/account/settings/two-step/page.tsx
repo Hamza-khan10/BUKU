@@ -18,7 +18,7 @@ export default function TwoStepPage() {
         >
           <ArrowLeft className="size-4" aria-hidden /> Settings
         </Link>
-        <h1 className="font-display text-4xl font-bold tracking-tight">Turn on two-step sign-in</h1>
+        <h1 className="text-4xl font-semibold tracking-[-0.03em]">Turn on two-step sign-in</h1>
       </div>
       <TwoStepSetup />
     </div>

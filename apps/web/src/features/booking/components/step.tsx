@@ -37,7 +37,7 @@ export function Step({
         >
           {number}
         </span>
-        <h2 id={id} className="font-display text-xl font-semibold text-ink">
+        <h2 id={id} className="text-xl tracking-[-0.02em] font-semibold text-ink">
           {title}
         </h2>
         {done && onChange && (

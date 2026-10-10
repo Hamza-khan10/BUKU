@@ -17,7 +17,7 @@ function Summary({ summary }: { summary: ReviewsMeta['summary'] }) {
   return (
     <div className="grid gap-6 rounded-lg border border-line bg-surface p-5 sm:grid-cols-[auto_1fr_1fr]">
       <div className="flex flex-col items-start gap-1">
-        <p className="font-display text-5xl font-bold tabular">{ratingValue(summary.average)}</p>
+        <p className="text-5xl font-semibold tracking-[-0.035em] tabular">{ratingValue(summary.average)}</p>
         <Stars value={summary.average} className="text-lg" />
         <p className="text-sm text-ink-3">
           {summary.count} {summary.count === 1 ? 'review' : 'reviews'} from real visits
@@ -30,8 +30,8 @@ function Summary({ summary }: { summary: ReviewsMeta['summary'] }) {
           return (
             <li key={star} className="flex items-center gap-2 text-sm">
               <span className="w-12 shrink-0 text-ink-2">{star} star</span>
-              <span aria-hidden className="h-2 flex-1 overflow-hidden rounded-full bg-sunken">
-                <span className="block h-full rounded-full bg-wait" style={{ width: `${pct}%` }} />
+              <span aria-hidden className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+                <span className="block h-full rounded-full bg-ink" style={{ width: `${pct}%` }} />
               </span>
               <span className="w-8 shrink-0 text-right text-ink-3 tabular">{n}</span>
             </li>
@@ -44,7 +44,9 @@ function Summary({ summary }: { summary: ReviewsMeta['summary'] }) {
           return (
             <div key={key} className="flex justify-between gap-4">
               <dt className="text-ink-2">{label}</dt>
-              <dd className="font-medium text-ink tabular">{value === null ? '—' : ratingValue(value)}</dd>
+              <dd className="font-medium text-ink tabular">
+                {value === null ? 'Not rated yet' : ratingValue(value)}
+              </dd>
             </div>
           );
         })}
@@ -68,7 +70,7 @@ export function ReviewsSection({
   if (meta.summary.count === 0) {
     return (
       <EmptyState title="No reviews yet">
-        Reviews come only from people whose visit was completed — so the first one will be from a real
+        Reviews come only from people whose visit was completed, so the first one will be from a real
         customer.
       </EmptyState>
     );

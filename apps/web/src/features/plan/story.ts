@@ -53,7 +53,7 @@ export function planStory(p: MyPlan): PlanStory {
             : null;
       if (s.status === 'past_due') {
         story.warning =
-          'Your last payment didn’t go through. It will be tried again — check your payment details.';
+          'Your last payment didn’t go through. It will be tried again. Check your payment details.';
       }
       if (s.cancelAtPeriodEnd) {
         story.lines.push(until ? `Ends on ${until}; it won’t renew.` : 'It won’t renew.');
@@ -77,7 +77,7 @@ export function usageLines(
   if (p.source === 'billing_off') return [];
   return Object.entries(p.usage).map(([key, u]) => ({
     label: labels[key] ?? key,
-    text: u.limit === null ? `${u.used} so far — no limit` : `${u.used} of ${u.limit} used`,
+    text: u.limit === null ? `${u.used} so far, no limit` : `${u.used} of ${u.limit} used`,
     full: u.limit !== null && u.used >= u.limit,
   }));
 }

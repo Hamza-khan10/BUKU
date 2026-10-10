@@ -9,7 +9,7 @@ import { ApiError } from '@/lib/api/errors';
 
 export const metadata = {
   title: 'All categories',
-  description: 'Barbers, clinics, spas, gyms, government offices and more — every kind of place on BUKU.',
+  description: 'Barbers, clinics, spas, gyms, government offices and more: every kind of place on BUKU.',
 };
 
 export default async function CategoriesPage() {
@@ -33,7 +33,7 @@ export default async function CategoriesPage() {
       <PageHeading
         eyebrow="Categories"
         title="Every kind of place"
-        description="Pick a category to see the places in it — open now, with a queue, top rated."
+        description="Pick a category to see the places in it: open now, with a queue, top rated."
       />
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {tree.map((c) => (
@@ -45,7 +45,7 @@ export default async function CategoriesPage() {
               <span className="grid size-12 shrink-0 place-items-center rounded-md bg-brand-soft text-brand-ink">
                 <CategoryIcon slug={c.slug} className="size-6" />
               </span>
-              <span className="font-display text-xl font-semibold group-hover:underline">{c.name}</span>
+              <span className="text-xl tracking-[-0.02em] font-semibold group-hover:underline">{c.name}</span>
             </Link>
             {c.children.length > 0 && (
               <ul aria-label={`In ${c.name}`} className="flex flex-wrap gap-2">

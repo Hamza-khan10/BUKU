@@ -100,7 +100,7 @@ export function ReviewPage({ appointmentId }: { appointmentId: string }) {
     <div className="flex max-w-2xl flex-col gap-8">
       <header className="flex flex-col gap-2">
         {back}
-        <h1 className="font-display text-4xl font-bold tracking-tight">
+        <h1 className="text-4xl font-semibold tracking-[-0.03em]">
           {existing ? 'Your review' : `How was your visit to ${r.business.name}?`}
         </h1>
         <p className="text-ink-2">
@@ -148,7 +148,7 @@ function ReviewForm({
       toast.success(
         existing
           ? 'Your review is updated.'
-          : `Thank you — your review is on ${possessive(r.business.name)} page.`,
+          : `Thank you. Your review is on ${possessive(r.business.name)} page.`,
       );
       router.push('/account/reviews');
     } catch (err) {
@@ -159,7 +159,7 @@ function ReviewForm({
         setErrors({
           form: {
             title: 'You’ve already reviewed this visit.',
-            detail: 'It’s shown below — you can change it there.',
+            detail: 'It’s shown below, and you can change it there.',
           },
         });
       } else if (e?.code === 'REVIEW_LOCKED') {

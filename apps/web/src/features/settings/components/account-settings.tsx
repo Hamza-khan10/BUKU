@@ -55,7 +55,7 @@ function SignInDetails({ me }: { me: Me }) {
   const rows =
     me.account.type === 'employee'
       ? [
-          { label: 'Username', value: me.account.username ?? '—' },
+          { label: 'Username', value: me.account.username ?? 'None' },
           { label: 'Account', value: 'Created by your business, which decides what it can do.' },
         ]
       : [{ label: 'Email', value: me.email ?? 'No email on this account' }];

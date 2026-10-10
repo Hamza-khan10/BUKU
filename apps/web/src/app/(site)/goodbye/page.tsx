@@ -19,7 +19,7 @@ export default async function GoodbyePage({ searchParams }: PageProps<'/goodbye'
   return (
     <Container className="flex justify-center py-16 sm:py-24">
       <div className="flex w-full max-w-lg flex-col gap-5">
-        <h1 className="font-display text-4xl font-bold tracking-tight">Your account is deleted</h1>
+        <h1 className="text-4xl font-semibold tracking-[-0.03em]">Your account is deleted</h1>
         <p className="text-ink-2">
           You’re signed out everywhere, and visits still to come are cancelled.{' '}
           {until ? (

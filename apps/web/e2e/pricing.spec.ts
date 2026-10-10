@@ -31,7 +31,7 @@ test.describe('Pricing', () => {
     }
     if (!business.billingEnabled) {
       await expect(
-        page.getByText('Right now, everything is included for businesses — at no cost'),
+        page.getByText('Right now, everything is included for businesses, at no cost'),
       ).toBeVisible();
     }
     // The iPhone price is the App Store's, and the page says so with the real number.

@@ -107,7 +107,7 @@ export function BookingSummary({
       <h2
         id="your-booking"
         tabIndex={-1}
-        className="font-display text-xl font-semibold text-ink focus:outline-none"
+        className="text-xl tracking-[-0.02em] font-semibold text-ink focus:outline-none"
       >
         Your booking
       </h2>
@@ -120,7 +120,9 @@ export function BookingSummary({
             <Missing>Choose a service</Missing>
           )}
         </Row>
-        <Row term="With">{service ? (person?.displayName ?? 'Anyone available') : <Missing>—</Missing>}</Row>
+        <Row term="With">
+          {service ? (person?.displayName ?? 'Anyone available') : <Missing>Not chosen yet</Missing>}
+        </Row>
         <Row term="When">
           {slot ? (
             <>
@@ -138,7 +140,7 @@ export function BookingSummary({
               , paid at the venue
             </>
           ) : (
-            <Missing>—</Missing>
+            <Missing>Not chosen yet</Missing>
           )}
         </Row>
       </dl>

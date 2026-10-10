@@ -18,7 +18,7 @@ export async function generateMetadata({ searchParams }: PageProps<'/explore'>):
   const where = f.city ? ` in ${f.city}` : '';
   return {
     title: f.q ? `“${f.q}”${where}` : `Explore${where}`,
-    description: 'Find places to book an appointment or join a queue — open now, near you, top rated.',
+    description: 'Find places to book an appointment or join a queue: open now, near you, top rated.',
   };
 }
 
@@ -38,7 +38,7 @@ export default async function ExplorePage({ searchParams }: PageProps<'/explore'
   return (
     <Container className="flex flex-col gap-8 py-10 sm:py-14">
       <header className="flex flex-col gap-5">
-        <h1 className="font-display text-4xl font-bold tracking-tight">
+        <h1 className="text-4xl font-semibold tracking-[-0.03em]">
           {filters.q ? `Results for “${filters.q}”` : 'Explore'}
           {filters.city && <span className="text-ink-3"> in {filters.city}</span>}
         </h1>
@@ -92,7 +92,7 @@ export default async function ExplorePage({ searchParams }: PageProps<'/explore'
           {filtered
             ? 'Try turning off a filter, or another city.'
             : filters.q
-              ? 'Try fewer or different words — a service (“haircut”) or a kind of place (“dentist”).'
+              ? 'Try fewer or different words: a service (“haircut”) or a kind of place (“dentist”).'
               : 'When businesses here join BUKU, they’ll appear on this page.'}
         </EmptyState>
       ) : (

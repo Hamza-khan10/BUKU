@@ -115,7 +115,7 @@ export function TwoStepSetup() {
       {stage.at === 'codes' && (
         <section aria-label="Recovery codes" className="flex flex-col gap-4">
           <Alert tone="ok" title="Two-step sign-in is on" />
-          <h2 className="font-display text-2xl font-semibold">Last step: save your recovery codes</h2>
+          <h2 className="text-2xl font-semibold tracking-[-0.025em]">Last step: save your recovery codes</h2>
           <RecoveryCodes codes={stage.codes} account={me.data.email ?? me.data.name} onDone={finish} />
         </section>
       )}
@@ -178,7 +178,7 @@ function ScanAndConfirm({
   return (
     <div className="flex flex-col gap-8">
       <section aria-label="Add BUKU to your app" className="flex flex-col gap-4">
-        <h2 className="font-display text-2xl font-semibold">1. Add BUKU to your app</h2>
+        <h2 className="text-2xl font-semibold tracking-[-0.025em]">1. Add BUKU to your app</h2>
         <p className="text-ink-2">In your authenticator app, add an account and scan this code.</p>
         <div
           role="img"
@@ -205,7 +205,7 @@ function ScanAndConfirm({
       </section>
 
       <section aria-label="Check it works" className="flex flex-col gap-4">
-        <h2 className="font-display text-2xl font-semibold">2. Check it works</h2>
+        <h2 className="text-2xl font-semibold tracking-[-0.025em]">2. Check it works</h2>
         <form noValidate onSubmit={submit} className="flex flex-col gap-4">
           <ProblemAlert problem={problem} />
           <Field

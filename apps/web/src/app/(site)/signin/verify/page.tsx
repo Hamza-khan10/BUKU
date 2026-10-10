@@ -44,7 +44,7 @@ export default async function VerifyPage({ searchParams }: PageProps<'/signin/ve
         <div className="flex flex-col gap-5">
           <Alert tone="wait" title="There’s no sign-in waiting for a code">
             The code step only stays open for a few minutes after you sign in, and only in the browser you
-            signed in with. Start again — it only takes a moment.
+            signed in with. Start again: it only takes a moment.
           </Alert>
           <Button asChild variant="primary" size="lg" block>
             <Link href={signInHref(start, next) as Route}>Sign in</Link>

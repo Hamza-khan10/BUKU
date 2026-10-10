@@ -57,8 +57,10 @@ export function VisitRow({ visit: r, past }: { visit: Receipt; past: boolean }) 
       className="flex items-center gap-4 rounded-lg border border-line bg-surface p-4 transition-colors hover:border-ink-3 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-focus/25"
     >
       <span className="flex w-14 shrink-0 flex-col items-center rounded-md bg-sunken py-1.5 text-center">
-        <span className="text-xs font-medium text-ink-3 uppercase">{d.weekday}</span>
-        <span className="font-display text-xl leading-tight font-semibold text-ink tabular">{d.day}</span>
+        <span className="text-xs font-medium text-ink-3">{d.weekday}</span>
+        <span className="text-xl tracking-[-0.02em] leading-tight font-semibold text-ink tabular">
+          {d.day}
+        </span>
         <span className="text-xs text-ink-3">{d.month}</span>
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">

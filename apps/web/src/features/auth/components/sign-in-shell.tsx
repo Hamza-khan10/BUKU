@@ -25,7 +25,7 @@ export function SignInShell({
       <div className="flex w-full max-w-lg flex-col gap-8">
         <header className="flex flex-col items-center gap-4 text-center">
           <LogoMark className="size-12" />
-          <h1 className="font-display text-4xl font-bold tracking-tight text-balance">{title}</h1>
+          <h1 className="text-4xl font-semibold tracking-[-0.03em] text-balance">{title}</h1>
           <p className="text-ink-2">{lead}</p>
         </header>
 

@@ -115,9 +115,9 @@ export function NewPasswordForm({
   return (
     <form noValidate onSubmit={(e) => void submit(e)} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <h2 className="font-display text-xl font-semibold text-ink">Choose your own password</h2>
+        <h2 className="text-xl tracking-[-0.02em] font-semibold text-ink">Choose your own password</h2>
         <p className="text-sm text-ink-2">
-          The password your business gave you is temporary. Choose one that only you know — then you’re in.
+          The password your business gave you is temporary. Choose one that only you know, and you’re in.
         </p>
       </div>
       <ProblemAlert problem={errors.form} />

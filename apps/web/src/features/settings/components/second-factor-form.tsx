@@ -46,7 +46,7 @@ export function SecondFactorForm({
       if (err instanceof ApiError && err.code === 'MFA_INVALID_CODE') {
         setFieldError(
           mode === 'code'
-            ? 'That code isn’t right. Codes change every 30 seconds — enter the one showing now.'
+            ? 'That code isn’t right. Codes change every 30 seconds: enter the one showing now.'
             : 'That recovery code isn’t right, or it was already used.',
         );
         setCode('');

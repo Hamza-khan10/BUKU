@@ -25,7 +25,7 @@ function ReviewItem({ review: v }: { review: MyReview }) {
         <div className="flex flex-col gap-1">
           <Link
             href={`/b/${v.business.slug}` as Route}
-            className="font-display text-lg font-semibold text-ink hover:underline"
+            className="text-lg tracking-[-0.015em] font-semibold text-ink hover:underline"
           >
             {v.business.name}
           </Link>
@@ -89,7 +89,7 @@ export function MyReviews() {
   if (reviews.data.items.length === 0) {
     return (
       <EmptyState icon={MessageSquareText} title="No reviews yet">
-        After a visit, you can say how it went — it helps others choose, and helps the business improve.
+        After a visit, you can say how it went. It helps others choose, and helps the business improve.
       </EmptyState>
     );
   }

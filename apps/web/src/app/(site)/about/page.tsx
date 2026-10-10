@@ -10,7 +10,7 @@ const PRINCIPLES = [
   {
     Icon: Clock,
     title: 'Your time matters',
-    text: 'Fewest steps to a booking, real free times only, reminders that arrive when they help — and a queue you can watch instead of stand in.',
+    text: 'Fewest steps to a booking, real free times only, reminders that arrive when they help, and a queue you can watch instead of stand in.',
   },
   {
     Icon: Eye,
@@ -38,7 +38,7 @@ export default function AboutPage() {
         description="Getting a haircut, seeing a doctor or renewing a document often means calling around or standing in line. BUKU replaces that with a time you choose, or a place in line you can see from wherever you are."
       />
       <section aria-labelledby="principles" className="flex flex-col gap-8">
-        <h2 id="principles" className="font-display text-3xl font-bold tracking-tight">
+        <h2 id="principles" className="text-3xl font-semibold tracking-[-0.03em]">
           What we build on
         </h2>
         <ul className="grid gap-4 sm:grid-cols-2">
@@ -50,7 +50,7 @@ export default function AboutPage() {
               <span className="grid size-11 place-items-center rounded-md bg-brand-soft text-brand-ink">
                 <Icon className="size-5" aria-hidden />
               </span>
-              <h3 className="font-display text-xl font-semibold">{title}</h3>
+              <h3 className="text-xl tracking-[-0.02em] font-semibold">{title}</h3>
               <p className="text-ink-2">{text}</p>
             </li>
           ))}

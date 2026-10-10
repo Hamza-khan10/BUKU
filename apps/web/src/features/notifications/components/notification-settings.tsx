@@ -14,7 +14,7 @@ function Group({ title, intro, children }: { title: string; intro?: ReactNode; c
   return (
     <section aria-label={title} className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-5">
       <div className="flex flex-col gap-1">
-        <h2 className="font-display text-xl font-semibold text-ink">{title}</h2>
+        <h2 className="text-xl tracking-[-0.02em] font-semibold text-ink">{title}</h2>
         {intro && <p className="text-sm text-ink-3">{intro}</p>}
       </div>
       <div className="flex flex-col gap-2">{children}</div>

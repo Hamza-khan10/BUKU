@@ -13,7 +13,7 @@ export default function NotFound() {
           <Logo />
         </Link>
         <p className="font-mono text-sm font-semibold tracking-widest text-brand-ink">404</p>
-        <h1 className="font-display text-3xl font-bold tracking-tight">This page isn’t here</h1>
+        <h1 className="text-3xl font-semibold tracking-[-0.03em]">This page isn’t here</h1>
         <p className="text-ink-2">
           The link may be old, or the page may have moved. If you followed a link to a business, it may no
           longer be listed.

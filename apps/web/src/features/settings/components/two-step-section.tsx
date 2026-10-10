@@ -47,7 +47,7 @@ export function TwoStepSection({ me }: { me: Me }) {
             <span className="text-sm text-ink-2">
               {status.data.since && <>Since {shortDate(status.data.since)}. </>}
               {status.data.recoveryCodesLeft === 0
-                ? 'No recovery codes left — get new ones.'
+                ? 'No recovery codes left. Get new ones.'
                 : `${status.data.recoveryCodesLeft} recovery ${status.data.recoveryCodesLeft === 1 ? 'code' : 'codes'} left.`}
             </span>
           </div>

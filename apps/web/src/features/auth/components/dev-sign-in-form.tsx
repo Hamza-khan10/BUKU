@@ -100,7 +100,7 @@ export function DevSignInForm({ next }: { next: string }) {
           value={role}
           onValueChange={(v) => setRole(v as DevRole)}
           aria-label="Sign in as"
-          className="grid gap-2 sm:grid-cols-3"
+          className="grid gap-2 sm:grid-cols-2"
         >
           {ROLES.map(({ value, label, text, Icon }) => (
             <RadioGroup.Item

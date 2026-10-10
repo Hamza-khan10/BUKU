@@ -15,7 +15,7 @@ export default function NotificationSettingsPage() {
         >
           <ArrowLeft className="size-4" aria-hidden /> Notifications
         </Link>
-        <h1 className="font-display text-4xl font-bold tracking-tight">Notification settings</h1>
+        <h1 className="text-4xl font-semibold tracking-[-0.03em]">Notification settings</h1>
       </div>
       <NotificationSettings />
     </div>

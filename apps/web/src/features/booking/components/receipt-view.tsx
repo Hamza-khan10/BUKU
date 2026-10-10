@@ -18,7 +18,7 @@ import { VisitActions } from './visit-actions';
 function statusOf(r: Receipt): TicketProps['status'] {
   switch (r.status) {
     case 'pending':
-      return { label: 'Requested — waiting for the business to confirm', tone: 'wait', live: true };
+      return { label: 'Requested: waiting for the business to confirm', tone: 'wait', live: true };
     case 'confirmed':
       return r.checkedInAt ? { label: 'Checked in', tone: 'ok' } : { label: 'Confirmed', tone: 'ok' };
     case 'completed':
@@ -123,7 +123,7 @@ export function ReceiptView({ id, arrival }: { id: string; arrival: Arrival }) {
         >
           <ArrowLeft className="size-4" aria-hidden /> Your visits
         </Link>
-        <h1 className="font-display text-4xl font-bold tracking-tight">{heading}</h1>
+        <h1 className="text-4xl font-semibold tracking-[-0.03em]">{heading}</h1>
         {arrival === 'moved' && (
           <p className="text-ink-2">
             It has a new booking code: the old one no longer works.
@@ -133,7 +133,7 @@ export function ReceiptView({ id, arrival }: { id: string; arrival: Arrival }) {
         )}
         {arrival === 'booked' && r.status === 'pending' && (
           <p className="text-ink-2">
-            {r.business.name} confirms each booking. You’ll be told as soon as they do — the time is held for
+            {r.business.name} confirms each booking. You’ll be told as soon as they do. The time is held for
             you meanwhile.
           </p>
         )}

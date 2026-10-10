@@ -40,7 +40,7 @@ export function BusinessCard({ item }: { item: SearchItem }) {
                 className="size-24 rounded-2xl object-cover shadow-soft"
               />
             ) : (
-              <span className="text-[5.5rem] leading-none font-semibold tracking-[-0.04em] text-ink/80 transition-transform duration-700 ease-(--ease-out) group-hover:scale-[1.04]">
+              <span className="text-[4.25rem] leading-none font-medium tracking-[-0.04em] text-ink-3 transition-transform duration-700 ease-(--ease-out) group-hover:scale-[1.04]">
                 {initial(item.name)}
               </span>
             )}

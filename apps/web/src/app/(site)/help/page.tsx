@@ -53,7 +53,7 @@ const TOPICS: { id: string; title: string; questions: { id: string; q: string; a
       },
       {
         id: 'taken',
-        q: 'The time I wanted was taken while I was choosing — what now?',
+        q: 'The time I wanted was taken while I was choosing. What now?',
         a: (
           <p>
             BUKU only ever books a time that’s still free. If someone else took it first, you’ll see the next
@@ -66,7 +66,7 @@ const TOPICS: { id: string; title: string; questions: { id: string; q: string; a
         q: 'When do reminders arrive?',
         a: (
           <p>
-            The day before (if you booked more than a day ahead) and about two hours before — never during the
+            The day before (if you booked more than a day ahead) and about two hours before, never during the
             night where the business is. You can turn either off in your notification settings.
           </p>
         ),
@@ -96,7 +96,7 @@ const TOPICS: { id: string; title: string; questions: { id: string; q: string; a
             <p>One of these is usually the reason, and BUKU tells you which:</p>
             <ul className="mt-2 list-disc pl-5">
               <li>You’re further away than the business allows (5 km unless it sets another distance).</li>
-              <li>You already have a ticket in another queue — you can hold one at a time.</li>
+              <li>You already have a ticket in another queue. You can hold one at a time.</li>
               <li>The queue is paused or closed right now.</li>
               <li>Your location is turned off for BUKU in your browser or phone.</li>
             </ul>
@@ -134,7 +134,7 @@ const TOPICS: { id: string; title: string; questions: { id: string; q: string; a
         q: 'Can I add two-step sign-in?',
         a: (
           <p>
-            Yes — with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password and
+            Yes, with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password and
             others), from your account settings.
           </p>
         ),
@@ -180,7 +180,7 @@ const TOPICS: { id: string; title: string; questions: { id: string; q: string; a
         q: 'What do businesses see about me?',
         a: (
           <p>
-            Your name, your booking, any note you write, and a label like “Shows up 95%” or “New customer” —
+            Your name, your booking, any note you write, and a label like “Shows up 95%” or “New customer”,
             never your phone number, email, picture or your history with other businesses.
           </p>
         ),
@@ -241,7 +241,7 @@ export default function HelpPage() {
           aria-labelledby={`${t.id}-title`}
           className="flex scroll-mt-24 flex-col gap-4"
         >
-          <h2 id={`${t.id}-title`} className="font-display text-2xl font-semibold tracking-tight">
+          <h2 id={`${t.id}-title`} className="text-2xl font-semibold tracking-[-0.025em]">
             {t.title}
           </h2>
           <Accordion type="multiple">

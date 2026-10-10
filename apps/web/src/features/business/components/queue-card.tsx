@@ -51,7 +51,7 @@ export function QueueCard({
       </div>
       <p className="mt-3 flex items-baseline gap-2" aria-live="polite">
         <Users className="size-5 self-center text-ink-3" aria-hidden />
-        <span className="font-display text-4xl font-bold tabular">{state.waiting}</span>
+        <span className="text-4xl font-semibold tracking-[-0.03em] tabular">{state.waiting}</span>
         <span className="text-ink-2">{state.waiting === 1 ? 'person waiting' : 'people waiting'}</span>
       </p>
       {state.estimatedWaitMinutes !== null && state.waiting > 0 && (

@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: 'Your reviews', robots: { index: fals
 export default function ReviewsPage() {
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="font-display text-4xl font-bold tracking-tight">Your reviews</h1>
+      <h1 className="text-4xl font-semibold tracking-[-0.03em]">Your reviews</h1>
       <MyReviews />
     </div>
   );

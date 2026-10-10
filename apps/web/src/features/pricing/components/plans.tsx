@@ -10,11 +10,13 @@ const per = (interval: 'month' | 'year') => (interval === 'month' ? 'month' : 'y
 export function PriceTag({ plan }: { plan: Plan }) {
   const price = plan.prices[0];
   if (plan.free || !price) {
-    return <p className="font-display text-4xl font-bold">Free</p>;
+    return <p className="text-4xl font-semibold tracking-[-0.03em]">Free</p>;
   }
   return (
     <p className="flex items-baseline gap-1.5">
-      <span className="font-display text-4xl font-bold tabular">{money(price.amount, price.currency)}</span>
+      <span className="text-4xl font-semibold tracking-[-0.03em] tabular">
+        {money(price.amount, price.currency)}
+      </span>
       <span className="text-ink-3">/ {per(price.interval)}</span>
     </p>
   );
@@ -40,7 +42,7 @@ export function PlanCard({
     >
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-display text-xl font-semibold">{plan.name}</h3>
+          <h3 className="text-xl tracking-[-0.02em] font-semibold">{plan.name}</h3>
           {hasTrial && <Badge tone="brand">{trial.days}-day free trial</Badge>}
         </div>
         {plan.tagline && <p className="text-sm text-ink-2">{plan.tagline}</p>}
