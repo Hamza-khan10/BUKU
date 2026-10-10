@@ -11,6 +11,7 @@ import { Dialog, DialogClose, DialogContent, DialogTrigger } from '@/components/
 import { Skeleton } from '@/components/ui/skeleton';
 import { ErrorState } from '@/components/ui/states';
 import { Ticket, type TicketProps } from '@/components/ui/ticket';
+import { LiveBoard } from './live-board';
 import { toast } from '@/components/ui/toaster';
 import { problemFrom } from '@/features/auth/problems';
 import { useMinute } from '@/features/booking/notice';
@@ -177,6 +178,10 @@ function TicketCard({
           </p>
         )}
       </header>
+
+      {(status === 'waiting' || status === 'called') && (
+        <LiveBoard ahead={ahead ?? null} code={t.ticket} called={status === 'called'} />
+      )}
 
       <Ticket
         fresh={joined}
