@@ -659,6 +659,29 @@ async function authorizationScan(ctx: { shop: Shop; stranger: Person; customer: 
       expect(!problems.length, problems.join('\n      '));
     },
   );
+
+  // D-092: each service signs in to Kafka as itself, publishes only its own events and sees only
+  // the topics it uses; without its password nothing connects.
+  await step('Kafka: a service can’t forge another’s events or read its topics, and must sign in', () => {
+    const answers = {
+      search: kafkaProbe('search', {
+        own: 'analytics.search',
+        other: 'users.deleted',
+        forge: 'bookings.created',
+      }),
+      booking: kafkaProbe('booking', {
+        own: 'bookings.created',
+        other: 'payments.completed',
+        forge: 'users.deleted',
+      }),
+    };
+    const problems = Object.entries(answers).flatMap(([service, r]) =>
+      Object.entries(r)
+        .filter(([what, answer]) => (what === 'sees its own topic') !== (answer === 'allowed'))
+        .map(([what, answer]) => `${service} ${what} → ${answer}`),
+    );
+    expect(!problems.length, problems.join('\n      '));
+  });
 }
 
 const PORTS: Record<string, number> = {
@@ -729,6 +752,69 @@ function reach(fromService: string, urls: string[]): Record<string, string> {
         out[url] = err?.cause?.code ?? err?.name ?? 'failed';
       }
     }
+    console.log(JSON.stringify(out));`;
+  return JSON.parse(inside(`buku-${fromService}-service-1`, script)) as Record<string, string>;
+}
+
+/**
+ * From inside a service, with its own Kafka user (D-092): can it see its own topic, see another's,
+ * publish another's event, or connect with a wrong password or none? Each answer is "allowed" or
+ * the refusal. Nothing is ever published: the one publish tried is one that must be refused.
+ */
+function kafkaProbe(
+  fromService: string,
+  topics: { own: string; other: string; forge: string },
+): Record<string, string> {
+  const script = `
+    import { createRequire } from 'node:module';
+    const { KafkaJS } = createRequire('/app/packages/kafka/package.json')('@confluentinc/kafka-javascript');
+    const topics = ${JSON.stringify(topics)};
+    const user = { username: process.env.KAFKA_SASL_USERNAME, password: process.env.KAFKA_SASL_PASSWORD };
+    const kafka = (sasl) =>
+      new KafkaJS.Kafka({
+        kafkaJS: {
+          brokers: [process.env.KAFKA_BROKERS],
+          clientId: 'acceptance-isolation',
+          ...(sasl ? { sasl: { mechanism: 'scram-sha-512', ...sasl } } : {}),
+          connectionTimeout: 4000,
+          requestTimeout: 6000,
+          retry: { retries: 0 },
+          logLevel: KafkaJS.logLevel.NOTHING,
+        },
+        'message.timeout.ms': 6000,
+      });
+    const out = {};
+    const attempt = async (label, fn) => {
+      try {
+        await fn();
+        out[label] = 'allowed';
+      } catch (err) {
+        out[label] = String(err?.message ?? err).slice(0, 80);
+      }
+    };
+    const see = (sasl, topic) => async () => {
+      const admin = kafka(sasl).admin();
+      await admin.connect();
+      try {
+        await admin.fetchTopicMetadata({ topics: [topic], timeout: 6000 });
+      } finally {
+        await admin.disconnect();
+      }
+    };
+    const publish = (topic) => async () => {
+      const producer = kafka(user).producer();
+      await producer.connect();
+      try {
+        await producer.send({ topic, messages: [{ value: 'acceptance: must be refused' }] });
+      } finally {
+        await producer.disconnect();
+      }
+    };
+    await attempt('sees its own topic', see(user, topics.own));
+    await attempt('sees ' + topics.other, see(user, topics.other));
+    await attempt('publishes ' + topics.forge, publish(topics.forge));
+    await attempt('connects with a wrong password', see({ ...user, password: 'x'.repeat(48) }, topics.own));
+    await attempt('connects without signing in', see(null, topics.own));
     console.log(JSON.stringify(out));`;
   return JSON.parse(inside(`buku-${fromService}-service-1`, script)) as Record<string, string>;
 }

@@ -709,9 +709,14 @@ can't reach the others' data or powers:
   added to the map (a test checks every table has an owner and every name exists). The roles are
   applied by the `db-access` job at start-up (`apply-access.ts`, each with its own password,
   `BUKU_DB_PASSWORD_<SERVICE>`); migrations and seeds keep their own role.
-- **Events.** Each service has its own Kafka credentials, allowed to publish only its own topics
-  and to read only what it consumes: nobody can forge another service's events (a forged
-  `users.deleted` would cancel someone's bookings).
+- **Events.** Each service signs in to Kafka as its own user (SCRAM-SHA-512), allowed to publish
+  only its own topics and to read only what it consumes, as its own consumer groups
+  (`infrastructure/kafka/access.conf`; a test checks it against the topics each service's code
+  uses, and that each kind of event has one publisher). Nobody can forge another service's
+  events — a forged `users.deleted` would cancel someone's bookings — or read events it has no
+  use for, and nothing connects without signing in. The broker's only password-less listeners
+  are bound to 127.0.0.1 inside its own container, used by the broker itself and the
+  `kafka-access` job that applies the plan.
 - **Cache.** Each service has its own Valkey user, limited to its own keys (and reading the
   shared revocation list).
 

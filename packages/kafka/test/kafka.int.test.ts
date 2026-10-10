@@ -20,7 +20,11 @@ import {
  * Each test uses a fresh consumer group and filters by its own event ids, so
  * tests are independent of whatever else is on the topic.
  */
-const kafka = createKafka({ brokers: testEnv.kafkaBrokers.split(','), clientId: 'int-test' });
+const kafka = createKafka({
+  brokers: testEnv.kafkaBrokers.split(','),
+  clientId: 'int-test',
+  sasl: testEnv.kafkaSasl,
+});
 const producer = new EventProducer(kafka);
 let db: Database;
 const consumers: RunningConsumer[] = [];

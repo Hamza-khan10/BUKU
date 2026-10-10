@@ -85,8 +85,13 @@ jobs:
         run: bash scripts/setup-dev.sh
       - name: Start Postgres, Valkey and Kafka
         run: docker compose -f docker-compose.dev.yml up -d --wait postgres valkey kafka
+      - name: Kafka users and their permissions (D-092)
+        run: docker compose -f docker-compose.dev.yml run --rm kafka-access
       - name: Create Kafka topics from the registry
-        run: KAFKA_BROKERS=localhost:9092 pnpm kafka:topics
+        # Signs in as the admin user, with the throwaway password setup generated.
+        run: |
+          set -a; . ./.env; set +a
+          KAFKA_BROKERS=localhost:9092 KAFKA_SASL_USERNAME=buku-admin KAFKA_SASL_PASSWORD="$KAFKA_PASSWORD_ADMIN" pnpm kafka:topics
       - name: Start object storage and create buckets
         run: docker compose -f docker-compose.dev.yml run --rm s3-init
       - name: Apply migrations to a fresh database

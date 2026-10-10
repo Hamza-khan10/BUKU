@@ -77,6 +77,12 @@ of whoever fired them: a trigger function that writes another service's table is
 Add it to `TOPIC_SPECS` in `packages/kafka/src/topics.ts`, then `pnpm kafka:topics`
 (or restart the stack). Never use raw topic strings in code — use `TOPICS.X`.
 
+Then say who publishes and who reads it in `infrastructure/kafka/access.conf` (D-092): each
+service signs in to Kafka as its own user and may use only the topics listed there (`pnpm test`
+checks the list against the code). Restarting the stack applies it (the `kafka-access` job). A
+service's log saying "Topic authorization failed" means the list is missing something. From this
+machine, tools sign in as `buku-admin` with `KAFKA_PASSWORD_ADMIN` from `.env`.
+
 ### Publish an event from a service
 
 Inside the same transaction as the business change:

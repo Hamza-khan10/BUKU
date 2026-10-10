@@ -543,8 +543,9 @@ The detailed plan — every page, its data and edge cases, the design system and
   progress:** each service on a network of its own (only Kong and its own data stores), the
   gateway admin API closed, each service publishing only its own outbox events, and each signing
   in to Postgres as its own role with only the tables and columns its job needs (no one else
-  reads credentials; the audit log is append-only). Next: Kafka and Valkey credentials per
-  service, then the premium redesign.
+  reads credentials; the audit log is append-only), and signing in to Kafka as its own user,
+  allowed to publish only its own events and read only what it consumes (nothing connects
+  without signing in). Next: Valkey users per service, then the premium redesign.
 
 ## Phase 4 — Mobile app (Expo)
 

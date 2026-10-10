@@ -59,6 +59,7 @@ volumes:
   postgres-data:
   valkey-data:
   kafka-data:
+  kafka-access-state:
   elasticsearch-data:
   clickhouse-data:
   s3-data:
@@ -105,6 +106,8 @@ x-service-env: &service-env
   LOG_PRETTY: 'true'
   TRUST_PROXY_HOPS: '1'
   KAFKA_BROKERS: kafka:29092
+  # Each service signs in as its own Kafka user (D-092; infrastructure/kafka/access.conf).
+  KAFKA_SASL_MECHANISM: scram-sha-512
   JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:?run pnpm bootstrap}
   JWT_KEY_ID: ${JWT_KEY_ID:?run pnpm bootstrap}
   JWT_ISSUER: ${JWT_ISSUER:-https://auth.buku.local}
@@ -243,7 +246,6 @@ services:
         svc-queue,
         svc-notification,
         svc-business,
-        svc-billing,
         svc-search,
         svc-ads,
         svc-analytics,
@@ -252,12 +254,25 @@ services:
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENERS: CONTROLLER://:9093,INTERNAL://:29092,EXTERNAL://:9092
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      # Signing in (D-092): services and jobs (INTERNAL) and this machine (EXTERNAL) sign in
+      # with SCRAM-SHA-512, each as its own user, allowed only what
+      # infrastructure/kafka/access.conf lists (the kafka-access job applies it). The controller
+      # and LOCAL listeners need no password and are bound to 127.0.0.1 inside this container:
+      # only the broker itself, its health check and the kafka-access job (which shares this
+      # container's network) reach them.
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@127.0.0.1:9093
+      KAFKA_LISTENERS: CONTROLLER://127.0.0.1:9093,LOCAL://127.0.0.1:29093,INTERNAL://:29092,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: LOCAL://127.0.0.1:29093,INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,LOCAL:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: LOCAL
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_SASL_ENABLED_MECHANISMS: SCRAM-SHA-512
+      KAFKA_LISTENER_NAME_INTERNAL_SCRAM___SHA___512_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required;
+      KAFKA_LISTENER_NAME_EXTERNAL_SCRAM___SHA___512_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required;
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: 'false'
+      # The password-less local listeners (the broker itself, the kafka-access job) and the admin.
+      KAFKA_SUPER_USERS: User:ANONYMOUS;User:buku-admin
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       # Topics are created explicitly from the registry — a typo in a topic
       # name must fail loudly, not silently create a new empty topic.
@@ -277,7 +292,7 @@ services:
       test:
         [
           'CMD-SHELL',
-          '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 > /dev/null 2>&1',
+          '/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:29093 > /dev/null 2>&1',
         ]
       interval: 10s
       timeout: 10s
@@ -370,6 +385,31 @@ services:
 
   # ═════════════════════════════ ONE-SHOT SETUP JOBS ═════════════════════════════
 
+  # Kafka's users and their permissions (D-092; infrastructure/kafka/access.conf). Runs in the
+  # broker's own network namespace, so it reaches the password-less local listener.
+  kafka-access:
+    <<: *oneshot
+    image: apache/kafka:4.3.1
+    network_mode: service:kafka
+    entrypoint: ['bash', '/access/apply-access.sh']
+    environment:
+      KAFKA_PASSWORD_ADMIN: ${KAFKA_PASSWORD_ADMIN:?run pnpm bootstrap}
+      KAFKA_PASSWORD_TOOLS: ${KAFKA_PASSWORD_TOOLS:?run pnpm bootstrap}
+      KAFKA_PASSWORD_AUTH: ${KAFKA_PASSWORD_AUTH:?run pnpm bootstrap}
+      KAFKA_PASSWORD_BOOKING: ${KAFKA_PASSWORD_BOOKING:?run pnpm bootstrap}
+      KAFKA_PASSWORD_QUEUE: ${KAFKA_PASSWORD_QUEUE:?run pnpm bootstrap}
+      KAFKA_PASSWORD_NOTIFICATION: ${KAFKA_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
+      KAFKA_PASSWORD_BUSINESS: ${KAFKA_PASSWORD_BUSINESS:?run pnpm bootstrap}
+      KAFKA_PASSWORD_SEARCH: ${KAFKA_PASSWORD_SEARCH:?run pnpm bootstrap}
+      KAFKA_PASSWORD_ADS: ${KAFKA_PASSWORD_ADS:?run pnpm bootstrap}
+      KAFKA_PASSWORD_ANALYTICS: ${KAFKA_PASSWORD_ANALYTICS:?run pnpm bootstrap}
+    volumes:
+      - ./infrastructure/kafka:/access:ro
+      # What was applied last (a fingerprint), so an unchanged plan isn't applied again.
+      - kafka-access-state:/home/appuser
+    depends_on:
+      kafka: { condition: service_healthy }
+
   kafka-init:
     <<: [*oneshot, *node-image, *node-hardening]
     networks: [kafka-admin]
@@ -377,6 +417,9 @@ services:
     command: ['/app/node_modules/.bin/tsx', 'scripts/sync-topics.ts']
     environment:
       KAFKA_BROKERS: kafka:29092
+      KAFKA_SASL_MECHANISM: scram-sha-512
+      KAFKA_SASL_USERNAME: buku-admin
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_ADMIN:?run pnpm bootstrap}
       KAFKA_REPLICATION_FACTOR: '1'
       KAFKA_MIN_INSYNC_REPLICAS: '1'
     volumes:
@@ -385,7 +428,7 @@ services:
         ./packages/kafka/scripts:/app/packages/kafka/scripts:ro,
       ]
     depends_on:
-      kafka: { condition: service_healthy }
+      kafka-access: { condition: service_completed_successfully }
 
   db-migrate:
     <<: [*oneshot, *node-image, *node-hardening]
@@ -475,6 +518,8 @@ services:
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
       DATABASE_URL: postgresql://buku_svc_auth:${BUKU_DB_PASSWORD_AUTH:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: auth-service
+      KAFKA_SASL_USERNAME: buku-auth
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_AUTH:?run pnpm bootstrap}
       PORT: '3001'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?run pnpm bootstrap}
@@ -520,6 +565,8 @@ services:
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
       DATABASE_URL: postgresql://buku_svc_booking:${BUKU_DB_PASSWORD_BOOKING:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: booking-service
+      KAFKA_SASL_USERNAME: buku-booking
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_BOOKING:?run pnpm bootstrap}
       PORT: '3002'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
     volumes:
@@ -555,6 +602,8 @@ services:
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
       DATABASE_URL: postgresql://buku_svc_queue:${BUKU_DB_PASSWORD_QUEUE:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: queue-service
+      KAFKA_SASL_USERNAME: buku-queue
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_QUEUE:?run pnpm bootstrap}
       PORT: '3003'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
     volumes:
@@ -589,6 +638,8 @@ services:
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
       DATABASE_URL: postgresql://buku_svc_notification:${BUKU_DB_PASSWORD_NOTIFICATION:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: notification-service
+      KAFKA_SASL_USERNAME: buku-notification
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
       PORT: '3004'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
       SMTP_HOST: mailpit
@@ -644,6 +695,8 @@ services:
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
       DATABASE_URL: postgresql://buku_svc_business:${BUKU_DB_PASSWORD_BUSINESS:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: business-service
+      KAFKA_SASL_USERNAME: buku-business
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_BUSINESS:?run pnpm bootstrap}
       PORT: '3008'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
       BUSINESS_TERMS_VERSION: '1.0'
@@ -724,6 +777,8 @@ services:
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
       DATABASE_URL: postgresql://buku_svc_search:${BUKU_DB_PASSWORD_SEARCH:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: search-service
+      KAFKA_SASL_USERNAME: buku-search
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_SEARCH:?run pnpm bootstrap}
       PORT: '3005'
       # Postgres full text + PostGIS, always current (D-076). Elasticsearch is
       # reserved for later and refused until built.
@@ -760,6 +815,8 @@ services:
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
       DATABASE_URL: postgresql://buku_svc_ads:${BUKU_DB_PASSWORD_ADS:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: ads-service
+      KAFKA_SASL_USERNAME: buku-ads
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_ADS:?run pnpm bootstrap}
       PORT: '3006'
       REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
       AD_ATTRIBUTION_WINDOW_DAYS: '7'
@@ -795,6 +852,8 @@ services:
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
       DATABASE_URL: postgresql://buku_svc_analytics:${BUKU_DB_PASSWORD_ANALYTICS:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: analytics-service
+      KAFKA_SASL_USERNAME: buku-analytics
+      KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_ANALYTICS:?run pnpm bootstrap}
       PORT: '3007'
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: buku_analytics
@@ -920,6 +979,10 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: buku-local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      # Signs in as buku-tools: may look at topics and groups, change nothing (D-092).
+      KAFKA_CLUSTERS_0_PROPERTIES_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_MECHANISM: SCRAM-SHA-512
+      KAFKA_CLUSTERS_0_PROPERTIES_SASL_JAAS_CONFIG: org.apache.kafka.common.security.scram.ScramLoginModule required username="buku-tools" password="${KAFKA_PASSWORD_TOOLS:?run pnpm bootstrap}";
       DYNAMIC_CONFIG_ENABLED: 'false'
     ports: ['127.0.0.1:8080:8080']
     depends_on:

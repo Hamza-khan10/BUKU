@@ -24,6 +24,12 @@ export const testEnv = {
   appUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_test`,
   migratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_test`,
   kafkaBrokers: process.env.TEST_KAFKA_BROKERS ?? 'localhost:9092',
+  // Tests sign in to Kafka as the admin (D-092): they make their own consumer groups.
+  kafkaSasl: {
+    mechanism: 'scram-sha-512' as const,
+    username: 'buku-admin',
+    password: required('KAFKA_PASSWORD_ADMIN'),
+  },
   redisUrl: `redis://:${encodeURIComponent(required('VALKEY_PASSWORD'))}@${host}:${process.env.VALKEY_HOST_PORT ?? '6379'}/0`,
   piiKeyring: required('PII_ENCRYPTION_KEYS'),
   s3: {
