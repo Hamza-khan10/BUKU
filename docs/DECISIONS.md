@@ -717,8 +717,13 @@ can't reach the others' data or powers:
   use for, and nothing connects without signing in. The broker's only password-less listeners
   are bound to 127.0.0.1 inside its own container, used by the broker itself and the
   `kafka-access` job that applies the plan.
-- **Cache.** Each service has its own Valkey user, limited to its own keys (and reading the
-  shared revocation list).
+- **Cache.** Each service signs in to Valkey as its own user, limited to its own keys
+  (`infrastructure/valkey/access.acl`; a test checks it against the keys each service's code
+  uses): every service reads the sign-out list auth keeps, only auth writes it, so no service can
+  forge or lift a sign-out, read another's two-step state, or clear another's rate limits. No
+  service user may list keys, flush, change the configuration or switch databases; the gateway
+  has its own user for its rate-limit counters. The users are written at every Valkey start, so
+  a restart never loses them.
 
 Proven by the acceptance run: from inside a service, the others, the gateway admin API and (for
 internal networks) the internet can't be reached, while the public gateway can. The acceptance

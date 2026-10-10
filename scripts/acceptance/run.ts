@@ -682,6 +682,17 @@ async function authorizationScan(ctx: { shop: Shop; stranger: Person; customer: 
     );
     expect(!problems.length, problems.join('\n      '));
   });
+
+  // D-092: each service signs in to Valkey as itself, limited to its own keys; every service
+  // reads the sign-out list, only auth writes it.
+  await step('Valkey: a service can’t touch another’s keys, forge a sign-out, or run admin commands', () => {
+    const answers = valkeyProbe('booking');
+    const allowed = new Set(['reads the sign-out list', 'uses its own rate-limit counters']);
+    const problems = Object.entries(answers)
+      .filter(([what, answer]) => allowed.has(what) !== (answer === 'allowed'))
+      .map(([what, answer]) => `booking ${what} → ${answer}`);
+    expect(!problems.length, problems.join('\n      '));
+  });
 }
 
 const PORTS: Record<string, number> = {
@@ -815,6 +826,48 @@ function kafkaProbe(
     await attempt('publishes ' + topics.forge, publish(topics.forge));
     await attempt('connects with a wrong password', see({ ...user, password: 'x'.repeat(48) }, topics.own));
     await attempt('connects without signing in', see(null, topics.own));
+    console.log(JSON.stringify(out));`;
+  return JSON.parse(inside(`buku-${fromService}-service-1`, script)) as Record<string, string>;
+}
+
+/**
+ * From inside a service, with its own Valkey user (D-092): what it may do with the sign-out list,
+ * its own keys, another service's keys, admin commands and a wrong password. Each answer is
+ * "allowed" or the refusal. The one write tried on a key of its own is removed again.
+ */
+function valkeyProbe(fromService: string): Record<string, string> {
+  const script = `
+    import { createRequire } from 'node:module';
+    const { Redis } = createRequire('/app/packages/common/package.json')('ioredis');
+    const url = new URL(process.env.REDIS_URL);
+    const open = (password) =>
+      new Redis({ host: url.hostname, port: Number(url.port), username: decodeURIComponent(url.username),
+        password, lazyConnect: true, maxRetriesPerRequest: 0, retryStrategy: () => null, enableOfflineQueue: false });
+    const redis = open(decodeURIComponent(url.password));
+    await redis.connect();
+    const out = {};
+    const attempt = async (label, fn) => {
+      try {
+        await fn();
+        out[label] = 'allowed';
+      } catch (err) {
+        out[label] = String(err?.message ?? err).slice(0, 80);
+      }
+    };
+    const own = 'rl:${fromService}:acceptance-isolation';
+    await attempt('reads the sign-out list', () => redis.get('auth:rev:none'));
+    await attempt('uses its own rate-limit counters', async () => { await redis.set(own, '1', 'EX', 5); await redis.del(own); });
+    await attempt('writes the sign-out list', () => redis.set('auth:rev:user:acceptance-isolation', '1', 'EX', 5));
+    await attempt('reads auth’s two-step state', () => redis.get('mfa:fail:acceptance-isolation'));
+    await attempt('clears auth’s sign-in limits', () => redis.del('rl:auth:signin:acceptance-isolation'));
+    await attempt('lists every key', () => redis.keys('*'));
+    await attempt('switches to the gateway’s database', () => redis.select(1));
+    await attempt('reads the server configuration', () => redis.config('GET', '*'));
+    await redis.quit();
+    const wrong = open('x'.repeat(48));
+    wrong.on('error', () => undefined); // the refusal is the answer, not something to log
+    await attempt('connects with a wrong password', () => wrong.connect());
+    wrong.disconnect();
     console.log(JSON.stringify(out));`;
   return JSON.parse(inside(`buku-${fromService}-service-1`, script)) as Record<string, string>;
 }

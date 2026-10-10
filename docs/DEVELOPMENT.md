@@ -72,6 +72,15 @@ A "permission denied" in a service's log means the map is missing something; fin
 of whoever fired them: a trigger function that writes another service's table is made
 `SECURITY DEFINER` in its migration.
 
+### Use a new Valkey key
+
+Each service signs in to Valkey as its own user and may touch only the key prefixes on its line
+in `infrastructure/valkey/access.acl` (D-092); every service may read `auth:rev:*`, only auth
+writes it. A new prefix (or a new rate limit's `keyPrefix`) goes on the service's line; `pnpm
+test` checks the code against the list, and restarting Valkey applies it. "NOPERM" in a service's
+log means the line is missing something. Tools from this machine use the admin
+(`VALKEY_PASSWORD`).
+
 ### Add a Kafka topic
 
 Add it to `TOPIC_SPECS` in `packages/kafka/src/topics.ts`, then `pnpm kafka:topics`

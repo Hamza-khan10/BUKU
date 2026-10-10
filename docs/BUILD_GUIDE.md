@@ -545,7 +545,8 @@ The detailed plan — every page, its data and edge cases, the design system and
   in to Postgres as its own role with only the tables and columns its job needs (no one else
   reads credentials; the audit log is append-only), and signing in to Kafka as its own user,
   allowed to publish only its own events and read only what it consumes (nothing connects
-  without signing in). Next: Valkey users per service, then the premium redesign.
+  without signing in), and signing in to Valkey as its own user, limited to its own keys (only
+  auth writes the sign-out list). Proven from inside the services by the acceptance run.
 
 ## Phase 4 — Mobile app (Expo)
 

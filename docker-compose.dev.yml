@@ -208,24 +208,21 @@ services:
     image: valkey/valkey:8.1.4-alpine
     # noeviction: this instance holds booking locks, queue state and BullMQ
     # jobs. An LRU policy would silently DELETE them under memory pressure.
-    entrypoint: ['/bin/sh', '-c']
-    command:
-      - |
-        umask 077
-        printf 'requirepass %s\n' "$$VALKEY_PASSWORD" > /tmp/auth.conf
-        exec valkey-server /tmp/auth.conf \
-          --maxmemory 384mb \
-          --maxmemory-policy noeviction \
-          --appendonly yes \
-          --appendfsync everysec \
-          --save 900 1 --save 300 100 --save 60 10000 \
-          --rename-command FLUSHALL '' \
-          --rename-command FLUSHDB '' \
-          --rename-command DEBUG ''
+    # Each service signs in as its own user, limited to its own keys (D-092;
+    # infrastructure/valkey/access.acl). The default user is the admin.
+    entrypoint: ['/bin/sh', '/access/start.sh']
     environment:
       VALKEY_PASSWORD: ${VALKEY_PASSWORD:?run pnpm bootstrap}
       REDISCLI_AUTH: ${VALKEY_PASSWORD}
-    volumes: [valkey-data:/data]
+      VALKEY_PASSWORD_AUTH: ${VALKEY_PASSWORD_AUTH:?run pnpm bootstrap}
+      VALKEY_PASSWORD_BOOKING: ${VALKEY_PASSWORD_BOOKING:?run pnpm bootstrap}
+      VALKEY_PASSWORD_QUEUE: ${VALKEY_PASSWORD_QUEUE:?run pnpm bootstrap}
+      VALKEY_PASSWORD_NOTIFICATION: ${VALKEY_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
+      VALKEY_PASSWORD_BUSINESS: ${VALKEY_PASSWORD_BUSINESS:?run pnpm bootstrap}
+      VALKEY_PASSWORD_BILLING: ${VALKEY_PASSWORD_BILLING:?run pnpm bootstrap}
+      VALKEY_PASSWORD_ADS: ${VALKEY_PASSWORD_ADS:?run pnpm bootstrap}
+      VALKEY_PASSWORD_KONG: ${VALKEY_PASSWORD_KONG:?run pnpm bootstrap}
+    volumes: [valkey-data:/data, ./infrastructure/valkey:/access:ro]
     ports: ['127.0.0.1:6379:6379']
     healthcheck:
       test: ['CMD-SHELL', 'valkey-cli ping | grep -q PONG']
@@ -521,7 +518,7 @@ services:
       KAFKA_SASL_USERNAME: buku-auth
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_AUTH:?run pnpm bootstrap}
       PORT: '3001'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-auth:${VALKEY_PASSWORD_AUTH:?run pnpm bootstrap}@valkey:6379/0
       JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?run pnpm bootstrap}
       # Local development only: sign in as any email without Google
       # (POST /v1/auth/dev/login). auth-service refuses this in production.
@@ -568,7 +565,7 @@ services:
       KAFKA_SASL_USERNAME: buku-booking
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_BOOKING:?run pnpm bootstrap}
       PORT: '3002'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-booking:${VALKEY_PASSWORD_BOOKING:?run pnpm bootstrap}@valkey:6379/0
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
@@ -605,7 +602,7 @@ services:
       KAFKA_SASL_USERNAME: buku-queue
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_QUEUE:?run pnpm bootstrap}
       PORT: '3003'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-queue:${VALKEY_PASSWORD_QUEUE:?run pnpm bootstrap}@valkey:6379/0
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
@@ -641,7 +638,7 @@ services:
       KAFKA_SASL_USERNAME: buku-notification
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
       PORT: '3004'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-notification:${VALKEY_PASSWORD_NOTIFICATION:?run pnpm bootstrap}@valkey:6379/0
       SMTP_HOST: mailpit
       SMTP_PORT: '1025'
       EMAIL_FROM: 'BUKU <noreply@buku.app>'
@@ -698,7 +695,7 @@ services:
       KAFKA_SASL_USERNAME: buku-business
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_BUSINESS:?run pnpm bootstrap}
       PORT: '3008'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-business:${VALKEY_PASSWORD_BUSINESS:?run pnpm bootstrap}@valkey:6379/0
       BUSINESS_TERMS_VERSION: '1.0'
       MAX_BUSINESSES_PER_OWNER: '5'
       PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS}
@@ -740,7 +737,7 @@ services:
       DATABASE_URL: postgresql://buku_svc_billing:${BUKU_DB_PASSWORD_BILLING:?run pnpm bootstrap}@postgres:5432/buku
       SERVICE_NAME: billing-service
       PORT: '3009'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-billing:${VALKEY_PASSWORD_BILLING:?run pnpm bootstrap}@valkey:6379/0
       # Online checkout (Paddle sandbox). Empty → checkout unavailable, everything else works.
       PADDLE_ENVIRONMENT: ${PADDLE_ENVIRONMENT:-sandbox}
       PADDLE_API_KEY: ${PADDLE_API_KEY:-}
@@ -818,7 +815,7 @@ services:
       KAFKA_SASL_USERNAME: buku-ads
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_ADS:?run pnpm bootstrap}
       PORT: '3006'
-      REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      REDIS_URL: redis://buku-ads:${VALKEY_PASSWORD_ADS:?run pnpm bootstrap}@valkey:6379/0
       AD_ATTRIBUTION_WINDOW_DAYS: '7'
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
@@ -925,7 +922,8 @@ services:
       # Don't advertise the gateway product/version in response headers.
       KONG_HEADERS: 'off'
       KONG_NGINX_PROXY_SERVER_TOKENS: 'off'
-      KONG_REDIS_PASSWORD: ${VALKEY_PASSWORD}
+      # Kong's own Valkey user: only its rate-limit counters (D-092).
+      KONG_REDIS_PASSWORD: ${VALKEY_PASSWORD_KONG:?run pnpm bootstrap}
       # Re-resolve service hostnames every 5s. Docker DNS answers carry a long
       # TTL; without this Kong keeps routing to a replaced container's old IP
       # (504s after every service restart or deploy).

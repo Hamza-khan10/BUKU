@@ -52,6 +52,8 @@ services:
           redis: &redis
             host: valkey
             port: 6379
+            # Its own Valkey user, limited to its counters (D-092).
+            username: buku-kong
             password: '{vault://env/kong-redis-password}'
             database: 1
             timeout: 2000
