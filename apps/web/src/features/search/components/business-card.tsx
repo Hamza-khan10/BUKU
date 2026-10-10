@@ -25,6 +25,8 @@ export function BusinessCard({ item }: { item: SearchItem }) {
           <img
             src={item.coverPhotoUrl}
             alt=""
+            width={640}
+            height={480}
             loading="lazy"
             decoding="async"
             className="size-full object-cover transition-transform duration-700 ease-(--ease-out) group-hover:scale-[1.04]"
@@ -35,6 +37,8 @@ export function BusinessCard({ item }: { item: SearchItem }) {
               <img
                 src={item.logoUrl}
                 alt=""
+                width={96}
+                height={96}
                 loading="lazy"
                 decoding="async"
                 className="size-24 rounded-2xl object-cover shadow-soft"

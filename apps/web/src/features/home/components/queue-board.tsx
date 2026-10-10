@@ -1,5 +1,6 @@
 'use client';
 
+import { Pause, Play } from 'lucide-react';
 import { motion, useMotionValue, useSpring, useTransform } from 'motion/react';
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
 import { SplitFlap } from '@/components/motion/split-flap';
@@ -28,11 +29,14 @@ export function QueueBoard({ className }: { className?: string }) {
   const reduce = useReducedMotion();
   const [step, setStep] = useState(0);
   const [started, setStarted] = useState(false);
+  // Moving content that runs longer than five seconds can be paused (WCAG 2.2.2).
+  const [paused, setPaused] = useState(false);
   const board = useRef<HTMLDivElement>(null);
+  const still = reduce || paused;
 
-  // Tell the story only while the board is on screen and the tab is visible.
+  // Tell the story only while the board is on screen, the tab is visible, and it isn't paused.
   useEffect(() => {
-    if (reduce || !board.current) return;
+    if (still || !board.current) return;
     let visible = false;
     let timer: number | undefined;
     const run = () => {
@@ -53,7 +57,7 @@ export function QueueBoard({ className }: { className?: string }) {
       document.removeEventListener('visibilitychange', run);
       window.clearInterval(timer);
     };
-  }, [reduce]);
+  }, [still]);
 
   // A slight tilt toward the pointer, on a spring (desktop pointers only).
   const px = useMotionValue(0);
@@ -93,7 +97,10 @@ export function QueueBoard({ className }: { className?: string }) {
           <div className="flex items-center justify-between text-sm text-[#b9c2bd]">
             <span>Walk-in queue</span>
             <span className="inline-flex items-center gap-2">
-              <span aria-hidden className="size-2 rounded-full bg-[#f2b655] text-[#f2b655] animate-live" />
+              <span
+                aria-hidden
+                className={cn('size-2 rounded-full bg-[#f2b655] text-[#f2b655]', !still && 'animate-live')}
+              />
               Live
             </span>
           </div>
@@ -129,12 +136,23 @@ export function QueueBoard({ className }: { className?: string }) {
             <p
               key={step}
               className={cn(
-                'text-lg font-medium tracking-[-0.01em] animate-rise',
+                'flex-1 text-lg font-medium tracking-[-0.01em] animate-rise',
                 now.tone === 'go' ? 'text-[#5ed3a8]' : 'text-[#edf2ef]',
               )}
             >
               {now.line}
             </p>
+            {!reduce && (
+              <button
+                type="button"
+                onClick={() => setPaused((p) => !p)}
+                aria-label={paused ? 'Play the example' : 'Pause the example'}
+                aria-pressed={paused}
+                className="-mr-2 grid size-10 shrink-0 place-items-center rounded-full text-[#b9c2bd] transition-colors hover:bg-white/10 hover:text-[#edf2ef] focus-visible:outline-[#5ed3a8]"
+              >
+                {paused ? <Play className="size-4" aria-hidden /> : <Pause className="size-4" aria-hidden />}
+              </button>
+            )}
           </div>
         </motion.div>
       </div>
