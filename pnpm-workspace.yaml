@@ -41,3 +41,10 @@ overrides:
   # to merge our own prisma.config.ts (plain objects); v8's breaking changes
   # concern Map merging and type names, which that code path does not use.
   deepmerge-ts: 8.0.2
+  # GHSA-pqg4-j6r4-53mv (critical): quote() command injection. Pulled in by
+  # launch-editor under @changesets/cli (release tooling, never at run time).
+  # Same major version.
+  shell-quote: 1.12.0
+  # source-map-js event-loop DoS through indexed source-map offsets (high).
+  # Pulled in by postcss under Next.js at build time. Same major version.
+  source-map-js: 1.2.2
