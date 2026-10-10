@@ -90,8 +90,11 @@ test.describe('Admin app', () => {
 
   test('without the admin app’s own Google client, Google isn’t offered and its endpoints say so', async ({
     page,
+    request,
   }) => {
-    test.skip(process.env.ADMIN_GOOGLE_CLIENT_ID !== undefined, 'Google is set up for this admin app');
+    // Whether this admin app has its own Google client is what its sign-in page offers.
+    const configured = (await (await request.get('/signin')).text()).includes('Continue with Google');
+    test.skip(configured, 'Google is set up for this admin app');
     await page.goto('/signin');
     await expect(page.getByRole('link', { name: 'Continue with Google' })).toHaveCount(0);
     for (const path of ['/api/auth/google/start', '/api/auth/google/callback?code=x&state=y']) {
@@ -101,6 +104,30 @@ test.describe('Admin app', () => {
       );
       await expect(page.getByRole('main').getByRole('alert')).toContainText('isn’t available right now');
     }
+  });
+
+  test('with its own Google client: the way to Google is this app’s, and a return it didn’t start is refused', async ({
+    request,
+    baseURL,
+  }) => {
+    const configured = (await (await request.get('/signin')).text()).includes('Continue with Google');
+    test.skip(!configured, 'Google isn’t set up for this admin app');
+    const start = await request.get('/api/auth/google/start', { maxRedirects: 0 });
+    expect(start.status()).toBe(303);
+    const google = new URL(start.headers()['location']!);
+    expect(google.origin).toBe('https://accounts.google.com');
+    expect(google.searchParams.get('redirect_uri')).toBe(
+      `${new URL(baseURL!).origin}/api/auth/google/callback`,
+    );
+    expect(google.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(google.searchParams.get('state')).toBeTruthy();
+    // A return from Google that this browser never started: refused, nothing set.
+    const back = await request.get('/api/auth/google/callback?code=x&state=not-ours', {
+      maxRedirects: 0,
+      headers: { cookie: '' },
+    });
+    expect(back.status()).toBe(303);
+    expect(new URL(back.headers()['location']!, 'http://x').searchParams.get('error')).toBe('google-expired');
   });
 
   test('calls from other sites are refused, and the admin API is closed to everyone else', async ({
