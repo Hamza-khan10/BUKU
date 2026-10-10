@@ -12,8 +12,13 @@
  *    scripts so they renew a session just before it lapses, and by the server
  *    to know someone is signed in. Lives as long as the refresh token.
  *  • challenge — between the password (or Google) and the two-step code: the
- *    5-minute token that turns a correct code into a session. HttpOnly,
- *    SameSite=Strict; the sign-in page's script never holds it either.
+ *    5-minute token that turns a correct code into a session. HttpOnly (the
+ *    sign-in page's script never holds it either), SameSite=Lax: after Google,
+ *    the code page is reached by redirects that began on Google's site, and
+ *    browsers withhold Strict cookies for that whole chain (the page then
+ *    said the sign-in had expired). Lax still keeps it out of other sites'
+ *    form posts and background requests; it is only ever used by our own
+ *    same-origin POST, which checks the origin too.
  *  • google    — a Google sign-in in progress (state, nonce, PKCE verifier):
  *    HttpOnly, 10 minutes, SameSite=Lax because Google's redirect back to us
  *    is a navigation from another site (D-090).
@@ -185,7 +190,7 @@ export function challengeCookie(
     value: `${Math.floor(expires / 1000)}.${challenge.token}`,
     httpOnly: true,
     secure,
-    sameSite: 'strict',
+    sameSite: 'lax',
     path: '/',
     maxAge: Math.max(0, Math.floor((expires - now) / 1000)),
   };
@@ -197,7 +202,7 @@ export function clearedChallengeCookie(secure: boolean, prefix: CookiePrefix = '
     value: '',
     httpOnly: true,
     secure,
-    sameSite: 'strict',
+    sameSite: 'lax',
     path: '/',
     maxAge: 0,
   };
