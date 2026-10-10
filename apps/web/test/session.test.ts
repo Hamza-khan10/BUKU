@@ -138,13 +138,15 @@ describe('two-step sign-in: the challenge never reaches the browser', () => {
     });
   });
 
-  it('keeps it in a cookie scripts can’t read, sent only by our own pages, for as long as it lasts', () => {
+  it('keeps it in a cookie scripts can’t read, for as long as it lasts, that survives the way back from Google', () => {
     const cookie = challengeCookie({ token, expiresAt: '2026-10-04T10:05:00Z' }, true, now);
     expect(cookie).toMatchObject({
       name: '__Host-buku_mfa',
       httpOnly: true,
       secure: true,
-      sameSite: 'strict',
+      // Lax: the code page is reached by redirects that began on Google's site, where a
+      // Strict cookie is withheld (and the sign-in looked expired).
+      sameSite: 'lax',
       path: '/',
       maxAge: 300,
     });
