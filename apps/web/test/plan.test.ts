@@ -50,9 +50,7 @@ describe('what someone is told about their plan', () => {
       { label: 'Bookings and queue joins', text: '1 of 1 used', full: true },
     ]);
     const unlimited: MyPlan = { ...base, usage: { visits: { used: 4, limit: null, remaining: null } } };
-    expect(usageLines(unlimited, {})).toEqual([
-      { label: 'visits', text: '4 so far — no limit', full: false },
-    ]);
+    expect(usageLines(unlimited, {})).toEqual([{ label: 'visits', text: '4 so far, no limit', full: false }]);
   });
 
   it('a trial: until when, and that nothing is charged after', () => {
