@@ -748,3 +748,26 @@ generated look, so it is replaced rather than polished (WEB_PLAN §2):
   stylesheet and real accessible text.
 - **No fake content:** no stock or placeholder photos. Businesses' own pictures where they exist;
   otherwise designed, honest stand-ins (the business's initial, its category).
+
+**D-094 · A colour system and a logo that explain BUKU, made for phones first.** The owner saw
+colours that didn't match from place to place (the logo was orange in some places, green in
+others) and asked for a palette built on how colour makes people feel, usable for marketing
+later, a logo that explains itself, a livelier hero and story, and all of it working on phones,
+where most people will see it (WEB_PLAN §2):
+
+- **Palette:** Porcelain 60%, Ink 30%, Emerald as the accent (go, trust, growth), Saffron as a
+  sparing spark (your number, live, waiting: warm and optimistic), Midnight as the stage for the
+  board and the story. Crimson for errors only. Every pair re-checked against WCAG 2.2 AA in
+  both themes; the board has its own tokens so no raw colours remain in components.
+- **Logo:** a ticket whose two clock hands form a check (queue, booking and time in one shape),
+  in emerald with a saffron pivot. Chosen from rendered concepts. Saved as reusable SVGs
+  (`apps/web/public/brand/`) and used for the favicon, app icons, share images and the admin
+  app's tab, so it's the same everywhere.
+- **Hero:** "Book the time. Skip the wait.", words rising in once; a still emerald and saffron
+  glow behind the live board (depth without more motion).
+- **The story:** "Two ways to stop waiting", told on a phone that plays BUKU's flow as you
+  scroll (find, pick a time, ticket, take a number, your turn), pinned and scrubbed with GSAP on
+  phones as well as desktops. The screens are labelled as an example. Under reduced motion it is
+  five still screens.
+- The admin app keeps its own blue look on purpose (it must never be mistaken for the public
+  website); it only takes the mark.

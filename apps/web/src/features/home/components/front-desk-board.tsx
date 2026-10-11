@@ -39,16 +39,16 @@ export function FrontDeskBoard({ className }: { className?: string }) {
     <figure className={cn('flex flex-col items-center gap-4', className)}>
       <div
         ref={board}
-        className="relative w-full overflow-hidden rounded-2xl bg-night p-6 text-[#edf2ef] shadow-lift ring-1 ring-white/8 sm:p-8 dark:bg-[#141b17] dark:ring-white/10"
+        className="relative w-full overflow-hidden rounded-2xl bg-board p-6 text-board-ink shadow-lift ring-1 ring-white/8 sm:p-8 dark:ring-white/12"
       >
         <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-white/15" />
-        <div className="flex items-center justify-between text-sm text-[#b9c2bd]">
+        <div className="flex items-center justify-between text-sm text-board-ink-2">
           <span>Front desk</span>
           <span>Walk-in queue open</span>
         </div>
         <div className="mt-6 grid grid-cols-2 gap-6">
           <div className="flex flex-col gap-3">
-            <span className="text-sm text-[#b9c2bd]">Now serving</span>
+            <span className="text-sm text-board-ink-2">Now serving</span>
             <SplitFlap
               value={serving}
               label={String(Number(serving))}
@@ -56,7 +56,7 @@ export function FrontDeskBoard({ className }: { className?: string }) {
             />
           </div>
           <div className="flex flex-col gap-3">
-            <span className="text-sm text-[#b9c2bd]">Waiting</span>
+            <span className="text-sm text-board-ink-2">Waiting</span>
             <SplitFlap
               value={waiting}
               label={String(Number(waiting))}
@@ -65,12 +65,12 @@ export function FrontDeskBoard({ className }: { className?: string }) {
           </div>
         </div>
         <div className="mt-7 flex items-center justify-between gap-4 border-t border-white/10 pt-5">
-          <p className="text-[#b9c2bd]">{called ? 'Number 22 is on their way.' : 'Next up: number 22.'}</p>
+          <p className="text-board-ink-2">{called ? 'Number 22 is on their way.' : 'Next up: number 22.'}</p>
           <span
             aria-hidden
             className={cn(
               'inline-flex h-11 items-center rounded-full px-5 font-semibold transition-[background-color,color,transform] duration-300',
-              called ? 'scale-[0.97] bg-[#3fc495]/20 text-[#5ed3a8]' : 'bg-[#3fc495] text-[#06140f]',
+              called ? 'scale-[0.97] bg-board-go-fill/20 text-board-go' : 'bg-board-go-fill text-board-on-go',
             )}
           >
             {called ? 'Called' : 'Call next'}

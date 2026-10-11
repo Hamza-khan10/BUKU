@@ -26,85 +26,90 @@
 
 :root {
   color-scheme: light;
-  --canvas: #f4f5f3; /* porcelain */
-  --surface: #fcfdfc;
-  --sunken: #eceeeb;
-  --ink: #131815; /* graphite */
-  --ink-2: #47504b;
-  --ink-3: #5c6560;
-  --line: #dde1de; /* hairlines */
-  --control: #7f8782; /* input borders (3:1) */
-  --brand: #0b6b4f; /* emerald: go */
-  --brand-hover: #08583f;
-  --brand-ink: #09634a; /* emerald as text */
-  --brand-soft: #e1efe8;
-  --on-brand: #fcfdfc;
-  --ok: #0b6b4f; /* available, confirmed, open now: the same "go" */
-  --ok-soft: #e1efe8;
-  --wait: #e9a23b; /* waiting: queue progress, almost your turn */
-  --wait-ink: #7f4f00;
-  --wait-soft: #faefd9;
-  --focus: #0b6b4f;
-  --danger: #b42318; /* errors only */
-  --danger-soft: #fbeae8;
-  --shadow-color: 19 24 21; /* shadows tinted to the page, never black */
-  --material: rgb(244 245 243 / 0.72); /* the header's glass */
+  /* BUKU Colour System (D-094): Porcelain and Ink 60%, Emerald 30%, Saffron 10%. */
+  --canvas: #f4f8f6; /* Porcelain */
+  --surface: #fcfefd;
+  --sunken: #eaeeec;
+  --ink: #131a17; /* Ink */
+  --ink-2: #4f5754;
+  --ink-3: #5e6662;
+  --line: #d4ddd9; /* hairlines */
+  --control: #7f8883; /* input borders (3:1) */
+  --brand: #056549; /* Emerald 700: buttons, "go" */
+  --brand-hover: #034c36;
+  --brand-ink: #056549; /* Emerald as text */
+  --brand-soft: #d7f5e7;
+  --on-brand: #ffffff;
+  --logo: #067f5d; /* Emerald: the logo, the same in both themes */
+  --ok: #056549; /* available, confirmed, open now: the same "go" */
+  --ok-soft: #d7f5e7;
+  --wait: #ffad52; /* Saffron: your turn, waiting, highlights (fills, with Ink text) */
+  --wait-ink: #7a4802; /* Saffron as text */
+  --wait-soft: #ffe9d3;
+  --spark: #ffad52; /* Saffron, the spark: the moments that matter */
+  --focus: #067f5d;
+  --danger: #c51d28; /* Crimson: errors only */
+  --danger-soft: #ffe6e4;
+  --shadow-color: 19 26 23; /* shadows tinted to the page, never black */
+  --material: rgb(244 248 246 / 0.74); /* the header's glass */
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
-    --canvas: #0b0f0d;
-    --surface: #121815;
-    --sunken: #080b0a;
-    --ink: #edf2ef;
-    --ink-2: #b9c2bd;
-    --ink-3: #8e9893;
-    --line: #242c28;
-    --control: #66716b;
-    --brand: #3fc495;
-    --brand-hover: #5ed3a8;
-    --brand-ink: #5ed3a8;
-    --brand-soft: #10271f;
-    --on-brand: #06140f;
-    --ok: #3fc495;
-    --ok-soft: #10271f;
-    --wait: #f2b655;
-    --wait-ink: #f5c878;
-    --wait-soft: #2a2010;
-    --focus: #3fc495;
-    --danger: #ff8a80;
+    --canvas: #0c1310;
+    --surface: #141c18;
+    --sunken: #08100c;
+    --ink: #edf3f0;
+    --ink-2: #bac3bf;
+    --ink-3: #9ba4a0;
+    --line: #26302b;
+    --control: #6a746f;
+    --brand: #2bbc8e;
+    --brand-hover: #79d7b1;
+    --brand-ink: #79d7b1;
+    --brand-soft: #0d2a20;
+    --on-brand: #011e14;
+    --ok: #2bbc8e;
+    --ok-soft: #0d2a20;
+    --wait: #ffad52;
+    --wait-ink: #fed1a5;
+    --wait-soft: #2a1c08;
+    --spark: #ffad52;
+    --focus: #2bbc8e;
+    --danger: #ffa69e;
     --danger-soft: #3a1614;
     --shadow-color: 0 0 0;
-    --material: rgb(11 15 13 / 0.7);
+    --material: rgb(12 19 16 / 0.72);
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --canvas: #0b0f0d;
-  --surface: #121815;
-  --sunken: #080b0a;
-  --ink: #edf2ef;
-  --ink-2: #b9c2bd;
-  --ink-3: #8e9893;
-  --line: #242c28;
-  --control: #66716b;
-  --brand: #3fc495;
-  --brand-hover: #5ed3a8;
-  --brand-ink: #5ed3a8;
-  --brand-soft: #10271f;
-  --on-brand: #06140f;
-  --ok: #3fc495;
-  --ok-soft: #10271f;
-  --wait: #f2b655;
-  --wait-ink: #f5c878;
-  --wait-soft: #2a2010;
-  --focus: #3fc495;
-  --danger: #ff8a80;
+  --canvas: #0c1310;
+  --surface: #141c18;
+  --sunken: #08100c;
+  --ink: #edf3f0;
+  --ink-2: #bac3bf;
+  --ink-3: #9ba4a0;
+  --line: #26302b;
+  --control: #6a746f;
+  --brand: #2bbc8e;
+  --brand-hover: #79d7b1;
+  --brand-ink: #79d7b1;
+  --brand-soft: #0d2a20;
+  --on-brand: #011e14;
+  --ok: #2bbc8e;
+  --ok-soft: #0d2a20;
+  --wait: #ffad52;
+  --wait-ink: #fed1a5;
+  --wait-soft: #2a1c08;
+  --spark: #ffad52;
+  --focus: #2bbc8e;
+  --danger: #ffa69e;
   --danger-soft: #3a1614;
   --shadow-color: 0 0 0;
-  --material: rgb(11 15 13 / 0.7);
+  --material: rgb(12 19 16 / 0.72);
 }
 
 @theme inline {
@@ -121,6 +126,8 @@
   --color-brand-ink: var(--brand-ink);
   --color-brand-soft: var(--brand-soft);
   --color-on-brand: var(--on-brand);
+  --color-logo: var(--logo);
+  --color-spark: var(--spark);
   --color-ok: var(--ok);
   --color-ok-soft: var(--ok-soft);
   --color-wait: var(--wait);
@@ -131,8 +138,18 @@
   --color-danger-soft: var(--danger-soft);
   /* Fixed colours that don't follow the theme: text on amber, and the dark backdrop
      behind dialogs and pictures. */
-  --color-night: #0b0f0d;
-  --color-on-wait: #131815;
+  --color-night: #011e14; /* Midnight: the board, premium dark surfaces */
+  /* The board (WEB_PLAN §2): a dark object, the same in both themes. Midnight ground,
+     Saffron for your number, Emerald for "go". */
+  --color-board: #011e14;
+  --color-board-tile: #0d2a20;
+  --color-board-ink: #edf3f0;
+  --color-board-ink-2: #b4c4bc;
+  --color-board-spark: #ffad52;
+  --color-board-go: #79d7b1;
+  --color-board-go-fill: #2bbc8e;
+  --color-board-on-go: #011e14;
+  --color-on-wait: #131a17;
 
   /* One family for everything (Instrument Sans); a monospace only for codes read aloud. */
   --font-sans: var(--font-instrument), ui-sans-serif, system-ui, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
@@ -199,13 +216,14 @@
 }
 
 /* A ticket "prints": it slides out of the slot, top first. */
+/* The clip reaches past the edges so the ticket's shadow and rounded corners aren't cut square. */
 @keyframes print {
   from {
-    clip-path: inset(0 0 100% 0);
+    clip-path: inset(-3rem -3rem 100% -3rem);
     transform: translateY(-8px);
   }
   to {
-    clip-path: inset(0 0 0 0);
+    clip-path: inset(-3rem);
     transform: none;
   }
 }
@@ -284,7 +302,7 @@
     height: 1.12em;
     border-radius: 0.12em;
     perspective: 480px;
-    background: var(--flap-tile, #161d19);
+    background: var(--flap-tile, var(--color-board-tile));
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.07),
       inset 0 -2px 4px rgb(0 0 0 / 0.35),
@@ -307,7 +325,7 @@
     height: 50%;
     overflow: hidden;
     border-radius: inherit;
-    background: var(--flap-tile, #161d19);
+    background: var(--flap-tile, var(--color-board-tile));
     backface-visibility: hidden;
   }
   .flap-half-top,
@@ -321,7 +339,7 @@
     bottom: 0;
     border-start-start-radius: 0;
     border-start-end-radius: 0;
-    background: color-mix(in srgb, var(--flap-tile, #161d19) 88%, black);
+    background: color-mix(in srgb, var(--flap-tile, var(--color-board-tile)) 88%, black);
   }
   .flap-char {
     position: absolute;
@@ -330,7 +348,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--flap-ink, #edf2ef);
+    color: var(--flap-ink, var(--color-board-ink));
   }
   .flap-half-top .flap-char,
   .flap-leaf-front .flap-char {
@@ -351,6 +369,134 @@
     transform-origin: center top;
     transform: rotateX(90deg);
     animation: flap-back var(--flap-ms, 110ms) cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+}
+
+/* The page opening: the headline's words rise in, then the line and search follow. */
+.rise-word {
+  display: inline-block;
+  animation: rise-word 900ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 85ms + 60ms);
+}
+.rise-in {
+  animation: rise-word 900ms var(--ease-out) both;
+  animation-delay: calc(500ms + var(--i, 1) * 110ms);
+}
+@keyframes rise-word {
+  from {
+    opacity: 0;
+    transform: translateY(0.4em);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+/* Things rise in as they scroll into view: pure CSS (scroll-driven animations), so where a
+   browser lacks them, or motion is unwelcome, everything simply sits in place. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal linear both;
+      animation-timeline: view();
+      animation-range: entry calc(var(--i, 0) * 6%) entry calc(60% + var(--i, 0) * 6%);
+    }
+  }
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(32px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The app's light look inside an illustration (the phone in the scroll story), in both themes. */
+.scope-light {
+  color-scheme: light;
+  --canvas: #f4f8f6;
+  --surface: #fcfefd;
+  --sunken: #eaeeec;
+  --ink: #131a17;
+  --ink-2: #4f5754;
+  --ink-3: #5e6662;
+  --line: #d4ddd9;
+  --control: #7f8883;
+  --brand: #056549;
+  --brand-hover: #034c36;
+  --brand-ink: #056549;
+  --brand-soft: #d7f5e7;
+  --on-brand: #ffffff;
+  --ok: #056549;
+  --ok-soft: #d7f5e7;
+  --wait: #ffad52;
+  --wait-ink: #7a4802;
+  --wait-soft: #ffe9d3;
+  --shadow-color: 19 26 23;
+}
+
+/* The scroll story's screens: each plays its entrance when it becomes the active one. */
+[data-active='true'] .story-in {
+  animation: story-in 520ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 70ms + 120ms);
+}
+[data-active='true'] .story-pick {
+  animation:
+    story-in 520ms var(--ease-out) both,
+    story-pick 700ms var(--ease-spring) 650ms both;
+}
+[data-active='true'] .story-print {
+  animation: print 700ms var(--ease-out) 120ms both;
+}
+[data-active='true'] .story-turn {
+  animation: story-turn 600ms var(--ease-out) both;
+}
+[data-active='true'] .story-pulse {
+  animation: story-pulse 1.8s ease-out 400ms infinite;
+}
+
+@keyframes story-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes story-pick {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes story-turn {
+  from {
+    clip-path: circle(0% at 50% 60%);
+  }
+  to {
+    clip-path: circle(150% at 50% 60%);
+  }
+}
+@keyframes story-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(255 173 82 / 0.55);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 26px rgb(255 173 82 / 0);
   }
 }
 

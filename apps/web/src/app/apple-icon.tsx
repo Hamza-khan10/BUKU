@@ -1,35 +1,20 @@
 import { ImageResponse } from 'next/og';
+import { BRAND, MARK } from '@/components/brand/mark';
 
 export const size = { width: 180, height: 180 };
 export const contentType = 'image/png';
 
-/** Home-screen icon for iPhones: the ticket mark on BUKU's porcelain colour. */
+/** Home-screen icon (iPhone): the app icon, a white ticket on Emerald (public/brand/buku-app-icon.svg). */
 export default function AppleIcon() {
   return new ImageResponse(
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#f4f5f3',
-      }}
-    >
-      <svg width="132" height="132" viewBox="0 0 32 32">
-        <path
-          d="M6 6h20a2 2 0 0 1 2 2v5a3 3 0 0 0 0 6v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-5a3 3 0 0 0 0-6V8a2 2 0 0 1 2-2Z"
-          fill="#0b6b4f"
-        />
-        <path d="M20 9v14" stroke="#fff" strokeWidth="1.6" strokeDasharray="1.6 2.2" opacity=".75" />
-        <path
-          d="m9.5 16.2 2.6 2.6 5-5.6"
-          fill="none"
-          stroke="#fff"
-          strokeWidth="2.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+    <div style={{ width: '100%', height: '100%', display: 'flex', background: BRAND.emerald }}>
+      <svg width="180" height="180" viewBox="0 0 48 48">
+        <g transform="translate(6 6) scale(.75)">
+          <path d={MARK.ticket} fill={BRAND.white} />
+          <path d={MARK.hour} stroke={BRAND.emerald} strokeWidth={MARK.hourWidth} strokeLinecap="round" />
+          <path d={MARK.minute} stroke={BRAND.emerald} strokeWidth={MARK.minuteWidth} strokeLinecap="round" />
+          <circle cx={MARK.pivot.cx} cy={MARK.pivot.cy} r={MARK.pivot.r} fill={BRAND.saffron} />
+        </g>
       </svg>
     </div>,
     size,

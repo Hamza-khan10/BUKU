@@ -2,6 +2,7 @@
 
 import type { Route } from 'next';
 import Link from 'next/link';
+import type { CSSProperties } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { BusinessCard } from '@/features/search/components/business-card';
 import type { SearchItem } from '@/features/search/types';
@@ -42,8 +43,12 @@ export function PlacesRail({ shelves }: { shelves: Shelf[] }) {
             data-lenis-prevent-wheel
             className="-mx-4 flex snap-x snap-mandatory scroll-px-4 gap-5 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:snap-none sm:grid-cols-2 sm:gap-x-6 sm:gap-y-10 sm:overflow-visible sm:px-0 lg:grid-cols-3"
           >
-            {s.items.map((item) => (
-              <li key={item.id} className="w-[78%] shrink-0 snap-start sm:w-auto">
+            {s.items.map((item, i) => (
+              <li
+                key={item.id}
+                className="reveal w-[78%] shrink-0 snap-start sm:w-auto"
+                style={{ '--i': i % 3 } as CSSProperties}
+              >
                 <BusinessCard item={item} />
               </li>
             ))}

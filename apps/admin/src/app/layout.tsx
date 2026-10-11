@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { Mark } from '@admin/components/mark';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -19,7 +20,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </a>
         <header className="border-b border-line bg-surface">
           <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4">
-            <span className="font-semibold tracking-tight">BUKU</span>
+            <span className="flex items-center gap-1.5 font-semibold tracking-tight">
+              <Mark className="size-7" /> BUKU
+            </span>
             <span className="rounded bg-brand px-2 py-0.5 text-xs font-semibold text-brand-ink">Admin</span>
           </div>
         </header>
