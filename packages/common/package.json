@@ -15,7 +15,7 @@
     "helmet": "8.3.0",
     "ioredis": "6.0.0",
     "jose": "6.2.12",
-    "pino": "10.3.1",
+    "pino": "10.4.0",
     "pino-http": "11.0.0",
     "rate-limiter-flexible": "11.2.1",
     "sanitize-html": "2.18.0",
