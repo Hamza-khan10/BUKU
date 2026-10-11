@@ -89,55 +89,58 @@ export function QueueBoard({ className }: { className?: string }) {
           initial={reduce ? false : { opacity: 0, scale: 0.97, filter: 'blur(6px)' }}
           animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
           transition={{ type: 'spring', bounce: 0, duration: 0.9 }}
-          className="relative w-full overflow-hidden rounded-2xl bg-night p-6 text-[#edf2ef] shadow-lift ring-1 ring-white/8 sm:p-8 dark:bg-[#141b17] dark:ring-white/10"
+          className="relative w-full overflow-hidden rounded-2xl bg-board p-5 text-board-ink shadow-lift ring-1 ring-white/8 sm:p-8 dark:ring-white/12"
         >
           {/* Light catching the top edge of the board. */}
           <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-white/15" />
 
-          <div className="flex items-center justify-between text-sm text-[#b9c2bd]">
+          <div className="flex items-center justify-between text-sm text-board-ink-2">
             <span>Walk-in queue</span>
             <span className="inline-flex items-center gap-2">
               <span
                 aria-hidden
-                className={cn('size-2 rounded-full bg-[#f2b655] text-[#f2b655]', !still && 'animate-live')}
+                className={cn(
+                  'size-2 rounded-full bg-board-spark text-board-spark',
+                  !still && 'animate-live',
+                )}
               />
               Live
             </span>
           </div>
 
-          <div className="mt-6 grid grid-cols-2 gap-6">
+          <div className="mt-5 grid grid-cols-2 gap-5 sm:mt-6 sm:gap-6">
             <div className="flex flex-col gap-3">
-              <span className="text-sm text-[#b9c2bd]">Now serving</span>
+              <span className="text-sm text-board-ink-2">Now serving</span>
               <SplitFlap
                 value={serving}
                 label={String(Number(serving))}
-                className="text-[4.25rem] font-semibold sm:text-[5rem]"
+                className="text-[3.5rem] font-semibold sm:text-[5rem]"
               />
             </div>
             <div className="flex flex-col gap-3">
-              <span className="text-sm text-[#b9c2bd]">Your number</span>
+              <span className="text-sm text-board-ink-2">Your number</span>
               <SplitFlap
                 value={yours}
                 label={String(YOURS)}
-                className="text-[4.25rem] font-semibold sm:text-[5rem]"
-                style={{ '--flap-ink': '#f2b655' } as CSSProperties}
+                className="text-[3.5rem] font-semibold sm:text-[5rem]"
+                style={{ '--flap-ink': 'var(--color-board-spark)' } as CSSProperties}
               />
             </div>
           </div>
 
-          <div className="mt-7 flex items-center gap-3 border-t border-white/10 pt-5">
+          <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-4 sm:mt-7 sm:pt-5">
             <span
               aria-hidden
               className={cn(
                 'size-2.5 shrink-0 rounded-full transition-colors duration-500',
-                now.tone === 'go' ? 'bg-[#3fc495]' : 'bg-[#f2b655]',
+                now.tone === 'go' ? 'bg-board-go-fill' : 'bg-board-spark',
               )}
             />
             <p
               key={step}
               className={cn(
                 'flex-1 text-lg font-medium tracking-[-0.01em] animate-rise',
-                now.tone === 'go' ? 'text-[#5ed3a8]' : 'text-[#edf2ef]',
+                now.tone === 'go' ? 'text-board-go' : 'text-board-ink',
               )}
             >
               {now.line}
@@ -148,7 +151,7 @@ export function QueueBoard({ className }: { className?: string }) {
                 onClick={() => setPaused((p) => !p)}
                 aria-label={paused ? 'Play the example' : 'Pause the example'}
                 aria-pressed={paused}
-                className="-mr-2 grid size-10 shrink-0 place-items-center rounded-full text-[#b9c2bd] transition-colors hover:bg-white/10 hover:text-[#edf2ef] focus-visible:outline-[#5ed3a8]"
+                className="-mr-2 grid size-10 shrink-0 place-items-center rounded-full text-board-ink-2 transition-colors hover:bg-white/10 hover:text-board-ink focus-visible:outline-board-go"
               >
                 {paused ? <Play className="size-4" aria-hidden /> : <Pause className="size-4" aria-hidden />}
               </button>

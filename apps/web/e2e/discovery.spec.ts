@@ -10,7 +10,7 @@ test.describe('Discovery', () => {
 
   test('the home page shows real places in a city people can switch', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Know exactly when.');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Book the time. Skip the wait.');
     const cities = page.getByRole('navigation', { name: 'Choose a city' });
     await expect(cities).toBeVisible();
     const second = cities.getByRole('link').nth(1);

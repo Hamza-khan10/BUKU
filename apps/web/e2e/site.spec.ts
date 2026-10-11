@@ -5,7 +5,7 @@ test.describe('The website', () => {
   test('home: says what BUKU is, with no errors and no blocked scripts', async ({ page }) => {
     const problems = await watchForProblems(page);
     await page.goto('/');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Know exactly when.');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Book the time. Skip the wait.');
     await expect(page).toHaveTitle(/BUKU/);
     await page.waitForLoadState('networkidle');
     expect(problems).toEqual([]);

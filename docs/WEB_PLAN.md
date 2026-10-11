@@ -52,24 +52,38 @@ when, and it's handled."** Restraint everywhere, so the one thing that matters o
 
 ### Colour
 
-Mostly graphite on porcelain, cool and quiet. **Emerald is the only accent**, and it means one
-thing: go (book, join, available, confirmed). Amber means waiting. Red is for errors only.
-Nothing else is coloured, and nothing is a gradient.
+Refined 2026-10-11 (D-094) into a colour system the business can also market with: five
+colours, each with one job. Porcelain and Ink carry most of every screen (60/30); the accents
+share the last 10%. Nothing is a gradient.
 
-| Token                     | Light                             | Dark                              | Role                                           |
-| ------------------------- | --------------------------------- | --------------------------------- | ---------------------------------------------- |
-| `canvas`                  | `#F4F5F3` porcelain               | `#0B0F0D`                         | Page                                           |
-| `surface`                 | `#FCFDFC`                         | `#121815`                         | Raised things: tickets, dialogs, menus, inputs |
-| `sunken`                  | `#ECEEEB`                         | `#080B0A`                         | Wells, tracks, quiet sections                  |
-| `ink` / `ink-2` / `ink-3` | `#131815` / `#47504B` / `#5C6560` | `#EDF2EF` / `#B9C2BD` / `#8E9893` | Text: primary, secondary, muted                |
-| `line` / `control`        | `#DDE1DE` / `#7F8782`             | `#242C28` / `#66716B`             | Hairlines; input borders (3:1)                 |
-| `brand` (emerald)         | `#0B6B4F`                         | `#3FC495`                         | Book, join, available, confirmed; focus rings  |
-| `wait` (amber)            | `#E9A23B`, text `#7F4F00`         | `#F2B655`, text `#F5C878`         | In a queue, almost your turn, pending          |
-| `danger`                  | `#B42318`                         | `#FF8A80`                         | Errors only                                    |
+- **Porcelain** (60%): the calm page. A cool, barely green white that reads as clean and quiet.
+- **Ink** (30%): text and structure. Near-black with a hint of green, never pure black.
+- **Emerald** (the accent): go, available, confirmed. Green is the colour of "proceed" and
+  of growth and trust; it is the brand and logo colour.
+- **Saffron** (the spark, used sparingly): your number, the "live" dot, waiting. Warm and
+  optimistic, the opposite of a cold queue; the pivot of the logo's clock.
+- **Midnight**: the board and the scroll story, a deep green-black stage that makes the emerald
+  and saffron glow.
 
-Every text pair meets WCAG 2.2 AA, checked numerically: body text 7.6:1 and up, muted text 5.2:1
-and up, white on emerald 6.4:1 (dark: 8.6:1), input borders 3.4:1. Components use the tokens
-only, never raw colours.
+Red is for errors only. The palette, its rules and ready-to-use combinations are published as
+"BUKU colour system" (brand page, owner's link).
+
+| Token                      | Light                             | Dark                              | Role                                           |
+| -------------------------- | --------------------------------- | --------------------------------- | ---------------------------------------------- |
+| `canvas`                   | `#F4F8F6` porcelain               | `#0C1310`                         | Page                                           |
+| `surface`                  | `#FCFEFD`                         | `#141C18`                         | Raised things: tickets, dialogs, menus, inputs |
+| `sunken`                   | `#EAEEEC`                         | `#08100C`                         | Wells, tracks, quiet sections                  |
+| `ink` / `ink-2` / `ink-3`  | `#131A17` / `#4F5754` / `#5E6662` | `#EDF3F0` / `#BAC3BF` / `#9BA4A0` | Text: primary, secondary, muted                |
+| `line` / `control`         | `#D4DDD9` / `#7F8883`             | `#26302B` / `#6A746F`             | Hairlines; input borders (3:1)                 |
+| `brand` (emerald)          | `#056549`, logo `#067F5D`         | `#2BBC8E`, text `#79D7B1`         | Book, join, available, confirmed; focus rings  |
+| `wait` / `spark` (saffron) | `#FFAD52`, text `#7A4802`         | `#FFAD52`, text `#FED1A5`         | Your number, live, in a queue, pending         |
+| `danger` (crimson)         | `#C51D28`                         | `#FFA69E`                         | Errors only                                    |
+| `board` (midnight)         | `#011E14`, tiles `#0D2A20`        | the same                          | The board, the scroll story                    |
+
+Every text pair meets WCAG 2.2 AA, checked numerically: body text 6.9:1 and up, muted text
+5.0:1 and up, white on emerald 7.1:1 (dark: 7.3:1), saffron on midnight 9.5:1, input borders
+3.4:1. Components use the tokens only, never raw colours (the board has its own `board-*`
+tokens, the same in both themes).
 
 ### Type
 
@@ -106,8 +120,11 @@ Springs, not timelines (critically damped by default; a little bounce only after
 everything can be interrupted and starts from where it is. Feedback on press, not on release.
 One orchestrated moment per page: the board on the home page, the ticket arriving when a booking
 is confirmed, your place counting down in a queue. Lenis smooths wheel scrolling on desktop;
-GSAP runs the one scroll-told story (how a visit goes). Under `prefers-reduced-motion`: no smooth
-scrolling, no pinning, short cross-fades instead of movement.
+GSAP runs the one scroll-told story (how a visit goes, on a phone, phones included). The hero's
+words rise in once as the page opens; sections below reveal as they scroll in (CSS
+scroll-driven, where the browser supports it). Anything that moves for more than five seconds
+can be paused. Under `prefers-reduced-motion`: no smooth scrolling, no pinning, no reveals, short
+cross-fades instead of movement.
 
 ### Voice
 
@@ -117,8 +134,17 @@ before adjectives. Sentence case, no all-caps labels, no em dashes.
 
 ### Logo
 
-A single `Logo` component (mark + wordmark) so the brand stays swappable: a ticket with a check
-cut into the stub, booking and queue in one shape, in emerald.
+Redrawn 2026-10-11 (D-094) so it explains itself: **a ticket whose two clock hands make a
+check.** The ticket is the queue (take a number) and the booking (your ticket); the hands are the
+time; together they read "your time, confirmed". Emerald ticket, white hands, a saffron pivot.
+
+- Drawn on a 48-unit grid (`src/components/brand/mark.ts` holds the geometry; `Logo` and
+  `LogoMark` draw it; favicon, app icons and share images use the same paths).
+- Reusable files in `apps/web/public/brand/`: the mark (colour, reversed for dark backgrounds,
+  one-colour), the lockup with the wordmark outlined (colour and reversed), and app icons
+  (emerald tile, maskable, midnight).
+- Clear space: half the mark's height on every side. Smallest size: 16 px for the mark, 80 px
+  wide for the lockup. Never recoloured outside these versions, never on a busy picture.
 
 ## 3. Pages (information architecture)
 

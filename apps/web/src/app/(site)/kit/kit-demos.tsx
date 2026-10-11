@@ -71,7 +71,7 @@ export function KitDemos() {
 
       <Section title="Type">
         <div className="flex flex-col gap-3">
-          <p className="text-5xl font-semibold tracking-[-0.035em]">Know exactly when.</p>
+          <p className="text-5xl font-semibold tracking-[-0.035em]">Book the time. Skip the wait.</p>
           <p className="text-2xl font-semibold tracking-[-0.025em]">Instrument Sans, for everything</p>
           <p className="max-w-2xl text-lg text-ink-2">
             One family, set tighter as it grows. Names in other scripts fall back to the device’s fonts: عائشہ

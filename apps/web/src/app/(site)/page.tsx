@@ -1,11 +1,13 @@
 import { BadgeCheck, LockKeyhole, MessageSquareQuote, Wallet } from 'lucide-react';
 import type { Metadata, Route } from 'next';
 import Link from 'next/link';
+import type { CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/layout';
 import { CategoryIcon } from '@/features/categories/icons';
-import { HowItGoes } from '@/features/home/components/how-it-goes';
 import { PlacesRail } from '@/features/home/components/places-rail';
+import { RiseWords } from '@/features/home/components/rise-words';
+import { ScrollStory } from '@/features/home/components/scroll-story';
 import { QueueBoard } from '@/features/home/components/queue-board';
 import { categoryTree, cities, shelf } from '@/features/search/api';
 import { SearchBox } from '@/features/search/components/search-box';
@@ -98,21 +100,33 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
   const nothingYet = city && [openNow, trending, topRated].every((s) => s.length === 0);
 
   return (
-    <div className="flex flex-col gap-28 pb-8 sm:gap-36">
+    <div className="flex flex-col gap-20 pb-8 sm:gap-36">
       {/* ── What BUKU is ── */}
-      <Container className="grid grid-cols-1 items-center gap-14 pt-12 sm:pt-20 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
-        <div className="flex flex-col gap-7">
-          <h1 className="text-[3.25rem] leading-[0.98] font-semibold tracking-[-0.045em] sm:text-[4.5rem] xl:text-[5.25rem]">
-            Know exactly when.
+      <Container className="grid grid-cols-1 items-center gap-9 pt-7 sm:gap-14 sm:pt-16 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
+        <div className="flex flex-col gap-5 sm:gap-7">
+          <h1 className="text-[3.1rem] leading-[1] font-semibold tracking-[-0.045em] sm:text-[4.5rem] xl:text-[5.25rem]">
+            <RiseWords text="Book the time." /> <RiseWords text="Skip the wait." from={3} />
           </h1>
-          <p className="max-w-[34rem] text-xl leading-relaxed text-ink-2 sm:text-[1.35rem]">
-            Book a time at local businesses, or join their queue from home and come in when you’re called.
+          <p className="rise-in max-w-[34rem] text-lg leading-relaxed text-ink-2 sm:text-[1.35rem]">
+            Appointments and walk-in queues at barbers, clinics, salons and offices near you, all from your
+            phone.
           </p>
-          <div className="max-w-xl pt-1">
+          <div className="rise-in max-w-xl [--i:2] sm:pt-1">
             <SearchBox city={city || undefined} />
           </div>
         </div>
-        <QueueBoard className="mx-auto w-full max-w-[30rem] lg:mr-0" />
+        {/* A still glow behind the board (emerald light, a touch of saffron): depth without more motion. */}
+        <div className="relative isolate mx-auto w-full max-w-[30rem] lg:mr-0">
+          <div
+            aria-hidden
+            className="absolute -inset-x-4 -inset-y-16 -z-10 bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--color-brand)_20%,transparent),transparent)] lg:-inset-x-20 lg:-inset-y-24"
+          />
+          <div
+            aria-hidden
+            className="absolute -bottom-12 -left-4 -z-10 size-56 bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--color-spark)_32%,transparent),transparent)] lg:-left-16"
+          />
+          <QueueBoard className="w-full" />
+        </div>
       </Container>
 
       {/* ── Real places, in a city you choose ── */}
@@ -168,10 +182,8 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
         </Container>
       )}
 
-      {/* ── How a visit goes ── */}
-      <Container>
-        <HowItGoes />
-      </Container>
+      {/* ── How a visit goes: told on a phone as you scroll ── */}
+      <ScrollStory />
 
       {/* ── Every kind of place ── */}
       {tree.length > 0 && (
@@ -187,8 +199,8 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
               </p>
             </div>
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {tree.map((c) => (
-                <li key={c.slug}>
+              {tree.map((c, i) => (
+                <li key={c.slug} className="reveal" style={{ '--i': i % 4 } as CSSProperties}>
                   <Link
                     href={`/c/${c.slug}` as Route}
                     className="group flex h-full flex-col justify-between gap-10 rounded-xl bg-sunken p-5 transition-[background-color,transform] duration-300 ease-(--ease-out) hover:bg-line/70 active:scale-[0.98] sm:p-6"
@@ -219,8 +231,8 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
             What you can count on.
           </h2>
           <ul className="grid gap-x-12 gap-y-12 border-t border-line pt-12 sm:grid-cols-2 lg:grid-cols-4">
-            {PROMISES.map(({ Icon, title, text }) => (
-              <li key={title} className="flex flex-col gap-3">
+            {PROMISES.map(({ Icon, title, text }, i) => (
+              <li key={title} className="reveal flex flex-col gap-3" style={{ '--i': i } as CSSProperties}>
                 <Icon className="size-6 text-brand-ink" aria-hidden />
                 <h3 className="mt-2 text-lg font-semibold tracking-[-0.015em]">{title}</h3>
                 <p className="leading-relaxed text-ink-2">{text}</p>

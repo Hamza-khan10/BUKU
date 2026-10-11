@@ -14,22 +14,22 @@ export function LiveBoard({ ahead, code, called }: { ahead: number | null; code:
   return (
     <div
       aria-hidden
-      className="relative w-full max-w-xl overflow-hidden rounded-2xl bg-night p-6 text-[#edf2ef] shadow-lift ring-1 ring-white/8 sm:p-8 dark:bg-[#141b17] dark:ring-white/10"
+      className="relative w-full max-w-xl overflow-hidden rounded-2xl bg-board p-6 text-board-ink shadow-lift ring-1 ring-white/8 sm:p-8 dark:ring-white/12"
     >
       <span className="absolute inset-x-0 top-0 h-px bg-white/15" />
       <div className="grid grid-cols-2 gap-6">
         <div className="flex flex-col gap-3">
-          <span className="text-sm text-[#b9c2bd]">{called ? 'Your turn' : 'Ahead of you'}</span>
+          <span className="text-sm text-board-ink-2">{called ? 'Your turn' : 'Ahead of you'}</span>
           <SplitFlap
             value={shown}
             charset="0123456789"
             className="text-[4rem] font-semibold sm:text-[4.75rem]"
-            style={called ? ({ '--flap-ink': '#5ed3a8' } as CSSProperties) : undefined}
+            style={called ? ({ '--flap-ink': 'var(--color-board-go)' } as CSSProperties) : undefined}
           />
         </div>
         <div className="flex flex-col gap-3">
-          <span className="text-sm text-[#b9c2bd]">Your number</span>
-          <span className="tabular text-[2.5rem] leading-[1.12] font-semibold tracking-[-0.02em] text-[#f2b655] sm:text-[3rem]">
+          <span className="text-sm text-board-ink-2">Your number</span>
+          <span className="tabular text-[2.5rem] leading-[1.12] font-semibold tracking-[-0.02em] text-board-spark sm:text-[3rem]">
             {code}
           </span>
         </div>
@@ -37,7 +37,7 @@ export function LiveBoard({ ahead, code, called }: { ahead: number | null; code:
       <p
         className={cn(
           'mt-7 border-t border-white/10 pt-5 text-lg font-medium',
-          called ? 'text-[#5ed3a8]' : 'text-[#edf2ef]',
+          called ? 'text-board-go' : 'text-board-ink',
         )}
       >
         {called
