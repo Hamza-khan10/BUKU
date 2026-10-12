@@ -71,7 +71,7 @@ export function MyPlanPanel() {
         className="flex flex-col gap-4 rounded-lg border border-line bg-surface p-5"
       >
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-2xl font-semibold tracking-[-0.025em] text-ink">{story.title}</h2>
+          <h2 className="type-heading text-ink">{story.title}</h2>
           {p.source === 'trial' && <Badge tone="brand">Free trial</Badge>}
         </div>
         {story.warning && <Alert tone="wait" title={story.warning} />}

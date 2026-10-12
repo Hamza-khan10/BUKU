@@ -34,7 +34,7 @@ function Unavailable({ what, reference }: { what: string; reference: string | un
 function Block({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
     <section aria-labelledby={id} className="flex scroll-mt-24 flex-col gap-4">
-      <h2 id={id} className="text-2xl font-semibold tracking-[-0.025em]">
+      <h2 id={id} className="type-heading">
         {title}
       </h2>
       {children}

@@ -110,7 +110,7 @@ export default function HowItWorksPage() {
 
       <section aria-labelledby="booking" className="grid grid-cols-1 items-start gap-12 lg:grid-cols-2">
         <div className="flex flex-col gap-8">
-          <h2 id="booking" className="text-3xl font-semibold tracking-[-0.03em]">
+          <h2 id="booking" className="type-section">
             Booking an appointment
           </h2>
           <Steps steps={BOOKING} label="Booking an appointment, step by step" />
@@ -134,7 +134,7 @@ export default function HowItWorksPage() {
 
       <section aria-labelledby="queue" className="grid grid-cols-1 items-start gap-12 lg:grid-cols-2">
         <div className="flex flex-col gap-8">
-          <h2 id="queue" className="text-3xl font-semibold tracking-[-0.03em]">
+          <h2 id="queue" className="type-section">
             Joining a queue
           </h2>
           <Steps steps={QUEUE} label="Joining a queue, step by step" />

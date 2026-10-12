@@ -167,7 +167,7 @@ function TicketCard({
         >
           <ArrowLeft className="size-4" aria-hidden /> {t.business.name}
         </Link>
-        <h1 className="text-4xl font-semibold tracking-[-0.03em]">
+        <h1 className="type-app-title">
           {joined && status === 'waiting' ? 'You’re in the queue' : 'Your ticket'}
         </h1>
         {active && (

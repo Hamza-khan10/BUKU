@@ -771,3 +771,24 @@ where most people will see it (WEB_PLAN §2):
   five still screens.
 - The admin app keeps its own blue look on purpose (it must never be mistaken for the public
   website); it only takes the mark.
+
+**D-095 · One design language on every page, and the story rebuilt for small phones.** The
+owner found the home page improved but the other pages not following it, and the phone in the
+scroll story looking "sucked in" on a small phone, with cramped screens and odd tickets. They
+asked for one design followed everywhere, a home page that stays unique, and every animation
+improved (WEB_PLAN §2):
+
+- **Shared parts:** one type scale named by job (`type-title`, `type-app-title`,
+  `type-section`, `type-heading`), `PageHeading` and `SectionHeading` with the Saffron-dot label,
+  the same word-by-word entrance, a Midnight footer on every page, a header that turns dark
+  over dark sections, and mint initials for places without photos. Every page's headings were
+  moved onto them.
+- **Phones first:** lists of places are rows on phones; filters are one swipeable row; City and
+  Order are compact pills. On a 375 × 667 phone, results now start on the first screen.
+- **The story's phone** is one fixed design (320 × 664) scaled to fit, so nothing wraps or gets
+  cut at any size; screens rebuilt to look like the app (search, day strip and time pills, the
+  real ticket with notches and a QR, the line moving up to the counter, a notification arriving
+  for "your turn"). Screens move the way a phone moves them and reverse on the way back. On
+  phones the stage no longer narrows or closes in as it arrives; the captions share one slot
+  so the phone never resizes between steps. Nothing loops for more than five seconds.
+- The home page stays the one with the board, the glow and the story; other pages are quieter.

@@ -40,6 +40,10 @@ export async function expectAccessible(page: Page) {
   );
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+    // Decorative illustrations (hidden from screen readers, labelled "an example"): their text
+    // is incidental under WCAG 1.4.3, and they mount after the page, so their entrances can
+    // still be mid-fade here. Their colours are the site's own tokens, checked numerically.
+    .exclude('[data-illustration]')
     .analyze();
   const summary = results.violations.map(
     (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,

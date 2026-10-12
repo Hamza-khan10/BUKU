@@ -15,7 +15,7 @@ export default function DeleteAccountPage() {
         >
           <ArrowLeft className="size-4" aria-hidden /> Settings
         </Link>
-        <h1 className="text-4xl font-semibold tracking-[-0.03em]">Delete your account</h1>
+        <h1 className="type-app-title">Delete your account</h1>
       </div>
       <DeleteAccount />
     </div>

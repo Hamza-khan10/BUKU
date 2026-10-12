@@ -100,7 +100,7 @@ export function ReviewPage({ appointmentId }: { appointmentId: string }) {
     <div className="flex max-w-2xl flex-col gap-8">
       <header className="flex flex-col gap-2">
         {back}
-        <h1 className="text-4xl font-semibold tracking-[-0.03em]">
+        <h1 className="type-app-title">
           {existing ? 'Your review' : `How was your visit to ${r.business.name}?`}
         </h1>
         <p className="text-ink-2">

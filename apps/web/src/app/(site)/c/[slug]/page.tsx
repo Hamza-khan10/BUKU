@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { SearchX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Container } from '@/components/ui/layout';
+import { Container, PageHeading } from '@/components/ui/layout';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { CategoryIcon } from '@/features/categories/icons';
 import { category, cities, searchBusinesses } from '@/features/search/api';
@@ -38,32 +38,44 @@ export default async function CategoryPage({ params, searchParams }: Props) {
   ]);
 
   return (
-    <Container className="flex flex-col gap-8 py-10 sm:py-14">
-      <header className="flex flex-col gap-5">
-        {node.parent && (
-          <nav aria-label="Breadcrumb" className="text-sm text-ink-3">
-            <Link href="/categories" className="hover:text-ink hover:underline">
-              Categories
-            </Link>{' '}
-            /{' '}
-            <Link href={`/c/${node.parent.slug}` as Route} className="hover:text-ink hover:underline">
-              {node.parent.name}
-            </Link>
-          </nav>
-        )}
-        <div className="flex items-center gap-4">
-          <span className="grid size-14 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand-ink">
-            <CategoryIcon slug={node.slug} className="size-7" />
+    <Container className="flex flex-col gap-8 py-8 sm:py-14">
+      <PageHeading
+        back={
+          node.parent && (
+            <nav aria-label="Breadcrumb" className="text-sm text-ink-3">
+              <Link href="/categories" className="hover:text-ink hover:underline">
+                Categories
+              </Link>{' '}
+              /{' '}
+              <Link href={`/c/${node.parent.slug}` as Route} className="hover:text-ink hover:underline">
+                {node.parent.name}
+              </Link>
+            </nav>
+          )
+        }
+        aside={
+          <span className="grid size-12 shrink-0 place-items-center rounded-[14px] bg-brand-soft text-brand-ink sm:size-16 sm:rounded-2xl">
+            <CategoryIcon slug={node.slug} className="size-6 sm:size-8" />
           </span>
-          <h1 className="text-4xl font-semibold tracking-[-0.03em]">
-            {node.name}
-            {filters.city && <span className="text-ink-3"> in {filters.city}</span>}
-          </h1>
-        </div>
+        }
+        title={
+          filters.city ? (
+            <>
+              {node.name}
+              <span className="text-ink-3"> in {filters.city}</span>
+            </>
+          ) : (
+            node.name
+          )
+        }
+      >
         {node.children.length > 0 && (
-          <ul aria-label={`Kinds of ${node.name}`} className="flex flex-wrap gap-2">
+          <ul
+            aria-label={`Kinds of ${node.name}`}
+            className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0"
+          >
             {node.children.map((child) => (
-              <li key={child.slug}>
+              <li key={child.slug} className="shrink-0">
                 <Link
                   href={`/c/${child.slug}` as Route}
                   className="inline-flex h-10 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-medium text-ink-2 hover:text-ink"
@@ -77,7 +89,7 @@ export default async function CategoryPage({ params, searchParams }: Props) {
         )}
         <PlaceControls base={base} filters={filters} cities={cityList} />
         <FilterChips base={base} filters={filters} />
-      </header>
+      </PageHeading>
 
       {results instanceof Error ? (
         <ErrorState

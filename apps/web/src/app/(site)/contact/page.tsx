@@ -17,7 +17,7 @@ function Way({ Icon, title, children }: { Icon: LucideIcon; title: string; child
       <span className="grid size-11 place-items-center rounded-md bg-sunken text-ink-2">
         <Icon className="size-5" aria-hidden />
       </span>
-      <h2 className="text-xl tracking-[-0.02em] font-semibold">{title}</h2>
+      <h2 className="type-subheading">{title}</h2>
       <div className="text-ink-2 [&_a]:font-medium [&_a]:text-brand-ink [&_a]:underline [&_a]:underline-offset-4">
         {children}
       </div>

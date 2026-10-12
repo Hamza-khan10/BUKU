@@ -241,7 +241,7 @@ export default function HelpPage() {
           aria-labelledby={`${t.id}-title`}
           className="flex scroll-mt-24 flex-col gap-4"
         >
-          <h2 id={`${t.id}-title`} className="text-2xl font-semibold tracking-[-0.025em]">
+          <h2 id={`${t.id}-title`} className="type-heading">
             {t.title}
           </h2>
           <Accordion type="multiple">

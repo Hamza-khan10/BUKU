@@ -84,7 +84,7 @@ export default function SecurityPage() {
               <span className="grid size-11 place-items-center rounded-md bg-ok-soft text-ok">
                 <Icon className="size-5" aria-hidden />
               </span>
-              <h2 className="text-xl tracking-[-0.02em] font-semibold">{title}</h2>
+              <h2 className="type-subheading">{title}</h2>
             </span>
             <ul className="flex list-disc flex-col gap-2 pl-5 text-ink-2">
               {points.map((p) => (

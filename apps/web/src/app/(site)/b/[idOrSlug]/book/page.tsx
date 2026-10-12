@@ -50,7 +50,7 @@ export default async function BookPage({ params, searchParams }: Props) {
         >
           <ArrowLeft className="size-4" aria-hidden /> {business.name}
         </Link>
-        <h1 className="text-4xl font-semibold tracking-[-0.03em] text-balance">Book at {business.name}</h1>
+        <h1 className="type-app-title text-balance">Book at {business.name}</h1>
         <p className="text-ink-2">
           {business.address.line}, {business.address.city}
         </p>

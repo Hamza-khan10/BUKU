@@ -16,15 +16,15 @@ export default async function VisitsPage({ searchParams }: PageProps<'/account/a
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h1 className="text-4xl font-semibold tracking-[-0.03em]">Your visits</h1>
-        <nav aria-label="Which visits" className="flex rounded-md bg-sunken p-1">
+        <h1 className="type-app-title">Your visits</h1>
+        <nav aria-label="Which visits" className="flex gap-1 rounded-full bg-sunken p-1">
           {SCOPES.map((s) => (
             <Link
               key={s.scope}
               href={s.href as Route}
               aria-current={scope === s.scope ? 'page' : undefined}
               className={cn(
-                'rounded px-4 py-2 text-sm font-medium text-ink-2 hover:text-ink',
+                'inline-flex h-9 items-center rounded-full px-4 text-sm font-medium text-ink-2 transition-[color,background-color,box-shadow] duration-200 hover:text-ink',
                 scope === s.scope && 'bg-surface text-ink shadow-soft',
               )}
             >

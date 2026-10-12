@@ -38,7 +38,7 @@ export default function AboutPage() {
         description="Getting a haircut, seeing a doctor or renewing a document often means calling around or standing in line. BUKU replaces that with a time you choose, or a place in line you can see from wherever you are."
       />
       <section aria-labelledby="principles" className="flex flex-col gap-8">
-        <h2 id="principles" className="text-3xl font-semibold tracking-[-0.03em]">
+        <h2 id="principles" className="type-section">
           What we build on
         </h2>
         <ul className="grid gap-4 sm:grid-cols-2">
