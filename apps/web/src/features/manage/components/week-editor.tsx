@@ -52,7 +52,7 @@ export function WeekEditor({
           const d = week[day]!;
           const problem = problems[day];
           return (
-            <li key={day} className="flex flex-col gap-3 px-4 py-3">
+            <li key={day} className="flex flex-col gap-3 px-3 py-3 sm:px-4">
               <Switch
                 label={<span className="font-medium">{name}</span>}
                 description={d.open ? undefined : 'Closed'}
@@ -62,7 +62,7 @@ export function WeekEditor({
               {d.open && (
                 <div className="flex flex-col gap-2">
                   {d.ranges.map((r, i) => (
-                    <div key={i} className="flex flex-wrap items-center gap-2">
+                    <div key={i} className="flex items-center gap-2">
                       <Input
                         type="time"
                         step={900}
@@ -74,9 +74,9 @@ export function WeekEditor({
                           })
                         }
                         aria-invalid={problem ? true : undefined}
-                        className="tabular w-[9.75rem]"
+                        className="tabular min-w-0 flex-1 px-2.5 sm:w-[9.75rem] sm:flex-none sm:px-3"
                       />
-                      <span className="text-sm text-ink-3">to</span>
+                      <span className="shrink-0 text-sm text-ink-3">to</span>
                       <Input
                         type="time"
                         step={900}
@@ -88,7 +88,7 @@ export function WeekEditor({
                           })
                         }
                         aria-invalid={problem ? true : undefined}
-                        className="tabular w-[9.75rem]"
+                        className="tabular min-w-0 flex-1 px-2.5 sm:w-[9.75rem] sm:flex-none sm:px-3"
                       />
                       {i > 0 && (
                         <Button

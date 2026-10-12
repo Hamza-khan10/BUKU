@@ -224,3 +224,43 @@ export function currencyOptions(): Option[] {
     label: `${names.of(value) ?? value} (${value})`,
   }));
 }
+
+/** Someone's working hours (as the API keeps them) as a week to edit; days not listed are off. */
+export function weekFromStaffDays(days: readonly { dayOfWeek: number; ranges: readonly Range[] }[]): Week {
+  const week: Week = {};
+  for (const { day } of WEEK) {
+    const ranges = (days.find((d) => d.dayOfWeek === day)?.ranges ?? []).map((r) => ({
+      start: r.start.slice(0, 5),
+      end: r.end.slice(0, 5),
+    }));
+    week[day] =
+      ranges.length > 0
+        ? { open: true, ranges }
+        : { open: false, ranges: [{ start: '09:00', end: '18:00' }] };
+  }
+  return week;
+}
+
+/** Clean-up time after a service, in minutes (used for free times, never shown to customers). */
+export const CLEANUP = [0, 5, 10, 15, 20, 30, 45, 60] as const;
+
+/** "Mon to Sat, 09:00 to 18:00" when every working day is the same; otherwise the days, briefly. */
+export function weekSummary(week: Week): string {
+  const open = WEEK.filter(({ day }) => week[day]?.open);
+  if (open.length === 0) return 'No working hours yet';
+  const labels = new Set(open.map(({ day }) => dayLabel(week[day])));
+  const days =
+    open.length === 7
+      ? 'Every day'
+      : isRun(open.map((d) => d.day))
+        ? `${open[0]!.short} to ${open.at(-1)!.short}`
+        : open.map((d) => d.short).join(', ');
+  return labels.size === 1 ? `${days}, ${[...labels][0]}` : `${days}, hours vary`;
+}
+
+/** Days next to each other in the week as people read it (Monday first). */
+function isRun(days: number[]): boolean {
+  const order = WEEK.map((w) => w.day as number);
+  const at = days.map((d) => order.indexOf(d));
+  return at.every((v, i) => i === 0 || v === at[i - 1]! + 1);
+}

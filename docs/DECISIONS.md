@@ -804,3 +804,13 @@ decision, with its provider named in the sub-processors. Alongside, the public c
 carries each category's id, since a business is registered under one (it's reference data, not
 private), and the list of country codes moved to `@buku/validation` so the website and the API
 check countries by the same list.
+
+**D-097 · One role table for the API and the website; the team as people and logins.** The owner
+asked for many services, a team, and their pictures, "with the logic we decided". The role table
+(`BUSINESS_PERMISSIONS`, `MANAGEABLE_ROLES`) moved to `@buku/validation` (browser-safe) and the
+server package re-exports it, so the website shows each person exactly the tools the API lets
+them use, from one source. The team is shown as the API models it: **people customers can book**
+(staff profiles: services, working hours, an optional photo given with their agreement) and
+**logins** (employee accounts with a role, the temporary password shown once to hand over in
+person), linked when a person both works on visits and signs in. Taking someone off bookings and
+archiving a service are reversible and keep history; removing a login closes it.

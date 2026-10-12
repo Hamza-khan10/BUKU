@@ -12,6 +12,8 @@ import {
   weekFromApi,
   weekProblems,
   weekToApi,
+  weekFromStaffDays,
+  weekSummary,
   weekToStaffDays,
 } from '@/features/manage/setup';
 
@@ -102,5 +104,25 @@ describe('Setting up a business: where it is and what it costs', () => {
     expect(durationLabel(45)).toBe('45 min');
     expect(durationLabel(90)).toBe('1 h 30 min');
     expect(durationLabel(120)).toBe('2 h');
+  });
+});
+
+describe('Setting up a business: someone’s working hours', () => {
+  it('reads the days the API keeps, and sums a week up', () => {
+    const week = weekFromStaffDays([
+      { dayOfWeek: 1, ranges: [{ start: '09:00:00', end: '17:00:00' }] },
+      { dayOfWeek: 2, ranges: [{ start: '09:00', end: '17:00' }] },
+      { dayOfWeek: 3, ranges: [{ start: '09:00', end: '17:00' }] },
+    ]);
+    expect(week[1]).toEqual({ open: true, ranges: [{ start: '09:00', end: '17:00' }] });
+    expect(week[0]?.open).toBe(false);
+    expect(weekSummary(week)).toBe('Mon to Wed, 09:00 to 17:00');
+    expect(weekSummary(defaultWeek())).toBe('Mon to Sat, 09:00 to 18:00');
+    expect(weekSummary(weekFromStaffDays([]))).toBe('No working hours yet');
+    const odd = weekFromStaffDays([
+      { dayOfWeek: 1, ranges: [{ start: '09:00', end: '13:00' }] },
+      { dayOfWeek: 4, ranges: [{ start: '14:00', end: '18:00' }] },
+    ]);
+    expect(weekSummary(odd)).toBe('Mon, Thu, hours vary');
   });
 });
