@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { sql } from './db';
 import { expect, test } from './fixtures';
-import { apiAvailable, expectAccessible } from './helpers';
+import { apiAvailable, expectAccessible, watchForProblems } from './helpers';
 
 /**
  * Adding a business (3.5a), as an owner would on the website: what it is and where, the
@@ -37,6 +37,9 @@ test.describe('Adding a business', () => {
   }) => {
     test.slow();
     await signInAsOwner(page);
+    // Errors in the browser fail the test: a page that renders differently on the server and in
+    // the browser (country names, say) logs a hydration error here.
+    const problems = await watchForProblems(page);
 
     await page.goto('/business');
     await expect(page.getByRole('heading', { name: 'No business here yet' })).toBeVisible();
@@ -99,5 +102,6 @@ test.describe('Adding a business', () => {
     // And the account lists it.
     await page.goto('/business');
     await expect(page.getByRole('link', { name: new RegExp(name) })).toBeVisible();
+    expect(problems).toEqual([]);
   });
 });

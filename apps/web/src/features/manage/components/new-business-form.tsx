@@ -1,6 +1,6 @@
 'use client';
 
-import { ISO_COUNTRY_CODES, zText, type TextKind } from '@buku/validation';
+import { zText, type TextKind } from '@buku/validation';
 import { useQueryClient } from '@tanstack/react-query';
 import { LocateFixed, MapPin } from 'lucide-react';
 import type { Route } from 'next';
@@ -17,7 +17,6 @@ import { ProblemAlert } from '@/features/auth/components/problem-alert';
 import { problemFrom, type Problem } from '@/features/auth/problems';
 import { Step } from '@/features/booking/components/step';
 import type { CategoryNode } from '@/features/search/types';
-import { zoneOptions } from '@/features/settings/zones';
 import { ApiError } from '@/lib/api/errors';
 import { BUSINESS_TERMS_VERSION } from '@/lib/legal-versions';
 import { createBusiness, MINE_KEY, type NewBusiness } from '../api';
@@ -29,6 +28,7 @@ import {
   mapsLink,
   parseCoordinates,
   roundCoordinates,
+  type Option,
 } from '../setup';
 
 type Place = { lat: number; lng: number };
@@ -86,7 +86,17 @@ const API_FIELD: Record<string, keyof Draft | 'location'> = {
  * coordinates pasted from a map: there is no map on this site, and no address is sent to
  * anyone to look up.
  */
-export function NewBusinessForm({ categories }: { categories: CategoryNode[] }) {
+export function NewBusinessForm({
+  categories,
+  countries,
+  currencies,
+  zones,
+}: {
+  categories: CategoryNode[];
+  countries: Option[];
+  currencies: Option[];
+  zones: Option[];
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const device = useDeviceZone();
@@ -118,17 +128,12 @@ export function NewBusinessForm({ categories }: { categories: CategoryNode[] }) 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const timezone = draft.timezone || device || 'Asia/Karachi';
 
-  const countries = useMemo(() => {
-    const names = new Intl.DisplayNames(['en'], { type: 'region' });
-    return [...ISO_COUNTRY_CODES]
-      .map((code) => ({ code, name: names.of(code) ?? code }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, []);
-  const currencies = useMemo(() => {
-    const names = new Intl.DisplayNames(['en'], { type: 'currency' });
-    return Intl.supportedValuesOf('currency').map((code) => ({ code, name: names.of(code) ?? code }));
-  }, []);
-  const zones = useMemo(() => zoneOptions(timezone, new Date()), [timezone]);
+  // The device's zone is known only once the page has come to life; offered if the list lacks it.
+  const zoneList = useMemo(
+    () =>
+      device && !zones.some((z) => z.value === device) ? [...zones, { value: device, label: device }] : zones,
+    [zones, device],
+  );
 
   const chooseCountry = (country: string) =>
     setDraft((d) => ({ ...d, country, currency: currencyFor(country) ?? d.currency }));
@@ -309,7 +314,8 @@ export function NewBusinessForm({ categories }: { categories: CategoryNode[] }) 
               maxLength={2000}
             />
           </Field>
-          <div className="grid gap-5 sm:grid-cols-2">
+          {/* One under the other: their hints differ in length, so side by side the boxes would not line up. */}
+          <div className="flex flex-col gap-5">
             <Field label="Phone" hint="With the country code: +92 300 1234567." error={errors.phone}>
               <Input
                 type="tel"
@@ -389,8 +395,8 @@ export function NewBusinessForm({ categories }: { categories: CategoryNode[] }) 
                 autoComplete="country"
               >
                 {countries.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.name}
+                  <option key={c.value} value={c.value}>
+                    {c.label}
                   </option>
                 ))}
               </Select>
@@ -443,7 +449,8 @@ export function NewBusinessForm({ categories }: { categories: CategoryNode[] }) 
             </Field>
           </fieldset>
 
-          <div className="grid gap-5 sm:grid-cols-2">
+          {/* One under the other: their hints differ in length, so side by side the boxes would not line up. */}
+          <div className="flex flex-col gap-5">
             <Field
               label="Time zone"
               required
@@ -451,7 +458,7 @@ export function NewBusinessForm({ categories }: { categories: CategoryNode[] }) 
               hint="Opening hours and every visit are in this time."
             >
               <Select value={timezone} onChange={(e) => set('timezone', e.target.value)}>
-                {zones.map((z) => (
+                {zoneList.map((z) => (
                   <option key={z.value} value={z.value}>
                     {z.label}
                   </option>
@@ -461,8 +468,8 @@ export function NewBusinessForm({ categories }: { categories: CategoryNode[] }) 
             <Field label="Currency" required optionalLabel={false} hint="Your prices are shown in it.">
               <Select value={draft.currency} onChange={(e) => set('currency', e.target.value)}>
                 {currencies.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.name} ({c.code})
+                  <option key={c.value} value={c.value}>
+                    {c.label}
                   </option>
                 ))}
               </Select>

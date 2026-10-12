@@ -310,7 +310,7 @@ function FirstServiceForm({
 
   return (
     <form noValidate onSubmit={(e) => void save(e)} className="flex flex-col gap-5">
-      <p className="text-ink-2">What people book first. You can add the rest of your menu later.</p>
+      <p className="text-ink-2">What people book first. It’s paid at your business.</p>
       <ProblemAlert problem={problem} />
       <Field label="Service" required optionalLabel={false} error={errors.name}>
         <CleanTextInput
@@ -331,13 +331,7 @@ function FirstServiceForm({
             ))}
           </Select>
         </Field>
-        <Field
-          label={`Price (${business.currency})`}
-          required
-          optionalLabel={false}
-          hint="Paid at your business."
-          error={errors.price}
-        >
+        <Field label={`Price (${business.currency})`} required optionalLabel={false} error={errors.price}>
           <Input
             inputMode="decimal"
             value={price}

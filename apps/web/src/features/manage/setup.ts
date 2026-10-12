@@ -198,3 +198,29 @@ export function parsePrice(text: string): number | null {
   if (!/^\d{1,9}(\.\d{1,2})?$/.test(clean)) return null;
   return Number(clean);
 }
+
+export interface Option {
+  value: string;
+  label: string;
+}
+
+/**
+ * Countries by name, A to Z. Built on the server only and handed to the form: the browser's
+ * own country names can differ from the server's ("Falkland Islands" or "Falkland Islands
+ * (Islas Malvinas)"), and a page must look the same before and after it comes to life.
+ */
+export function countryOptions(codes: Iterable<string>): Option[] {
+  const names = new Intl.DisplayNames(['en'], { type: 'region' });
+  return [...codes]
+    .map((value) => ({ value, label: names.of(value) ?? value }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Every currency, "Pakistani Rupee (PKR)" (server only, for the same reason). */
+export function currencyOptions(): Option[] {
+  const names = new Intl.DisplayNames(['en'], { type: 'currency' });
+  return Intl.supportedValuesOf('currency').map((value) => ({
+    value,
+    label: `${names.of(value) ?? value} (${value})`,
+  }));
+}
