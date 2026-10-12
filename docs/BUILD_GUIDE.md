@@ -565,6 +565,21 @@ The detailed plan — every page, its data and edge cases, the design system and
   link and the photos, like the public profile, instead of the internal storage key.
   `/business/[id]`: where the business stands and what's left before people can book. The account
   menu has "Your businesses"; the for-business page's main button is "Add your business".
+- **3.5d Services and team — ✅ done (time off and attendance come later).** A business's own
+  pages have tabs (Overview · Services · Team), each shown only to roles that can use it, from the
+  same role table the API enforces (`BUSINESS_PERMISSIONS`, now in `@buku/validation`).
+  `/business/[id]/services`: the menu by group (a new group made from the form), each service's
+  length, clean-up time (for free times only), price and who does it — one nobody does is flagged
+  as unbookable; changed in place; archived (not deleted, so past visits keep it) and brought
+  back. `/business/[id]/team`: the people customers can book — what they do, when they work (the
+  opening hours or their own week), a line about them, their photo only once the box says they
+  agreed (the API records who confirmed it and when), linked to their BUKU login so they keep
+  their own hours; taking someone off bookings keeps their history and can be undone. Then the
+  logins: a name, a username and a role (manager, front desk, staff, each said in plain words;
+  managers can give only front desk and staff), the temporary password shown once with its sign-in
+  link to hand over in person, and per login: change role, a new password (also unlocks), turn
+  off/on, remove. Setup now adds as many services as wanted and the team (optional) before the
+  logo and photos. Plan limits, rate limits and taken usernames are said in words.
 
 ## Phase 4 — Mobile app (Expo)
 

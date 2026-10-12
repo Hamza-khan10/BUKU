@@ -4,12 +4,14 @@ import { zText } from '@buku/validation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { Plus } from 'lucide-react';
 import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { CleanTextInput } from '@/components/ui/clean-text';
 import { Field } from '@/components/ui/field';
 import { Input, Select } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { toast } from '@/components/ui/toaster';
 import { ErrorState } from '@/components/ui/states';
 import { ME_KEY, fetchMe, type Me } from '@/features/auth/api';
 import { ProblemAlert } from '@/features/auth/components/problem-alert';
@@ -17,6 +19,7 @@ import { problemFrom, type Problem } from '@/features/auth/problems';
 import { choiceCard, Step } from '@/features/booking/components/step';
 import { ApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/cn';
+import { money } from '@/lib/format';
 import {
   canSetUp,
   createService,
@@ -32,6 +35,7 @@ import {
   staffKey,
   updateStaff,
   type ManagedBusiness,
+  type ManagedMenu,
   type ManagedStaff,
 } from '../api';
 import {
@@ -47,6 +51,8 @@ import {
   type Week,
 } from '../setup';
 import { BusinessPictures } from './business-pictures';
+import { PeopleSection } from './people';
+import { ServiceForm } from './service-form';
 import { WeekEditor } from './week-editor';
 
 /**
@@ -127,25 +133,27 @@ export function SetupFlow({ id }: { id: string }) {
         <HoursForm business={b} onSaved={() => setEditingHours(false)} />
       </Step>
 
-      <Step
-        number={2}
-        title="Your first service"
-        done={hasService}
-        summary={
-          <p>
-            {services[0]?.name}, {services[0] && durationLabel(services[0].durationMinutes)}.{' '}
-            {services.length > 1 && `${services.length} services in all.`}
-          </p>
-        }
-      >
-        {hoursSet ? (
+      <Step number={2} title={hasService ? 'Your services' : 'Your first service'}>
+        {!hoursSet ? (
+          <p className="text-ink-3">Your opening hours first: services are booked inside them.</p>
+        ) : !hasService ? (
           <FirstServiceForm business={b} me={me.data} staff={staff.data!} />
         ) : (
-          <p className="text-ink-3">Your opening hours first: the service is booked inside them.</p>
+          <MoreServices business={b} menu={menu.data!} staff={staff.data!} />
         )}
       </Step>
 
-      <Step number={3} title="Your logo and photos">
+      {hasService && (
+        <Step number={3} title="Your team">
+          <p className="-mt-1 text-ink-2">
+            Optional: anyone else customers can book, with what they do and when they work. Logins for them
+            are on the Team page.
+          </p>
+          <PeopleSection business={b} />
+        </Step>
+      )}
+
+      <Step number={hasService ? 4 : 3} title="Your logo and photos">
         <p className="-mt-1 text-ink-2">
           Optional, and worth it: a page with the business’s own pictures is the one people choose.
         </p>
@@ -173,6 +181,54 @@ export function SetupFlow({ id }: { id: string }) {
             </Button>
           </div>
         </section>
+      )}
+    </div>
+  );
+}
+
+function MoreServices({
+  business,
+  menu,
+  staff,
+}: {
+  business: ManagedBusiness;
+  menu: ManagedMenu;
+  staff: ManagedStaff[];
+}) {
+  const [adding, setAdding] = useState(false);
+  const services = menu.categories.flatMap((c) => c.services).filter((s) => s.isActive);
+  return (
+    <div className="flex flex-col gap-4">
+      <ul className="flex flex-col divide-y divide-line rounded-xl bg-surface ring-1 ring-line">
+        {services.map((s) => (
+          <li key={s.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3">
+            <span className="font-medium text-ink">{s.name}</span>
+            <span className="tabular text-sm text-ink-3">
+              {durationLabel(s.durationMinutes)} · {money(s.price, business.currency)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {adding ? (
+        <ServiceForm
+          business={business}
+          menu={menu}
+          staff={staff}
+          onDone={(s) => {
+            setAdding(false);
+            toast.success(`${s.name} is on your menu.`);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      ) : (
+        <div className="flex flex-wrap gap-3">
+          <Button onClick={() => setAdding(true)}>
+            <Plus aria-hidden /> Add another service
+          </Button>
+          <Button asChild variant="ghost">
+            <Link href={`/business/${business.id}/services` as Route}>Groups, changes and more</Link>
+          </Button>
+        </div>
       )}
     </div>
   );

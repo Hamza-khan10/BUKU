@@ -2,5 +2,6 @@
 // bundled into the web app, whose bundler (Turbopack) doesn't map ".js" to ".ts".
 export * from './countries';
 export * from './password';
+export * from './roles';
 export * from './text';
 export * from './zod';
