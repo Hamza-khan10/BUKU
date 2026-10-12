@@ -939,6 +939,15 @@ describe('Pictures: logo', () => {
     const profile = await request(app).get(`/v1/businesses/${b.slug}`);
     expect(keyOf(profile.body.data.logoUrl)).toBe(keyOf(second.done.body.data.logoUrl));
     expect(profile.body.data).not.toHaveProperty('logoStorageKey');
+    // The team's own views show the same logo as a link (with the gallery), never the storage key.
+    const managed = await request(app).get(`/v1/businesses/${b.id}/manage`).set(owner.auth);
+    expect(keyOf(managed.body.data.logoUrl)).toBe(keyOf(second.done.body.data.logoUrl));
+    expect(managed.body.data.photos).toEqual([]);
+    expect(managed.body.data).not.toHaveProperty('logoStorageKey');
+    const mine = await request(app).get('/v1/businesses/mine').set(owner.auth);
+    const listed = (mine.body.data as { id: string; logoUrl: string }[]).find((x) => x.id === b.id)!;
+    expect(keyOf(listed.logoUrl)).toBe(keyOf(second.done.body.data.logoUrl));
+    expect(listed).not.toHaveProperty('logoStorageKey');
     expect(await storage.head(testEnv.s3.mediaBucket, keyOf(first.done.body.data.logoUrl))).toBeNull();
 
     expect((await request(app).delete(base).set(owner.auth)).status).toBe(204);

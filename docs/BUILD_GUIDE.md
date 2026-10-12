@@ -557,7 +557,12 @@ The detailed plan — every page, its data and edge cases, the design system and
   the field, and sending twice registers once. `/business/[id]/setup`: opening hours (a row per
   day, open or closed, the phone's own time picker, a lunch break, the same hours on every open
   day), then the first service and who does it (the owner, or someone named), who then works the
-  opening hours; each step is saved as it's done, so leaving half-way loses nothing.
+  opening hours; each step is saved as it's done, so leaving half-way loses nothing. Then
+  (optional, and on the business's own page too) its logo and photos, the first the cover:
+  checked in the browser, sent straight to storage, cleaned by the API; a photo is described for
+  people who can't see it; any photo can be made the cover; removing asks first. The team's own
+  views of a business (`/mine`, `/manage`, and the answers to changing it) now give the logo as a
+  link and the photos, like the public profile, instead of the internal storage key.
   `/business/[id]`: where the business stands and what's left before people can book. The account
   menu has "Your businesses"; the for-business page's main button is "Add your business".
 

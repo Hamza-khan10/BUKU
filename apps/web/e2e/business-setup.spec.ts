@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { sql } from './db';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible, watchForProblems } from './helpers';
+import { png } from './pictures';
 
 /**
  * Adding a business (3.5a), as an owner would on the website: what it is and where, the
@@ -23,6 +24,9 @@ async function signInAsOwner(page: Page) {
 const made: string[] = [];
 
 test.describe('Adding a business', () => {
+  // The page sends pictures straight to storage, which allows only the headers it expects.
+  test.use({ ownAddress: false });
+
   test.beforeAll(async () => {
     test.skip(!(await apiAvailable()), 'the API stack is not running');
   });
@@ -84,6 +88,23 @@ test.describe('Adding a business', () => {
     await expect(page.getByRole('radio', { name: /Me, Sana Malik/ })).toBeChecked();
     await page.getByRole('button', { name: 'Add this service' }).click();
     await expect(page.getByRole('heading', { name: 'Your page is live' })).toBeVisible({ timeout: 20_000 });
+
+    // Its logo and a cover photo (described for people who can't see it), cleaned by the API.
+    await page.getByLabel('Logo file').setInputFiles({
+      name: 'logo.png',
+      mimeType: 'image/png',
+      buffer: png(400, 400, [6, 127, 93]),
+    });
+    await expect(page.getByRole('img', { name: `${name}’s logo` })).toBeVisible({ timeout: 20_000 });
+    await page.getByLabel('Photo file').setInputFiles({
+      name: 'front.png',
+      mimeType: 'image/png',
+      buffer: png(800, 600, [244, 248, 246]),
+    });
+    await page.getByLabel('Describe it').fill('The front of the shop');
+    await page.getByRole('button', { name: 'Add the photo' }).click();
+    await expect(page.getByRole('img', { name: 'The front of the shop' })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText('Cover', { exact: true })).toBeVisible();
     await expectAccessible(page);
 
     // Its own page: live, not verified, everything set up.
@@ -93,9 +114,10 @@ test.describe('Adding a business', () => {
     await expect(page.getByText('3 of 3 done')).toBeVisible();
     await expectAccessible(page);
 
-    // The public page says "Not verified" and offers the service, done by the owner.
+    // The public page says "Not verified", shows the cover, and offers the service.
     await page.getByRole('link', { name: 'See your page' }).click();
     await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+    await expect(page.getByRole('img', { name: 'The front of the shop' })).toBeVisible();
     await expect(page.getByText('Haircut').first()).toBeVisible();
     await expect(page.getByText('Not verified').first()).toBeVisible();
 

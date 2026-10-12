@@ -21,6 +21,7 @@ import {
   ROLE_LABELS,
   staffKey,
 } from '../api';
+import { BusinessPictures } from './business-pictures';
 import { STATUS, StatusBadge } from './status';
 
 /**
@@ -154,6 +155,18 @@ export function BusinessHome({ id }: { id: string }) {
           </div>
         )}
       </section>
+
+      {canSetUp(b.myRole) && (
+        <section
+          aria-labelledby="looks"
+          className="flex flex-col gap-5 rounded-xl bg-surface p-5 shadow-soft ring-1 ring-line sm:p-6"
+        >
+          <h2 id="looks" className="type-subheading">
+            How it looks
+          </h2>
+          <BusinessPictures business={b} />
+        </section>
+      )}
 
       <p className="text-sm text-ink-3">Today’s visits and your queue come to this page next.</p>
     </div>

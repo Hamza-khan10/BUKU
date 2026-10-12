@@ -46,6 +46,7 @@ import {
   weekToStaffDays,
   type Week,
 } from '../setup';
+import { BusinessPictures } from './business-pictures';
 import { WeekEditor } from './week-editor';
 
 /**
@@ -142,6 +143,13 @@ export function SetupFlow({ id }: { id: string }) {
         ) : (
           <p className="text-ink-3">Your opening hours first: the service is booked inside them.</p>
         )}
+      </Step>
+
+      <Step number={3} title="Your logo and photos">
+        <p className="-mt-1 text-ink-2">
+          Optional, and worth it: a page with the business’s own pictures is the one people choose.
+        </p>
+        <BusinessPictures business={b} />
       </Step>
 
       {hoursSet && hasService && (

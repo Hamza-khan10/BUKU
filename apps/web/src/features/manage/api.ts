@@ -1,5 +1,6 @@
 import type { ServiceItem, ServiceMenu, StaffMember } from '@/features/business/types';
 import { api } from '@/lib/api/client';
+import { uploadFile } from '@/lib/api/upload';
 import type { OpeningHours } from '@/lib/format';
 import type { Range } from './setup';
 
@@ -99,6 +100,29 @@ export const updateStaff = (id: string, staffId: string, change: { serviceIds: s
 
 export const setStaffHours = (id: string, staffId: string, days: { dayOfWeek: number; ranges: Range[] }[]) =>
   api<unknown>(`businesses/${id}/staff/${staffId}/hours`, { method: 'PUT', body: { days } });
+
+// ── Pictures: the logo, and photos (the first is the cover) ──────────────────
+
+export type BusinessPhoto = ManagedBusiness['photos'][number];
+
+/** Every business can have up to 20 photos (the API refuses more). */
+export const MAX_PHOTOS = 20;
+
+/** A new logo (it replaces the old one); the API cleans it and answers with its link. */
+export const uploadLogo = (id: string, file: File, type: string) =>
+  uploadFile<{ logoUrl: string }>(`businesses/${id}/logo/uploads`, {}, file, type);
+
+export const removeLogo = (id: string) => api<void>(`businesses/${id}/logo`, { method: 'DELETE' });
+
+/** A new photo, described for people who can't see it; the answer is the whole gallery, cover first. */
+export const uploadPhoto = (id: string, file: File, type: string, altText: string | undefined) =>
+  uploadFile<BusinessPhoto[]>(`businesses/${id}/photos/uploads`, altText ? { altText } : {}, file, type);
+
+export const makeCover = (id: string, photoId: string) =>
+  api<BusinessPhoto[]>(`businesses/${id}/photos/${photoId}/primary`, { method: 'POST' });
+
+export const removePhoto = (id: string, photoId: string) =>
+  api<BusinessPhoto[]>(`businesses/${id}/photos/${photoId}`, { method: 'DELETE' });
 
 /** Roles, as people say them. */
 export const ROLE_LABELS: Record<TeamRole, string> = {
