@@ -7,6 +7,7 @@ import { filtersQuery, withFilters, type Filters } from '../params';
 /**
  * Filter chips: each one is a plain link to the same search with that filter
  * switched — so filters work without scripts, and every search can be shared.
+ * On phones they sit in one row you swipe, so the results start sooner.
  */
 export function FilterChips({
   base,
@@ -27,9 +28,12 @@ export function FilterChips({
   const chip =
     'inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-sm font-medium transition-colors';
   return (
-    <ul aria-label="Filters" className="flex flex-wrap gap-2">
+    <ul
+      aria-label="Filters"
+      className="relative -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
+    >
       {chips.map(({ key, label, on }) => (
-        <li key={key}>
+        <li key={key} className="shrink-0">
           <Link
             href={link({ [key]: !on })}
             scroll={false}
@@ -47,7 +51,7 @@ export function FilterChips({
         </li>
       ))}
       {filters.category && categoryName && base === '/explore' && (
-        <li>
+        <li className="shrink-0">
           <Link
             href={link({ category: '' })}
             scroll={false}

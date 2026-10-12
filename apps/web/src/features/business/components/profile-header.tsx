@@ -2,6 +2,7 @@ import { BadgeCheck, CircleHelp, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Container } from '@/components/ui/layout';
 import { Tooltip } from '@/components/ui/tooltip';
+import { cn } from '@/lib/cn';
 import { openLabel, openState, wallClock } from '@/lib/format';
 import type { BusinessProfile } from '../types';
 import { RatingInline } from './rating';
@@ -43,11 +44,16 @@ export function ProfileHeader({ business }: { business: BusinessProfile }) {
               : 'flex flex-col gap-5 sm:flex-row sm:items-end'
           }
         >
-          <span className="grid size-20 shrink-0 place-items-center overflow-hidden rounded-2xl border border-line bg-surface text-ink-2 shadow-soft sm:size-24">
+          <span
+            className={cn(
+              'grid size-20 shrink-0 place-items-center overflow-hidden rounded-2xl shadow-soft sm:size-24',
+              business.logoUrl ? 'border border-line bg-surface' : 'bg-brand-soft text-brand-ink',
+            )}
+          >
             {business.logoUrl ? (
               <img src={business.logoUrl} alt="" className="size-full object-cover" />
             ) : (
-              <span aria-hidden className="text-4xl font-semibold tracking-[-0.04em] text-ink/80">
+              <span aria-hidden className="text-[2.6rem] font-semibold tracking-[-0.04em]">
                 {[...business.name.trim()][0]?.toUpperCase()}
               </span>
             )}
@@ -56,9 +62,7 @@ export function ProfileHeader({ business }: { business: BusinessProfile }) {
             <p className="text-sm font-medium text-ink-3">
               {business.category.name} · {business.address.city}
             </p>
-            <h1 className="text-3xl leading-tight font-semibold tracking-[-0.03em] break-words sm:text-4xl">
-              {business.name}
-            </h1>
+            <h1 className="type-app-title break-words">{business.name}</h1>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <RatingInline average={business.rating.average} count={business.rating.count} />
               {verified ? (

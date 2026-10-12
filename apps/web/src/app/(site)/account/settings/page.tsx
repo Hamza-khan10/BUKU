@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: 'Settings', robots: { index: false, f
 export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-4xl font-semibold tracking-[-0.03em]">Settings</h1>
+      <h1 className="type-app-title">Settings</h1>
       <AccountSettings />
     </div>
   );

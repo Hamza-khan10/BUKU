@@ -123,7 +123,7 @@ export function ReceiptView({ id, arrival }: { id: string; arrival: Arrival }) {
         >
           <ArrowLeft className="size-4" aria-hidden /> Your visits
         </Link>
-        <h1 className="text-4xl font-semibold tracking-[-0.03em]">{heading}</h1>
+        <h1 className="type-app-title">{heading}</h1>
         {arrival === 'moved' && (
           <p className="text-ink-2">
             It has a new booking code: the old one no longer works.

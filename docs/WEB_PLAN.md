@@ -94,6 +94,30 @@ tokens, the same in both themes).
 - **A monospace only for codes** people read aloud (`BK-7KQ2MX`), where 0 and O must never be
   confused.
 - Self-hosted through `next/font` (no requests to font CDNs from visitors' browsers).
+- **One scale for every page** (D-095), named by a heading's job, never set by hand:
+  `type-title` (a page's h1), `type-app-title` (h1 in the parts you use: account, a visit, a
+  ticket, signing in), `type-section` (a section of a page that tells), `type-heading` (a list, a
+  form, a panel), `type-subheading`, `type-lead` (the sentence under a heading). The home page's
+  headline is the one exception, its own size.
+
+### One design language on every page (D-095)
+
+The home page is the most striking page, but every page is built from the same parts, so it
+all reads as one product:
+
+- **`PageHeading`** on every page: an optional label (an `Eyebrow`, whose Saffron dot is the
+  logo's pivot), the title, a sentence of context, then the page's controls. Titles rise in word
+  by word, as the home page's does; `compact` (the account area) simply fades up.
+- **`SectionHeading`** for every section: label, title, sentence, optional link.
+- **The Midnight footer** closes every page with the promise ("Book the time. Skip the wait.")
+  and the links (two columns on phones).
+- **The header adapts**: over a Midnight section (the story, the footer; anything marked
+  `data-tone="dark"`) its glass turns dark too, instead of going grey.
+- **Places look the same everywhere**: a place without a photo gets its initial on mint (never a
+  grey box or a stock picture); in a list on a phone each place is a row (picture beside the
+  text), so a list is quick to scan.
+- **Phone first**: filters sit in one row you swipe, City and Order are compact pills, so results
+  start on the first screen of a small phone.
 
 ### Shape and material
 
@@ -120,7 +144,11 @@ Springs, not timelines (critically damped by default; a little bounce only after
 everything can be interrupted and starts from where it is. Feedback on press, not on release.
 One orchestrated moment per page: the board on the home page, the ticket arriving when a booking
 is confirmed, your place counting down in a queue. Lenis smooths wheel scrolling on desktop;
-GSAP runs the one scroll-told story (how a visit goes, on a phone, phones included). The hero's
+GSAP runs the one scroll-told story (how a visit goes, on a phone, phones included). The
+story's phone is drawn once at one size (320 × 664) and scaled to the space it has, so a small
+phone shows the same screen smaller, never a squashed one; its screens move as a phone's do
+(pushed in from the right, the queue rising as a sheet, "your turn" opening from the middle) and
+reverse when scrolling back. The hero's
 words rise in once as the page opens; sections below reveal as they scroll in (CSS
 scroll-driven, where the browser supports it). Anything that moves for more than five seconds
 can be paused. Under `prefers-reduced-motion`: no smooth scrolling, no pinning, no reveals, short

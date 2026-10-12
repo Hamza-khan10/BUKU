@@ -4,12 +4,13 @@ import { Container } from '@/components/ui/layout';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { AccountControl } from '@/features/auth/components/account-control';
 import type { Theme } from '@/lib/theme';
+import { HeaderShell } from './header-shell';
 import { DesktopNav, MobileNav } from './site-nav';
 
 /** The public site's header: logo, main links (a menu on phones), theme, and signing in or the account menu. */
 export function SiteHeader({ theme, signedIn }: { theme: Theme; signedIn: boolean }) {
   return (
-    <header className="material-bar sticky top-0 z-30 border-b border-line/60">
+    <HeaderShell className="material-bar sticky top-0 z-30 border-b border-line/60">
       <Container className="flex h-16 items-center justify-between gap-4">
         <div className="flex items-center gap-6">
           <Link href="/" aria-label="BUKU home" className="rounded-md">
@@ -23,7 +24,7 @@ export function SiteHeader({ theme, signedIn }: { theme: Theme; signedIn: boolea
           <MobileNav theme={theme} />
         </div>
       </Container>
-    </header>
+    </HeaderShell>
   );
 }
 

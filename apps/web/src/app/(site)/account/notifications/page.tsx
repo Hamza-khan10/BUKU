@@ -10,7 +10,7 @@ export default function NotificationsPage() {
   return (
     <div className="flex max-w-2xl flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
-        <h1 className="text-4xl font-semibold tracking-[-0.03em]">Notifications</h1>
+        <h1 className="type-app-title">Notifications</h1>
         <Button asChild variant="secondary" size="sm">
           <Link href="/account/notifications/settings">
             <Settings aria-hidden /> Settings

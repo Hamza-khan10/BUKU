@@ -139,6 +139,7 @@
   /* Fixed colours that don't follow the theme: text on amber, and the dark backdrop
      behind dialogs and pictures. */
   --color-night: #011e14; /* Midnight: the board, premium dark surfaces */
+  --color-device: #0a0f0d; /* A phone's glass and bezel, in illustrations */
   /* The board (WEB_PLAN §2): a dark object, the same in both themes. Midnight ground,
      Saffron for your number, Emerald for "go". */
   --color-board: #011e14;
@@ -172,6 +173,8 @@
 
   /* Critically damped (no overshoot) for almost everything; a little bounce only after a flick. */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* How iOS moves a page in or a sheet up: quick to start, long soft landing. */
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-spring: linear(
     0,
     0.009,
@@ -372,6 +375,69 @@
   }
 }
 
+/* One type scale for every page (D-095): what a heading looks like depends on its job, not on
+   the page it's on. Tight as it grows, Apple-style. */
+@utility type-title {
+  /* A page's h1 (every page but the home page, whose headline is its own). */
+  font-size: 2.35rem;
+  line-height: 1.04;
+  font-weight: 600;
+  letter-spacing: -0.042em;
+  @media (width >= 40rem) {
+    font-size: 3.1rem;
+  }
+  @media (width >= 64rem) {
+    font-size: 3.6rem;
+  }
+}
+@utility type-app-title {
+  /* A page's h1 in the parts of BUKU you use (account, a visit, a ticket, signing in). */
+  font-size: 2.1rem;
+  line-height: 1.08;
+  font-weight: 600;
+  letter-spacing: -0.034em;
+  @media (width >= 40rem) {
+    font-size: 2.5rem;
+  }
+}
+@utility type-section {
+  /* A section of a page that tells (the home page, for businesses, how it works). */
+  font-size: 1.95rem;
+  line-height: 1.06;
+  font-weight: 600;
+  letter-spacing: -0.036em;
+  @media (width >= 40rem) {
+    font-size: 2.5rem;
+  }
+  @media (width >= 64rem) {
+    font-size: 3rem;
+  }
+}
+@utility type-heading {
+  /* A part of a page that does (a list, a form, a panel). */
+  font-size: 1.45rem;
+  line-height: 1.15;
+  font-weight: 600;
+  letter-spacing: -0.026em;
+  @media (width >= 40rem) {
+    font-size: 1.6rem;
+  }
+}
+@utility type-subheading {
+  font-size: 1.15rem;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+@utility type-lead {
+  font-size: 1.08rem;
+  line-height: 1.55;
+  color: var(--ink-2);
+  @media (width >= 40rem) {
+    font-size: 1.2rem;
+  }
+}
+
 /* The page opening: the headline's words rise in, then the line and search follow. */
 .rise-word {
   display: inline-block;
@@ -417,6 +483,41 @@
   }
 }
 
+/* The dark look, in both themes: Midnight sections (the story, the footer) and the header
+   while it floats over one, so it never turns a muddy grey over a dark stage. */
+.scope-dark,
+.material-bar[data-over='dark'] {
+  color-scheme: dark;
+  --canvas: #0c1310;
+  --surface: #141c18;
+  --sunken: #08100c;
+  --ink: #edf3f0;
+  --ink-2: #bac3bf;
+  --ink-3: #9ba4a0;
+  --line: #26302b;
+  --control: #6a746f;
+  --brand: #2bbc8e;
+  --brand-hover: #79d7b1;
+  --brand-ink: #79d7b1;
+  --brand-soft: #0d2a20;
+  --on-brand: #011e14;
+  --ok: #2bbc8e;
+  --ok-soft: #0d2a20;
+  --wait-ink: #fed1a5;
+  --wait-soft: #2a1c08;
+  --focus: #2bbc8e;
+  --danger: #ffa69e;
+  --danger-soft: #3a1614;
+  --shadow-color: 0 0 0;
+  --material: rgb(1 30 20 / 0.72);
+}
+.material-bar {
+  transition:
+    background-color 360ms var(--ease-out),
+    border-color 360ms var(--ease-out),
+    color 360ms var(--ease-out);
+}
+
 /* The app's light look inside an illustration (the phone in the scroll story), in both themes. */
 .scope-light {
   color-scheme: light;
@@ -441,53 +542,193 @@
   --shadow-color: 19 26 23;
 }
 
-/* The scroll story's screens: each plays its entrance when it becomes the active one. */
-[data-active='true'] .story-in {
-  animation: story-in 520ms var(--ease-out) both;
-  animation-delay: calc(var(--i, 0) * 70ms + 120ms);
+/* The scroll story's phone (D-095). Screens arrive the way a phone moves them and leave the
+   way they came: pushed in from the right (the one underneath slides a little left), the queue
+   rising as a sheet (the one underneath sinks back and dims), "your turn" opening out from the
+   middle. Hidden screens stop being painted once they're out of sight. */
+.story-screen {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--canvas);
+  transition:
+    transform 620ms var(--ease-ios),
+    clip-path 760ms var(--ease-ios),
+    border-radius 620ms var(--ease-ios),
+    visibility 0s linear 0s;
 }
-[data-active='true'] .story-pick {
+.story-screen::after {
+  /* The dimming of a screen that something has been laid over. */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.28);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 620ms var(--ease-ios);
+}
+.story-screen:is([data-state^='next'], [data-state^='under']) {
+  visibility: hidden;
+  transition:
+    transform 620ms var(--ease-ios),
+    clip-path 760ms var(--ease-ios),
+    border-radius 620ms var(--ease-ios),
+    visibility 0s linear 760ms;
+}
+.story-screen[data-state='next-push'] {
+  transform: translateX(100%);
+}
+.story-screen[data-state='next-sheet'] {
+  transform: translateY(100%);
+}
+.story-screen[data-state='next-reveal'] {
+  clip-path: circle(0% at 50% 52%);
+}
+.story-screen[data-state='here'] {
+  clip-path: circle(150% at 50% 52%);
+}
+.story-screen[data-state='under-push'] {
+  transform: translateX(-30%);
+}
+.story-screen[data-state='under-push']::after,
+.story-screen[data-state='under-sheet']::after {
+  opacity: 1;
+}
+.story-screen[data-state='under-sheet'] {
+  transform: scale(0.93);
+  border-radius: 24px;
+}
+/* The queue sheet sits just below the top, so the ticket peeks out behind it. */
+.story-screen[data-state='here']:has(> .story-sheet),
+.story-screen[data-state='next-sheet']:has(> .story-sheet),
+.story-screen[data-state^='under']:has(> .story-sheet) {
+  top: 8px;
+  border-radius: 24px 24px 0 0;
+}
+
+/* Inside a screen, things play once each time the screen arrives. */
+[data-state='here'] .story-in {
+  animation: story-in 560ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 60ms + 180ms);
+}
+[data-state='here'] .story-type {
+  animation: story-type 640ms steps(7, end) 420ms both;
+}
+[data-state='here'] .story-tap {
   animation:
-    story-in 520ms var(--ease-out) both,
-    story-pick 700ms var(--ease-spring) 650ms both;
+    story-in 560ms var(--ease-out) calc(3 * 60ms + 180ms) both,
+    story-tap 700ms var(--ease-out) 1500ms both;
 }
-[data-active='true'] .story-print {
-  animation: print 700ms var(--ease-out) 120ms both;
+[data-state='here'] .story-pick {
+  animation:
+    story-in 560ms var(--ease-out) calc(var(--i, 0) * 60ms + 180ms) both,
+    story-pick 620ms var(--ease-out) 1000ms both;
 }
-[data-active='true'] .story-turn {
-  animation: story-turn 600ms var(--ease-out) both;
+[data-state='here'] .story-cta {
+  animation: story-cta 620ms var(--ease-spring) 1350ms both;
 }
-[data-active='true'] .story-pulse {
-  animation: story-pulse 1.8s ease-out 400ms infinite;
+[data-state='here'] .story-pop {
+  animation: story-pop 520ms var(--ease-spring) 120ms both;
+}
+[data-state='here'] .story-draw {
+  stroke-dasharray: 24;
+  animation: story-draw 420ms var(--ease-out) 420ms both;
+}
+[data-state='here'] .story-print {
+  animation: print 760ms var(--ease-out) 380ms both;
+}
+[data-state='here'] .story-drop {
+  animation: story-drop 640ms var(--ease-spring) 700ms both;
+}
+[data-state='here'] .story-pulse {
+  /* Three rings, then still (nothing loops for more than five seconds). */
+  animation: story-pulse 1.6s ease-out 500ms 3;
 }
 
 @keyframes story-in {
   from {
     opacity: 0;
-    transform: translateY(14px) scale(0.97);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
-@keyframes story-pick {
+@keyframes story-type {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+@keyframes story-tap {
   0% {
     transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
   }
-  40% {
-    transform: scale(1.12);
+  35% {
+    transform: scale(0.97);
+    box-shadow: 0 0 0 2px var(--brand);
   }
   100% {
     transform: scale(1);
+    box-shadow: 0 0 0 2px var(--brand);
   }
 }
-@keyframes story-turn {
+@keyframes story-pick {
+  0%,
+  30% {
+    background: var(--surface);
+    color: var(--ink);
+    transform: scale(1);
+  }
+  45% {
+    background: var(--surface);
+    color: var(--ink);
+    transform: scale(0.93);
+  }
+  100% {
+    background: var(--brand);
+    color: var(--on-brand);
+    transform: scale(1);
+  }
+}
+@keyframes story-cta {
   from {
-    clip-path: circle(0% at 50% 60%);
+    transform: translateY(160%);
   }
   to {
-    clip-path: circle(150% at 50% 60%);
+    transform: none;
+  }
+}
+@keyframes story-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@keyframes story-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes story-drop {
+  from {
+    transform: translateY(-130%);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
   }
 }
 @keyframes story-pulse {

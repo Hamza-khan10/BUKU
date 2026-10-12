@@ -20,18 +20,21 @@ const SORT_LABELS: Record<Sort, string> = {
 };
 
 const selectStyles =
-  'h-11 rounded-md border border-control bg-surface px-3 text-[0.95rem] text-ink hover:border-ink-3 focus-visible:border-focus';
+  'h-10 rounded-full border border-control bg-surface px-4 text-sm font-medium text-ink hover:border-ink-3 focus-visible:border-focus sm:h-11 sm:rounded-md sm:px-3 sm:text-[0.95rem] sm:font-normal';
 
-/** City and order: changing either runs the search again (it's all in the address). */
+/**
+ * City and order: changing either runs the search again (it's all in the address). On
+ * phones they're two compact pills side by side (their labels stay for screen readers).
+ */
 export function PlaceControls({ base, filters, cities }: { base: string; filters: Filters; cities: City[] }) {
   const router = useRouter();
   const id = useId();
   const go = (change: Partial<Filters>) =>
     router.push(`${base}${filtersQuery(withFilters(filters, change))}` as Route);
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <div className="flex flex-wrap items-end gap-2 sm:gap-3">
       <div className="flex flex-col gap-1">
-        <label htmlFor={`${id}-city`} className="text-sm font-medium text-ink-2">
+        <label htmlFor={`${id}-city`} className="text-sm font-medium text-ink-2 max-sm:sr-only">
           City
         </label>
         <select
@@ -49,7 +52,7 @@ export function PlaceControls({ base, filters, cities }: { base: string; filters
         </select>
       </div>
       <div className="flex flex-col gap-1">
-        <label htmlFor={`${id}-sort`} className="text-sm font-medium text-ink-2">
+        <label htmlFor={`${id}-sort`} className="text-sm font-medium text-ink-2 max-sm:sr-only">
           Order
         </label>
         <select
@@ -127,7 +130,11 @@ export function NearMe({ filters }: { filters: Filters }) {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <Button onClick={find} disabled={state.kind === 'locating'}>
+        <Button
+          onClick={find}
+          disabled={state.kind === 'locating'}
+          className="max-sm:h-10 max-sm:px-4 max-sm:text-sm"
+        >
           {state.kind === 'locating' ? <Spinner className="size-4" /> : <LocateFixed aria-hidden />}
           {state.kind === 'done' ? 'Search near me again' : 'Near me'}
         </Button>
@@ -135,7 +142,7 @@ export function NearMe({ filters }: { filters: Filters }) {
       {state.kind === 'error' && <Alert tone="wait" title={state.message} />}
       {state.kind === 'done' && (
         <section aria-labelledby="near-me" className="flex flex-col gap-4">
-          <h2 id="near-me" className="text-2xl font-semibold tracking-[-0.025em]" aria-live="polite">
+          <h2 id="near-me" className="type-heading" aria-live="polite">
             {state.items.length === 0
               ? 'Nothing within 10 km matches'
               : `${state.items.length} ${state.items.length === 1 ? 'place' : 'places'} within 10 km`}

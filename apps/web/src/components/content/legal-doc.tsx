@@ -45,7 +45,7 @@ export function LegalDoc({
         <article className="min-w-0">
           <header className="flex flex-col gap-3">
             <p className="text-sm font-medium text-brand-ink">Legal</p>
-            <h1 className="text-4xl font-semibold tracking-[-0.03em]">{title}</h1>
+            <h1 className="type-app-title">{title}</h1>
             <p className="text-sm text-ink-3">
               Version {version} · {reviewed ? 'In effect' : 'Draft — not yet in effect'}
             </p>

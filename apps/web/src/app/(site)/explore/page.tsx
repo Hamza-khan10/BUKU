@@ -2,7 +2,7 @@ import type { Metadata, Route } from 'next';
 import Link from 'next/link';
 import { SearchX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Container } from '@/components/ui/layout';
+import { Container, PageHeading } from '@/components/ui/layout';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { categoryTree, cities, searchBusinesses } from '@/features/search/api';
 import { BusinessGrid } from '@/features/search/components/business-card';
@@ -36,21 +36,28 @@ export default async function ExplorePage({ searchParams }: PageProps<'/explore'
   const filtered = activeFilterCount(filters) > 0;
 
   return (
-    <Container className="flex flex-col gap-8 py-10 sm:py-14">
-      <header className="flex flex-col gap-5">
-        <h1 className="text-4xl font-semibold tracking-[-0.03em]">
-          {filters.q ? `Results for “${filters.q}”` : 'Explore'}
-          {filters.city && <span className="text-ink-3"> in {filters.city}</span>}
-        </h1>
+    <Container className="flex flex-col gap-8 py-8 sm:py-14">
+      <PageHeading
+        title={
+          filters.city ? (
+            <>
+              {filters.q ? `Results for “${filters.q}”` : 'Explore'}
+              <span className="text-ink-3"> in {filters.city}</span>
+            </>
+          ) : filters.q ? (
+            `Results for “${filters.q}”`
+          ) : (
+            'Explore'
+          )
+        }
+      >
         <div className="max-w-2xl">
           <SearchBox defaultValue={filters.q} city={filters.city || undefined} size="md" />
         </div>
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <PlaceControls base="/explore" filters={filters} cities={cityList} />
-        </div>
+        <PlaceControls base="/explore" filters={filters} cities={cityList} />
         <FilterChips base="/explore" filters={filters} categoryName={categoryName} />
         <NearMe filters={filters} />
-      </header>
+      </PageHeading>
 
       {results instanceof Error ? (
         <ErrorState

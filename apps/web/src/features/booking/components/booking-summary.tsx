@@ -104,11 +104,7 @@ export function BookingSummary({
 
   return (
     <div className="flex flex-col gap-5 rounded-xl border border-line bg-surface p-5 shadow-soft">
-      <h2
-        id="your-booking"
-        tabIndex={-1}
-        className="text-xl tracking-[-0.02em] font-semibold text-ink focus:outline-none"
-      >
+      <h2 id="your-booking" tabIndex={-1} className="type-subheading text-ink focus:outline-none">
         Your booking
       </h2>
       <dl className="flex flex-col gap-3 text-sm">

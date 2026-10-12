@@ -42,7 +42,7 @@ export function SignOutPanel({ signedIn }: { signedIn: boolean }) {
     return (
       <div className="flex flex-col items-center gap-4 text-center">
         <CheckCircle2 className="size-12 text-ok" aria-hidden />
-        <h1 className="text-3xl font-semibold tracking-[-0.03em]">You’re signed out</h1>
+        <h1 className="type-app-title">You’re signed out</h1>
         <p className="text-ink-2">See you next time.</p>
         <div className="flex gap-3">
           <Button asChild variant="primary">
@@ -58,7 +58,7 @@ export function SignOutPanel({ signedIn }: { signedIn: boolean }) {
 
   return (
     <div className="flex flex-col gap-6 rounded-xl border border-line bg-surface p-6 shadow-soft sm:p-8">
-      <h1 className="text-3xl font-semibold tracking-[-0.03em]">Sign out</h1>
+      <h1 className="type-app-title">Sign out</h1>
       {typeof state === 'object' && (
         <Alert tone="danger" title={state.error}>
           {state.reference && <span className="font-mono text-xs">Reference: {state.reference}</span>}

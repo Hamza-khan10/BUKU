@@ -73,7 +73,7 @@ export default async function PricingPage() {
           aria-labelledby="customers-title"
           className="flex scroll-mt-24 flex-col gap-6"
         >
-          <h2 id="customers-title" className="text-3xl font-semibold tracking-[-0.03em]">
+          <h2 id="customers-title" className="type-section">
             For people booking and queueing
           </h2>
           {!user.billingEnabled && <BillingOff who="everyone" />}
@@ -108,7 +108,7 @@ export default async function PricingPage() {
           aria-labelledby="businesses-title"
           className="flex scroll-mt-24 flex-col gap-6"
         >
-          <h2 id="businesses-title" className="text-3xl font-semibold tracking-[-0.03em]">
+          <h2 id="businesses-title" className="type-section">
             For businesses
           </h2>
           {!business.billingEnabled && <BillingOff who="businesses" />}
@@ -132,7 +132,7 @@ export default async function PricingPage() {
       )}
 
       <section aria-labelledby="questions" className="flex flex-col gap-3">
-        <h2 id="questions" className="text-2xl font-semibold tracking-[-0.025em]">
+        <h2 id="questions" className="type-heading">
           Good to know
         </h2>
         <ul className="flex max-w-3xl list-disc flex-col gap-2 pl-5 text-ink-2">

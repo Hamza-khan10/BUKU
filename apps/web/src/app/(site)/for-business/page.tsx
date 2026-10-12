@@ -3,7 +3,8 @@ import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Container } from '@/components/ui/layout';
+import { RiseWords } from '@/components/motion/rise-words';
+import { Container, Eyebrow, SectionHeading } from '@/components/ui/layout';
 import { FrontDeskBoard } from '@/features/home/components/front-desk-board';
 import { pricing } from '@/features/pricing/api';
 
@@ -82,22 +83,21 @@ const STEPS = [
   'Send your registration details. Once BUKU has checked them, your page says “Verified business”.',
 ];
 
-const sectionTitle = 'text-[2.25rem] leading-[1.05] font-semibold tracking-[-0.035em] sm:text-[3rem]';
-
 export default async function ForBusinessPage() {
   const plans = await pricing('business').catch(() => null);
   return (
-    <div className="flex flex-col gap-28 pb-8 sm:gap-36">
-      <Container className="grid grid-cols-1 items-center gap-14 pt-12 sm:pt-20 lg:min-h-[calc(88dvh-4rem)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
-        <div className="flex flex-col gap-7">
-          <h1 className="text-[3rem] leading-[1] font-semibold tracking-[-0.045em] sm:text-[4.25rem] xl:text-[4.75rem]">
-            A calm front desk, a full day.
+    <div className="flex flex-col gap-20 pb-8 sm:gap-36">
+      <Container className="grid grid-cols-1 items-center gap-12 pt-8 sm:gap-14 sm:pt-20 lg:min-h-[calc(88dvh-4rem)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
+        <div className="flex flex-col gap-5 sm:gap-7">
+          <Eyebrow className="rise-in [--i:-4]">For businesses</Eyebrow>
+          <h1 className="text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.045em] sm:text-[4.25rem] xl:text-[4.75rem]">
+            <RiseWords text="A calm front desk," /> <RiseWords text="a full day." from={4} />
           </h1>
-          <p className="max-w-[34rem] text-xl leading-relaxed text-ink-2">
+          <p className="rise-in max-w-[34rem] text-lg leading-relaxed text-ink-2 sm:text-xl">
             BUKU takes your bookings and runs your walk-in queue, so customers know exactly when and your team
             can focus on the people in front of them.
           </p>
-          <div className="flex flex-wrap gap-3 pt-1">
+          <div className="rise-in flex flex-wrap gap-3 pt-1 [--i:2]">
             <Button asChild variant="primary" size="lg">
               <Link href="/pricing#businesses">See plans and prices</Link>
             </Button>
@@ -111,9 +111,7 @@ export default async function ForBusinessPage() {
 
       <Container>
         <section aria-labelledby="what" className="flex flex-col gap-12">
-          <h2 id="what" className={sectionTitle}>
-            Everything the front desk needs.
-          </h2>
+          <SectionHeading id="what" eyebrow="What you get" title="Everything the front desk needs." />
           <div className="grid gap-14 lg:grid-cols-3 lg:gap-10">
             {GROUPS.map(({ Icon, title, items }) => (
               <section key={title} aria-labelledby={`g-${title}`} className="flex flex-col gap-6">
@@ -143,13 +141,10 @@ export default async function ForBusinessPage() {
       <Container>
         <section
           aria-labelledby="start"
-          className="grid grid-cols-1 gap-12 rounded-2xl border border-line bg-surface p-8 shadow-soft sm:p-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"
+          className="reveal grid grid-cols-1 gap-10 rounded-2xl border border-line bg-surface p-6 shadow-soft sm:gap-12 sm:p-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]"
         >
           <div className="flex flex-col gap-5">
-            <h2
-              id="start"
-              className="text-[2rem] leading-[1.08] font-semibold tracking-[-0.03em] sm:text-[2.5rem]"
-            >
+            <h2 id="start" className="type-section">
               Getting started.
             </h2>
             <p className="text-lg leading-relaxed text-ink-2">
@@ -171,7 +166,7 @@ export default async function ForBusinessPage() {
           <ol className="flex flex-col gap-6">
             {STEPS.map((step, i) => (
               <li key={step} className="flex gap-5">
-                <span className="tabular grid size-10 shrink-0 place-items-center rounded-full border border-line font-semibold text-ink">
+                <span className="tabular grid size-10 shrink-0 place-items-center rounded-full bg-brand-soft font-semibold text-brand-ink">
                   {i + 1}
                 </span>
                 <span className="pt-2 text-lg leading-relaxed text-ink">{step}</span>

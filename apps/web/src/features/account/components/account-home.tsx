@@ -22,7 +22,7 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
   return (
     <section aria-label={title} className="flex flex-col gap-4">
       <div className="flex items-end justify-between gap-4">
-        <h2 className="text-2xl font-semibold tracking-[-0.025em]">{title}</h2>
+        <h2 className="type-heading">{title}</h2>
         {action}
       </div>
       {children}
@@ -72,7 +72,7 @@ export function AccountHome() {
 
   return (
     <div className="flex flex-col gap-12">
-      <h1 className="text-4xl font-semibold tracking-[-0.03em]">{first ? `Hi, ${first}` : 'Your account'}</h1>
+      <h1 className="type-app-title">{first ? `Hi, ${first}` : 'Your account'}</h1>
 
       {queueTicket.data && (
         <Section title="Your place in a queue">

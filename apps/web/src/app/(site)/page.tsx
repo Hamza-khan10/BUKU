@@ -3,10 +3,10 @@ import type { Metadata, Route } from 'next';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
-import { Container } from '@/components/ui/layout';
+import { Container, SectionHeading } from '@/components/ui/layout';
 import { CategoryIcon } from '@/features/categories/icons';
 import { PlacesRail } from '@/features/home/components/places-rail';
-import { RiseWords } from '@/features/home/components/rise-words';
+import { RiseWords } from '@/components/motion/rise-words';
 import { ScrollStory } from '@/features/home/components/scroll-story';
 import { QueueBoard } from '@/features/home/components/queue-board';
 import { categoryTree, cities, shelf } from '@/features/search/api';
@@ -75,8 +75,6 @@ function CityPicker({ list, current }: { list: City[]; current: string }) {
   );
 }
 
-const sectionTitle = 'text-[2.25rem] leading-[1.05] font-semibold tracking-[-0.035em] sm:text-[3rem]';
-
 export default async function HomePage({ searchParams }: PageProps<'/'>) {
   const asked = (await searchParams).city;
   const [cityList, tree] = await Promise.all([
@@ -133,13 +131,15 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
       {city && (
         <Container className="flex flex-col gap-10">
           <div className="flex flex-col gap-5">
-            <h2 className={sectionTitle}>Places in {city}</h2>
-            {places > 0 && (
-              <p className="text-lg text-ink-2">
-                {places} {places === 1 ? 'place' : 'places'} in {cityList.length}{' '}
-                {cityList.length === 1 ? 'city' : 'cities'} on BUKU so far.
-              </p>
-            )}
+            <SectionHeading
+              eyebrow="Near you"
+              title={`Places in ${city}`}
+              description={
+                places > 0
+                  ? `${places} ${places === 1 ? 'place' : 'places'} in ${cityList.length} ${cityList.length === 1 ? 'city' : 'cities'} on BUKU so far.`
+                  : undefined
+              }
+            />
             <CityPicker list={cityList} current={city} />
           </div>
           <PlacesRail
@@ -189,26 +189,22 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
       {tree.length > 0 && (
         <Container>
           <section aria-labelledby="categories" className="flex flex-col gap-10">
-            <div className="flex flex-col gap-4">
-              <h2 id="categories" className={sectionTitle}>
-                Every kind of place.
-              </h2>
-              <p className="max-w-2xl text-lg leading-relaxed text-ink-2">
-                Barbers and clinics, government offices and garages. If you’d normally wait there, it can be
-                on BUKU.
-              </p>
-            </div>
+            <SectionHeading
+              id="categories"
+              eyebrow="Categories"
+              title="Every kind of place."
+              description="Barbers and clinics, government offices and garages. If you’d normally wait there, it can be on BUKU."
+            />
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {tree.map((c, i) => (
                 <li key={c.slug} className="reveal" style={{ '--i': i % 4 } as CSSProperties}>
                   <Link
                     href={`/c/${c.slug}` as Route}
-                    className="group flex h-full flex-col justify-between gap-10 rounded-xl bg-sunken p-5 transition-[background-color,transform] duration-300 ease-(--ease-out) hover:bg-line/70 active:scale-[0.98] sm:p-6"
+                    className="group flex h-full flex-col justify-between gap-7 rounded-xl bg-surface p-4 shadow-soft ring-1 ring-line transition-[box-shadow,transform] duration-300 ease-(--ease-out) hover:ring-control active:scale-[0.98] sm:gap-10 sm:p-6"
                   >
-                    <CategoryIcon
-                      slug={c.slug}
-                      className="size-7 text-ink-2 transition-colors duration-300 group-hover:text-brand-ink"
-                    />
+                    <span className="grid size-11 place-items-center rounded-full bg-brand-soft text-brand-ink transition-transform duration-300 ease-(--ease-out) group-hover:scale-110">
+                      <CategoryIcon slug={c.slug} className="size-5" />
+                    </span>
                     <span className="text-[1.05rem] font-semibold tracking-[-0.01em] text-ink">{c.name}</span>
                   </Link>
                 </li>
@@ -227,9 +223,7 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
       {/* ── What we promise ── */}
       <Container>
         <section aria-labelledby="promises" className="flex flex-col gap-12">
-          <h2 id="promises" className={cn(sectionTitle, 'max-w-2xl')}>
-            What you can count on.
-          </h2>
+          <SectionHeading id="promises" eyebrow="Our promise" title="What you can count on." />
           <ul className="grid gap-x-12 gap-y-12 border-t border-line pt-12 sm:grid-cols-2 lg:grid-cols-4">
             {PROMISES.map(({ Icon, title, text }, i) => (
               <li key={title} className="reveal flex flex-col gap-3" style={{ '--i': i } as CSSProperties}>
@@ -246,19 +240,15 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
       <Container>
         <section
           aria-labelledby="for-business"
-          className="flex flex-col items-start gap-8 rounded-2xl border border-line bg-surface p-8 shadow-soft sm:p-12 lg:flex-row lg:items-end lg:justify-between"
+          className="reveal flex flex-col items-start gap-8 rounded-2xl bg-brand-soft p-6 sm:p-12 lg:flex-row lg:items-end lg:justify-between"
         >
-          <div className="flex max-w-xl flex-col gap-4">
-            <h2
-              id="for-business"
-              className="text-[2rem] leading-[1.08] font-semibold tracking-[-0.03em] sm:text-[2.5rem]"
-            >
-              Run a business? Give people a time, not a wait.
-            </h2>
-            <p className="text-lg leading-relaxed text-ink-2">
-              Your calendar and your walk-in queue in one place, with reminders sent before every visit.
-            </p>
-          </div>
+          <SectionHeading
+            id="for-business"
+            eyebrow="For businesses"
+            title="Run a business? Give people a time, not a wait."
+            description="Your calendar and your walk-in queue in one place, with reminders sent before every visit."
+            className="max-w-xl"
+          />
           <Button asChild variant="primary" size="lg">
             <Link href="/for-business">BUKU for businesses</Link>
           </Button>
