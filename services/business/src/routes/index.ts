@@ -78,6 +78,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     durationSeconds: 3600,
     redis: deps.redis,
   });
+  /** The team's own views read several tables and sign picture links: generous, but bounded. */
+  const readLimit = rateLimit({
+    keyPrefix: 'rl:biz:read',
+    points: 300,
+    durationSeconds: 60,
+    redis: deps.redis,
+  });
 
   // ── Owner & team ─────────────────────────────────────────────────────────
   const r = Router();
@@ -109,7 +116,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     }),
   );
 
-  r.get('/mine', auth, async (req, res) => {
+  r.get('/mine', auth, readLimit, async (req, res) => {
     const mine = await deps.businesses.listMine(requireAuth(req).userId);
     sendSuccess(res, await Promise.all(mine.map(withPictures)));
   });
@@ -117,6 +124,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   r.get(
     '/:id/manage',
     auth,
+    readLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,

@@ -257,6 +257,8 @@ endpoints (we don't confirm what they can't manage); a role without the permissi
 | `POST /v1/admin/business-documents/:id/review`                                                      | ✔    | super_admin                                | `{ "decision": "approved" \| "rejected", "note"? }`                   |
 | `POST /v1/admin/business-exports`                                                                   | ✔    | super_admin (10/day)                       | Lawful per-country export (see below)                                 |
 
+Reading the team's own views (`/mine`, `/:id/manage`) is limited to 300 a minute per person (`429 RATE_LIMITED`).
+
 ### `POST /v1/businesses`
 
 ```json
