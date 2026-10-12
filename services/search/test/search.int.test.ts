@@ -463,6 +463,8 @@ describe('Categories', () => {
     const tree = await request(app).get('/v1/categories').expect(200);
     const root = tree.body.data.find((c: { slug: string }) => c.slug === cats.root!.slug);
     expect(root.children.map((c: { slug: string }) => c.slug)).toEqual([cats.barber!.slug]);
+    // Each carries its id: registering a business names its category by id.
+    expect(root.children[0].id).toBe(cats.barber!.id);
     expect(tree.body.data.some((c: { slug: string }) => c.slug === cats.hidden!.slug)).toBe(false);
 
     const one = await request(app).get(`/v1/categories/${cats.barber!.slug}`).expect(200);

@@ -530,7 +530,7 @@ The detailed plan — every page, its data and edge cases, the design system and
   provider's own pages (only ever its https address), stop renewing (asks first) or keep it
   renewing. No "buy" button: buying online needs the payment provider set up (the owner's Paddle
   account), so the page says plans can't be bought on the website yet.
-- **Hardening before 3.4d ships (owner's request, 2026-10-06) — in progress.** Deleting an account
+- **Hardening before 3.4d ships (owner's request, 2026-10-06) — ✅ done.** Deleting an account
   lists what it cancels first; the API refuses passwords seen in data breaches (Have I Been Pwned,
   k-anonymity; allowed if unreachable); the public sign-in offers no admin role and its API
   pass-through refuses every admin path; browser tests prove tokens are HttpOnly only, admin is
@@ -539,14 +539,27 @@ The detailed plan — every page, its data and edge cases, the design system and
   cookies, platform admins only (any other account is signed out at once), two-step sign-in set
   up before anything shows, the access review as its first page; Kong answers `/v1/admin` only to
   the admin app's key (`ADMIN_GATEWAY_KEY`); both web servers share `@buku/web-security`. The
-  operator tools themselves (3.6) build on it. **Services walled off from each other (D-092) — in
-  progress:** each service on a network of its own (only Kong and its own data stores), the
+  operator tools themselves (3.6) build on it. **Services walled off from each other (D-092) — done:** each service on a network of its own (only Kong and its own data stores), the
   gateway admin API closed, each service publishing only its own outbox events, and each signing
   in to Postgres as its own role with only the tables and columns its job needs (no one else
   reads credentials; the audit log is append-only), and signing in to Kafka as its own user,
   allowed to publish only its own events and read only what it consumes (nothing connects
   without signing in), and signing in to Valkey as its own user, limited to its own keys (only
   auth writes the sign-out list). Proven from inside the services by the acceptance run.
+- **3.5a Adding a business — ✅ done.** `/business`: the businesses an account owns or works at,
+  each with its role and where it stands (live but not verified, verified, not approved with the
+  reason, suspended), and "Add your business" (team accounts can't add one). `/business/new`: what
+  it is (name, kind from the category list — which now carries ids — description, phone, email,
+  https website), where it is (address, city, province, postal code, country, time zone, currency
+  started from the country) and the exact spot, from this phone's location (asked only when
+  pressed) or coordinates pasted from a map — no map or address lookup service is involved
+  (D-096); then the business terms. Every field is checked as the API checks it, problems said on
+  the field, and sending twice registers once. `/business/[id]/setup`: opening hours (a row per
+  day, open or closed, the phone's own time picker, a lunch break, the same hours on every open
+  day), then the first service and who does it (the owner, or someone named), who then works the
+  opening hours; each step is saved as it's done, so leaving half-way loses nothing.
+  `/business/[id]`: where the business stands and what's left before people can book. The account
+  menu has "Your businesses"; the for-business page's main button is "Add your business".
 
 ## Phase 4 — Mobile app (Expo)
 

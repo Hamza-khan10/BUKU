@@ -29,6 +29,8 @@ export interface SearchMeta {
 }
 
 export interface CategoryNode {
+  /** What a business is registered under. */
+  id: string;
   slug: string;
   name: string;
   icon: string | null;

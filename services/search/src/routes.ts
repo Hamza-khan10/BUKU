@@ -90,6 +90,8 @@ const cacheable = (res: Response, seconds: number) =>
   res.setHeader('Cache-Control', `public, max-age=${seconds}`);
 
 const categoryView = (n: CategoryNode): object => ({
+  // The id is what a business is registered under (POST /v1/businesses takes categoryId).
+  id: n.id,
   slug: n.slug,
   name: n.name,
   icon: n.icon,
