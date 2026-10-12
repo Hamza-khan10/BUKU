@@ -230,7 +230,8 @@ closed/paused, business suspended mid-flow, session expired mid-flow (resume aft
 | Route                         | Purpose                                                                                           |
 | ----------------------------- | ------------------------------------------------------------------------------------------------- |
 | `/business`                   | My businesses (owner or team) + "Add your business"                                               |
-| `/business/new`               | Guided setup: profile → location → hours → first service → first team member → publish            |
+| `/business/new`               | Guided setup: what it is → where it is (phone location or pasted coordinates) → business terms    |
+| `/business/[id]/setup`        | Opening hours → first service and who does it → live (each step saved as it's done)               |
 | `/business/[id]`              | Today: appointments timeline with now-line, queue status, arrivals, quick check-in, real KPIs     |
 | `/business/[id]/appointments` | Day view + list, search by code or name, confirm/decline/cancel, complete, no-show                |
 | `/business/[id]/calendar`     | Week view per employee                                                                            |

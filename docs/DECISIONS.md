@@ -792,3 +792,15 @@ improved (WEB_PLAN §2):
   phones the stage no longer narrows or closes in as it arrives; the captions share one slot
   so the phone never resizes between steps. Nothing loops for more than five seconds.
 - The home page stays the one with the board, the glow and the story; other pages are quieter.
+
+**D-096 · Where a business is: the phone's location or pasted coordinates, no map service.**
+Registering a business needs its exact spot (for "near me" and the queue's distance rule). The
+website has no map, and adding one (map tiles) or an address lookup (geocoding) would send
+visitors' and owners' data to a new third party and open the Content-Security-Policy to it. So
+the setup offers what needs neither: "I'm at the business: use where I am" (the browser asks
+first; used once) or coordinates pasted from any map app, read back with a link to check them on
+Google Maps (a plain link, opened only if pressed). A map picker can come later as its own
+decision, with its provider named in the sub-processors. Alongside, the public category list now
+carries each category's id, since a business is registered under one (it's reference data, not
+private), and the list of country codes moved to `@buku/validation` so the website and the API
+check countries by the same list.

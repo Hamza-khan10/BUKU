@@ -99,10 +99,10 @@ export default async function ForBusinessPage() {
           </p>
           <div className="rise-in flex flex-wrap gap-3 pt-1 [--i:2]">
             <Button asChild variant="primary" size="lg">
-              <Link href="/pricing#businesses">See plans and prices</Link>
+              <Link href="/business/new">Add your business</Link>
             </Button>
             <Button asChild size="lg">
-              <Link href="/how-it-works">How it works for customers</Link>
+              <Link href="/pricing#businesses">See plans and prices</Link>
             </Button>
           </div>
         </div>
@@ -162,7 +162,7 @@ export default async function ForBusinessPage() {
               .
             </p>
           </div>
-          {/* A real sequence, so it's numbered. */}
+          {/* A real sequence, so it's numbered; then the way in. */}
           <ol className="flex flex-col gap-6">
             {STEPS.map((step, i) => (
               <li key={step} className="flex gap-5">

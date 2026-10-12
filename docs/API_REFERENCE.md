@@ -235,9 +235,9 @@ endpoints (we don't confirm what they can't manage); a role without the permissi
 | Method & path                                                                                       | Auth | Who                                        | Purpose                                                               |
 | --------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------ | --------------------------------------------------------------------- |
 | `POST /v1/businesses`                                                                               | ✔    | anyone signed in (5/hour, max 5 per owner) | Register a business → `201`, status `pending`, **not verified**       |
-| `GET /v1/businesses/mine`                                                                           | ✔    | —                                          | Businesses I own or work at, with `myRole`                            |
+| `GET /v1/businesses/mine`                                                                           | ✔    | —                                          | Businesses I own or work at, with `myRole`, `logoUrl` and `photos`    |
 | `GET /v1/businesses/:idOrSlug`                                                                      | —    | public                                     | Public profile (pending + verified only)                              |
-| `GET /v1/businesses/:id/manage`                                                                     | ✔    | any team role                              | Private view: status, rejection reason, settings                      |
+| `GET /v1/businesses/:id/manage`                                                                     | ✔    | any team role                              | Private view: status, rejection reason, settings, `logoUrl`, `photos` |
 | `PATCH /v1/businesses/:id`                                                                          | ✔    | owner, manager                             | Edit profile                                                          |
 | `PUT /v1/businesses/:id/hours`                                                                      | ✔    | owner, manager                             | Replace weekly opening hours                                          |
 | `POST /v1/businesses/:id/reports`                                                                   | ✔    | anyone but the owner (once)                | Report a business                                                     |
@@ -256,6 +256,8 @@ endpoints (we don't confirm what they can't manage); a role without the permissi
 | `GET /v1/admin/businesses/:id/review`                                                               | ✔    | super_admin                                | Checklist + decrypted legal details + documents with 5-min view links |
 | `POST /v1/admin/business-documents/:id/review`                                                      | ✔    | super_admin                                | `{ "decision": "approved" \| "rejected", "note"? }`                   |
 | `POST /v1/admin/business-exports`                                                                   | ✔    | super_admin (10/day)                       | Lawful per-country export (see below)                                 |
+
+Reading the team's own views (`/mine`, `/:id/manage`) is limited to 300 a minute per person (`429 RATE_LIMITED`).
 
 ### `POST /v1/businesses`
 
@@ -939,17 +941,17 @@ audited.
 
 All public (no sign-in), rate-limited at the gateway (200/minute per address).
 
-| Method & path                                    | Purpose                                                              |
-| ------------------------------------------------ | -------------------------------------------------------------------- |
-| `GET /v1/businesses/search`                      | Text, place and filters; paged                                       |
-| `GET /v1/businesses/nearby?lat=&lng=`            | Same, nearest first (default radius 5 km)                            |
-| `GET /v1/businesses/autocomplete?q=`             | As-you-type: businesses, categories, services (2+ characters)        |
-| `GET /v1/businesses/featured?city=` or `lat,lng` | Homepage picks: verified, with a photo, best first, ≤ 2 per category |
-| `GET /v1/businesses/trending?city=` or `lat,lng` | Busiest this week (bookings + queue joins, at least 3)               |
-| `GET /v1/cities`                                 | Cities with businesses on BUKU and how many, most first              |
-| `GET /v1/categories`                             | Category tree (active only)                                          |
-| `GET /v1/categories/:slug`                       | One category with its children and parent                            |
-| `GET /v1/categories/:slug/businesses`            | Search within a category (and its sub-categories)                    |
+| Method & path                                    | Purpose                                                               |
+| ------------------------------------------------ | --------------------------------------------------------------------- |
+| `GET /v1/businesses/search`                      | Text, place and filters; paged                                        |
+| `GET /v1/businesses/nearby?lat=&lng=`            | Same, nearest first (default radius 5 km)                             |
+| `GET /v1/businesses/autocomplete?q=`             | As-you-type: businesses, categories, services (2+ characters)         |
+| `GET /v1/businesses/featured?city=` or `lat,lng` | Homepage picks: verified, with a photo, best first, ≤ 2 per category  |
+| `GET /v1/businesses/trending?city=` or `lat,lng` | Busiest this week (bookings + queue joins, at least 3)                |
+| `GET /v1/cities`                                 | Cities with businesses on BUKU and how many, most first               |
+| `GET /v1/categories`                             | Category tree (active only): `id`, `slug`, `name`, `icon`, `children` |
+| `GET /v1/categories/:slug`                       | One category with its children and parent                             |
+| `GET /v1/categories/:slug/businesses`            | Search within a category (and its sub-categories)                     |
 
 **Search parameters** (all optional): `q` (words; partial last word and small typos are fine),
 `lat` + `lng` (together), `radiusKm` (default 10, max 100), `city`, `category` (slug, includes

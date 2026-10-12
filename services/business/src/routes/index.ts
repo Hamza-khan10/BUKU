@@ -78,9 +78,31 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     durationSeconds: 3600,
     redis: deps.redis,
   });
+  /** The team's own views read several tables and sign picture links: generous, but bounded. */
+  const readLimit = rateLimit({
+    keyPrefix: 'rl:biz:read',
+    points: 300,
+    durationSeconds: 60,
+    redis: deps.redis,
+  });
 
   // ── Owner & team ─────────────────────────────────────────────────────────
   const r = Router();
+
+  /**
+   * What the team sees of its business: like the public profile, the logo as a link and the
+   * gallery, never the storage key behind them (links depend on storage settings).
+   */
+  const withPictures = async <B extends { id: string; logoStorageKey: string | null }>({
+    logoStorageKey,
+    ...business
+  }: B) => {
+    const [logoUrl, photos] = await Promise.all([
+      deps.pictures.logoUrl(logoStorageKey),
+      deps.pictures.listPhotos(business.id),
+    ]);
+    return { ...business, logoUrl, photos };
+  };
 
   r.post(
     '/',
@@ -90,19 +112,24 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       const { userId, role } = requireAuth(req);
       // Employee accounts (platform role `staff`) exist only inside the business that made them.
       if (role === 'staff') throw AppError.forbidden('Employee accounts cannot register a business');
-      sendCreated(res, await deps.businesses.create(userId, body, requestContext(req)));
+      sendCreated(res, await withPictures(await deps.businesses.create(userId, body, requestContext(req))));
     }),
   );
 
-  r.get('/mine', auth, async (req, res) => {
-    sendSuccess(res, await deps.businesses.listMine(requireAuth(req).userId));
+  r.get('/mine', auth, readLimit, async (req, res) => {
+    const mine = await deps.businesses.listMine(requireAuth(req).userId);
+    sendSuccess(res, await Promise.all(mine.map(withPictures)));
   });
 
   r.get(
     '/:id/manage',
     auth,
+    readLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.businesses.getManaged(params.id, requireAuth(req).userId));
+      sendSuccess(
+        res,
+        await withPictures(await deps.businesses.getManaged(params.id, requireAuth(req).userId)),
+      );
     }),
   );
 
@@ -113,7 +140,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: UpdateBusinessBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.businesses.update(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await withPictures(
+          await deps.businesses.update(params.id, requireAuth(req).userId, body, requestContext(req)),
+        ),
       );
     }),
   );
@@ -125,7 +154,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: SetHoursBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.businesses.setHours(params.id, requireAuth(req).userId, body.hours, requestContext(req)),
+        await withPictures(
+          await deps.businesses.setHours(params.id, requireAuth(req).userId, body.hours, requestContext(req)),
+        ),
       );
     }),
   );
