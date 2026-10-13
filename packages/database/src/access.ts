@@ -213,7 +213,8 @@ export const ACCESS: Readonly<Record<ServiceName, Access>> = {
       appointments: '*',
       queue_entries: '*',
     },
-    inserts: ['audit_logs'],
+    // Owners add the kind of business BUKU doesn't list yet (D-098): added to, never changed.
+    inserts: ['audit_logs', 'categories'],
   },
   billing: {
     owns: [
@@ -260,11 +261,11 @@ export const ACCESS: Readonly<Record<ServiceName, Access>> = {
 };
 
 /**
- * Tables no service writes at run time: filled by migrations and seeds
- * (categories), or kept for features that are not built yet.
+ * Tables no service changes at run time: filled by migrations and seeds, only ever added to
+ * (categories: owners' suggestions, D-098; audit_logs), or kept for features not built yet.
  */
 export const NOT_WRITTEN_AT_RUN_TIME = [
-  'categories',
+  'categories', // added to by business (inserts), changed by no one
   'webhooks',
   'webhook_deliveries',
   'ai_receptionist_configs',

@@ -201,7 +201,7 @@ export class SearchService {
         LIMIT ${limit}`,
       this.db.$queryRaw<{ slug: string; name: string; icon: string | null }[]>`
         SELECT slug, name, icon FROM categories
-        WHERE is_active AND (name ILIKE ${like} OR name ILIKE ${wordLike})
+        WHERE is_active AND NOT pending AND (name ILIKE ${like} OR name ILIKE ${wordLike})
         ORDER BY (name ILIKE ${like}) DESC, depth DESC, sort_order
         LIMIT 3`,
       this.db.$queryRaw<{ name: string }[]>`

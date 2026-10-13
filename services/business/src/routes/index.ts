@@ -16,12 +16,14 @@ import { requireBusinessPermission } from '@buku/database';
 import type { Redis } from 'ioredis';
 import type { AdminService } from '../businesses/admin-service.js';
 import type { BusinessService } from '../businesses/business-service.js';
+import type { CategoryService } from '../categories/category-service.js';
 import type { LegalService } from '../legal/legal-service.js';
 import type { DocumentService } from '../media/document-service.js';
 import type { PictureService } from '../media/picture-service.js';
 import { verificationChecklist } from '../verification/checklist.js';
 import { requestContext } from '../http/context.js';
 import {
+  CategorySuggestionBody,
   AdminListQuery,
   CreateBusinessBody,
   DocumentParams,
@@ -48,6 +50,7 @@ import {
 
 export interface RouteDeps {
   businesses: BusinessService;
+  categories: CategoryService;
   legal: LegalService;
   documents: DocumentService;
   pictures: PictureService;
@@ -76,6 +79,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     keyPrefix: 'rl:biz:report',
     points: 10,
     durationSeconds: 3600,
+    redis: deps.redis,
+  });
+  /** Adding kinds of business to the shared list: a few a day per person is plenty. */
+  const suggestLimit = rateLimit({
+    keyPrefix: 'rl:biz:category',
+    points: 10,
+    durationSeconds: 86_400,
     redis: deps.redis,
   });
   /** The team's own views read several tables and sign picture links: generous, but bounded. */
@@ -113,6 +123,20 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       // Employee accounts (platform role `staff`) exist only inside the business that made them.
       if (role === 'staff') throw AppError.forbidden('Employee accounts cannot register a business');
       sendCreated(res, await withPictures(await deps.businesses.create(userId, body, requestContext(req))));
+    }),
+  );
+
+  // A kind of business BUKU doesn't list yet (D-098): checked, never a copy, reviewed later.
+  r.post(
+    '/category-suggestions',
+    auth,
+    suggestLimit,
+    validated({ body: CategorySuggestionBody }, async ({ body }, req, res) => {
+      const { userId, role } = requireAuth(req);
+      if (role === 'staff') throw AppError.forbidden('Employee accounts cannot add kinds of business');
+      const result = await deps.categories.suggest(userId, body, requestContext(req));
+      if (result.existing) sendSuccess(res, result);
+      else sendCreated(res, result);
     }),
   );
 

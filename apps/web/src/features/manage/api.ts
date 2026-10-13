@@ -101,6 +101,16 @@ export interface NewBusiness {
   acceptedBusinessTermsVersion: string;
 }
 
+/**
+ * A kind of business BUKU doesn't list yet (D-098), under one of its groups. A name that means the
+ * same as one already on BUKU gives back that one (`existing`); a new one is pending review.
+ */
+export const suggestCategory = (parentId: string, name: string) =>
+  api<{
+    category: { id: string; name: string; slug: string; parentId: string; pending: boolean };
+    existing: boolean;
+  }>('businesses/category-suggestions', { method: 'POST', body: { parentId, name } });
+
 /** Register a business. Safe to send twice (the key makes a retry answer like the first). */
 export const createBusiness = (input: NewBusiness, idempotencyKey: string) =>
   api<ManagedBusiness>('businesses', { method: 'POST', body: input, idempotencyKey });

@@ -13,6 +13,8 @@ export interface CategoryNode {
   name: string;
   icon: string | null;
   parentId: string | null;
+  /** Added by an owner, not reviewed yet (D-098): not in the public list. */
+  pending: boolean;
   children: CategoryNode[];
 }
 
@@ -32,7 +34,15 @@ export class Categories {
     const byId = new Map<string, CategoryNode>(
       rows.map((r) => [
         r.id,
-        { id: r.id, slug: r.slug, name: r.name, icon: r.icon, parentId: r.parentId, children: [] },
+        {
+          id: r.id,
+          slug: r.slug,
+          name: r.name,
+          icon: r.icon,
+          parentId: r.parentId,
+          pending: r.pending,
+          children: [],
+        },
       ]),
     );
     const roots: CategoryNode[] = [];
@@ -52,8 +62,14 @@ export class Categories {
     return this.cache;
   }
 
+  /**
+   * The public list: kinds that owners added and BUKU hasn't reviewed yet (D-098) are left out,
+   * though their businesses are still found when browsing the group above them.
+   */
   async tree(): Promise<CategoryNode[]> {
-    return (await this.load()).roots;
+    const listed = (nodes: CategoryNode[]): CategoryNode[] =>
+      nodes.filter((n) => !n.pending).map((n) => ({ ...n, children: listed(n.children) }));
+    return listed((await this.load()).roots);
   }
 
   /** The category, or 404. */

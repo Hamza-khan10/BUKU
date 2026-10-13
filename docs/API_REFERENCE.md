@@ -235,6 +235,7 @@ endpoints (we don't confirm what they can't manage); a role without the permissi
 | Method & path                                                                                       | Auth | Who                                        | Purpose                                                               |
 | --------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------ | --------------------------------------------------------------------- |
 | `POST /v1/businesses`                                                                               | ✔    | anyone signed in (5/hour, max 5 per owner) | Register a business → `201`, status `pending`, **not verified**       |
+| `POST /v1/businesses/category-suggestions`                                                          | ✔    | anyone signed in (10/day, 3 waiting)       | Add a kind of business BUKU doesn't list (D-098)                      |
 | `GET /v1/businesses/mine`                                                                           | ✔    | —                                          | Businesses I own or work at, with `myRole`, `logoUrl` and `photos`    |
 | `GET /v1/businesses/:idOrSlug`                                                                      | —    | public                                     | Public profile (pending + verified only)                              |
 | `GET /v1/businesses/:id/manage`                                                                     | ✔    | any team role                              | Private view: status, rejection reason, settings, `logoUrl`, `photos` |
@@ -316,6 +317,31 @@ from the public and read-only for their team (`403 BUSINESS_SUSPENDED`).
 links are permanent CDN links in production and 1-hour signed links in development.
 
 Apps must show the `verification.label` badge on unverified businesses (D-032).
+
+### `POST /v1/businesses/category-suggestions` (D-098)
+
+```json
+{ "parentId": "…one of BUKU's groups (a top-level category)…", "name": "Henna studio" }
+```
+
+For a kind of business BUKU doesn't list yet. The name is cleaned like every title, then held to
+more: letters (any script), numbers, spaces and `& ' -` only, 2–40 characters, at least two
+letters (no brackets, slashes, emoji or invisible characters: `400 VALIDATION_ERROR`).
+
+- A name that means the same as a category already on BUKU (lower case, `&` read as `and`,
+  letters and numbers only, one plural `s` dropped: "Barber Shops" = "Barbershop") gives back that
+  one: `200 { "category": {…}, "existing": true }`. One switched off by BUKU stays off:
+  `409 CATEGORY_UNAVAILABLE`.
+- Otherwise a new category is made under the group: `201 { "category": { "id", "name", "slug",
+"parentId", "pending": true }, "existing": false }`. It can be used at once (`POST
+/v1/businesses` with its id); it stays out of the public category list and the suggestions
+  (`GET /v1/categories`, autocomplete) until BUKU has reviewed it, but its businesses are found
+  when browsing its group, and `GET /v1/categories/:slug` answers for it.
+- A database unique key on the meaning (`categories.name_key`) settles two owners adding the
+  same kind at the same moment: one category, both get it.
+- Up to 3 of one person's additions wait for review at once (`409 LIMIT_REACHED`); 10 tries a
+  day per person (`429`). Employee accounts can't add kinds (`403`). Each addition is audited
+  (`category.suggested`). The business service may only add categories, never change one.
 
 ### `PUT /v1/businesses/:id/hours`
 
@@ -941,17 +967,17 @@ audited.
 
 All public (no sign-in), rate-limited at the gateway (200/minute per address).
 
-| Method & path                                    | Purpose                                                               |
-| ------------------------------------------------ | --------------------------------------------------------------------- |
-| `GET /v1/businesses/search`                      | Text, place and filters; paged                                        |
-| `GET /v1/businesses/nearby?lat=&lng=`            | Same, nearest first (default radius 5 km)                             |
-| `GET /v1/businesses/autocomplete?q=`             | As-you-type: businesses, categories, services (2+ characters)         |
-| `GET /v1/businesses/featured?city=` or `lat,lng` | Homepage picks: verified, with a photo, best first, ≤ 2 per category  |
-| `GET /v1/businesses/trending?city=` or `lat,lng` | Busiest this week (bookings + queue joins, at least 3)                |
-| `GET /v1/cities`                                 | Cities with businesses on BUKU and how many, most first               |
-| `GET /v1/categories`                             | Category tree (active only): `id`, `slug`, `name`, `icon`, `children` |
-| `GET /v1/categories/:slug`                       | One category with its children and parent                             |
-| `GET /v1/categories/:slug/businesses`            | Search within a category (and its sub-categories)                     |
+| Method & path                                    | Purpose                                                                    |
+| ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `GET /v1/businesses/search`                      | Text, place and filters; paged                                             |
+| `GET /v1/businesses/nearby?lat=&lng=`            | Same, nearest first (default radius 5 km)                                  |
+| `GET /v1/businesses/autocomplete?q=`             | As-you-type: businesses, categories, services (2+ characters)              |
+| `GET /v1/businesses/featured?city=` or `lat,lng` | Homepage picks: verified, with a photo, best first, ≤ 2 per category       |
+| `GET /v1/businesses/trending?city=` or `lat,lng` | Busiest this week (bookings + queue joins, at least 3)                     |
+| `GET /v1/cities`                                 | Cities with businesses on BUKU and how many, most first                    |
+| `GET /v1/categories`                             | Category tree (active, reviewed): `id`, `slug`, `name`, `icon`, `children` |
+| `GET /v1/categories/:slug`                       | One category with its children and parent                                  |
+| `GET /v1/categories/:slug/businesses`            | Search within a category (and its sub-categories)                          |
 
 **Search parameters** (all optional): `q` (words; partial last word and small typos are fine),
 `lat` + `lng` (together), `radiusKm` (default 10, max 100), `city`, `category` (slug, includes

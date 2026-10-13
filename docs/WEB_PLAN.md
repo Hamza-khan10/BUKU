@@ -148,9 +148,9 @@ GSAP runs the one scroll-told story (how a visit goes, on a phone, phones includ
 story's phone is drawn once at one size (320 × 664) and scaled to the space it has, so a small
 phone shows the same screen smaller, never a squashed one; its screens move as a phone's do
 (pushed in from the right, the queue rising as a sheet, "your turn" opening from the middle) and
-reverse when scrolling back. The hero's
+reverse when scrolling back; it can be tapped too, and a tap that changes step scrolls the page there (D-099). The hero's
 words rise in once as the page opens; sections below reveal as they scroll in (CSS
-scroll-driven, where the browser supports it). Anything that moves for more than five seconds
+scroll-driven, where the browser supports it). Words that move only with the scroll, cards laid down as the page scrolls (wide screens), main buttons that lean toward a mouse and counts that roll up when seen (D-099). Anything that moves for more than five seconds
 can be paused. Under `prefers-reduced-motion`: no smooth scrolling, no pinning, no reveals, short
 cross-fades instead of movement.
 

@@ -1,5 +1,6 @@
 import {
   zBody,
+  zCategoryName,
   zCountryCode,
   zEmail,
   zPagination,
@@ -190,4 +191,10 @@ export const ExportBody = zBody({
   reference: zSafeText({ kind: 'line', min: 3, max: 100 }),
   /** Why this disclosure is lawful. Recorded in the audit log. */
   legalBasis: zSafeText({ kind: 'text', min: 10, max: 1000 }),
+});
+
+/** A kind of business an owner adds (D-098): under one of BUKU's groups, a clean, plain name. */
+export const CategorySuggestionBody = zBody({
+  parentId: zUuid,
+  name: zCategoryName,
 });

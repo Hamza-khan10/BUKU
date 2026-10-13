@@ -580,6 +580,11 @@ The detailed plan — every page, its data and edge cases, the design system and
   link to hand over in person, and per login: change role, a new password (also unlocks), turn
   off/on, remove. Setup now adds as many services as wanted and the team (optional) before the
   logo and photos. Plan limits, rate limits and taken usernames are said in words.
+- **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
+  ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
+  name rule shared with the API, pending review before it's in the public list. The for-business
+  board loops like the home page's, with the same glow and pause. The home page's phone can be
+  tapped (D-099).
 
 ## Phase 4 — Mobile app (Expo)
 
