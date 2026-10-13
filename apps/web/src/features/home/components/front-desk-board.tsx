@@ -57,7 +57,7 @@ export function FrontDeskBoard({ className }: { className?: string }) {
         <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-4 sm:mt-7 sm:pt-5">
           <p
             key={story.step}
-            className="flex-1 font-medium tracking-[-0.01em] text-board-ink animate-rise sm:text-lg"
+            className="flex-1 font-medium tracking-[-0.01em] text-board-ink animate-line sm:text-lg"
           >
             {now.line}
           </p>

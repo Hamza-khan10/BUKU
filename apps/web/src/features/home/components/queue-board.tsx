@@ -69,7 +69,7 @@ export function QueueBoard({ className }: { className?: string }) {
           <p
             key={story.step}
             className={cn(
-              'flex-1 text-lg font-medium tracking-[-0.01em] animate-rise',
+              'flex-1 text-lg font-medium tracking-[-0.01em] animate-line',
               now.tone === 'go' ? 'text-board-go' : 'text-board-ink',
             )}
           >
