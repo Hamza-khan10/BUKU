@@ -29,6 +29,8 @@ const config: NextConfig = {
   // building blocks with the admin app (D-091).
   transpilePackages: ['@buku/validation', '@buku/web-security'],
   headers: () => Promise.resolve([{ source: '/:path*', headers: securityHeaders }]),
+  // Customers use BUKU for free (D-101): there's no customer plan page any more.
+  redirects: () => Promise.resolve([{ source: '/account/plan', destination: '/account', permanent: true }]),
 };
 
 export default config;

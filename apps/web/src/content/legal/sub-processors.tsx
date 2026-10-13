@@ -33,7 +33,7 @@ export function subProcessors(): LegalDocument {
               ['Google', 'Signing in with Google', 'Name, email, Google account ID', 'Global'],
               [
                 'Paddle',
-                'Selling and billing subscriptions',
+                'Selling and billing business plans',
                 'Name, email, payment details (held by Paddle)',
                 'EU, UK, US',
               ],

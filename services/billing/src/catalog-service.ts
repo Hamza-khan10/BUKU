@@ -383,6 +383,11 @@ export class CatalogService {
     adminId: string,
     ctx: RequestContext,
   ) {
+    // Customers use BUKU for free (D-101): nothing about them is limited any more, so a plan
+    // or a trial would sell nothing. Charging them again needs a new release, not a switch.
+    if (audience === 'user' && (changes.enabled === true || changes.trialEnabled === true)) {
+      throw AppError.conflict('Customers use BUKU for free; charging them can’t be switched on');
+    }
     const current = await this.db.billingSettings.findUnique({ where: { audience } });
     if (!current) throw AppError.notFound('Billing settings');
     const planFor = async (code: string) => {

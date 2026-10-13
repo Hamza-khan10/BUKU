@@ -2,14 +2,15 @@ import { Contact } from '@/components/content/legal-doc';
 import type { SiteFacts } from '@/lib/site';
 import type { LegalDocument } from './types';
 
-/** Refunds: subscriptions go through Paddle; appointment payments never touch BUKU. */
+/** Refunds: business subscriptions go through Paddle; appointment payments never touch BUKU. */
 export function refunds(facts: SiteFacts): LegalDocument {
   return {
     title: 'Cancellations and refunds',
-    description: 'How cancelling BUKU Plus or a business plan works, and who to ask about refunds.',
+    description: 'How cancelling a business plan works, and who to ask about refunds.',
     version: '1.0',
     inShort: [
-      'You can cancel BUKU Plus or a business plan at any time and keep it until the end of the period you paid for.',
+      'BUKU is free for people who book and queue, so there’s nothing for them to cancel or refund.',
+      'A business can cancel its plan at any time and keep it until the end of the period it paid for.',
       'Subscriptions are sold by Paddle, our payment partner, which handles refunds.',
       'BUKU never takes payment for appointments: refunds for a visit are between you and the business.',
     ],
@@ -19,10 +20,7 @@ export function refunds(facts: SiteFacts): LegalDocument {
         title: 'Cancelling a subscription',
         body: (
           <ul>
-            <li>
-              Cancel any time from your account (or your business’s billing page). There is no cancellation
-              fee.
-            </li>
+            <li>Cancel any time from your business’s billing page. There is no cancellation fee.</li>
             <li>
               Your plan stays active until the end of the period you’ve paid for, then it stops renewing.
             </li>

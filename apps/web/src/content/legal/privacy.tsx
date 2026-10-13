@@ -76,8 +76,8 @@ export function privacy(facts: SiteFacts): LegalDocument {
                 'Legitimate interest',
               ],
               [
-                'Subscription details (payments themselves are handled by Paddle)',
-                'BUKU Plus and business plans',
+                'A business’s subscription details (payments themselves are handled by Paddle)',
+                'Business plans',
                 'Contract',
               ],
             ]}

@@ -116,6 +116,7 @@ export function assertFeature(e: Entitlements, key: string): void {
  * A customer's "visits": appointments and queue tickets that are live,
  * completed or missed. Cancelled, declined, rescheduled-away and left ones
  * don't count — the customer didn't get (or block) a service with them.
+ * Shown on the account only: customers are never limited (D-101).
  */
 export async function countVisits(db: Database | Transaction, userId: string): Promise<number> {
   const [appointments, tickets] = await Promise.all([
@@ -178,23 +179,6 @@ function labelOf(audience: Audience, key: string): string {
  */
 export async function lockForLimit(tx: Transaction, scope: string, id: string): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`limit:${scope}:${id}`}, 0))`;
-}
-
-/**
- * Before a customer books or joins a queue (inside that transaction): may
- * they have one more visit on their plan? Free: 1 in total; Plus or a trial:
- * unlimited; billing off: unlimited.
- */
-export async function assertVisitAllowed(tx: Transaction, userId: string): Promise<void> {
-  await lockForLimit(tx, 'visits', userId);
-  const e = await entitlementsOf(tx, { userId });
-  if (e.limits.visits === null || e.limits.visits === undefined) return;
-  assertWithinLimit(
-    e,
-    'visits',
-    await countVisits(tx, userId),
-    'You’ve used your free booking. Start your free trial or subscribe to BUKU Plus to keep booking',
-  );
 }
 
 /** Business limit check inside the creating transaction (locked per business and limit). */

@@ -12,6 +12,7 @@ export function terms(facts: SiteFacts): LegalDocument {
     version: TERMS_VERSION,
     inShort: [
       'A booking is an agreement between you and the business; BUKU makes it easy to make and keep.',
+      'BUKU is free for you: book and queue as often as you like.',
       'Appointments are paid at the business, never through BUKU.',
       'Cancel before the business’s notice period if you can’t come — late cancellations and no-shows count towards the reliability label businesses see.',
       'Reviews are for real visits: one per completed visit, within 30 days.',
@@ -127,14 +128,15 @@ export function terms(facts: SiteFacts): LegalDocument {
         ),
       },
       {
-        id: 'plans',
-        title: 'Free use and BUKU Plus',
+        id: 'free',
+        title: 'BUKU is free for you',
         body: (
           <p>
-            BUKU can be used for free, with a limit on bookings and queue joins; BUKU Plus removes the limit.
-            Current limits and prices are on the pricing page. Subscriptions are sold and billed by Paddle,
-            our payment partner; you can cancel at any time and keep BUKU Plus until the end of the period you
-            paid for (see <Link href="/legal/refunds">refunds</Link>).
+            Finding places, booking appointments and joining queues with BUKU is free, with no limit on how
+            often. BUKU doesn’t sell plans to people who book and queue; businesses pay for their own. You
+            hold one appointment at a time (BUKU won’t book you into two places at the same hour) and wait in
+            one queue at a time, and each business sets how many upcoming bookings one person can hold with
+            it.
           </p>
         ),
       },
