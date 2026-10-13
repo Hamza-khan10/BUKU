@@ -343,6 +343,10 @@ letters (no brackets, slashes, emoji or invisible characters: `400 VALIDATION_ER
   day per person (`429`). Employee accounts can't add kinds (`403`). Each addition is audited
   (`category.suggested`). The business service may only add categories, never change one.
 
+BUKU's own list ships with the database (D-100): 11 groups and 116 kinds of business that work by
+appointment or by queue (migration `20261013120000_appointment_categories`), the same in every
+environment. A kind an owner had already added under the same group is approved by it.
+
 ### `PUT /v1/businesses/:id/hours`
 
 ```json
@@ -745,21 +749,33 @@ GET /v1/businesses/:id/billing
 Over a limit (e.g. after a downgrade), nothing is removed — only adding more is refused
 (`409 PLAN_LIMIT_REACHED`).
 
-### Free trial (once per account)
+### Customers are free (D-101)
 
-Settings per audience: `PUT /v1/admin/billing/settings/user { "trialEnabled": true, "trialDays": 30, "trialPlanCode": "user_plus" }`
+People who book and queue never pay and have no BUKU limit. Customer billing is switched off, with
+no trial, and the billing service refuses to switch either back on:
+`PUT /v1/admin/billing/settings/user { "enabled": true }` (or `"trialEnabled": true`) → `409 CONFLICT`.
+`GET /v1/billing/me` always answers `source: "billing_off"` with the unlimited plan, and
+`POST /v1/billing/checkout` / `POST /v1/billing/me/trial` are refused with `409`. The customer
+plans stay in the catalogue, unused. Each business still sets its own cap on upcoming bookings
+per customer (`maxFutureBookingsPerCustomer`, `409 LIMIT_REACHED`), and nobody can hold two
+appointments that overlap, at any businesses (`409 APPOINTMENT_OVERLAP`), or wait in two queues
+at once (`409 QUEUE_ALREADY_JOINED`).
+
+### Free trial (once per business)
+
+Settings: `PUT /v1/admin/billing/settings/business { "trialEnabled": true, "trialDays": 30, "trialPlanCode": "business_professional" }`
 (`trialPlanCode: null` or `trialEnabled: false` → no new trials; running ones finish). The
 pricing page shows `trial: { days, plan }` while trials are offered. `GET /v1/billing/me` and
 `GET /v1/businesses/:id/billing` include:
 
 ```json
-"trial": { "available": false, "reason": "already_used", "days": 30, "plan": { "code": "user_plus", "name": "BUKU Plus" }, "endsAt": "2026-11-01T…" }
+"trial": { "available": false, "reason": "already_used", "days": 30, "plan": { "code": "business_professional", "name": "Professional" }, "endsAt": "2026-11-01T…" }
 ```
 
 `reason`: `null` (can start) · `billing_off` · `trials_off` · `in_trial` · `already_used` ·
 `has_subscription`. Starting is `POST …/trial` → the plan and `source: "trial"`; refused with
 `409` and the same `reason`. Two taps at once start one trial (database rule). When it ends, the
-account is back on the default plan (Free / Starter) — nothing is deleted.
+business is back on the default plan (Starter) — nothing is deleted.
 
 ### Plan requests
 
@@ -776,16 +792,15 @@ links it to the request; or declines with a `note`.
 
 While billing is on, creating something a plan limits is checked against the account's plan:
 
-| What               | Where                                                   | Refusal                                         |
-| ------------------ | ------------------------------------------------------- | ----------------------------------------------- |
-| A visit (customer) | `POST /v1/appointments`, `POST /v1/queue/join`          | `409 PLAN_LIMIT_REACHED` `limit: visits`        |
-| Team logins        | `POST /v1/businesses/:id/members`, re-enabling a member | `limit: team_accounts`                          |
-| Bookable staff     | `POST …/staff`, re-activating a profile                 | `limit: staff_profiles`                         |
-| Services           | `POST …/services`, restoring an archived one            | `limit: services`                               |
-| Gallery photos     | `POST …/photos/uploads` (and when saved)                | `limit: photos` (platform cap 100)              |
-| Virtual queue      | `POST …/queue/open`                                     | `403 PLAN_FEATURE_UNAVAILABLE` `feature: queue` |
-| Staff photos       | `POST …/staff/:staffId/photo/uploads`                   | `feature: staff_photos`                         |
-| Manual approval    | `PUT …/booking-settings { confirmationMode: "manual" }` | `feature: manual_approval`                      |
+| What            | Where                                                   | Refusal                                         |
+| --------------- | ------------------------------------------------------- | ----------------------------------------------- |
+| Team logins     | `POST /v1/businesses/:id/members`, re-enabling a member | `limit: team_accounts`                          |
+| Bookable staff  | `POST …/staff`, re-activating a profile                 | `limit: staff_profiles`                         |
+| Services        | `POST …/services`, restoring an archived one            | `limit: services`                               |
+| Gallery photos  | `POST …/photos/uploads` (and when saved)                | `limit: photos` (platform cap 100)              |
+| Virtual queue   | `POST …/queue/open`                                     | `403 PLAN_FEATURE_UNAVAILABLE` `feature: queue` |
+| Staff photos    | `POST …/staff/:staffId/photo/uploads`                   | `feature: staff_photos`                         |
+| Manual approval | `PUT …/booking-settings { confirmationMode: "manual" }` | `feature: manual_approval`                      |
 
 ```json
 {
@@ -798,16 +813,15 @@ While billing is on, creating something a plan limits is checked against the acc
 }
 ```
 
-Apps show the message and offer the trial or an upgrade (`GET …/billing` says which). A
-customer's visits are bookings and queue tickets that are live, completed or missed — cancelled,
-declined and left ones don't count. Over a limit after a downgrade, everything already there
-keeps working; only adding more is refused.
+Apps show the message and offer the trial or an upgrade (`GET …/billing` says which). Customers
+are never limited (D-101): booking and joining a queue never return `PLAN_LIMIT_REACHED`. Over a
+limit after a downgrade, everything already there keeps working; only adding more is refused.
 
 ## Paying online — Paddle (2.5 part 3)
 
 | Method & path                                           | Auth      | Who                  | Purpose                                                  |
 | ------------------------------------------------------- | --------- | -------------------- | -------------------------------------------------------- |
-| `POST /v1/billing/checkout { planCode }`                | ✔         | a customer           | Start paying for a plan → Paddle checkout                |
+| `POST /v1/billing/checkout { planCode }`                | ✔         | a customer           | Refused (`409`): customers are free (D-101)              |
 | `POST /v1/businesses/:id/billing/checkout { planCode }` | ✔         | owner                | Same for the business                                    |
 | `POST …/subscription/cancel` · `/undo-cancel`           | ✔         | the customer / owner | Cancel at the end of the paid period · keep it after all |
 | `POST …/subscription/change { planCode }`               | ✔         | the customer / owner | Switch plan now (difference charged or credited)         |
