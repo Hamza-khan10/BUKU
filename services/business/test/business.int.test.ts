@@ -1131,3 +1131,104 @@ describe('Plans (billing on)', () => {
     });
   });
 });
+
+describe('Kinds of business that owners add (D-098)', () => {
+  const run = randomUUID().slice(0, 8);
+  let groupId: string;
+
+  beforeAll(async () => {
+    groupId = (
+      await db.category.create({ data: { name: `Grooming ${run}`, slug: `grooming-${run}`, depth: 0 } })
+    ).id;
+  });
+
+  const suggest = (who: Person, name: string, parentId = groupId) =>
+    request(app).post('/v1/businesses/category-suggestions').set(who.auth).send({ parentId, name });
+
+  it('a new kind is added under a group, pending review, and a business can use it at once', async () => {
+    const owner = await person();
+    const res = await suggest(owner, `  Tattoo   studio ${run} `);
+    expect(res.status).toBe(201);
+    expect(res.body.data).toMatchObject({
+      existing: false,
+      category: { name: `Tattoo studio ${run}`, parentId: groupId, pending: true },
+    });
+    const row = await db.category.findUniqueOrThrow({ where: { id: res.body.data.category.id } });
+    expect([row.depth, row.suggestedById, row.nameKey]).toEqual([1, owner.id, `tattoostudio${run}`]);
+    const audit = await db.auditLog.findFirst({
+      where: { action: 'category.suggested', resourceId: row.id },
+    });
+    expect(audit?.userId).toBe(owner.id);
+
+    const business = await createBusiness(owner, { categoryId: row.id });
+    expect((await db.business.findUniqueOrThrow({ where: { id: business.id } })).categoryId).toBe(row.id);
+  });
+
+  it('a name that means the same as one on BUKU gives back that one, never a copy', async () => {
+    const first = await suggest(await person(), `Henna Art ${run}`);
+    expect(first.status).toBe(201);
+    for (const same of [`henna art ${run}`, `HENNA-ART ${run}`, `Henna  Art ${run}`, ` Henna Art ${run} `]) {
+      const again = await suggest(await person(), same);
+      expect(again.status, same).toBe(200);
+      expect(again.body.data).toMatchObject({
+        existing: true,
+        category: { id: first.body.data.category.id },
+      });
+    }
+    expect(await db.category.count({ where: { nameKey: `hennaart${run}` } })).toBe(1);
+  });
+
+  it('two owners adding the same kind at the same moment make one category', async () => {
+    const [a, b] = await Promise.all([
+      suggest(await person(), `Kite Shop ${run}`),
+      suggest(await person(), `kite shop ${run}`),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 201]);
+    expect(a.body.data.category.id).toBe(b.body.data.category.id);
+  });
+
+  it('refuses names that would corrupt or deface the list, before anything is stored', async () => {
+    const owner = await person();
+    for (const bad of [
+      '<script>alert(1)</script>',
+      'Spa 💆',
+      'Hair\u200Bcut',
+      'Kebab / Grill',
+      'x',
+      '12345',
+      "x'); DROP TABLE categories;--",
+    ]) {
+      const res = await suggest(owner, bad);
+      expect(res.status, bad).toBe(400);
+    }
+    expect(await db.category.count({ where: { suggestedById: owner.id } })).toBe(0);
+  });
+
+  it('only under one of BUKU’s own groups, a few at a time, and never by employee accounts', async () => {
+    const owner = await person();
+    const child = (await suggest(owner, `Wig Studio ${run}`)).body.data.category.id as string;
+    expect((await suggest(owner, `Under a kind ${run}`, child)).status).toBe(400); // not a group
+    expect((await suggest(owner, `Nowhere ${run}`, randomUUID())).status).toBe(400);
+    await suggest(owner, `Brow Bar ${run}`);
+    await suggest(owner, `Lash Lounge ${run}`);
+    const fourth = await suggest(owner, `Nail Art ${run}`);
+    expect([fourth.status, fourth.body.error.code]).toEqual([409, 'LIMIT_REACHED']);
+    expect((await suggest(await person('staff'), `Barber Den ${run}`)).status).toBe(403);
+  });
+
+  it('a kind BUKU switched off is not brought back by adding it again', async () => {
+    const off = await db.category.create({
+      data: {
+        name: `Fortune Teller ${run}`,
+        slug: `fortune-teller-${run}`,
+        nameKey: `fortuneteller${run}`,
+        isActive: false,
+        parentId: groupId,
+        depth: 1,
+      },
+    });
+    const res = await suggest(await person(), `fortune  TELLER ${run}`);
+    expect([res.status, res.body.error.code]).toEqual([409, 'CATEGORY_UNAVAILABLE']);
+    expect(await db.category.count({ where: { nameKey: off.nameKey } })).toBe(1);
+  });
+});

@@ -14,6 +14,7 @@ export * from './reputation.js';
 export * from './ids.js';
 
 // Validation
+export * from './categories.js';
 export * from './countries.js';
 export * from './validation.js';
 export {

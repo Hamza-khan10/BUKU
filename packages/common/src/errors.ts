@@ -93,6 +93,8 @@ export const ErrorCodes = {
   FILE_TYPE_NOT_ALLOWED: 'FILE_TYPE_NOT_ALLOWED',
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
   LIMIT_REACHED: 'LIMIT_REACHED',
+  /** A kind of business BUKU has deliberately switched off (D-098). */
+  CATEGORY_UNAVAILABLE: 'CATEGORY_UNAVAILABLE',
   PLAN_LIMIT_REACHED: 'PLAN_LIMIT_REACHED',
   /** The account's plan doesn't include this feature (details.feature). */
   PLAN_FEATURE_UNAVAILABLE: 'PLAN_FEATURE_UNAVAILABLE',

@@ -66,7 +66,11 @@ beforeAll(async () => {
   const hidden = await db.category.create({
     data: { name: `Hidden ${RUN}`, slug: `hidden-${RUN}`, isActive: false },
   });
-  Object.assign(cats, { root, barber, clinic, hidden });
+  // A kind an owner added, not reviewed yet (D-098).
+  const henna = await db.category.create({
+    data: { name: `Henna ${RUN}`, slug: `henna-${RUN}`, parentId: root.id, depth: 1, pending: true },
+  });
+  Object.assign(cats, { root, barber, clinic, hidden, henna });
 });
 
 afterAll(async () => {
@@ -491,5 +495,26 @@ describe('Search analytics', () => {
     expect(events[0]).toMatchObject({ query: '[redacted]', city: CITY, nearby: false });
     expect(events[1]).toMatchObject({ nearby: true, filters: ['openNow'], sort: 'distance' });
     expect(JSON.stringify(events)).not.toContain(String(HOME.lat));
+  });
+});
+
+describe('Kinds owners added, not reviewed yet (D-098)', () => {
+  it('stay out of the list and the suggestions, but their businesses are found under the group', async () => {
+    const shop = await place({ name: `Henna Corner ${RUN}`, category: 'henna' });
+    const tree = await request(app).get('/v1/categories').expect(200);
+    const root = tree.body.data.find((c: { slug: string }) => c.slug === cats.root!.slug);
+    expect(root.children.map((c: { slug: string }) => c.slug)).not.toContain(cats.henna!.slug);
+    const typed = await request(app)
+      .get('/v1/businesses/autocomplete')
+      .query({ q: `Henna ${RUN}` })
+      .expect(200);
+    expect(typed.body.data.categories).toEqual([]);
+
+    await request(app).get(`/v1/categories/${cats.henna!.slug}`).expect(200);
+    const group = await request(app)
+      .get(`/v1/categories/${cats.root!.slug}/businesses`)
+      .query({ city: CITY, q: 'Henna Corner', limit: 50 })
+      .expect(200);
+    expect(group.body.data.map((b: { id: string }) => b.id)).toContain(shop.id);
   });
 });

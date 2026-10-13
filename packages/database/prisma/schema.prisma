@@ -459,15 +459,21 @@ model NotificationPreference {
 
 /// Self-referencing tree (depth 0 = top level). DB extras: CHECK depth >= 0.
 model Category {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  name      String   @db.VarChar(100)
-  slug      String   @unique @db.VarChar(100)
-  icon      String?  @db.VarChar(10)
-  parentId  String?  @map("parent_id") @db.Uuid
-  depth     Int      @default(0)
-  isActive  Boolean  @default(true) @map("is_active")
-  sortOrder Int      @default(0) @map("sort_order")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id            String   @id @default(uuid(7)) @db.Uuid
+  name          String   @db.VarChar(100)
+  slug          String   @unique @db.VarChar(100)
+  icon          String?  @db.VarChar(10)
+  parentId      String?  @map("parent_id") @db.Uuid
+  depth         Int      @default(0)
+  isActive      Boolean  @default(true) @map("is_active")
+  sortOrder     Int      @default(0) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// The name reduced to what it means (`categoryKey`): one category per meaning (D-098).
+  nameKey       String?  @unique @map("name_key") @db.VarChar(120)
+  /// Added by a business owner and not reviewed yet: usable, but kept out of the public list.
+  pending       Boolean  @default(false)
+  /// Who added it (an owner's suggestion); null for BUKU's own categories.
+  suggestedById String?  @map("suggested_by_id") @db.Uuid
 
   parent     Category?    @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
   children   Category[]   @relation("CategoryTree")

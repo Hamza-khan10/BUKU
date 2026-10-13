@@ -12,6 +12,7 @@ import type { Express } from 'express';
 import type { Redis } from 'ioredis';
 import { AdminService } from './businesses/admin-service.js';
 import { BusinessService, type BusinessServiceSettings } from './businesses/business-service.js';
+import { CategoryService } from './categories/category-service.js';
 import { LegalService } from './legal/legal-service.js';
 import type { MediaLinks, ObjectStorage, PictureUploads } from '@buku/media';
 import { DocumentService, type DocumentSettings } from './media/document-service.js';
@@ -41,6 +42,7 @@ export interface BusinessApp {
 
 export function buildBusinessApp(deps: BusinessAppDeps): BusinessApp {
   const businesses = new BusinessService(deps.db, deps.settings);
+  const categories = new CategoryService(deps.db);
   const legal = new LegalService(deps.db, deps.cipher, deps.indexer);
   const documents = new DocumentService(deps.db, deps.storage, deps.settings);
   const pictures = new PictureService(deps.db, deps.storage, deps.pictureUploads, deps.mediaLinks);
@@ -50,6 +52,7 @@ export function buildBusinessApp(deps: BusinessAppDeps): BusinessApp {
     routes: (app) =>
       registerRoutes(app, {
         businesses,
+        categories,
         legal,
         documents,
         pictures,

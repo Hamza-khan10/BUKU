@@ -241,6 +241,13 @@ services:
         methods: [POST, OPTIONS]
         strip_path: false
         plugins: [*jwt]
+      # Owners adding a kind of business BUKU doesn't list yet (D-098).
+      - name: business-category-suggestions
+        paths: ['~/v1/businesses/category-suggestions$']
+        methods: [POST, OPTIONS]
+        regex_priority: 20
+        strip_path: false
+        plugins: [*jwt]
       - name: business-update
         paths: ['~/v1/businesses/[^/]+$']
         methods: [PATCH, DELETE, OPTIONS]

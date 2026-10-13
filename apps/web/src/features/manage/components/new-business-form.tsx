@@ -1,6 +1,6 @@
 'use client';
 
-import { zText, type TextKind } from '@buku/validation';
+import { categoryKey, normalizeText, zCategoryName, zText, type TextKind } from '@buku/validation';
 import { useQueryClient } from '@tanstack/react-query';
 import { LocateFixed, MapPin } from 'lucide-react';
 import type { Route } from 'next';
@@ -19,7 +19,7 @@ import { Step } from '@/features/booking/components/step';
 import type { CategoryNode } from '@/features/search/types';
 import { ApiError } from '@/lib/api/errors';
 import { BUSINESS_TERMS_VERSION } from '@/lib/legal-versions';
-import { createBusiness, MINE_KEY, type NewBusiness } from '../api';
+import { createBusiness, MINE_KEY, suggestCategory, type NewBusiness } from '../api';
 import {
   cleanPhone,
   coordinatesLabel,
@@ -36,6 +36,9 @@ type Place = { lat: number; lng: number };
 interface Draft {
   name: string;
   categoryId: string;
+  /** "Something else": the closest of BUKU's groups, and the kind in the owner's words (D-098). */
+  otherGroup: string;
+  otherName: string;
   description: string;
   phone: string;
   email: string;
@@ -53,6 +56,20 @@ interface Draft {
 }
 
 type Errors = Partial<Record<keyof Draft | 'location', string>>;
+
+/** The "something else" choice in the list of kinds. */
+const OTHER = '__other__';
+
+/** A kind already on BUKU that means the same as `name` (the API would give back the same one). */
+function sameKind(categories: CategoryNode[], name: string): CategoryNode | null {
+  const key = categoryKey(normalizeText(name, 'title'));
+  if (key.length < 2) return null;
+  for (const group of categories) {
+    if (categoryKey(group.name) === key) return group;
+    for (const c of group.children) if (categoryKey(c.name) === key) return c;
+  }
+  return null;
+}
 
 const deviceZone = () => () => undefined;
 const useDeviceZone = () =>
@@ -105,6 +122,8 @@ export function NewBusinessForm({
   const [draft, setDraft] = useState<Draft>({
     name: '',
     categoryId: '',
+    otherGroup: '',
+    otherName: '',
     description: '',
     phone: '',
     email: '',
@@ -184,6 +203,11 @@ export function NewBusinessForm({
     if (!draft.name.trim()) found.name = 'Please enter the business’s name.';
     else if (!name.ok) found.name = name.message;
     if (!draft.categoryId) found.categoryId = 'Please choose what kind of business it is.';
+    const other = draft.categoryId === OTHER;
+    const kind = zCategoryName.safeParse(draft.otherName);
+    const known = other ? sameKind(categories, draft.otherName) : null;
+    if (other && !draft.otherGroup) found.otherGroup = 'Please choose the group it’s closest to.';
+    if (other && !known && !kind.success) found.otherName = kind.error.issues[0]?.message;
     const description = checkText('text', draft.description, 0, 2000);
     if (!description.ok) found.description = description.message;
     const phone = cleanPhone(draft.phone);
@@ -216,9 +240,29 @@ export function NewBusinessForm({
       return;
     }
 
+    setBusy(true);
+    // A kind BUKU doesn't list yet: added first (or the one that means the same is used).
+    let categoryId = known?.id ?? draft.categoryId;
+    if (other && !known) {
+      try {
+        categoryId = (await suggestCategory(draft.otherGroup, kind.data!)).category.id;
+      } catch (err) {
+        const issue = err instanceof ApiError ? err.fieldIssues[0] : undefined;
+        setErrors({
+          otherName:
+            issue?.message ??
+            (err instanceof ApiError && ['LIMIT_REACHED', 'CATEGORY_UNAVAILABLE'].includes(err.code)
+              ? err.message
+              : 'That kind of business couldn’t be added. Please try again.'),
+        });
+        setBusy(false);
+        return;
+      }
+    }
+
     const input: NewBusiness = {
       name: name.ok ? name.value : draft.name,
-      categoryId: draft.categoryId,
+      categoryId,
       ...(description.ok && description.value && { description: description.value }),
       ...(phone && { phone }),
       ...(draft.email.trim() && { email: draft.email.trim() }),
@@ -234,7 +278,6 @@ export function NewBusinessForm({
       currency: draft.currency,
       acceptedBusinessTermsVersion: BUSINESS_TERMS_VERSION,
     };
-    setBusy(true);
     try {
       const created = await createBusiness(input, key.current);
       await queryClient.invalidateQueries({ queryKey: MINE_KEY });
@@ -299,8 +342,20 @@ export function NewBusinessForm({
                   </option>
                 ),
               )}
+              <option value={OTHER}>Something else…</option>
             </Select>
           </Field>
+          {draft.categoryId === OTHER && (
+            <OtherKind
+              categories={categories}
+              group={draft.otherGroup}
+              name={draft.otherName}
+              errors={errors}
+              onGroup={(v) => set('otherGroup', v)}
+              onName={(v) => set('otherName', v)}
+              onUse={(id) => set('categoryId', id)}
+            />
+          )}
           <Field
             label="About it"
             hint="A sentence or two people read on your page: what you do, what you’re known for."
@@ -520,5 +575,66 @@ export function NewBusinessForm({
         <span className="text-sm text-ink-3">Next: your opening hours and your first service.</span>
       </div>
     </form>
+  );
+}
+
+/**
+ * The kind of business in the owner's own words, when BUKU's list doesn't have it (D-098): the
+ * closest of BUKU's groups, and the name. A name that means the same as one already on BUKU is
+ * spotted as it's typed (the same rule the API uses), so nobody adds a copy by accident.
+ */
+function OtherKind({
+  categories,
+  group,
+  name,
+  errors,
+  onGroup,
+  onName,
+  onUse,
+}: {
+  categories: CategoryNode[];
+  group: string;
+  name: string;
+  errors: Errors;
+  onGroup: (id: string) => void;
+  onName: (name: string) => void;
+  onUse: (id: string) => void;
+}) {
+  const known = sameKind(categories, name);
+  return (
+    <div className="flex flex-col gap-4 rounded-lg border border-line bg-surface p-4 animate-rise">
+      <Field label="The group it’s closest to" required optionalLabel={false} error={errors.otherGroup}>
+        <Select value={group} onChange={(e) => onGroup(e.target.value)}>
+          <option value="">Choose one</option>
+          {categories.map((g) => (
+            <option key={g.slug} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field
+        label="What kind of business it is"
+        required
+        optionalLabel={false}
+        hint="In a few words, like “Tattoo studio”. You can use it straight away; BUKU checks new kinds before listing them for everyone."
+        error={errors.otherName}
+      >
+        <CleanTextInput kind="title" value={name} onChange={(e) => onName(e.target.value)} maxLength={40} />
+      </Field>
+      {known && (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-md bg-brand-soft p-3 text-sm text-ink"
+          role="status"
+        >
+          <span>
+            That’s already on BUKU as <strong>{known.name}</strong>.
+          </span>
+          <Button type="button" size="sm" onClick={() => onUse(known.id)}>
+            Use {known.name}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }

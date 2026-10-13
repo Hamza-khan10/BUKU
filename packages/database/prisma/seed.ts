@@ -11,6 +11,7 @@
  * do it, so the seed exercises the real PII path.
  */
 import {
+  categoryKey,
   createBlindIndexer,
   createFieldCipher,
   generateConfirmationCode,
@@ -281,13 +282,28 @@ async function main(): Promise<void> {
   for (const top of CATEGORY_TREE) {
     const parentId = uuidv7();
     await db.category.create({
-      data: { id: parentId, name: top.name, slug: top.slug, depth: 0, sortOrder: sort++ },
+      data: {
+        id: parentId,
+        name: top.name,
+        slug: top.slug,
+        nameKey: categoryKey(top.name),
+        depth: 0,
+        sortOrder: sort++,
+      },
     });
     for (const [i, child] of top.children.entries()) {
       const id = uuidv7();
       leafCategoryIds.set(child, id);
       await db.category.create({
-        data: { id, name: child, slug: slugify(child), parentId, depth: 1, sortOrder: i },
+        data: {
+          id,
+          name: child,
+          slug: slugify(child),
+          nameKey: categoryKey(child),
+          parentId,
+          depth: 1,
+          sortOrder: i,
+        },
       });
     }
   }

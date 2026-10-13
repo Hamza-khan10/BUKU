@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { sql } from './db';
 import { expect, test } from './fixtures';
@@ -124,6 +124,43 @@ test.describe('Adding a business', () => {
     // And the account lists it.
     await page.goto('/business');
     await expect(page.getByRole('link', { name: new RegExp(name) })).toBeVisible();
+    expect(problems).toEqual([]);
+  });
+
+  test('a kind BUKU doesn’t list: a name that means the same is spotted; a new one is added and used', async ({
+    page,
+  }) => {
+    test.slow();
+    await signInAsOwner(page);
+    const problems = await watchForProblems(page);
+    // The form answers once its scripts are running (a choice made before that is reset).
+    await page.goto('/business/new', { waitUntil: 'networkidle' });
+    await page.getByLabel('What kind of business').selectOption({ label: 'Something else…' });
+    await page.getByLabel('The group it’s closest to').selectOption({ label: 'Beauty & Hair' });
+
+    // The same as one BUKU lists: said as it's typed, and offered instead of a copy.
+    await page.getByLabel('What kind of business it is').fill('Barber shops');
+    await expect(page.getByRole('status').filter({ hasText: 'already on BUKU as Barbershop' })).toBeVisible();
+
+    // Something that would deface the list is refused on the field.
+    await page.getByLabel('What kind of business it is').fill('Kebab / Grill');
+    await page.getByRole('button', { name: 'Put my business on BUKU' }).click();
+    await expect(page.getByText("Letters, numbers, spaces and & ' - only.")).toBeVisible();
+
+    // A new kind: added (pending review) and the business is registered under it.
+    const kind = `Henna studio ${Array.from({ length: 6 }, () => String.fromCharCode(97 + randomInt(26))).join('')}`;
+    await page.getByLabel('What kind of business it is').fill(kind);
+    const name = `Setup Test Studio ${randomUUID().slice(0, 6)}`;
+    await page.getByLabel('Business name').fill(name);
+    await page.getByLabel('Street address').fill('12 Main Boulevard, Gulberg');
+    await page.getByLabel('City').fill('Lahore');
+    await page.getByLabel('Or paste it from a map').fill('31.5204, 74.3587');
+    await page.getByRole('checkbox', { name: /business terms/ }).click();
+    await page.getByRole('button', { name: 'Put my business on BUKU' }).click();
+    await expect(page).toHaveURL(/\/business\/[0-9a-f-]{36}\/setup$/, { timeout: 20_000 });
+    made.push(/\/business\/([0-9a-f-]{36})\//.exec(page.url())![1]!);
+    await page.goto(page.url().replace(/\/setup$/, ''));
+    await expect(page.getByText(`${kind} · Lahore`)).toBeVisible();
     expect(problems).toEqual([]);
   });
 });
