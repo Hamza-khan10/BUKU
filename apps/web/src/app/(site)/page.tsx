@@ -1,4 +1,4 @@
-import { BadgeCheck, LockKeyhole, MessageSquareQuote, Wallet } from 'lucide-react';
+import { ArrowRight, BadgeCheck, LockKeyhole, MessageSquareQuote, Wallet } from 'lucide-react';
 import type { Metadata, Route } from 'next';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
@@ -79,6 +79,15 @@ function CityPicker({ list, current }: { list: City[]; current: string }) {
   );
 }
 
+/** Up to `n` kinds of place, taken a few from every group in turn, so one big group doesn't fill the line. */
+function acrossGroups(tree: CategoryNode[], n: number): string[] {
+  const names: string[] = [];
+  for (let i = 0; names.length < n && tree.some((g) => i < g.children.length); i++) {
+    for (const g of tree) if (i < g.children.length && names.length < n) names.push(g.children[i]!.name);
+  }
+  return names;
+}
+
 export default async function HomePage({ searchParams }: PageProps<'/'>) {
   const asked = (await searchParams).city;
   const [cityList, tree] = await Promise.all([
@@ -125,7 +134,7 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
       {/* ── Every kind of place BUKU lists, moving with the scroll ── */}
       {tree.length > 0 && (
         <ScrollMarquee
-          items={tree.flatMap((g) => g.children.map((c) => c.name)).slice(0, 18)}
+          items={acrossGroups(tree, 18)}
           className="-my-6 text-[2.4rem] leading-none font-semibold tracking-[-0.04em] text-control sm:-my-10 sm:text-[4.5rem]"
         />
       )}
@@ -216,13 +225,21 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
                   </Link>
                 </li>
               ))}
+              {/* The way into every kind, as the last tile, so the grid ends on a full row. */}
+              <li className="reveal" style={{ '--i': tree.length % 4 } as CSSProperties}>
+                <Link
+                  href="/categories"
+                  className="group flex h-full flex-col justify-between gap-7 rounded-xl bg-brand-soft p-4 ring-1 ring-line transition-[box-shadow,transform] duration-300 ease-(--ease-out) hover:ring-control active:scale-[0.98] sm:gap-10 sm:p-6"
+                >
+                  <span className="grid size-11 place-items-center rounded-full bg-surface text-brand-ink transition-transform duration-300 ease-(--ease-out) group-hover:translate-x-1">
+                    <ArrowRight aria-hidden className="size-5" />
+                  </span>
+                  <span className="text-[1.05rem] font-semibold tracking-[-0.01em] text-brand-ink">
+                    All {tree.reduce((n, g) => n + g.children.length, 0)} kinds of place
+                  </span>
+                </Link>
+              </li>
             </ul>
-            <Link
-              href="/categories"
-              className="self-start font-medium text-brand-ink underline-offset-4 hover:underline"
-            >
-              All categories and what’s in them
-            </Link>
           </section>
         </Container>
       )}
