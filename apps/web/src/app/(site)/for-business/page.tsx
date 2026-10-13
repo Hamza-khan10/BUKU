@@ -3,7 +3,10 @@ import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { BoardGlow } from '@/components/motion/board';
+import { Magnetic } from '@/components/motion/magnetic';
 import { RiseWords } from '@/components/motion/rise-words';
+import { StackedCards } from '@/components/motion/stacked-cards';
 import { Container, Eyebrow, SectionHeading } from '@/components/ui/layout';
 import { FrontDeskBoard } from '@/features/home/components/front-desk-board';
 import { pricing } from '@/features/pricing/api';
@@ -98,35 +101,41 @@ export default async function ForBusinessPage() {
             can focus on the people in front of them.
           </p>
           <div className="rise-in flex flex-wrap gap-3 pt-1 [--i:2]">
-            <Button asChild variant="primary" size="lg">
-              <Link href="/business/new">Add your business</Link>
-            </Button>
+            <Magnetic>
+              <Button asChild variant="primary" size="lg">
+                <Link href="/business/new">Add your business</Link>
+              </Button>
+            </Magnetic>
             <Button asChild size="lg">
               <Link href="/pricing#businesses">See plans and prices</Link>
             </Button>
           </div>
         </div>
-        <FrontDeskBoard className="mx-auto w-full max-w-[30rem] lg:mr-0" />
+        <BoardGlow>
+          <FrontDeskBoard className="w-full" />
+        </BoardGlow>
       </Container>
 
       <Container>
         <section aria-labelledby="what" className="flex flex-col gap-12">
           <SectionHeading id="what" eyebrow="What you get" title="Everything the front desk needs." />
-          <div className="grid gap-14 lg:grid-cols-3 lg:gap-10">
-            {GROUPS.map(({ Icon, title, items }) => (
-              <section key={title} aria-labelledby={`g-${title}`} className="flex flex-col gap-6">
-                <h3
-                  id={`g-${title}`}
-                  className="flex items-center gap-3 text-lg font-semibold tracking-[-0.015em]"
-                >
-                  <span className="grid size-10 place-items-center rounded-full bg-brand-soft text-brand-ink">
+          {/* The three parts of the front desk, laid down one over another as the page scrolls. */}
+          <StackedCards
+            cards={GROUPS.map(({ Icon, title, items }) => (
+              <section
+                key={title}
+                aria-labelledby={`g-${title}`}
+                className="flex flex-col gap-5 rounded-2xl bg-surface p-6 shadow-lift ring-1 ring-line sm:p-8"
+              >
+                <h3 id={`g-${title}`} className="flex items-center gap-3 type-heading">
+                  <span className="grid size-11 shrink-0 place-items-center rounded-full bg-brand-soft text-brand-ink">
                     <Icon className="size-5" aria-hidden />
                   </span>
                   {title}
                 </h3>
-                <ul className="flex flex-col divide-y divide-line border-t border-line">
+                <ul className="grid gap-x-8 gap-y-5 border-t border-line pt-5 md:grid-cols-3">
                   {items.map((item) => (
-                    <li key={item.title} className="flex flex-col gap-2 py-6">
+                    <li key={item.title} className="flex flex-col gap-1.5">
                       <h4 className="font-semibold tracking-[-0.01em] text-ink">{item.title}</h4>
                       <p className="leading-relaxed text-ink-2">{item.text}</p>
                     </li>
@@ -134,7 +143,7 @@ export default async function ForBusinessPage() {
                 </ul>
               </section>
             ))}
-          </div>
+          />
         </section>
       </Container>
 

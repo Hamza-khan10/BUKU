@@ -1,58 +1,48 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Check } from 'lucide-react';
+import { BoardLive, BoardPause, BoardSurface, useBoardStory } from '@/components/motion/board';
 import { SplitFlap } from '@/components/motion/split-flap';
-import { useReducedMotion } from '@/components/motion/use-reduced-motion';
 import { cn } from '@/lib/cn';
 
 /**
- * The business side of the queue board (WEB_PLAN §2): what the front desk
- * sees, now serving, how many are waiting, and the one button that calls the
- * next person. When it comes into view the next ticket is called once, so the
- * board shows what that button does. An illustration, captioned as one.
+ * The business side of the queue board (WEB_PLAN §2): what the front desk sees through a
+ * morning — the next person called, someone joining from home, a booking checking in — told as
+ * a short story that loops while the board is on screen, like the home page's. An illustration,
+ * captioned as one; not anyone's real queue.
  */
+
+const STORY = [
+  { serving: 21, waiting: 4, line: 'Next up: number 22.', called: false },
+  { serving: 22, waiting: 3, line: 'Number 22 is on their way.', called: true },
+  { serving: 22, waiting: 4, line: 'Number 26 joined from home.', called: false },
+  { serving: 23, waiting: 3, line: 'Number 23 is on their way.', called: true },
+  { serving: 23, waiting: 3, line: 'A 10:30 booking just checked in.', called: false },
+] as const;
+const STEP_MS = 3200;
+
+const two = (n: number) => String(n).padStart(2, '0');
+
 export function FrontDeskBoard({ className }: { className?: string }) {
-  const reduce = useReducedMotion();
-  const [called, setCalled] = useState(false);
-  const board = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (reduce || !board.current) return;
-    let timer: number | undefined;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry?.isIntersecting) {
-        timer = window.setTimeout(() => setCalled(true), 900);
-        observer.disconnect();
-      }
-    });
-    observer.observe(board.current);
-    return () => {
-      observer.disconnect();
-      window.clearTimeout(timer);
-    };
-  }, [reduce]);
-
-  const serving = called ? '22' : '21';
-  const waiting = called ? '03' : '04';
+  const story = useBoardStory(STORY.length, STEP_MS);
+  const now = STORY[story.step]!;
+  const serving = story.started ? two(now.serving) : '00';
+  const waiting = story.started ? two(now.waiting) : '00';
 
   return (
     <figure className={cn('flex flex-col items-center gap-4', className)}>
-      <div
-        ref={board}
-        className="relative w-full overflow-hidden rounded-2xl bg-board p-6 text-board-ink shadow-lift ring-1 ring-white/8 sm:p-8 dark:ring-white/12"
-      >
-        <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-white/15" />
+      <BoardSurface boardRef={story.ref} reduce={story.reduce}>
         <div className="flex items-center justify-between text-sm text-board-ink-2">
           <span>Front desk</span>
-          <span>Walk-in queue open</span>
+          <BoardLive still={story.still} label="Queue open" />
         </div>
-        <div className="mt-6 grid grid-cols-2 gap-6">
+        <div className="mt-5 grid grid-cols-2 gap-5 sm:mt-6 sm:gap-6">
           <div className="flex flex-col gap-3">
             <span className="text-sm text-board-ink-2">Now serving</span>
             <SplitFlap
               value={serving}
               label={String(Number(serving))}
-              className="text-[4.25rem] font-semibold sm:text-[5rem]"
+              className="text-[3.5rem] font-semibold sm:text-[5rem]"
             />
           </div>
           <div className="flex flex-col gap-3">
@@ -60,23 +50,33 @@ export function FrontDeskBoard({ className }: { className?: string }) {
             <SplitFlap
               value={waiting}
               label={String(Number(waiting))}
-              className="text-[4.25rem] font-semibold sm:text-[5rem]"
+              className="text-[3.5rem] font-semibold sm:text-[5rem]"
             />
           </div>
         </div>
-        <div className="mt-7 flex items-center justify-between gap-4 border-t border-white/10 pt-5">
-          <p className="text-board-ink-2">{called ? 'Number 22 is on their way.' : 'Next up: number 22.'}</p>
+        <div className="mt-5 flex items-center gap-3 border-t border-white/10 pt-4 sm:mt-7 sm:pt-5">
+          <p
+            key={story.step}
+            className="flex-1 font-medium tracking-[-0.01em] text-board-ink animate-rise sm:text-lg"
+          >
+            {now.line}
+          </p>
+          {/* The one button the front desk needs, pressed as the story calls the next person. */}
           <span
             aria-hidden
             className={cn(
-              'inline-flex h-11 items-center rounded-full px-5 font-semibold transition-[background-color,color,transform] duration-300',
-              called ? 'scale-[0.97] bg-board-go-fill/20 text-board-go' : 'bg-board-go-fill text-board-on-go',
+              'inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-[background-color,color,transform] duration-300 ease-(--ease-out) sm:h-11 sm:px-5',
+              now.called
+                ? 'scale-[0.97] bg-board-go-fill/20 text-board-go'
+                : 'bg-board-go-fill text-board-on-go',
             )}
           >
-            {called ? 'Called' : 'Call next'}
+            {now.called && <Check className="size-4" strokeWidth={3} />}
+            {now.called ? 'Called' : 'Call next'}
           </span>
+          {!story.reduce && <BoardPause paused={story.paused} onToggle={story.togglePause} />}
         </div>
-      </div>
+      </BoardSurface>
       <figcaption className="text-sm text-ink-3">What the front desk sees on BUKU</figcaption>
     </figure>
   );

@@ -814,3 +814,42 @@ them use, from one source. The team is shown as the API models it: **people cust
 **logins** (employee accounts with a role, the temporary password shown once to hand over in
 person), linked when a person both works on visits and signs in. Taking someone off bookings and
 archiving a service are reversible and keep history; removing a login closes it.
+
+**D-098 · Owners add the kind of business BUKU doesn't list, without breaking the list.** The
+owner asked that a business can create a new category when BUKU doesn't have one, without being
+able to break the system with a duplicate, malicious code, emoji or special characters. So:
+
+- An owner chooses "Something else…", the closest of BUKU's groups, and the kind in their words.
+  The name is cleaned like every title, then held to a stricter rule shared by the website and
+  the API (`@buku/validation` `zCategoryName`): letters of any script, numbers, spaces and
+  `& ' -`, 2–40 characters, at least two letters. HTML, scripts, slashes, emoji and invisible
+  characters are refused before anything is stored (and Prisma never builds SQL from it).
+- **No duplicates:** each category has a key for its meaning (`categoryKey`: lower case, `&` as
+  `and`, letters and numbers only, one plural `s` dropped), unique in the database. "Barber Shops"
+  gives back "Barbershop"; the website says so as it's typed. Two owners adding the same kind at
+  once get one category. A kind BUKU switched off stays off.
+- **No spam in the public list:** a new kind is usable at once but `pending`: it isn't in the
+  public category list or the suggestions until BUKU reviews it (the operator console, 3.6); its
+  businesses are still found under their group. 3 waiting per person, 10 tries a day.
+- **Least privilege:** the business service may only add categories (INSERT), never change or
+  delete one; every addition is in the audit log.
+
+**D-099 · A phone visitors can tap, and motion that earns its place.** The owner asked for the
+home page's phone to be usable, not only watched; the for-business board to move like the home
+page's; and better motion from libraries like componentry.dev, rolled back if it doesn't fit.
+
+- **The phone:** places, days, times and buttons answer a tap, and picks carry on (the ticket
+  shows the day and time chosen). A tap that leads to another step scrolls the page there, so the
+  phone, the captions and the scroll always agree. It's an illustration (hidden from screen
+  readers, who get the story from the captions), so its buttons stay out of the keyboard's way.
+- **The boards** share one set of parts (`components/motion/board.tsx`): a story that loops only
+  while seen, a pause (WCAG 2.2.2), a tilt toward a mouse, the still glow. The front desk tells a
+  morning: call next, on their way, someone joins from home, a booking checks in.
+- **Chosen from componentry.dev (MIT) and motion-primitives (MIT), rebuilt in BUKU's style** with
+  no new packages: words that move only while the page scrolls (real category names; still when
+  the page is still); cards laid one over another on the for-business page (only where a whole
+  card fits the screen, a plain list on phones); main buttons that lean toward a mouse; real counts
+  that roll up when seen; a fade at the edge of rows you swipe. Left out on purpose: WebGL shader
+  backgrounds (battery and focus), cursor trails and particle text (gimmicks), and animated
+  "someone just booked" lists (they would be invented, D-093's rule: no fake content).
+- Each piece is its own component, so any can be removed without touching the rest.

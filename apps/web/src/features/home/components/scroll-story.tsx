@@ -3,10 +3,11 @@
 import { useGSAP } from '@gsap/react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import { useLenis } from 'lenis/react';
 import { useRef, useState } from 'react';
 import { useReducedMotion } from '@/components/motion/use-reduced-motion';
 import { cn } from '@/lib/cn';
-import { FittedPhone, SCREEN_COUNT } from './story-phone';
+import { FittedPhone, SCREEN_COUNT, START, type Act, type Demo } from './story-phone';
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
@@ -55,6 +56,9 @@ export function ScrollStory() {
   const root = useRef<HTMLElement>(null);
   const [step, setStep] = useState(0);
   const [serving, setServing] = useState(7);
+  // What the visitor picked by tapping the phone (D-099).
+  const [demo, setDemo] = useState<Demo>(START);
+  const lenis = useLenis();
   // The cinematic version only where motion is welcome. The server assumes "less motion",
   // so the first paint is the still version and the browser upgrades it.
   const cinematic = !reduce;
@@ -68,6 +72,7 @@ export function ScrollStory() {
 
       // The story: pinned for five screens' worth of scrolling, one step per screen.
       ScrollTrigger.create({
+        id: 'story',
         trigger: '[data-story-stage]',
         start: 'top top',
         end: () => `+=${window.innerHeight * STEPS.length * 0.8}`,
@@ -114,6 +119,21 @@ export function ScrollStory() {
     },
     { scope: root, dependencies: [cinematic] },
   );
+
+  /**
+   * A tap on the phone: keep the pick, and when it leads to another step, scroll there, so the
+   * phone, the captions and the scroll always agree. Starting again forgets the picks.
+   */
+  const act = (a: Act) => {
+    if (a.set) setDemo((d) => ({ ...d, ...a.set }));
+    if (a.go === undefined) return;
+    if (a.go === 0) setDemo(START);
+    const st = ScrollTrigger.getById('story');
+    if (!st) return;
+    const y = st.start + (st.end - st.start) * ((a.go + 0.45) / STEPS.length);
+    if (lenis) lenis.scrollTo(y, { duration: 1.1 });
+    else window.scrollTo({ top: y, behavior: 'smooth' });
+  };
 
   if (!cinematic) {
     return (
@@ -211,10 +231,12 @@ export function ScrollStory() {
             <FittedPhone
               step={step}
               serving={serving}
+              demo={demo}
+              act={act}
               max={1}
               className="w-full flex-1 lg:h-[min(41.5rem,calc(100%-2rem))] lg:flex-none"
             />
-            <p className="text-[11px] text-board-ink-2">An example of BUKU on your phone</p>
+            <p className="text-[11px] text-board-ink-2">An example of BUKU on your phone · tap it to try</p>
           </div>
         </div>
       </div>

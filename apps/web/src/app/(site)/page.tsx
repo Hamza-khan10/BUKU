@@ -6,7 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Container, SectionHeading } from '@/components/ui/layout';
 import { CategoryIcon } from '@/features/categories/icons';
 import { PlacesRail } from '@/features/home/components/places-rail';
+import { BoardGlow } from '@/components/motion/board';
+import { CountUp } from '@/components/motion/count-up';
+import { Magnetic } from '@/components/motion/magnetic';
 import { RiseWords } from '@/components/motion/rise-words';
+import { ScrollMarquee } from '@/components/motion/scroll-marquee';
 import { ScrollStory } from '@/features/home/components/scroll-story';
 import { QueueBoard } from '@/features/home/components/queue-board';
 import { categoryTree, cities, shelf } from '@/features/search/api';
@@ -113,19 +117,18 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
             <SearchBox city={city || undefined} />
           </div>
         </div>
-        {/* A still glow behind the board (emerald light, a touch of saffron): depth without more motion. */}
-        <div className="relative isolate mx-auto w-full max-w-[30rem] lg:mr-0">
-          <div
-            aria-hidden
-            className="absolute -inset-x-4 -inset-y-16 -z-10 bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--color-brand)_20%,transparent),transparent)] lg:-inset-x-20 lg:-inset-y-24"
-          />
-          <div
-            aria-hidden
-            className="absolute -bottom-12 -left-4 -z-10 size-56 bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--color-spark)_32%,transparent),transparent)] lg:-left-16"
-          />
+        <BoardGlow>
           <QueueBoard className="w-full" />
-        </div>
+        </BoardGlow>
       </Container>
+
+      {/* ── Every kind of place BUKU lists, moving with the scroll ── */}
+      {tree.length > 0 && (
+        <ScrollMarquee
+          items={tree.flatMap((g) => g.children.map((c) => c.name)).slice(0, 18)}
+          className="-my-6 text-[2.4rem] leading-none font-semibold tracking-[-0.04em] text-control sm:-my-10 sm:text-[4.5rem]"
+        />
+      )}
 
       {/* ── Real places, in a city you choose ── */}
       {city && (
@@ -135,9 +138,13 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
               eyebrow="Near you"
               title={`Places in ${city}`}
               description={
-                places > 0
-                  ? `${places} ${places === 1 ? 'place' : 'places'} in ${cityList.length} ${cityList.length === 1 ? 'city' : 'cities'} on BUKU so far.`
-                  : undefined
+                places > 0 ? (
+                  <>
+                    <CountUp value={places} /> {places === 1 ? 'place' : 'places'} in{' '}
+                    <CountUp value={cityList.length} /> {cityList.length === 1 ? 'city' : 'cities'} on BUKU so
+                    far.
+                  </>
+                ) : undefined
               }
             />
             <CityPicker list={cityList} current={city} />
@@ -249,9 +256,11 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
             description="Your calendar and your walk-in queue in one place, with reminders sent before every visit."
             className="max-w-xl"
           />
-          <Button asChild variant="primary" size="lg">
-            <Link href="/for-business">BUKU for businesses</Link>
-          </Button>
+          <Magnetic>
+            <Button asChild variant="primary" size="lg">
+              <Link href="/for-business">BUKU for businesses</Link>
+            </Button>
+          </Magnetic>
         </section>
       </Container>
     </div>

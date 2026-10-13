@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { LogoMark } from '@/components/brand/logo';
+import { Magnetic } from '@/components/motion/magnetic';
 import { Container } from '@/components/ui/layout';
 import { footerNav } from './nav';
 
@@ -21,12 +22,14 @@ export function SiteFooter() {
               Book the time. <span className="text-board-ink-2">Skip the wait.</span>
             </p>
           </div>
-          <Link
-            href="/explore"
-            className="inline-flex h-12 w-fit items-center rounded-full bg-board-go-fill px-6 font-semibold text-board-on-go transition-transform duration-150 ease-(--ease-out) active:scale-[0.97]"
-          >
-            Find a place
-          </Link>
+          <Magnetic className="w-fit">
+            <Link
+              href="/explore"
+              className="inline-flex h-12 w-fit items-center rounded-full bg-board-go-fill px-6 font-semibold text-board-on-go transition-transform duration-150 ease-(--ease-out) active:scale-[0.97]"
+            >
+              Find a place
+            </Link>
+          </Magnetic>
         </div>
 
         <div className="grid grid-cols-2 gap-x-6 gap-y-10 border-t border-white/10 pt-10 sm:grid-cols-3">

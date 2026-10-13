@@ -15,6 +15,10 @@ import { cn } from '@/lib/cn';
  * Screens move the way the eye expects from a phone, and reverse when scrolling back:
  * the next page pushes in from the right, the queue rises as a sheet over the ticket, and
  * "your turn" opens out from the middle (WEB_PLAN §2, spatial consistency).
+ *
+ * It can be tapped, too (D-099): places, days, times and buttons answer, and what's picked
+ * carries on (the ticket shows the day and time chosen). A tap that leads to another screen
+ * scrolls the page to that step, so the phone, the captions and the scroll never disagree.
  */
 
 export const PHONE_W = 320;
@@ -29,32 +33,140 @@ function screenState(i: number, step: number): string {
   return i > step ? `next-${ENTER[i]}` : `under-${ENTER[step]}`;
 }
 
+/** The places in the demo: two you can book, one with a walk-in queue. */
 const PLACES = [
-  { name: 'Barbershop', meta: '4.8 · 0.4 km', tag: '10:30', tone: 'go' },
-  { name: 'Hair salon', meta: '4.6 · 1.1 km', tag: '3 waiting', tone: 'wait' },
-  { name: 'Dental clinic', meta: '4.9 · 2.0 km', tag: '11:00', tone: 'go' },
+  {
+    name: 'Barbershop',
+    rating: 4.8,
+    km: '0.4',
+    tag: '10:30',
+    tone: 'go',
+    service: 'Haircut',
+    price: 'Rs 800',
+  },
+  {
+    name: 'Hair salon',
+    rating: 4.6,
+    km: '1.1',
+    tag: '3 waiting',
+    tone: 'wait',
+    service: 'Blow-dry',
+    price: 'Rs 1,500',
+  },
+  {
+    name: 'Dental clinic',
+    rating: 4.9,
+    km: '2.0',
+    tag: '11:00',
+    tone: 'go',
+    service: 'Check-up',
+    price: 'Rs 2,500',
+  },
 ] as const;
 const DAYS = [
-  ['Mon', '13'],
-  ['Tue', '14'],
-  ['Wed', '15'],
-  ['Thu', '16'],
-  ['Fri', '17'],
+  ['Mon', '13', 'Monday'],
+  ['Tue', '14', 'Tuesday'],
+  ['Wed', '15', 'Wednesday'],
+  ['Thu', '16', 'Thursday'],
+  ['Fri', '17', 'Friday'],
 ] as const;
 const TIMES = ['10:00', '10:30', '11:00', '11:30', '12:00', '14:30'];
+const CHIPS = [
+  ['open', 'Open now'],
+  ['queue', 'Queue'],
+  ['top', 'Top rated'],
+] as const;
+
+/** What the visitor has picked in the demo (the story's own picks to begin with). */
+export interface Demo {
+  place: number;
+  day: string;
+  time: string;
+  chip: (typeof CHIPS)[number][0];
+}
+export const START: Demo = { place: 0, day: '14', time: '10:30', chip: 'open' };
+
+/** A tap in the demo: change a pick, go to another step of the story, or both. */
+export interface Act {
+  set?: Partial<Demo>;
+  go?: number;
+}
+
+interface ScreenProps {
+  serving: number;
+  demo: Demo;
+  /** Absent on the still phones: then nothing can be tapped. */
+  act?: ((a: Act) => void) | undefined;
+}
 
 const stagger = (i: number) => ({ '--i': i }) as CSSProperties;
 
-function TopBar({ title }: { title: string }) {
+/** "10:30" + 30 minutes → "11:00". */
+const after = (time: string, minutes: number) => {
+  const [h, m] = time.split(':').map(Number) as [number, number];
+  const t = h * 60 + m + minutes;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
+
+/**
+ * Something in the phone that can be tapped. The phone is an illustration (hidden from screen
+ * readers, whose users get the same story from the captions), so these are for a pointer and
+ * stay out of the keyboard's way; on the still phones they're plain shapes.
+ */
+function Tap({
+  act,
+  onTap,
+  className,
+  style,
+  children,
+}: {
+  act: ScreenProps['act'];
+  onTap: () => Act;
+  className?: string;
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
+  if (!act)
+    return (
+      <span className={className} style={style}>
+        {children}
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      onClick={() => act(onTap())}
+      className={cn(
+        'cursor-pointer text-left transition-transform duration-150 ease-(--ease-out) active:scale-[0.97]',
+        className,
+      )}
+      style={style}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TopBar({ title, act, back }: { title: string; act: ScreenProps['act']; back: number }) {
   return (
     <div className="relative flex h-11 items-center justify-center px-4">
-      <ChevronLeft className="absolute left-3 size-6 text-brand" strokeWidth={2.2} aria-hidden />
+      <Tap
+        act={act}
+        onTap={() => ({ go: back })}
+        className="absolute left-2 grid size-9 place-items-center rounded-full"
+      >
+        <ChevronLeft className="size-6 text-brand" strokeWidth={2.2} aria-hidden />
+      </Tap>
       <span className="text-[15px] font-semibold tracking-[-0.01em]">{title}</span>
     </div>
   );
 }
 
-function FindScreen() {
+function FindScreen({ demo, act }: ScreenProps) {
+  const shown = PLACES.map((p, i) => ({ ...p, i }))
+    .filter((p) => demo.chip !== 'queue' || p.tone === 'wait')
+    .sort((a, b) => (demo.chip === 'top' ? b.rating - a.rating : a.i - b.i));
   return (
     <div className="flex h-full flex-col gap-4 px-5 pt-2">
       <div className="story-in flex flex-col" style={stagger(0)}>
@@ -69,37 +181,51 @@ function FindScreen() {
         <span className="story-type">Haircut</span>
       </div>
       <div className="story-in flex gap-1.5 text-[12px] font-medium" style={stagger(2)}>
-        <span className="rounded-full bg-ink px-3 py-1.5 text-canvas">Open now</span>
-        <span className="rounded-full bg-surface px-3 py-1.5 ring-1 ring-line">Queue</span>
-        <span className="rounded-full bg-surface px-3 py-1.5 ring-1 ring-line">Top rated</span>
+        {CHIPS.map(([key, label]) => (
+          <Tap
+            key={key}
+            act={act}
+            onTap={() => ({ set: { chip: key } })}
+            className={cn(
+              'rounded-full px-3 py-1.5 transition-colors duration-200',
+              demo.chip === key ? 'bg-ink text-canvas' : 'bg-surface ring-1 ring-line',
+            )}
+          >
+            {label}
+          </Tap>
+        ))}
       </div>
       <ul className="flex flex-col gap-2">
-        {PLACES.map((p, i) => (
+        {shown.map((p) => (
           <li
             key={p.name}
-            className={cn(
-              'story-in flex items-center gap-3 rounded-[18px] bg-surface p-2.5 shadow-soft',
-              i === 0 && 'story-tap',
-            )}
-            style={stagger(i + 3)}
+            className={cn('story-in', p.i === 0 && demo.chip === 'open' && 'story-tap rounded-[18px]')}
+            style={stagger(p.i + 3)}
           >
-            <span className="grid size-11 shrink-0 place-items-center rounded-[13px] bg-brand-soft text-[17px] font-semibold text-brand-ink">
-              {p.name[0]}
-            </span>
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="truncate text-[14px] font-semibold">{p.name}</span>
-              <span className="flex items-center gap-1 text-[12px] text-ink-3">
-                <Star className="size-3 fill-current text-ink" aria-hidden /> {p.meta}
-              </span>
-            </span>
-            <span
-              className={cn(
-                'tabular shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-semibold',
-                p.tone === 'go' ? 'bg-brand-soft text-brand-ink' : 'bg-wait-soft text-wait-ink',
-              )}
+            <Tap
+              act={act}
+              // A place with free times opens them; the one with a queue opens the queue.
+              onTap={() => (p.tone === 'go' ? { set: { place: p.i, time: p.tag }, go: 1 } : { go: 3 })}
+              className="flex w-full items-center gap-3 rounded-[18px] bg-surface p-2.5 shadow-soft"
             >
-              {p.tag}
-            </span>
+              <span className="grid size-11 shrink-0 place-items-center rounded-[13px] bg-brand-soft text-[17px] font-semibold text-brand-ink">
+                {p.name[0]}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-[14px] font-semibold">{p.name}</span>
+                <span className="flex items-center gap-1 text-[12px] text-ink-3">
+                  <Star className="size-3 fill-current text-ink" aria-hidden /> {p.rating} · {p.km} km
+                </span>
+              </span>
+              <span
+                className={cn(
+                  'tabular shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-semibold',
+                  p.tone === 'go' ? 'bg-brand-soft text-brand-ink' : 'bg-wait-soft text-wait-ink',
+                )}
+              >
+                {p.tag}
+              </span>
+            </Tap>
           </li>
         ))}
       </ul>
@@ -107,35 +233,41 @@ function FindScreen() {
   );
 }
 
-function TimeScreen() {
+function TimeScreen({ demo, act }: ScreenProps) {
+  const place = PLACES[demo.place]!;
+  const day = DAYS.find(([, n]) => n === demo.day) ?? DAYS[1];
+  // The story's own pick plays its little "chosen" moment; a visitor's pick simply fills.
+  const storyPick = demo.time === START.time && demo.place === START.place;
   return (
     <div className="relative flex h-full flex-col">
-      <TopBar title="Barbershop" />
+      <TopBar title={place.name} act={act} back={0} />
       <div className="flex flex-col gap-4 px-5 pt-2">
         <div
           className="story-in flex items-center justify-between rounded-[18px] bg-surface p-3.5 shadow-soft ring-2 ring-brand"
           style={stagger(0)}
         >
           <span className="flex flex-col">
-            <span className="text-[15px] font-semibold">Haircut</span>
+            <span className="text-[15px] font-semibold">{place.service}</span>
             <span className="text-[12px] text-ink-3">30 min · with anyone</span>
           </span>
-          <span className="tabular text-[15px] font-semibold">Rs 800</span>
+          <span className="tabular text-[15px] font-semibold">{place.price}</span>
         </div>
         <div className="story-in flex flex-col gap-2" style={stagger(1)}>
           <span className="text-[13px] font-semibold">October</span>
           <div className="grid grid-cols-5 gap-1.5">
             {DAYS.map(([d, n]) => (
-              <span
+              <Tap
                 key={n}
+                act={act}
+                onTap={() => ({ set: { day: n } })}
                 className={cn(
-                  'flex h-[58px] flex-col items-center justify-center rounded-[16px] text-[11px]',
-                  n === '14' ? 'bg-ink text-canvas' : 'bg-surface text-ink-2 ring-1 ring-line',
+                  'flex h-[58px] flex-col items-center justify-center rounded-[16px] text-[11px] transition-colors duration-200',
+                  n === demo.day ? 'bg-ink text-canvas' : 'bg-surface text-ink-2 ring-1 ring-line',
                 )}
               >
-                {d}
-                <span className="tabular text-[17px] font-semibold">{n}</span>
-              </span>
+                <span className="text-center">{d}</span>
+                <span className="tabular text-center text-[17px] font-semibold">{n}</span>
+              </Tap>
             ))}
           </div>
         </div>
@@ -145,28 +277,39 @@ function TimeScreen() {
           </span>
           <ul className="grid grid-cols-3 gap-2">
             {TIMES.map((t, i) => (
-              <li
-                key={t}
-                className={cn(
-                  'story-in tabular flex h-10 items-center justify-center rounded-full text-[14px] font-medium',
-                  t === '10:30' ? 'story-pick bg-brand text-on-brand' : 'bg-surface ring-1 ring-line',
-                )}
-                style={stagger(i + 3)}
-              >
-                {t}
+              <li key={t} className="story-in" style={stagger(i + 3)}>
+                <Tap
+                  act={act}
+                  onTap={() => ({ set: { time: t } })}
+                  className={cn(
+                    'tabular flex h-10 w-full items-center justify-center rounded-full text-[14px] font-medium transition-colors duration-200',
+                    t === demo.time ? 'bg-brand text-on-brand' : 'bg-surface ring-1 ring-line',
+                    t === demo.time && storyPick && 'story-pick',
+                  )}
+                >
+                  {t}
+                </Tap>
               </li>
             ))}
           </ul>
         </div>
       </div>
-      <div className="story-cta absolute inset-x-5 bottom-7 flex h-12 items-center justify-center rounded-full bg-brand text-[15px] font-semibold text-on-brand shadow-lift">
-        Book Tuesday 10:30
-      </div>
+      <Tap
+        act={act}
+        onTap={() => ({ go: 2 })}
+        className="story-cta absolute inset-x-5 bottom-7 flex h-12 items-center justify-center rounded-full bg-brand text-[15px] font-semibold text-on-brand shadow-lift"
+      >
+        <span className="w-full text-center">
+          Book {day[2]} {demo.time}
+        </span>
+      </Tap>
     </div>
   );
 }
 
-function TicketScreen() {
+function TicketScreen({ demo, act }: ScreenProps) {
+  const place = PLACES[demo.place]!;
+  const day = DAYS.find(([, n]) => n === demo.day) ?? DAYS[1];
   return (
     <div className="flex h-full flex-col gap-4 px-5 pt-4">
       <div className="flex items-center gap-3">
@@ -185,7 +328,9 @@ function TicketScreen() {
         </span>
         <span className="story-in flex flex-col" style={stagger(1)}>
           <span className="text-[21px] leading-tight font-semibold tracking-[-0.03em]">You’re booked</span>
-          <span className="text-[13px] text-ink-2">Tuesday 14 October, 10:30</span>
+          <span className="text-[13px] text-ink-2">
+            {day[2]} {day[1]} October, {demo.time}
+          </span>
         </span>
       </div>
 
@@ -193,10 +338,14 @@ function TicketScreen() {
       <div className="story-print relative overflow-hidden rounded-[20px] bg-surface shadow-lift">
         <div className="bg-brand px-4 py-2 text-[12px] font-semibold text-on-brand">Confirmed</div>
         <div className="flex flex-col gap-1 px-4 pt-3.5 pb-4">
-          <span className="text-[12px] text-ink-3">Barbershop · 0.4 km</span>
-          <span className="text-[21px] leading-tight font-semibold tracking-[-0.025em]">Haircut</span>
-          <span className="tabular text-[13.5px] font-medium">Tue 14 Oct · 10:30 to 11:00</span>
-          <span className="text-[12px] text-ink-2">Pay at the venue · Rs 800</span>
+          <span className="text-[12px] text-ink-3">
+            {place.name} · {place.km} km
+          </span>
+          <span className="text-[21px] leading-tight font-semibold tracking-[-0.025em]">{place.service}</span>
+          <span className="tabular text-[13.5px] font-medium">
+            {day[0]} {day[1]} Oct · {demo.time} to {after(demo.time, 30)}
+          </span>
+          <span className="text-[12px] text-ink-2">Pay at the venue · {place.price}</span>
         </div>
         <div aria-hidden className="relative flex items-center">
           <span className="absolute -left-2.5 size-5 rounded-full bg-canvas" />
@@ -222,11 +371,21 @@ function TicketScreen() {
         <Bell className="size-4 shrink-0" strokeWidth={2.2} aria-hidden />
         We’ll remind you the day before, and 2 hours before.
       </div>
+      {act && (
+        <Tap
+          act={act}
+          onTap={() => ({ go: 3 })}
+          className="story-in self-center rounded-full px-3 py-2 text-[13px] font-semibold text-brand-ink"
+          style={stagger(6)}
+        >
+          Or join a walk-in queue instead
+        </Tap>
+      )}
     </div>
   );
 }
 
-function QueueScreen({ serving }: { serving: number }) {
+function QueueScreen({ serving, act }: ScreenProps) {
   const ahead = Math.max(0, 10 - serving);
   return (
     <div className="story-sheet flex h-full flex-col">
@@ -289,12 +448,21 @@ function QueueScreen({ serving }: { serving: number }) {
         <p className="text-[12px] leading-snug text-ink-3">
           This page moves by itself. We’ll nudge you when you’re next.
         </p>
+        {act && (
+          <Tap
+            act={act}
+            onTap={() => ({ go: 4 })}
+            className="flex h-11 items-center justify-center rounded-full bg-brand text-[14px] font-semibold text-on-brand shadow-soft"
+          >
+            <span className="w-full text-center">Skip ahead to my turn</span>
+          </Tap>
+        )}
       </div>
     </div>
   );
 }
 
-function TurnScreen() {
+function TurnScreen({ act }: ScreenProps) {
   return (
     <div className="relative flex h-full flex-col items-center justify-center gap-4 bg-brand px-6 text-center text-on-brand">
       {/* The nudge arrives the way a phone shows one: dropping in from the top. */}
@@ -315,22 +483,31 @@ function TurnScreen() {
       </span>
       <span className="text-[30px] leading-tight font-semibold tracking-[-0.035em]">It’s your turn.</span>
       <span className="text-[14px] opacity-90">Number 10 · Go to the counter</span>
+      {act && (
+        <Tap
+          act={act}
+          onTap={() => ({ go: 0 })}
+          className="absolute inset-x-6 bottom-8 flex h-11 items-center justify-center rounded-full bg-white/15 text-[14px] font-semibold"
+        >
+          <span className="w-full text-center">Start again</span>
+        </Tap>
+      )}
     </div>
   );
 }
 
-function Screen({ step, serving }: { step: number; serving: number }): ReactNode {
+function Screen({ step, ...props }: ScreenProps & { step: number }): ReactNode {
   switch (step) {
     case 0:
-      return <FindScreen />;
+      return <FindScreen {...props} />;
     case 1:
-      return <TimeScreen />;
+      return <TimeScreen {...props} />;
     case 2:
-      return <TicketScreen />;
+      return <TicketScreen {...props} />;
     case 3:
-      return <QueueScreen serving={serving} />;
+      return <QueueScreen {...props} />;
     default:
-      return <TurnScreen />;
+      return <TurnScreen {...props} />;
   }
 }
 
@@ -357,7 +534,19 @@ function StatusBar() {
 }
 
 /** The phone at its one design size (320 × 664). `scale` fits it to the space it has. */
-export function Phone({ step, serving, still = false }: { step: number; serving: number; still?: boolean }) {
+export function Phone({
+  step,
+  serving,
+  still = false,
+  demo = START,
+  act,
+}: {
+  step: number;
+  serving: number;
+  still?: boolean;
+  demo?: Demo;
+  act?: ScreenProps['act'];
+}) {
   return (
     <div
       aria-hidden
@@ -376,7 +565,7 @@ export function Phone({ step, serving, still = false }: { step: number; serving:
                 data-state={still ? 'here' : screenState(i, step)}
                 style={{ zIndex: i + 1 }}
               >
-                <Screen step={i} serving={serving} />
+                <Screen step={i} serving={serving} demo={demo} act={still ? undefined : act} />
               </div>
             ),
           )}
@@ -394,12 +583,16 @@ export function FittedPhone({
   step,
   serving,
   still,
+  demo,
+  act,
   max = 1,
   className,
 }: {
   step: number;
   serving: number;
   still?: boolean;
+  demo?: Demo;
+  act?: ScreenProps['act'];
   max?: number;
   className?: string;
 }) {
@@ -423,7 +616,7 @@ export function FittedPhone({
       {scale !== null && (
         <div style={{ width: PHONE_W * scale, height: PHONE_H * scale }}>
           <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}>
-            <Phone step={step} serving={serving} still={still} />
+            <Phone step={step} serving={serving} still={still} demo={demo} act={act} />
           </div>
         </div>
       )}
