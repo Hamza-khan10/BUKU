@@ -19,7 +19,7 @@
     "pino-http": "11.0.0",
     "rate-limiter-flexible": "11.2.1",
     "sanitize-html": "2.18.0",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@types/express": "5.0.6",

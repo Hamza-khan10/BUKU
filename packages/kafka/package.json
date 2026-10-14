@@ -14,6 +14,6 @@
     "@buku/common": "workspace:*",
     "@buku/database": "workspace:*",
     "@confluentinc/kafka-javascript": "1.10.1",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   }
 }
