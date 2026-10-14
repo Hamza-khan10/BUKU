@@ -596,6 +596,10 @@ The detailed plan — every page, its data and edge cases, the design system and
   appointment or by queue ships with the database: 11 groups, 116 kinds, the same everywhere
   (D-100). Customers book and queue for free with no BUKU limit; customer billing can't be switched
   back on; the account's Plan tab is gone and pricing leads with "free" (D-101).
+- **Categories page and the stack (2026-10-14).** Find a kind by typing; jump to a group; each
+  group a card with its kinds in readable rows, stacked as the page scrolls where they fit. The
+  stacking cards were rebuilt for both pages: same pin place, three edges, nothing peeking out,
+  only when they fit the screen (D-102).
 
 ## Phase 4 — Mobile app (Expo)
 

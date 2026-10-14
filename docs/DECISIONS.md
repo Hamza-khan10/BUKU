@@ -892,6 +892,24 @@ D-065). Businesses keep their plans.
   only the business plans; the account's Plan tab is gone (`/account/plan` → `/account`); the
   terms, privacy notice, refunds and sub-processors say BUKU is free for customers.
 
+**D-102 · A categories page nobody gets lost in, and a stack that really stacks.** The owner
+said the categories page wasn't good (a wall of small chips), asked for the for-business page's
+stacking boxes there, and said that stack wasn't working properly.
+
+- **The stack, rebuilt** (`components/motion/stacked-cards.tsx`): every card pins in the same
+  place under the header; the one being covered rises a little, settles back and dims, so the
+  last three show as edges and older ones fade away. Nothing of a covered card shows below the
+  card on top, even when a short card covers a tall one. The old version left 18% of the screen
+  empty between cards, sliced covered text mid-line, and grew a pile of edges that pushed each
+  new card down. It stacks only where every card fits on the screen whole, measured live (not
+  guessed from the window size); otherwise it's a plain list. Tabbing into a covered card brings
+  it back on top (WCAG 2.4.11). Cards rise in without fading, so text keeps its contrast.
+- **The categories page:** "Find a kind of place" (type part of a name: the kinds that match, each
+  with its group; nothing found → search every place), a row of the 11 groups that jumps to each
+  group's card, then one card per group: its icon, name, one line saying what's in it, a link to
+  all its places, and its kinds as readable rows with their own icons (two columns on phones,
+  three on wide screens). It ends with how a business adds a kind BUKU doesn't list.
+
 **D-103 · The front desk's day (3.5b).** A business now runs its day on BUKU: what's coming, who
 has arrived, and every step with each visit.
 
