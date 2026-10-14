@@ -513,8 +513,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kafka
       '@clickhouse/client':
-        specifier: 1.23.1
-        version: 1.23.1
+        specifier: 1.24.1
+        version: 1.24.1
       express:
         specifier: 5.2.1
         version: 5.2.1
@@ -963,8 +963,8 @@ packages:
     resolution: {integrity: sha512-dlT1m5e/0yUL0kRNcQn7yGLVThkgbB0Ga/1AmfDDC/8ik6AIiSf2QLQO2zPYvefsHP0aFgxO93cVLCCfDp7kzQ==}
     engines: {node: '>= 20.12.0'}
 
-  '@clickhouse/client@1.23.1':
-    resolution: {integrity: sha512-vs3/Zc1dHvT171btW5nMoPsPCJ6QVJ5pp7obxzO5sjqwFx/jjz9wwCAqcFOdc2DhprugDBaVn+4dVY8hG3A9nw==}
+  '@clickhouse/client@1.24.1':
+    resolution: {integrity: sha512-1kjKJ4uuD4J9JlRU4CpwEGfecstvtoGreBorhh7CxgB7r7PL54DCLD6gajKZhLCri84XlyD3CUxEm6rYkKC+dA==}
     engines: {node: '>=20'}
 
   '@commitlint/cli@21.2.3':
@@ -5868,7 +5868,7 @@ snapshots:
       fast-wrap-ansi: 0.2.2
       sisteransi: 1.0.5
 
-  '@clickhouse/client@1.23.1': {}
+  '@clickhouse/client@1.24.1': {}
 
   '@commitlint/cli@21.2.3(@types/node@24.19.1)(conventional-commits-parser@7.1.2)(typescript@6.0.3)':
     dependencies:
