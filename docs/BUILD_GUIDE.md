@@ -586,6 +586,10 @@ The detailed plan — every page, its data and edge cases, the design system and
   name rule shared with the API, pending review before it's in the public list. The for-business
   board loops like the home page's, with the same glow and pause. The home page's phone can be
   tapped (D-099).
+- **Categories and free customers (2026-10-13).** Every kind of business that works by
+  appointment or by queue ships with the database: 11 groups, 116 kinds, the same everywhere
+  (D-100). Customers book and queue for free with no BUKU limit; customer billing can't be switched
+  back on; the account's Plan tab is gone and pricing leads with "free" (D-101).
 
 ## Phase 4 — Mobile app (Expo)
 

@@ -272,18 +272,20 @@ infra docker kong ci deps docs repo security release`.
 
 ## Troubleshooting
 
-| Symptom                                              | Cause / fix                                                                                                                                                |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.env` errors: `... run pnpm bootstrap`              | Secrets missing. `pnpm bootstrap` fills only empty values; it never overwrites.                                                                            |
-| Elasticsearch exits / unhealthy                      | `vm.max_map_count` too low — see setup above. Needs ~1.3 GB RAM.                                                                                           |
-| A service is `unhealthy`                             | `docker compose -f docker-compose.dev.yml logs <svc>`; its `/ready` lists which dependency is down. Config errors print every invalid variable at startup. |
-| `504` from the gateway right after a restart         | Kong DNS cache; resolved within 5 s (`KONG_DNS_VALID_TTL`).                                                                                                |
-| `ERR_PNPM_NO_MATURE_MATCHING_VERSION`                | Supply-chain guard: that version is < 24 h old. Pick the previous version or wait.                                                                         |
-| `ERR_PNPM_...BUILD` for a new dependency             | It wants to run an install script. Review it, then add it to `allowBuilds` in `pnpm-workspace.yaml` with a comment.                                        |
-| Prisma: "Environment variable not found" on the host | Run from the repo root after `pnpm bootstrap`; `prisma.config.ts` reads the root `.env`.                                                                   |
-| Out of memory in WSL                                 | Give WSL ≥ 8 GB in `%UserProfile%\.wslconfig` (`[wsl2]\nmemory=8GB`), don't run `--profile tools` unless needed.                                           |
-| Port already in use                                  | Another local Postgres/Redis? Stop it, or change `POSTGRES_HOST_PORT` in `.env`.                                                                           |
-| Start completely fresh                               | `pnpm dev:wipe && pnpm dev`                                                                                                                                |
+| Symptom                                                                | Cause / fix                                                                                                                                                |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.env` errors: `... run pnpm bootstrap`                                | Secrets missing. `pnpm bootstrap` fills only empty values; it never overwrites.                                                                            |
+| Elasticsearch exits / unhealthy                                        | `vm.max_map_count` too low — see setup above. Needs ~1.3 GB RAM.                                                                                           |
+| A service is `unhealthy`                                               | `docker compose -f docker-compose.dev.yml logs <svc>`; its `/ready` lists which dependency is down. Config errors print every invalid variable at startup. |
+| `504` from the gateway right after a restart                           | Kong DNS cache; resolved within 5 s (`KONG_DNS_VALID_TTL`).                                                                                                |
+| `ERR_PNPM_NO_MATURE_MATCHING_VERSION`                                  | Supply-chain guard: that version is < 24 h old. Pick the previous version or wait.                                                                         |
+| `ERR_PNPM_...BUILD` for a new dependency                               | It wants to run an install script. Review it, then add it to `allowBuilds` in `pnpm-workspace.yaml` with a comment.                                        |
+| Prisma: "Environment variable not found" on the host                   | Run from the repo root after `pnpm bootstrap`; `prisma.config.ts` reads the root `.env`.                                                                   |
+| Out of memory in WSL                                                   | Give WSL ≥ 8 GB in `%UserProfile%\.wslconfig` (`[wsl2]\nmemory=8GB`), don't run `--profile tools` unless needed.                                           |
+| Port already in use                                                    | Another local Postgres/Redis? Stop it, or change `POSTGRES_HOST_PORT` in `.env`.                                                                           |
+| After a Windows/WSL restart: Kong `Exited (127)`, services `unhealthy` | Docker started the containers before WSL's files were mounted. `docker compose -f docker-compose.dev.yml up -d --force-recreate` (data is kept).           |
+| Host tools get `Connection terminated unexpectedly`                    | After a restart the port forwarder can drop every host connection while the containers look healthy. Same fix: recreate the stack.                         |
+| Start completely fresh                                                 | `pnpm dev:wipe && pnpm dev`                                                                                                                                |
 
 ## Releases (Phase 5)
 
