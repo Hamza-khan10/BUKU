@@ -88,6 +88,22 @@ test.describe('Discovery', () => {
     page,
   }) => {
     await page.goto('/categories');
+    // The group cards are evenly spaced, the last one too (stacked or not). Entrance animations are
+    // switched off for the measurement, so it sees where each card really sits.
+    await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; }' });
+    // On a wide screen the cards stack once the page has measured them; measure after that.
+    if (test.info().project.name === 'desktop')
+      await expect(page.locator('[data-stacked]').first()).toBeAttached();
+    const gaps = await page.evaluate(() => {
+      window.scrollTo(0, 0);
+      const cards = [...document.querySelectorAll('section[aria-labelledby^="group-"]')].map((c) =>
+        c.getBoundingClientRect(),
+      );
+      return cards.slice(1).map((c, i) => Math.round(c.top - cards[i]!.bottom));
+    });
+    expect(gaps.length).toBeGreaterThan(5);
+    // Whole pixels round fractional sizes, so neighbours may differ by a pixel or two.
+    expect(Math.max(...gaps) - Math.min(...gaps), gaps.join(', ')).toBeLessThanOrEqual(2);
     const find = page.getByLabel('Find a kind of place');
     await find.fill('lash and brow');
     await expect(page.getByText('1 kind matches.')).toBeVisible();
