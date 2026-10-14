@@ -83,4 +83,35 @@ test.describe('Discovery', () => {
     await expectAccessible(page);
     expect((await request.get('/c/no-such-category')).status()).toBe(404);
   });
+
+  test('categories: find a kind by typing part of its name, or jump straight to a group', async ({
+    page,
+  }) => {
+    await page.goto('/categories');
+    const find = page.getByLabel('Find a kind of place');
+    await find.fill('lash and brow');
+    await expect(page.getByText('1 kind matches.')).toBeVisible();
+    await find.fill('zzqx');
+    await expect(page.getByText('No kind of place called “zzqx” yet.')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Search every place for “zzqx”' })).toHaveAttribute(
+      'href',
+      '/explore?q=zzqx',
+    );
+    await find.fill('padel');
+    await page
+      .getByRole('link', { name: /^Padel Court/ })
+      .first()
+      .click();
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Padel Court');
+
+    await page.goBack();
+    await page
+      .getByRole('navigation', { name: 'Groups' })
+      .getByRole('button', { name: /Finance & Banking/ })
+      .click();
+    const heading = page.getByRole('heading', { name: 'Finance & Banking', level: 2 });
+    await expect(heading).toBeFocused();
+    await expect(heading).toBeInViewport();
+    await expectAccessible(page);
+  });
 });
