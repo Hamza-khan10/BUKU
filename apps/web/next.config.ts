@@ -14,12 +14,18 @@ const securityHeaders = [
   { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
   { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
   // Location only where a page asks for it ("near me"); the camera only on the
-  // check-in page (which overrides this header when it is built).
+  // check-in page (below).
   {
     key: 'Permissions-Policy',
     value: 'camera=(), microphone=(), geolocation=(self), payment=(), usb=(), browsing-topics=()',
   },
 ];
+
+/** The front desk scans receipt QR codes there: the camera, for this site only, on that page only. */
+const checkInPolicy = {
+  key: 'Permissions-Policy',
+  value: 'camera=(self), microphone=(), geolocation=(self), payment=(), usb=(), browsing-topics=()',
+};
 
 const config: NextConfig = {
   reactStrictMode: true,
@@ -28,7 +34,12 @@ const config: NextConfig = {
   // Shared as TypeScript source: the clean-text rules with the API (D-083), and the security
   // building blocks with the admin app (D-091).
   transpilePackages: ['@buku/validation', '@buku/web-security'],
-  headers: () => Promise.resolve([{ source: '/:path*', headers: securityHeaders }]),
+  // The later rule wins for the same header, so the check-in page's camera rule comes last.
+  headers: () =>
+    Promise.resolve([
+      { source: '/:path*', headers: securityHeaders },
+      { source: '/business/:id/check-in', headers: [checkInPolicy] },
+    ]),
   // Customers use BUKU for free (D-101): there's no customer plan page any more.
   redirects: () => Promise.resolve([{ source: '/account/plan', destination: '/account', permanent: true }]),
 };

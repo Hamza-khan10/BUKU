@@ -566,6 +566,12 @@ The detailed plan — every page, its data and edge cases, the design system and
   link and the photos, like the public profile, instead of the internal storage key.
   `/business/[id]`: where the business stands and what's left before people can book. The account
   menu has "Your businesses"; the for-business page's main button is "Add your business".
+- **3.5b Today, appointments and check-in — ✅ done (D-103).** Today: the day at a glance,
+  check-in by code, the next customer, and every visit in time order with a line at "now",
+  refreshed every half minute. Appointments: any day, a person, a status, or a search by code or
+  name; each visit's details and the steps it allows now (confirm, decline, check in, done, didn't
+  come, cancel with a reason). Check-in: the code typed or its QR scanned (camera on that page
+  only), and the people expected now for those without a phone.
 - **3.5d Services and team — ✅ done (time off and attendance come later).** A business's own
   pages have tabs (Overview · Services · Team), each shown only to roles that can use it, from the
   same role table the API enforces (`BUSINESS_PERMISSIONS`, now in `@buku/validation`).

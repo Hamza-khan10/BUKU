@@ -23,10 +23,12 @@ import {
 } from '../api';
 import { BusinessPictures } from './business-pictures';
 import { STATUS, StatusBadge } from './status';
+import { TodayBoard } from './today';
 
 /**
- * A business's own page (3.5a): where it stands with BUKU, and what's left to set up before
- * people can book. Today's visits and the queue board join it in the next steps (3.5b, 3.5c).
+ * A business's own page: where it stands with BUKU (3.5a) and today at the front desk (3.5b).
+ * Until people can book, what's left to set up comes first; once they can, today does. The
+ * queue board joins it next (3.5c).
  */
 export function BusinessHome({ id }: { id: string }) {
   const business = useQuery({
@@ -75,8 +77,62 @@ export function BusinessHome({ id }: { id: string }) {
   const loaded = menu.isSuccess && staff.isSuccess;
   const ready = loaded && steps.every((s) => s.done);
 
+  const setup = (
+    <section
+      aria-labelledby="setup"
+      className="flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-soft ring-1 ring-line sm:p-6"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="setup" className="type-subheading">
+          {ready ? 'Ready for bookings' : 'Before people can book'}
+        </h2>
+        {loaded && (
+          <span className="tabular text-sm text-ink-3">
+            {steps.filter((s) => s.done).length} of {steps.length} done
+          </span>
+        )}
+      </div>
+      {loaded ? (
+        <ol className="flex flex-col gap-3">
+          {steps.map((s) => (
+            <li key={s.label} className="flex items-start gap-3">
+              <span
+                className={cn(
+                  'mt-0.5 grid size-6 shrink-0 place-items-center rounded-full',
+                  s.done ? 'bg-ok text-surface' : 'text-ink-3',
+                )}
+              >
+                {s.done ? (
+                  <Check className="size-4" strokeWidth={3} aria-hidden />
+                ) : (
+                  <CircleDashed className="size-5" aria-hidden />
+                )}
+              </span>
+              <span className="flex flex-col">
+                <span className="font-medium text-ink">
+                  {s.label}
+                  <span className="sr-only">{s.done ? ' (done)' : ' (still to do)'}</span>
+                </span>
+                <span className="text-sm text-ink-3">{s.detail}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <Skeleton className="h-24" />
+      )}
+      {loaded && !ready && canSetUp(b.myRole) && (
+        <div>
+          <Button asChild variant="primary">
+            <Link href={`/business/${b.id}/setup` as Route}>Finish setting up</Link>
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+
   return (
-    <div className="flex max-w-3xl flex-col gap-8">
+    <div className="flex max-w-5xl flex-col gap-10">
       <PageHeading
         compact
         eyebrow={ROLE_LABELS[b.myRole]}
@@ -104,57 +160,9 @@ export function BusinessHome({ id }: { id: string }) {
         <p className="text-ink-2">{status.text}</p>
       )}
 
-      <section
-        aria-labelledby="setup"
-        className="flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-soft ring-1 ring-line sm:p-6"
-      >
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="setup" className="type-subheading">
-            {ready ? 'Ready for bookings' : 'Before people can book'}
-          </h2>
-          {loaded && (
-            <span className="tabular text-sm text-ink-3">
-              {steps.filter((s) => s.done).length} of {steps.length} done
-            </span>
-          )}
-        </div>
-        {loaded ? (
-          <ol className="flex flex-col gap-3">
-            {steps.map((s) => (
-              <li key={s.label} className="flex items-start gap-3">
-                <span
-                  className={cn(
-                    'mt-0.5 grid size-6 shrink-0 place-items-center rounded-full',
-                    s.done ? 'bg-ok text-surface' : 'text-ink-3',
-                  )}
-                >
-                  {s.done ? (
-                    <Check className="size-4" strokeWidth={3} aria-hidden />
-                  ) : (
-                    <CircleDashed className="size-5" aria-hidden />
-                  )}
-                </span>
-                <span className="flex flex-col">
-                  <span className="font-medium text-ink">
-                    {s.label}
-                    <span className="sr-only">{s.done ? ' (done)' : ' (still to do)'}</span>
-                  </span>
-                  <span className="text-sm text-ink-3">{s.detail}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <Skeleton className="h-24" />
-        )}
-        {loaded && !ready && canSetUp(b.myRole) && (
-          <div>
-            <Button asChild variant="primary">
-              <Link href={`/business/${b.id}/setup` as Route}>Finish setting up</Link>
-            </Button>
-          </div>
-        )}
-      </section>
+      {!ready && setup}
+      {loaded && ready && <TodayBoard business={b} />}
+      {ready && setup}
 
       {canSetUp(b.myRole) && (
         <section
@@ -168,7 +176,7 @@ export function BusinessHome({ id }: { id: string }) {
         </section>
       )}
 
-      <p className="text-sm text-ink-3">Today’s visits and your queue come to this page next.</p>
+      <p className="text-sm text-ink-3">Your queue board comes to this page next.</p>
     </div>
   );
 }
