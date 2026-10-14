@@ -12,6 +12,8 @@ updates:
       lint-and-types:
         { patterns: ['eslint*', '@eslint/*', 'typescript-eslint', 'typescript', '@types/*', 'prettier'] }
       test: { patterns: ['vitest', 'supertest', '@types/supertest'] }
+      # The S3 client and its presigner share types: one without the other doesn't compile.
+      aws-sdk: { patterns: ['@aws-sdk/*'] }
     commit-message: { prefix: 'chore', include: 'scope' }
     ignore:
       # Node major versions follow the LTS schedule deliberately (docs/DECISIONS.md D-001).
@@ -25,6 +27,9 @@ updates:
     directory: /
     schedule: { interval: weekly, day: monday }
     commit-message: { prefix: 'ci' }
+    groups:
+      # CodeQL's init and analyze steps must be the same version, or the scan fails.
+      codeql: { patterns: ['github/codeql-action*'] }
 
   # Base images, pinned by digest in the Dockerfiles: new digests as Debian/Node security
   # fixes land; CI's vulnerability scan checks every image before it can merge (D-082).

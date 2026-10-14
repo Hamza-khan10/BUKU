@@ -13,7 +13,7 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Base images are pinned by digest (reproducible; a cached old base can't slip in) and
 # updated by Dependabot's weekly PRs, which CI's vulnerability scan checks (D-082).
-FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe AS build
+FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66 AS build
 ARG SERVICE
 RUN test -n "$SERVICE" || (echo "Build arg SERVICE is required, e.g. --build-arg SERVICE=auth" && exit 1)
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true CHECKPOINT_DISABLE=1 PRISMA_HIDE_UPDATE_MESSAGE=1

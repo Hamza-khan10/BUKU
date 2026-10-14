@@ -14,7 +14,7 @@
     "@buku/database": "workspace:*",
     "@buku/kafka": "workspace:*",
     "@buku/media": "workspace:*",
-    "express": "5.2.1",
+    "express": "5.3.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
