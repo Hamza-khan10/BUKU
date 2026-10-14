@@ -313,50 +313,47 @@ async function main() {
     },
   );
 
-  console.log('Journey 2 — free plan, trial, second booking');
-  const userBilling = data<{ audience: string; enabled: boolean }[]>(
-    await call('GET', '/v1/admin/billing/settings', { token: admin.token }),
-  ).find((x) => x.audience === 'user');
-  expect(userBilling, 'no billing settings for users');
-  try {
-    await step(
-      'with billing on, the free plan’s one visit is used, then the trial unlocks a second',
-      async () => {
-        is(
-          await call('PUT', '/v1/admin/billing/settings/user', {
-            token: admin.token,
-            body: { enabled: true },
-          }),
-          200,
-          'billing on',
-        );
-        is(
-          await call('PUT', `/v1/businesses/${shop2.id}/booking-settings`, {
-            token: owner2.token,
-            body: { confirmationMode: 'automatic' },
-          }),
-          200,
-          'automatic',
-        );
-        const free = await signIn(`acc-free-${RUN}@example.com`, 'user', 'Free Person');
-        const times = await slots(shop2, 2);
-        const first = await book(free, shop2, times[2]!);
-        is(first, 201, 'first booking (the free visit)');
-        const second = await book(free, shop2, times[10]!);
-        expect(
-          second.status >= 400 && /PLAN/.test(second.body.error?.code ?? ''),
-          `second should need a plan: ${show(second)}`,
-        );
-        is(await call('POST', '/v1/billing/me/trial', { token: free.token }), 200, 'start trial');
-        is(await book(free, shop2, times[10]!), 201, 'second booking on the trial');
-      },
-    );
-  } finally {
-    await call('PUT', '/v1/admin/billing/settings/user', {
-      token: admin.token,
-      body: { enabled: userBilling.enabled },
-    });
-  }
+  console.log('Journey 2 — customers book for free; never two places at the same time');
+  await step(
+    'customers book as often as they like, for free; charging them can’t be switched on',
+    async () => {
+      const on = await call('PUT', '/v1/admin/billing/settings/user', {
+        token: admin.token,
+        body: { enabled: true },
+      });
+      expect(on.status === 409, `switching customer billing on should be refused: ${show(on)}`);
+      is(
+        await call('PUT', `/v1/businesses/${shop2.id}/booking-settings`, {
+          token: owner2.token,
+          body: { confirmationMode: 'automatic' },
+        }),
+        200,
+        'automatic',
+      );
+      const free = await signIn(`acc-free-${RUN}@example.com`, 'user', 'Free Person');
+      const times = await slots(shop2, 2);
+      for (const i of [2, 10, 18]) is(await book(free, shop2, times[i]!), 201, `booking at slot ${i}`);
+      const me = data<{ source: string; usage: { visits: { limit: number | null } } }>(
+        await call('GET', '/v1/billing/me', { token: free.token }),
+      );
+      expect(
+        me.source === 'billing_off' && me.usage.visits.limit === null,
+        `customer should be unlimited: ${JSON.stringify(me)}`,
+      );
+      is(await call('POST', '/v1/billing/me/trial', { token: free.token }), 409, 'no trial to start');
+    },
+  );
+  await step('the same time at two places, sent at once: one booking, the other refused', async () => {
+    const both = await signIn(`acc-both-${RUN}@example.com`, 'user', 'Two Places');
+    const there = new Set(await slots(shop2, 5));
+    const at = (await slots(shop, 5)).find((t) => there.has(t));
+    expect(at, 'no time both shops have free');
+    const results = await Promise.all([book(both, shop, at), book(both, shop2, at)]);
+    const codes = results.map((r) => r.status).sort();
+    expect(codes[0] === 201 && codes[1] === 409, `expected one 201 and one 409: ${codes.join(',')}`);
+    const refused = results.find((r) => r.status === 409)!;
+    expect(refused.body.error?.code === 'APPOINTMENT_OVERLAP', `refusal: ${show(refused)}`);
+  });
 
   console.log('Journey 3 — the queue');
   let ticketId = '';

@@ -5,6 +5,12 @@
  * to slow down, so a run never fails because of its own speed.
  */
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// The admin app's key and the app role's password come from the root .env (never printed).
+const rootEnv = resolve(import.meta.dirname, '../../.env');
+if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
 export const API = process.env.ACCEPTANCE_API ?? 'http://localhost:8000';
 /** The admin app's gateway key (D-091), from the root .env. */
