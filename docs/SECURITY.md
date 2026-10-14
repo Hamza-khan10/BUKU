@@ -40,6 +40,7 @@ Status legend: ✅ in place and tested (Phase 1) · 🔜 built in the phase show
 | Body size limits (gateway 128 KB, service 100 KB); uploads go direct to S3 via presigned URLs                                                                                                      | ✅ tested                                     |
 | Errors: generic 500 to clients (no stack/SQL), full detail in logs, request id in both                                                                                                             | ✅ tested                                     |
 | Security headers on every response (CSP `default-src 'none'`, HSTS, nosniff, frame DENY, no-store)                                                                                                 | ✅                                            |
+| Website: the camera is off everywhere (`Permissions-Policy: camera=()`) except the front desk's check-in page, and there only for this site (`camera=(self)`, D-103)                               | ✅ tested (e2e)                               |
 
 ## 3. Data protection
 

@@ -891,3 +891,25 @@ D-065). Businesses keep their plans.
 - **The website:** the pricing page leads with "free" for people booking and queueing and lists
   only the business plans; the account's Plan tab is gone (`/account/plan` → `/account`); the
   terms, privacy notice, refunds and sub-processors say BUKU is free for customers.
+
+**D-103 · The front desk's day (3.5b).** A business now runs its day on BUKU: what's coming, who
+has arrived, and every step with each visit.
+
+- **Today** (`/business/[id]`, once setup is done): the day at a glance (still to come, here now,
+  done, didn't come), check-in by code, the next customer, and every visit in time order with a
+  line at "now". It refreshes itself every half minute, so a booking or a check-in on another
+  tablet shows up without reloading.
+- **Appointments**: any day, one person's or everyone's, by status, or a search by booking code
+  or customer name (a month back to a year ahead), kept in the address so a view can be shared.
+  Each visit opens to its details (never the customer's contact details: a name and a
+  reliability label, D-057) and the steps it allows right now.
+- **Check-in**: the code typed (any case, with or without "BK" or the dash; only the booking
+  service's own alphabet is accepted) or its QR scanned; and the people expected now, for someone
+  without a phone. Scanning uses the browser's own QR reader where it has one (no new package);
+  the camera is allowed on this page only, for this site only (`Permissions-Policy:
+camera=(self)` there, `camera=()` everywhere else).
+- **What can be done, and when**, mirrors the booking service so a button only shows when the
+  API would accept it: check-in from two hours before until the end; done from the start; "didn't
+  come" after the grace period and never once someone arrived; confirming, declining and
+  cancelling (with a reason the customer sees) for the front desk, managers and owners; staff
+  handle their own customers. The API still decides, and says why when it refuses.
