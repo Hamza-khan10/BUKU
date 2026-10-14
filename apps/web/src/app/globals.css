@@ -483,6 +483,20 @@
       animation-timeline: view();
       animation-range: entry calc(var(--i, 0) * 6%) entry calc(60% + var(--i, 0) * 6%);
     }
+    /* Cards full of text rise without fading, so their contrast holds at every moment. */
+    .reveal-rise {
+      animation: reveal-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 60%;
+    }
+  }
+}
+@keyframes reveal-rise {
+  from {
+    transform: translateY(32px) scale(0.98);
+  }
+  to {
+    transform: none;
   }
 }
 @keyframes reveal {
