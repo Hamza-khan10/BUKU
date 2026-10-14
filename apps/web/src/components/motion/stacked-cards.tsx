@@ -169,7 +169,14 @@ export function StackedCards({
           }}
           data-stacked={stacked || undefined}
           className={stacked ? (i < cards.length - 1 ? 'sticky' : 'relative') : 'reveal-rise'}
-          style={stacked ? { top: `${PIN_REM}rem`, zIndex: i + 1 } : undefined}
+          // Only pinned cards get an offset: on the last card (not pinned) it would push it down.
+          style={
+            stacked
+              ? i < cards.length - 1
+                ? { top: `${PIN_REM}rem`, zIndex: i + 1 }
+                : { zIndex: i + 1 }
+              : undefined
+          }
         >
           <div
             ref={(el) => {
