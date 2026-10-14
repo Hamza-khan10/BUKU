@@ -15,7 +15,7 @@
     "@buku/kafka": "workspace:*",
     "express": "5.3.0",
     "ioredis": "6.0.0",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@types/express": "5.0.6"
