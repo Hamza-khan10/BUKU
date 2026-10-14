@@ -389,18 +389,33 @@ describe('Admins', () => {
   });
 });
 
-describe('Webhooks are verified, processed once, and in order', () => {
-  async function paidUser() {
+describe('Customers', () => {
+  it('can’t buy a plan, even with Paddle set up: BUKU is free for them (D-101)', async () => {
     await sync('user_plus');
     const me = await person();
-    const checkout = await post('/v1/billing/checkout', me, { planCode: 'user_plus' });
+    const before = fake.calls.length;
+    const res = await post('/v1/billing/checkout', me, { planCode: 'user_plus' });
+    expect([res.status, res.body.error.code]).toEqual([409, 'CONFLICT']);
+    expect(fake.calls.slice(before).filter((c) => c.path === '/transactions')).toEqual([]);
+    expect(await db.subscription.count({ where: { userId: me.id } })).toBe(0);
+  });
+});
+
+describe('Webhooks are verified, processed once, and in order', () => {
+  async function paidBusiness() {
+    await sync('business_essential');
+    const owner = await person();
+    const b = await business(owner);
+    const checkout = await post(`/v1/businesses/${b.id}/billing/checkout`, owner, {
+      planCode: 'business_essential',
+    });
     expect(checkout.status).toBe(201);
-    return { me, sub: fake.pay(checkout.body.data.transactionId) };
+    return { owner, b, sub: fake.pay(checkout.body.data.transactionId) };
   }
 
   it('refuses bad signatures, wrong secrets and old deliveries; duplicates are processed once', async () => {
-    await withBilling(db, 'user', async () => {
-      const { me, sub } = await paidUser();
+    await withBilling(db, 'business', async () => {
+      const { owner, b, sub } = await paidBusiness();
       expect((await deliver('subscription.created', sub, { secret: 'not-the-secret' })).status).toBe(401);
       expect(
         (await deliver('subscription.created', sub, { ts: Math.floor(Date.now() / 1000) - 3600 })).status,
@@ -410,7 +425,7 @@ describe('Webhooks are verified, processed once, and in order', () => {
         .set('Content-Type', 'application/json')
         .send(JSON.stringify({ event_id: 'evt_x', event_type: 'subscription.created', data: sub }));
       expect(unsigned.status).toBe(401);
-      expect(await db.subscription.count({ where: { userId: me.id } })).toBe(0);
+      expect(await db.subscription.count({ where: { businessId: b.id } })).toBe(0);
 
       const eventId = pid('evt');
       expect((await deliver('subscription.created', sub, { eventId })).body.data).toEqual({
@@ -419,17 +434,17 @@ describe('Webhooks are verified, processed once, and in order', () => {
       expect((await deliver('subscription.created', sub, { eventId })).body.data).toEqual({
         processed: false,
       });
-      expect(await db.subscription.count({ where: { userId: me.id } })).toBe(1);
-      expect((await get('/v1/billing/me', me)).body.data).toMatchObject({
-        plan: { code: 'user_plus' },
+      expect(await db.subscription.count({ where: { businessId: b.id } })).toBe(1);
+      expect((await get(`/v1/businesses/${b.id}/billing`, owner)).body.data).toMatchObject({
+        plan: { code: 'business_essential' },
         source: 'subscription',
       });
     });
   });
 
   it('an older update arriving late is ignored', async () => {
-    await withBilling(db, 'user', async () => {
-      const { me, sub } = await paidUser();
+    await withBilling(db, 'business', async () => {
+      const { b, sub } = await paidBusiness();
       await deliver('subscription.created', sub);
       const newer = {
         ...sub,
@@ -443,38 +458,41 @@ describe('Webhooks are verified, processed once, and in order', () => {
       };
       await deliver('subscription.updated', newer);
       await deliver('subscription.past_due', older);
-      expect((await db.subscription.findFirstOrThrow({ where: { userId: me.id } })).status).toBe('active');
+      expect((await db.subscription.findFirstOrThrow({ where: { businessId: b.id } })).status).toBe('active');
     });
   });
 
   it('events BUKU can’t use are acknowledged (so Paddle stops retrying) and change nothing', async () => {
-    await withBilling(db, 'user', async () => {
-      const { me, sub } = await paidUser();
+    await withBilling(db, 'business', async () => {
+      const { owner, b, sub } = await paidBusiness();
       const before = await db.subscription.count();
       const unknownPrice = { ...sub, id: pid('sub'), items: [{ price: { id: pid('pri') }, quantity: 1 }] };
       const noAccount = { ...sub, id: pid('sub'), custom_data: null };
       const strangers = {
         ...sub,
         id: pid('sub'),
-        custom_data: { buku_account_type: 'user', buku_account_id: randomUUID() },
+        custom_data: { buku_account_type: 'business', buku_account_id: randomUUID() },
       };
       for (const s of [unknownPrice, noAccount, strangers])
         expect((await deliver('subscription.created', s)).status).toBe(200);
       expect((await deliver('transaction.completed', { id: pid('txn') })).status).toBe(200);
       expect(await db.subscription.count()).toBe(before);
-      expect((await get('/v1/billing/me', me)).body.data.source).not.toBe('subscription');
+      expect((await get(`/v1/businesses/${b.id}/billing`, owner)).body.data.source).not.toBe('subscription');
     });
   });
 });
 
 describe('When Paddle isn’t there', () => {
   it('a Paddle outage gives a clear 502, and nothing is recorded', async () => {
-    await withBilling(db, 'user', async () => {
-      await sync('user_plus');
-      const me = await person();
+    await withBilling(db, 'business', async () => {
+      await sync('business_essential');
+      const owner = await person();
+      const b = await business(owner);
       fake.setDown(true);
       try {
-        const res = await post('/v1/billing/checkout', me, { planCode: 'user_plus' });
+        const res = await post(`/v1/businesses/${b.id}/billing/checkout`, owner, {
+          planCode: 'business_essential',
+        });
         expect([res.status, res.body.error.code]).toEqual([502, 'SERVICE_UNAVAILABLE']);
       } finally {
         fake.setDown(false);

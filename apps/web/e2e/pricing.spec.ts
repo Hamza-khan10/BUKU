@@ -22,10 +22,15 @@ test.describe('Pricing', () => {
     test.skip(!(await apiAvailable()), 'the API stack is not running');
   });
 
-  test('shows the catalog’s own plans and prices, and says when paid plans are off', async ({ page }) => {
+  test('booking is free: no customer plans, only the catalog’s business plans and prices', async ({
+    page,
+  }) => {
     const [user, business] = await Promise.all([catalog('user'), catalog('business')]);
     await page.goto('/pricing');
-    for (const p of [...user.plans, ...business.plans]) {
+    await expect(
+      page.getByRole('heading', { name: 'For people booking and queueing: free', level: 2 }),
+    ).toBeVisible();
+    for (const p of business.plans) {
       await expect(page.getByRole('heading', { name: p.name, exact: true }).first()).toBeVisible();
       if (!p.free) await expect(page.getByText(`$${p.prices[0]!.amount}`).first()).toBeVisible();
     }
@@ -34,10 +39,16 @@ test.describe('Pricing', () => {
         page.getByText('Right now, everything is included for businesses, at no cost'),
       ).toBeVisible();
     }
-    // The iPhone price is the App Store's, and the page says so with the real number.
-    const ios = await catalog('user', 'ios');
-    const iosPlus = ios.plans.find((p) => !p.free)?.prices[0]?.amount;
-    if (iosPlus) await expect(page.getByText(new RegExp(`iPhone app it’s \\$${iosPlus}`))).toBeVisible();
+    // The customer plans stay in the catalog, unused (D-101): none of them is offered here.
+    for (const p of user.plans.filter((plan) => !plan.free)) {
+      await expect(page.getByRole('heading', { name: p.name, exact: true })).toHaveCount(0);
+    }
+  });
+
+  test('the old “your plan” page leads to the account', async ({ request }) => {
+    const res = await request.get('/account/plan', { maxRedirects: 0 });
+    expect(res.status()).toBe(308);
+    expect(res.headers().location).toBe('/account');
   });
 
   test('promises nothing BUKU doesn’t offer yet (no ads anywhere)', async ({ page }) => {

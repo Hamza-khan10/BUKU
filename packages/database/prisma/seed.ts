@@ -2,8 +2,7 @@
  * Development seed data. Deterministic (fixed PRNG seed), idempotent (skips
  * if data exists) and REFUSES to run in production.
  *
- *   8 top-level categories (+ sub-categories) · 20 businesses in 4 Pakistani
- *   cities · 1 admin · 20 owners · 50 customers · 5 staff per business ·
+ *   20 businesses in 4 Pakistani cities · 1 admin · 20 owners · 50 customers · 5 staff per business ·
  *   ~200 appointments that respect every DB constraint · 30 reviews ·
  *   10 queue sessions · favourites, notifications, audit entries.
  *
@@ -11,7 +10,6 @@
  * do it, so the seed exercises the real PII path.
  */
 import {
-  categoryKey,
   createBlindIndexer,
   createFieldCipher,
   generateConfirmationCode,
@@ -78,33 +76,7 @@ function contact(email: string | null, phone: string | null) {
 }
 
 // ── Reference data ─────────────────────────────────────────────────────────
-// No icons here: the apps draw each category's icon from its slug.
-const CATEGORY_TREE = [
-  {
-    name: 'Beauty & Hair',
-    slug: 'beauty-hair',
-    children: ['Barbershop', 'Hair Salon', 'Nail Salon'],
-  },
-  {
-    name: 'Health & Medical',
-    slug: 'health-medical',
-    children: ['Dental Clinic', 'General Physician', 'Physiotherapy'],
-  },
-  { name: 'Wellness & Spa', slug: 'wellness-spa', children: ['Spa', 'Massage', 'Yoga Studio'] },
-  { name: 'Fitness', slug: 'fitness', children: ['Gym', 'Personal Training'] },
-  { name: 'Automotive', slug: 'automotive', children: ['Car Wash', 'Auto Repair'] },
-  { name: 'Pets', slug: 'pets', children: ['Pet Grooming', 'Veterinary'] },
-  {
-    name: 'Government & Public',
-    slug: 'government-public',
-    children: ['Passport Office', 'Utility Services'],
-  },
-  {
-    name: 'Home & Professional',
-    slug: 'home-professional',
-    children: ['Tailor', 'Legal Consultation'],
-  },
-] as const;
+// Categories aren't seeded: the migrations ship them, so every database has the same list.
 
 const CITIES = [
   { city: 'Lahore', state: 'Punjab', lat: 31.5204, lng: 74.3587, phone: '+9242' },
@@ -267,7 +239,7 @@ const slugify = (s: string) =>
     .replace(/^-|-$/g, '');
 
 async function main(): Promise<void> {
-  if ((await db.category.count()) > 0) {
+  if ((await db.business.count()) > 0) {
     console.log('Seed skipped: data already present (use `pnpm dev:wipe` for a fresh database).');
     return;
   }
@@ -276,36 +248,15 @@ async function main(): Promise<void> {
   const now = new Date();
   const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
-  // ── Categories ──
-  const leafCategoryIds = new Map<string, string>();
-  let sort = 0;
-  for (const top of CATEGORY_TREE) {
-    const parentId = uuidv7();
-    await db.category.create({
-      data: {
-        id: parentId,
-        name: top.name,
-        slug: top.slug,
-        nameKey: categoryKey(top.name),
-        depth: 0,
-        sortOrder: sort++,
-      },
-    });
-    for (const [i, child] of top.children.entries()) {
-      const id = uuidv7();
-      leafCategoryIds.set(child, id);
-      await db.category.create({
-        data: {
-          id,
-          name: child,
-          slug: slugify(child),
-          nameKey: categoryKey(child),
-          parentId,
-          depth: 1,
-          sortOrder: i,
-        },
-      });
-    }
+  // ── Categories (from the migrations) ──
+  const leafCategoryIds = new Map(
+    (
+      await db.category.findMany({ where: { depth: 1, pending: false }, select: { id: true, name: true } })
+    ).map((c) => [c.name, c.id] as const),
+  );
+  const unknown = BUSINESS_NAMES.map(([leaf]) => leaf).filter((leaf) => !leafCategoryIds.has(leaf));
+  if (unknown.length > 0) {
+    throw new Error(`Categories missing (run the migrations first): ${unknown.join(', ')}`);
   }
 
   // ── Users ──

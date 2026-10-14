@@ -330,7 +330,8 @@ the plans an audience falls back to can't be archived. One resolver (`@buku/bill
 subscription → its plan; otherwise the default plan; settings missing → unlimited. Limits only
 block creating MORE; downgrades never delete anything. Business tiers (Essential $24.99, Professional
 $49.99, Enterprise $99.99) differ by team logins, staff, services, photos and features; customers
-have Free (1 visit) and BUKU Plus ($1.99 web/Android, $4.99 iPhone to absorb the App Store's cut).
+have Free (1 visit) and BUKU Plus ($1.99 web/Android, $4.99 iPhone to absorb the App Store's cut)
+— the customer plans are superseded by D-101 (customers are free).
 Billing launches switched off until checkout exists (part 3). A billing-service owns it all;
 Paddle is the merchant of record on the web (collects and remits sales tax/VAT).
 
@@ -853,3 +854,40 @@ page's; and better motion from libraries like componentry.dev, rolled back if it
   backgrounds (battery and focus), cursor trails and particle text (gimmicks), and animated
   "someone just booked" lists (they would be invented, D-093's rule: no fake content).
 - Each piece is its own component, so any can be removed without touching the rest.
+
+**D-100 · Every kind of business that works by appointment ships with BUKU.** The owner asked for
+all the kinds of business that take appointments to be there from the start. 11 groups and 116
+kinds now come from a migration (`20261013120000_appointment_categories`), not the dev seed, so
+production, CI and every laptop have the same list; the seed reads them instead of making its
+own. Pakistan first: clinics and specialists, beauty parlours and bridal makeup, hijama, padel and
+futsal courts, ID card, licence and excise offices, tutors and Quran classes, wedding halls, bank
+branches and more. New groups: Education & Tutoring, Events & Photography, Finance & Banking.
+
+- Every name follows the owner-added rules (D-098) and has its meaning key; the migration's own
+  generator refused duplicates of meaning or address before it was written.
+- Safe to run anywhere: existing rows are kept (`ON CONFLICT DO NOTHING`); a kind an owner had
+  already added under the same group, still waiting, is that kind and is approved; one under a
+  different group stays for review. The migration stops if any group is missing afterwards.
+- Every shipped kind has its own icon; a test reads the migration and fails if one hasn't.
+- Restaurants are left out: a table booking needs a party size, which services don't have yet.
+- The home page shows the 11 groups and a 12th tile to all 116 kinds; the moving line of names
+  takes a few from every group.
+
+**D-101 · Customers use BUKU for free.** The owner turned customer pricing off: people who book
+and queue pay nothing and have no BUKU limit (this replaces the 1 free visit and BUKU Plus of
+D-065). Businesses keep their plans.
+
+- **No limit on visits:** booking and joining a queue no longer ask the billing package; the
+  check is gone, not just switched off.
+- **Can't be switched back on by accident:** customer billing and trials are off (migration
+  `20261013130000_customers_free`) and the billing service refuses to turn either on (`409`), since
+  a plan would now sell nothing. Charging customers again would take a new release and a new
+  decision. Checkout and trials for customers are refused. The customer plans stay in the
+  catalogue, unused; no customer had ever paid (customer billing was never switched on).
+- **The rules that stay:** each business's own cap on upcoming bookings per customer (default 3,
+  1–20, D-037); never two appointments that overlap, at any businesses, even when both are sent at
+  the same moment (a database exclusion rule, D-036; the same day at another time is fine); one
+  queue at a time.
+- **The website:** the pricing page leads with "free" for people booking and queueing and lists
+  only the business plans; the account's Plan tab is gone (`/account/plan` → `/account`); the
+  terms, privacy notice, refunds and sub-processors say BUKU is free for customers.

@@ -7,7 +7,6 @@ import {
   generateConfirmationCode,
   type Role,
 } from '@buku/common';
-import { assertVisitAllowed } from '@buku/billing';
 import {
   businessRoleOf,
   constraintNameOf,
@@ -113,8 +112,7 @@ export class AppointmentService {
     const id = await this.firstFree(candidates, (staffId) =>
       this.db.$transaction(async (tx) => {
         await this.lockCustomerAtBusiness(tx, userId, business.id);
-        // The customer's plan: Free includes one visit; Plus, a trial or billing off: unlimited.
-        await assertVisitAllowed(tx, userId);
+        // Customers book for free and without a BUKU limit (D-101): only the business's own cap applies.
         const upcoming = await tx.appointment.count({
           where: { userId, businessId: business.id, status: { in: [...LIVE] }, startAt: { gt: new Date() } },
         });

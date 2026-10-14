@@ -217,14 +217,13 @@ Everything about pricing is **data that platform admins change at any time** (D-
 prices per channel (web / Android / iPhone), limits, features, pricing-page benefits, an on/off
 switch per audience, running costs and channel fees. Starting catalog:
 
-| Audience   | Plan                        | Price / month                     | Highlights                                                     |
-| ---------- | --------------------------- | --------------------------------- | -------------------------------------------------------------- |
-| Customers  | Free (default)              | —                                 | 1 booking or queue join                                        |
-| Customers  | BUKU Plus                   | $1.99 web & Android, $4.99 iPhone | Unlimited bookings and queue joins                             |
-| Businesses | Starter (default, not sold) | —                                 | 1 team login, 2 staff, 10 services, 5 photos, no queue         |
-| Businesses | Essential                   | $24.99                            | 3 logins, 5 staff, 30 services, 10 photos, queue, staff photos |
-| Businesses | Professional                | $49.99                            | 15 logins, 25 staff, 100 services, 30 photos, priority support |
-| Businesses | Enterprise                  | $99.99                            | Unlimited logins, staff, services, photos; ads                 |
+| Audience   | Plan                        | Price / month | Highlights                                                     |
+| ---------- | --------------------------- | ------------- | -------------------------------------------------------------- |
+| Customers  | Free, always (D-101)        | —             | Unlimited bookings and queue joins; nothing to buy             |
+| Businesses | Starter (default, not sold) | —             | 1 team login, 2 staff, 10 services, 5 photos, no queue         |
+| Businesses | Essential                   | $24.99        | 3 logins, 5 staff, 30 services, 10 photos, queue, staff photos |
+| Businesses | Professional                | $49.99        | 15 logins, 25 staff, 100 services, 30 photos, priority support |
+| Businesses | Enterprise                  | $99.99        | Unlimited logins, staff, services, photos; ads                 |
 
 Part 1 (built): the catalog, the pricing-page API, admin management (new prices replace old ones
 for new customers while subscribers keep theirs; plans and channel prices archived, never
@@ -232,13 +231,15 @@ deleted), the switches (billing off → everyone unlimited, nothing breaks), adm
 usage for customers and businesses, and the profit calculator (tax, channel fees, running costs,
 break-even). Billing starts **switched off** for both audiences.
 
-Also built: a **free trial** each customer and each business can start once, whenever they like
-(default 30 days of BUKU Plus / Professional; length, plan and on/off per audience — off makes Free
-the normal plan); **any plan for any account free of charge** (admin grants, optionally until a
-date, replacing a grant or trial); and **plan requests** — a business asks for a plan (e.g.
+Customers use BUKU for free since D-101: no limit, no plan, no trial, and customer billing can't
+be switched back on (the old Free / BUKU Plus plans stay in the catalogue, unused).
+
+Also built: a **free trial** each business can start once, whenever it likes (default 30 days of
+Professional; length, plan and on/off are settings — off makes Starter the normal plan); **any
+plan for any account free of charge** (admin grants, optionally until a date, replacing a grant
+or trial); and **plan requests** — a business asks for a plan (e.g.
 Enterprise), an admin approves (→ a grant) or declines. Ended trials and grants expire on their own.
-Part 2 (built): every limit and feature is enforced where things are created — the free visit
-(booking and queue join), team logins (active accounts; re-enabling counts), bookable staff and
+Part 2 (built): every limit and feature is enforced where things are created — team logins (active accounts; re-enabling counts), bookable staff and
 services (restoring counts), photos, the virtual queue, staff photos and manual approval. Checks
 run inside the creating transaction behind a per-account lock, so parallel requests can't slip
 past a limit. Nothing existing is ever removed by a downgrade.
@@ -585,6 +586,10 @@ The detailed plan — every page, its data and edge cases, the design system and
   name rule shared with the API, pending review before it's in the public list. The for-business
   board loops like the home page's, with the same glow and pause. The home page's phone can be
   tapped (D-099).
+- **Categories and free customers (2026-10-13).** Every kind of business that works by
+  appointment or by queue ships with the database: 11 groups, 116 kinds, the same everywhere
+  (D-100). Customers book and queue for free with no BUKU limit; customer billing can't be switched
+  back on; the account's Plan tab is gone and pricing leads with "free" (D-101).
 
 ## Phase 4 — Mobile app (Expo)
 
@@ -604,24 +609,24 @@ load tests (k6) → security review & penetration test → runbooks → go-live 
 
 Recorded from the product owner; rationale for each is in DECISIONS.md.
 
-| Topic        | Decision                                                                                                                                                                                                                                                                                                               |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Services     | Add `business-service` and `billing-service`; outgoing webhooks (later) live in notification-service                                                                                                                                                                                                                   |
-| Sign-in      | Google now; Apple built but locked until the Apple Developer account; business sub-accounts use username + password; SMS/Twilio later                                                                                                                                                                                  |
-| Sessions     | Signed in until logout; password change logs out every device with a clear "sign in again" message                                                                                                                                                                                                                     |
-| Guests       | No guest bookings                                                                                                                                                                                                                                                                                                      |
-| Monetisation | Customers: 1 free booking or queue join, then BUKU Plus ($1.99 web/Android, $4.99 iPhone). Businesses: Essential $24.99, Professional $49.99, Enterprise $99.99 (employee logins and other limits by tier). Every price, limit and plan is editable at any time (D-065). Appointments themselves are paid at the venue |
-| Market       | Pakistan first, built for worldwide from day one                                                                                                                                                                                                                                                                       |
-| Language     | English first; more languages by user majority                                                                                                                                                                                                                                                                         |
-| Verification | Unverified businesses may take bookings, clearly badged; detailed country-flexible business details                                                                                                                                                                                                                    |
-| Teams        | AWS-style sub-accounts with Owner / Manager / Front desk / Staff roles                                                                                                                                                                                                                                                 |
-| Reputation   | Two-way: customer reliability (no-shows, last-minute cancels) and business reliability (business cancellations)                                                                                                                                                                                                        |
-| Scheduling   | No overlapping appointments per customer across businesses; business-set booking horizon; 3 future bookings per customer per business                                                                                                                                                                                  |
-| Queue        | Remote join within a business-set distance (default 5 km); one active queue per customer; alerts at 10, 5, then every step                                                                                                                                                                                             |
-| Data rights  | Self-service section for customers and businesses to export or delete their data                                                                                                                                                                                                                                       |
-| Hosting      | Web app on Vercel (thebuku.vercel.app) until a domain is bought; backend on DigitalOcean (lean: droplet + managed Postgres/Valkey)                                                                                                                                                                                     |
-| Search       | Postgres first; Elasticsearch kept, not running                                                                                                                                                                                                                                                                        |
-| Pictures     | Business cover + logo; optional employee photos chosen by the business; customer profile picture visible only to that customer; ad images and videos only on the Enterprise business plan                                                                                                                              |
+| Topic        | Decision                                                                                                                                                                                                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Services     | Add `business-service` and `billing-service`; outgoing webhooks (later) live in notification-service                                                                                                                                                                                                                     |
+| Sign-in      | Google now; Apple built but locked until the Apple Developer account; business sub-accounts use username + password; SMS/Twilio later                                                                                                                                                                                    |
+| Sessions     | Signed in until logout; password change logs out every device with a clear "sign in again" message                                                                                                                                                                                                                       |
+| Guests       | No guest bookings                                                                                                                                                                                                                                                                                                        |
+| Monetisation | Customers: free, with no limit (D-101; they once had 1 free visit, then BUKU Plus at $1.99). Businesses: Essential $24.99, Professional $49.99, Enterprise $99.99 (employee logins and other limits by tier). Every price, limit and plan is editable at any time (D-065). Appointments themselves are paid at the venue |
+| Market       | Pakistan first, built for worldwide from day one                                                                                                                                                                                                                                                                         |
+| Language     | English first; more languages by user majority                                                                                                                                                                                                                                                                           |
+| Verification | Unverified businesses may take bookings, clearly badged; detailed country-flexible business details                                                                                                                                                                                                                      |
+| Teams        | AWS-style sub-accounts with Owner / Manager / Front desk / Staff roles                                                                                                                                                                                                                                                   |
+| Reputation   | Two-way: customer reliability (no-shows, last-minute cancels) and business reliability (business cancellations)                                                                                                                                                                                                          |
+| Scheduling   | No overlapping appointments per customer across businesses; business-set booking horizon; 3 future bookings per customer per business                                                                                                                                                                                    |
+| Queue        | Remote join within a business-set distance (default 5 km); one active queue per customer; alerts at 10, 5, then every step                                                                                                                                                                                               |
+| Data rights  | Self-service section for customers and businesses to export or delete their data                                                                                                                                                                                                                                         |
+| Hosting      | Web app on Vercel (thebuku.vercel.app) until a domain is bought; backend on DigitalOcean (lean: droplet + managed Postgres/Valkey)                                                                                                                                                                                       |
+| Search       | Postgres first; Elasticsearch kept, not running                                                                                                                                                                                                                                                                          |
+| Pictures     | Business cover + logo; optional employee photos chosen by the business; customer profile picture visible only to that customer; ad images and videos only on the Enterprise business plan                                                                                                                                |
 
 **Still open:** whether the business a customer booked with may see the customer's profile
 picture (default: no) · Enterprise plan contents and price · SMS/WhatsApp provider choice and cost (before launch) · AI receptionist

@@ -130,7 +130,10 @@ export function NotificationSettings() {
         <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm text-ink-2">
           <li>Everything also goes to your inbox here, so nothing is ever only in an email.</li>
           <li>Being called in a queue: your live ticket shows it the moment it happens.</li>
-          <li>Notices about your plan, like a trial ending or a payment that didn’t go through.</li>
+          <li>
+            If you run a business on BUKU: notices about its plan, like a trial ending or a payment that
+            didn’t go through.
+          </li>
         </ul>
       </Group>
     </div>

@@ -217,11 +217,11 @@ Legend — **Data:** API used. **Auth:** who may open it. Every page has designe
 | `/queue/[entryId]`                            | Live ticket: position, people ahead, called → come to the counter                                 | my-ticket, public queue stream (live)                  |
 | `/account/reviews`                            | My reviews (edit within 7 days, delete)                                                           | `/v1/appointments/reviews`                             |
 | `/account/notifications`                      | Inbox + preferences + WhatsApp connect + suggestions opt-in                                       | notifications, prefs, whatsapp                         |
-| `/account/billing`                            | Plan, trial, upgrade                                                                              | billing me, trial, checkout                            |
 | `/account/settings`                           | Profile, phone, picture, two-step, sessions/devices, export my data, delete account               | auth me, mfa, sessions, export, delete                 |
 
-Edge cases throughout: slot taken while choosing (refresh times, keep choices), plan limit
-(explain + trial), booking limit per business, overlapping booking elsewhere, late cancellation
+Customers use BUKU for free, with no plan (D-101): there is no customer billing page, and the old
+`/account/plan` goes to `/account`. Edge cases throughout: slot taken while choosing (refresh
+times, keep choices), booking limit per business, overlapping booking elsewhere, late cancellation
 warning (window), queue too far (distance, retry with location), already in a queue, queue
 closed/paused, business suspended mid-flow, session expired mid-flow (resume after sign-in).
 

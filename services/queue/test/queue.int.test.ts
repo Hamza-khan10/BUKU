@@ -384,23 +384,20 @@ describe('Plans (billing on)', () => {
     });
   });
 
-  it('a queue join is a visit: Free customers get one; leaving before being served gives it back', async () => {
+  it('customers join queues for free and as often as they like (D-101), one queue at a time', async () => {
     await withBilling(db, 'user', async () => {
-      const s = await shop();
+      const [s, other] = [await shop(), await shop()];
       const me = await person();
-      const first = await join(me, s);
-      expect(
-        (await request(app).post(`/v1/queue/tickets/${first.body.data.id}/leave`).set(me.auth)).status,
-      ).toBe(200);
-      const second = await join(me, s);
-      expect(second.status).toBe(201);
-      await desk(s, '/call-next');
-      await desk(s, `/entries/${second.body.data.id}/serve`);
-      await desk(s, `/entries/${second.body.data.id}/complete`);
-      const third = await join(me, s);
-      expect([third.status, third.body.error.code]).toEqual([409, 'PLAN_LIMIT_REACHED']);
-      await givePlan(db, { userId: me.id }, 'user_plus');
-      expect((await join(me, s)).status).toBe(201);
+      for (let visit = 0; visit < 3; visit++) {
+        const ticket = await join(me, s);
+        expect(ticket.status).toBe(201);
+        // Already waiting here: another queue has to wait until this visit is over.
+        expect((await join(me, other)).body.error?.code).toBe('QUEUE_ALREADY_JOINED');
+        await desk(s, '/call-next');
+        await desk(s, `/entries/${ticket.body.data.id}/serve`);
+        await desk(s, `/entries/${ticket.body.data.id}/complete`);
+      }
+      expect((await join(me, other)).status).toBe(201);
     });
   });
 });

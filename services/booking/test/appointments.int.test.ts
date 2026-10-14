@@ -16,7 +16,7 @@ import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
-import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
+import { withBilling } from '../../../packages/billing/test/helpers.js';
 import { createEvent, TOPICS } from '@buku/kafka';
 import { buildBookingApp } from '../src/app.js';
 import type { AppointmentService } from '../src/appointments/appointment-service.js';
@@ -328,6 +328,16 @@ describe('Booking', () => {
     expect([clash.status, clash.body.error.code]).toEqual([409, 'APPOINTMENT_OVERLAP']);
   });
 
+  it('the same time at two businesses, booked at once: one booking, and a clear “you already have one”', async () => {
+    const [a, b] = [await salon(), await salon()];
+    const me = await person();
+    const results = await Promise.all([book(me, a, at(DAY(), '16:00')), book(me, b, at(DAY(), '16:00'))]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    expect(results.find((r) => r.status === 409)!.body.error.code).toBe('APPOINTMENT_OVERLAP');
+    // Another time the same day is fine.
+    expect((await book(me, b, at(DAY(), '11:00'))).status).toBe(201);
+  });
+
   it('caps future bookings per customer per business (D-037), even when sent at once', async () => {
     const s = await salon({ staffCount: 3, settings: { maxFutureBookingsPerCustomer: 2 } });
     const me = await person();
@@ -559,45 +569,21 @@ describe('The business’s list (serve customers with or without a phone)', () =
   });
 });
 
-describe('Plans: the free visit (billing on)', () => {
-  it('Free: one booking; cancelled ones don’t count; Plus is unlimited', async () => {
+describe('Customers book for free (D-101)', () => {
+  it('no BUKU limit on bookings, at one business or many, even if charging customers were switched on', async () => {
     await withBilling(db, 'user', async () => {
-      const [a, b] = [await salon(), await salon()];
+      const [a, b] = [await salon({ staffCount: 2 }), await salon({ staffCount: 2 })];
       const me = await person();
-      const first = await book(me, a, at(DAY(), '10:00'));
-      expect(first.status).toBe(201);
-      const second = await book(me, b, at(DAY(), '12:00'));
-      expect([second.status, second.body.error.code]).toEqual([409, 'PLAN_LIMIT_REACHED']);
-      expect(second.body.error).toMatchObject({
-        message: expect.stringContaining('free booking'),
-        details: { limit: 'visits', max: 1, used: 1, plan: 'user_free' },
-      });
-
-      await request(app)
-        .post(`/v1/appointments/${first.body.data.id}/cancel`)
-        .set(me.auth)
-        .send({ reasonCode: 'other' });
-      expect((await book(me, b, at(DAY(), '12:00'))).status).toBe(201);
-
-      await givePlan(db, { userId: me.id }, 'user_plus');
-      expect((await book(me, a, at(DAY(), '14:00'))).status).toBe(201);
-      expect((await book(me, b, at(DAY(), '15:00'))).status).toBe(201);
+      for (const [s, time] of [
+        [a, '09:00'],
+        [b, '10:00'],
+        [a, '11:00'],
+        [b, '12:00'],
+      ] as const) {
+        expect((await book(me, s, at(DAY(), time))).status).toBe(201);
+      }
+      // The next day too: only each business's own cap on upcoming bookings applies (3 here).
+      expect((await book(me, a, at(addDays(DAY(), 1), '09:00'))).status).toBe(201);
     });
-  });
-
-  it('two bookings at once at different businesses: only one free visit is used', async () => {
-    await withBilling(db, 'user', async () => {
-      const [a, b] = [await salon(), await salon()];
-      const me = await person();
-      const results = await Promise.all([book(me, a, at(DAY(), '10:00')), book(me, b, at(DAY(), '13:00'))]);
-      expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
-    });
-  });
-
-  it('billing off: everyone books freely (as in every other test)', async () => {
-    const s = await salon({ staffCount: 2 });
-    const me = await person();
-    expect((await book(me, s, at(DAY(), '10:00'))).status).toBe(201);
-    expect((await book(me, s, at(DAY(), '11:00'))).status).toBe(201);
   });
 });
