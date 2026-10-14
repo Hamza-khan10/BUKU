@@ -13,7 +13,7 @@
   "dependencies": {
     "@buku/common": "workspace:*",
     "@buku/database": "workspace:*",
-    "@confluentinc/kafka-javascript": "1.10.1",
+    "@confluentinc/kafka-javascript": "1.11.0",
     "zod": "4.6.5"
   }
 }
