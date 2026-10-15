@@ -49,11 +49,86 @@ test.describe('Discovery', () => {
     await expect(page.getByRole('link', { name: /^Verified.*\(on/ })).toBeVisible();
   });
 
-  test('nothing found: says so and offers a fresh start; a page past the end says that', async ({ page }) => {
+  test('nothing found: says so and offers a fresh start; an old link to a later page starts at the top', async ({
+    page,
+  }) => {
     await page.goto('/explore?q=zzqqxxyy');
     await expect(page.getByRole('heading', { name: 'No places match all of that' })).toBeVisible();
+    await page.getByRole('button', { name: 'Start a fresh search' }).click();
+    await expect(page).toHaveURL(/\/explore$/);
+    await expect(page.getByRole('heading', { name: /^\d+ places?/ })).toBeVisible();
     await page.goto('/explore?page=40');
-    await expect(page.getByRole('heading', { name: 'There’s no page 40 for this search' })).toBeVisible();
+    await expect(page.getByRole('list', { name: 'Places' }).getByRole('listitem').first()).toBeVisible();
+  });
+
+  test('explore changes in place, shows its shape while loading, keeps going as you scroll, and Back works', async ({
+    page,
+  }) => {
+    // It scrolls through every place there is: more than the usual half minute on a phone.
+    test.slow();
+    await page.goto('/explore');
+    const places = page.getByRole('list', { name: 'Places' });
+    await expect(places.getByRole('listitem').first()).toBeVisible();
+    const total = Number(
+      (await page.getByRole('heading', { name: /^\d+ places?/ }).textContent())!.match(/\d+/)![0],
+    );
+    // A marker on the page: a reload would wipe it.
+    await page.evaluate(() => ((window as unknown as { kept: boolean }).kept = true));
+    const kept = () => page.evaluate(() => (window as unknown as { kept?: boolean }).kept === true);
+
+    // While the next results are on their way, the page shows their shape.
+    await page.route('**/api/v1/businesses/search**', async (route) => {
+      await new Promise((r) => setTimeout(r, 800));
+      await route.continue();
+    });
+    await page.getByRole('link', { name: /^Open now/ }).click();
+    await expect(page.getByRole('status', { name: 'Loading places' })).toBeVisible();
+    await expect(page).toHaveURL(/openNow=1/);
+    await expect(page.getByRole('link', { name: /^Open now.*\(on/ })).toBeVisible();
+    await expect(page.getByRole('status', { name: 'Loading places' })).toBeHidden();
+    await page.unroute('**/api/v1/businesses/search**');
+    expect(await kept()).toBe(true);
+
+    await page.goBack();
+    await expect(page).toHaveURL(/\/explore$/);
+    await expect(page.getByRole('heading', { name: new RegExp(`^${total} places?`) })).toBeVisible();
+
+    // A kind of place, one tap.
+    await page
+      .getByRole('navigation', { name: 'Kinds of place' })
+      .getByRole('button', { name: /Beauty & Hair/ })
+      .click();
+    await expect(page).toHaveURL(/category=beauty-hair/);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Beauty & Hair');
+    await page
+      .getByRole('navigation', { name: 'Kinds of place' })
+      .getByRole('button', { name: 'Everything' })
+      .click();
+    await expect(page).toHaveURL(/\/explore$/);
+    expect(await kept()).toBe(true);
+
+    // More places as you scroll, until the end says so.
+    if (total > 12) {
+      for (let i = 0; i < 12 && (await page.getByText(/^That’s all \d+ places/).count()) === 0; i++) {
+        // Straight to the bottom (a wheel would start the page's smooth scrolling, which keeps
+        // going after the test has moved on).
+        await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        await page.waitForTimeout(400);
+        const more = page.getByRole('button', { name: 'Show more places' });
+        // Places keep loading by themselves at first, so the button may move or be gone a moment later.
+        if ((await more.count()) > 0) await more.click({ timeout: 3000 }).catch(() => undefined);
+      }
+      await expect(page.getByText(`That’s all ${total} places for this search.`)).toBeVisible();
+      await expect(places.locator(':scope > li.reveal')).toHaveCount(total);
+      // While the end of the list is on screen it steps aside (the list's own buttons are there);
+      // higher up, one tap takes you back to the search.
+      await page.getByText(`That’s all ${total} places for this search.`).scrollIntoViewIfNeeded();
+      await expect(page.getByRole('button', { name: 'Back to the search' })).toBeHidden();
+      await page.evaluate(() => window.scrollTo(0, 2000));
+      await page.getByRole('button', { name: 'Back to the search' }).click();
+      await expect(page.getByRole('heading', { level: 1 })).toBeInViewport();
+    }
+    await expectAccessible(page);
   });
 
   test('near me: asks for the location and lists the nearest places', async ({ page, context }) => {

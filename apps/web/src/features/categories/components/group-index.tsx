@@ -14,7 +14,16 @@ export function GroupIndex({ groups }: { groups: { slug: string; name: string; c
     const top = stackTarget(slug);
     if (top === null) return;
     const heading = document.getElementById(`group-${slug}`);
-    const done = () => heading?.focus({ preventScroll: true });
+    // When the glide ends, make sure it ended there (a busy page can cut it short, or the cards can
+    // have settled since), then hand focus to the group.
+    const done = () => {
+      const exact = stackTarget(slug);
+      if (exact !== null && Math.abs(window.scrollY - exact) > 4) {
+        if (lenis) lenis.scrollTo(exact, { immediate: true });
+        else window.scrollTo({ top: exact });
+      }
+      heading?.focus({ preventScroll: true });
+    };
     if (lenis) lenis.scrollTo(top, { duration: 0.9, onComplete: done });
     else {
       window.scrollTo({ top });

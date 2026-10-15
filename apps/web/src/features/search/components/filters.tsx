@@ -1,22 +1,30 @@
+'use client';
+
 import { Check, X } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
+import type { MouseEvent } from 'react';
 import { cn } from '@/lib/cn';
 import { filtersQuery, withFilters, type Filters } from '../params';
 
 /**
  * Filter chips: each one is a plain link to the same search with that filter
  * switched — so filters work without scripts, and every search can be shared.
- * On phones they sit in one row you swipe, so the results start sooner.
+ * On phones they sit in one row you swipe, so the results start sooner. Given `onFilters` (the
+ * explore page), a plain click changes the search in place instead; a new tab still opens the link.
  */
 export function FilterChips({
   base,
   filters,
   categoryName,
+  onFilters,
+  className,
 }: {
   base: string;
   filters: Filters;
   categoryName?: string | undefined;
+  onFilters?: ((f: Filters) => void) | undefined;
+  className?: string | undefined;
 }) {
   const chips: { key: keyof Filters; label: string; on: boolean }[] = [
     { key: 'openNow', label: 'Open now', on: filters.openNow },
@@ -25,17 +33,26 @@ export function FilterChips({
     { key: 'topRated', label: '4 stars & up', on: filters.topRated },
   ];
   const link = (change: Partial<Filters>) => `${base}${filtersQuery(withFilters(filters, change))}` as Route;
+  const inPlace = (change: Partial<Filters>) => (e: MouseEvent<HTMLAnchorElement>) => {
+    if (!onFilters || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    onFilters(withFilters(filters, change));
+  };
   const chip =
     'inline-flex h-10 items-center gap-1.5 rounded-full border px-4 text-sm font-medium transition-colors';
   return (
     <ul
       aria-label="Filters"
-      className="relative -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 sm:[mask-image:none]"
+      className={cn(
+        'relative -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 sm:[mask-image:none]',
+        className,
+      )}
     >
       {chips.map(({ key, label, on }) => (
         <li key={key} className="shrink-0">
           <Link
             href={link({ [key]: !on })}
+            onClick={inPlace({ [key]: !on })}
             scroll={false}
             className={cn(
               chip,
@@ -54,6 +71,7 @@ export function FilterChips({
         <li className="shrink-0">
           <Link
             href={link({ category: '' })}
+            onClick={inPlace({ category: '' })}
             scroll={false}
             className={cn(chip, 'border-ink bg-ink text-canvas')}
           >

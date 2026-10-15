@@ -1,16 +1,9 @@
-import type { Metadata, Route } from 'next';
-import Link from 'next/link';
-import { SearchX } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Container, PageHeading } from '@/components/ui/layout';
-import { EmptyState, ErrorState } from '@/components/ui/states';
+import type { Metadata } from 'next';
+import { Container } from '@/components/ui/layout';
 import { categoryTree, cities, searchBusinesses } from '@/features/search/api';
-import { BusinessGrid } from '@/features/search/components/business-card';
-import { FilterChips, Pagination } from '@/features/search/components/filters';
-import { NearMe, PlaceControls } from '@/features/search/components/place-controls';
-import { SearchBox } from '@/features/search/components/search-box';
-import { activeFilterCount, filtersQuery, parseFilters, withFilters } from '@/features/search/params';
-import type { CategoryNode } from '@/features/search/types';
+import { Explore } from '@/features/search/components/explore';
+import type { ExplorePage } from '@/features/search/explore';
+import { parseFilters } from '@/features/search/params';
 import { ApiError } from '@/lib/api/errors';
 
 export async function generateMetadata({ searchParams }: PageProps<'/explore'>): Promise<Metadata> {
@@ -22,96 +15,35 @@ export async function generateMetadata({ searchParams }: PageProps<'/explore'>):
   };
 }
 
-const findCategory = (tree: CategoryNode[], slug: string): CategoryNode | undefined =>
-  tree.flatMap((c) => [c, ...c.children]).find((c) => c.slug === slug);
-
-export default async function ExplorePage({ searchParams }: PageProps<'/explore'>) {
-  const filters = parseFilters(await searchParams);
-  const [results, cityList, tree] = await Promise.all([
-    searchBusinesses(filters).catch((e: unknown) => e as ApiError),
+/**
+ * The first page of a search, rendered here (fast, and readable by search engines); the rest of
+ * the page lives in the browser (D-104). An old link to a later page starts at the beginning:
+ * results now continue as you scroll.
+ */
+export default async function ExploreRoute({ searchParams }: PageProps<'/explore'>) {
+  const filters = { ...parseFilters(await searchParams), page: 1 };
+  const [first, cityList, tree] = await Promise.all([
+    searchBusinesses(filters).catch((e: unknown) => (e instanceof Error ? e : new Error('Search failed'))),
     cities().catch(() => []),
     categoryTree().catch(() => []),
   ]);
-  const categoryName = filters.category ? findCategory(tree, filters.category)?.name : undefined;
-  const filtered = activeFilterCount(filters) > 0;
+  const initial: ExplorePage | { error: string; requestId?: string | undefined } =
+    first instanceof Error
+      ? { error: first.message, requestId: first instanceof ApiError ? first.requestId : undefined }
+      : {
+          items: first.data,
+          meta: first.meta ?? {
+            page: 1,
+            limit: first.data.length,
+            total: first.data.length,
+            totalPages: 1,
+            sort: filters.sort,
+          },
+        };
 
   return (
-    <Container className="flex flex-col gap-8 py-8 sm:py-14">
-      <PageHeading
-        title={
-          filters.city ? (
-            <>
-              {filters.q ? `Results for “${filters.q}”` : 'Explore'}
-              <span className="text-ink-3"> in {filters.city}</span>
-            </>
-          ) : filters.q ? (
-            `Results for “${filters.q}”`
-          ) : (
-            'Explore'
-          )
-        }
-      >
-        <div className="max-w-2xl">
-          <SearchBox defaultValue={filters.q} city={filters.city || undefined} size="md" />
-        </div>
-        <PlaceControls base="/explore" filters={filters} cities={cityList} />
-        <FilterChips base="/explore" filters={filters} categoryName={categoryName} />
-        <NearMe filters={filters} />
-      </PageHeading>
-
-      {results instanceof Error ? (
-        <ErrorState
-          title="Search isn’t answering right now"
-          message="Please try again in a moment."
-          reference={results instanceof ApiError ? results.requestId : undefined}
-          action={
-            <Button asChild>
-              <Link href={`/explore${filtersQuery(filters)}` as Route}>Try again</Link>
-            </Button>
-          }
-        />
-      ) : results.data.length === 0 && filters.page > 1 ? (
-        <EmptyState
-          icon={SearchX}
-          title={`There’s no page ${filters.page} for this search`}
-          action={
-            <Button asChild variant="primary">
-              <Link href={`/explore${filtersQuery(withFilters(filters, { page: 1 }))}` as Route}>
-                Go to page 1
-              </Link>
-            </Button>
-          }
-        >
-          The results may have changed since this link was made.
-        </EmptyState>
-      ) : results.data.length === 0 ? (
-        <EmptyState
-          icon={SearchX}
-          title={filtered || filters.q ? 'No places match all of that' : 'No places listed here yet'}
-          action={
-            filtered || filters.q || filters.city ? (
-              <Button asChild variant="primary">
-                <Link href="/explore">Start a fresh search</Link>
-              </Button>
-            ) : undefined
-          }
-        >
-          {filtered
-            ? 'Try turning off a filter, or another city.'
-            : filters.q
-              ? 'Try fewer or different words: a service (“haircut”) or a kind of place (“dentist”).'
-              : 'When businesses here join BUKU, they’ll appear on this page.'}
-        </EmptyState>
-      ) : (
-        <section aria-labelledby="results" className="flex flex-col gap-6">
-          <h2 id="results" className="text-ink-2" aria-live="polite">
-            {results.meta!.total} {results.meta!.total === 1 ? 'place' : 'places'}
-            {results.meta!.totalPages > 1 && ` · page ${filters.page} of ${results.meta!.totalPages}`}
-          </h2>
-          <BusinessGrid items={results.data} label="Places" />
-          <Pagination base="/explore" filters={filters} totalPages={results.meta!.totalPages} />
-        </section>
-      )}
+    <Container className="py-8 sm:py-14">
+      <Explore initial={initial} initialFilters={filters} cities={cityList} tree={tree} />
     </Container>
   );
 }

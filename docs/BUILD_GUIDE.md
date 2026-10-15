@@ -600,6 +600,9 @@ The detailed plan — every page, its data and edge cases, the design system and
   group a card with its kinds in readable rows, stacked as the page scrolls where they fit. The
   stacking cards were rebuilt for both pages: same pin place, three edges, nothing peeking out,
   only when they fit the screen (D-102).
+- **Explore (2026-10-15).** Changes in place without reloading, a loading skeleton, places that
+  keep coming as you scroll, the groups as one-tap pills, other kinds of place between pages, an end
+  that says where to look next; "Sponsored" ready for when ads exist (D-104).
 
 ## Phase 4 — Mobile app (Expo)
 
