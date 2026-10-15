@@ -19,6 +19,9 @@ const SORT_LABELS: Record<Sort, string> = {
   newest: 'Newest on BUKU',
 };
 
+const pillStyles =
+  'h-10 rounded-full border border-control bg-surface px-4 text-sm font-medium text-ink hover:border-ink-3 focus-visible:border-focus';
+
 const selectStyles =
   'h-10 rounded-full border border-control bg-surface px-4 text-sm font-medium text-ink hover:border-ink-3 focus-visible:border-focus sm:h-11 sm:rounded-md sm:px-3 sm:text-[0.95rem] sm:font-normal';
 
@@ -26,22 +29,40 @@ const selectStyles =
  * City and order: changing either runs the search again (it's all in the address). On
  * phones they're two compact pills side by side (their labels stay for screen readers).
  */
-export function PlaceControls({ base, filters, cities }: { base: string; filters: Filters; cities: City[] }) {
+export function PlaceControls({
+  base,
+  filters,
+  cities,
+  onFilters,
+  compact = false,
+}: {
+  base: string;
+  filters: Filters;
+  cities: City[];
+  /** Change the search in place (the explore page) instead of going to its address. */
+  onFilters?: ((f: Filters) => void) | undefined;
+  /** Pills in the parent's row, their labels for screen readers only (the explore toolbar). */
+  compact?: boolean;
+}) {
   const router = useRouter();
   const id = useId();
   const go = (change: Partial<Filters>) =>
-    router.push(`${base}${filtersQuery(withFilters(filters, change))}` as Route);
+    onFilters
+      ? onFilters(withFilters(filters, change))
+      : router.push(`${base}${filtersQuery(withFilters(filters, change))}` as Route);
+  const label = compact ? 'sr-only' : 'text-sm font-medium text-ink-2 max-sm:sr-only';
+  const select = compact ? pillStyles : selectStyles;
   return (
-    <div className="flex flex-wrap items-end gap-2 sm:gap-3">
+    <div className={compact ? 'contents' : 'flex flex-wrap items-end gap-2 sm:gap-3'}>
       <div className="flex flex-col gap-1">
-        <label htmlFor={`${id}-city`} className="text-sm font-medium text-ink-2 max-sm:sr-only">
+        <label htmlFor={`${id}-city`} className={label}>
           City
         </label>
         <select
           id={`${id}-city`}
           value={filters.city}
           onChange={(e) => go({ city: e.target.value })}
-          className={selectStyles}
+          className={select}
         >
           <option value="">All cities</option>
           {cities.map((c) => (
@@ -52,14 +73,14 @@ export function PlaceControls({ base, filters, cities }: { base: string; filters
         </select>
       </div>
       <div className="flex flex-col gap-1">
-        <label htmlFor={`${id}-sort`} className="text-sm font-medium text-ink-2 max-sm:sr-only">
+        <label htmlFor={`${id}-sort`} className={label}>
           Order
         </label>
         <select
           id={`${id}-sort`}
           value={filters.sort}
           onChange={(e) => go({ sort: e.target.value as Sort })}
-          className={selectStyles}
+          className={select}
         >
           {SORTS.map((s) => (
             <option key={s} value={s}>
@@ -127,21 +148,18 @@ export function NearMe({ filters }: { filters: Filters }) {
     );
   };
 
+  // Its button sits in the parent's row; what it finds takes a row of its own below.
   return (
-    <div className="flex flex-col gap-4">
+    <div className="contents">
       <div>
-        <Button
-          onClick={find}
-          disabled={state.kind === 'locating'}
-          className="max-sm:h-10 max-sm:px-4 max-sm:text-sm"
-        >
+        <Button onClick={find} disabled={state.kind === 'locating'} className="h-10 px-4 text-sm">
           {state.kind === 'locating' ? <Spinner className="size-4" /> : <LocateFixed aria-hidden />}
           {state.kind === 'done' ? 'Search near me again' : 'Near me'}
         </Button>
       </div>
-      {state.kind === 'error' && <Alert tone="wait" title={state.message} />}
+      {state.kind === 'error' && <Alert tone="wait" title={state.message} className="basis-full" />}
       {state.kind === 'done' && (
-        <section aria-labelledby="near-me" className="flex flex-col gap-4">
+        <section aria-labelledby="near-me" className="flex basis-full flex-col gap-4 pt-2">
           <h2 id="near-me" className="type-heading" aria-live="polite">
             {state.items.length === 0
               ? 'Nothing within 10 km matches'

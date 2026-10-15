@@ -24,7 +24,6 @@ const TOP_REM = 5.5; // under the site header
 const STEP_REM = 0.75; // how much of each covered card still shows above the next
 const DEPTH = 3; // covered cards that still show as edges
 const PIN_REM = TOP_REM + DEPTH * STEP_REM; // where every card pins
-const GAP_REM = 1.5;
 const MIN_WIDTH_REM = 40;
 
 interface Metrics {
@@ -62,13 +61,6 @@ export function StackedCards({
       window.innerWidth >= MIN_WIDTH_REM * rem &&
       heights.every((h, i) => tops[i]! + h <= window.innerHeight - rem);
     setStacked(!reduce && fits && cards.length > 1);
-    // Where each card is shown whole: its place in the deck, less where it pins.
-    const deckTop = (deck.current?.getBoundingClientRect().top ?? 0) + window.scrollY;
-    let flow = deckTop;
-    heights.forEach((h, i) => {
-      wrappers.current[i]?.setAttribute('data-stack-target', String(Math.round(flow - tops[i]!)));
-      flow += h + GAP_REM * rem;
-    });
   }, [reduce, cards.length]);
 
   /** Every frame the page moves: lift, settle, dim and trim the covered cards (reads, then writes). */
@@ -151,7 +143,8 @@ export function StackedCards({
     if (!stacked) return;
     const i = wrappers.current.findIndex((el) => el?.contains(event.target));
     if (i < 0 || !(covered.current[i]! > 0.01)) return;
-    const target = Number(wrappers.current[i]?.getAttribute('data-stack-target'));
+    const wrapper = wrappers.current[i];
+    const target = wrapper ? showAt(wrapper) : NaN;
     if (Number.isFinite(target)) {
       if (lenis) lenis.scrollTo(target, { immediate: true });
       else window.scrollTo(0, target);
@@ -197,12 +190,28 @@ export function StackedCards({
   );
 }
 
+/**
+ * The scroll position that shows a card whole, worked out now (not remembered: anything above
+ * the deck may have changed height since): stacked, its place in the deck less where it pins;
+ * otherwise its top, just under the header.
+ */
+function showAt(wrapper: HTMLElement): number {
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const deck = wrapper.parentElement;
+  if (!deck || !wrapper.hasAttribute('data-stacked')) {
+    return Math.round(wrapper.getBoundingClientRect().top + window.scrollY - TOP_REM * rem);
+  }
+  const gap = parseFloat(getComputedStyle(deck).rowGap) || 0;
+  let flow = deck.getBoundingClientRect().top + window.scrollY;
+  for (const card of Array.from(deck.children)) {
+    if (card === wrapper) break;
+    flow += (card as HTMLElement).offsetHeight + gap;
+  }
+  return Math.round(flow - PIN_REM * rem);
+}
+
 /** The scroll position that shows the card with this id whole (stacked or not), or null. */
 export function stackTarget(id: string): number | null {
   const el = document.getElementById(id);
-  if (!el) return null;
-  const pinned = el.getAttribute('data-stack-target');
-  if (pinned !== null && el.hasAttribute('data-stacked')) return Number(pinned);
-  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  return el.getBoundingClientRect().top + window.scrollY - PIN_REM * rem;
+  return el ? showAt(el) : null;
 }

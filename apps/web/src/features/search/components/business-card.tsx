@@ -3,6 +3,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { LiveDot } from '@/components/ui/live-dot';
+import { Skeleton } from '@/components/ui/skeleton';
 import { RatingInline } from '@/features/business/components/rating';
 import { CategoryIcon } from '@/features/categories/icons';
 import { cn } from '@/lib/cn';
@@ -21,6 +22,7 @@ const initial = (name: string) => [...name.trim()][0]?.toUpperCase() ?? '';
  *
  * `row` lays it out as a phone list row (picture beside the text) below `sm`, so
  * a list of places is quick to scan on a phone instead of a screen per place.
+ * A place a business pays to show (an ad, once BUKU sells them) always says "Sponsored".
  */
 export function BusinessCard({ item, row = false }: { item: SearchItem; row?: boolean }) {
   return (
@@ -83,6 +85,7 @@ export function BusinessCard({ item, row = false }: { item: SearchItem; row?: bo
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        {item.isPromoted && <p className="text-xs font-semibold tracking-[0.02em] text-ink-2">Sponsored</p>}
         <div className="flex items-start justify-between gap-3">
           <h3 className="text-[1.05rem] leading-snug font-semibold tracking-[-0.01em]">
             <Link
@@ -145,5 +148,51 @@ export function BusinessGrid({ items, label }: { items: SearchItem[]; label: str
         </li>
       ))}
     </ul>
+  );
+}
+
+/** A place still on its way: the card's own shape, so nothing jumps when it arrives. */
+export function BusinessCardSkeleton({ row = false }: { row?: boolean }) {
+  return (
+    <div
+      aria-hidden
+      className={cn('flex gap-3.5', row ? 'flex-row gap-4 sm:flex-col sm:gap-3.5' : 'flex-col')}
+    >
+      <Skeleton
+        className={cn(
+          'rounded-lg',
+          row
+            ? 'aspect-square w-[6.5rem] shrink-0 rounded-xl sm:aspect-[4/3] sm:w-auto sm:rounded-lg'
+            : 'aspect-[4/3]',
+        )}
+      />
+      <div className="flex flex-1 flex-col gap-2.5 pt-1">
+        <Skeleton className="h-5 w-3/4" />
+        <Skeleton className="h-4 w-1/2" />
+        <Skeleton className="h-4 w-2/5" />
+        <Skeleton className="h-4 w-3/5" />
+      </div>
+    </div>
+  );
+}
+
+/** A grid of cards still loading, laid out like the real one. */
+export function BusinessGridSkeleton({
+  count = 6,
+  label = 'Loading places',
+}: {
+  count?: number;
+  label?: string;
+}) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      className="grid gap-x-6 gap-y-6 sm:grid-cols-2 sm:gap-y-10 lg:grid-cols-3"
+    >
+      {Array.from({ length: count }, (_, i) => (
+        <BusinessCardSkeleton key={i} row />
+      ))}
+    </div>
   );
 }

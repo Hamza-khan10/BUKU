@@ -931,3 +931,22 @@ camera=(self)` there, `camera=()` everywhere else).
   come" after the grace period and never once someone arrived; confirming, declining and
   cancelling (with a reason the customer sees) for the front desk, managers and owners; staff
   handle their own customers. The API still decides, and says why when it refuses.
+
+**D-104 · Explore keeps people looking.** The owner said explore felt static and asked for it to
+be dynamic, with a loading screen and a design that makes people want to keep finding places. Ads
+there come later, as their own phase (the owner's choice); browsing continues as you scroll.
+
+- **Dynamic:** the search still lives in the address (shared links, Back, search engines get the
+  first page rendered on the server), but every change after that — a filter, the city, the
+  order, a kind of place — updates the results in place without reloading the page.
+- **Loading:** a skeleton in the page's own shape when explore opens (`loading.tsx`) and while new
+  results load; the old list dims while it refreshes; never a blank screen or a lone spinner.
+- **More and more places:** they keep coming as you scroll (by themselves for the first five
+  pages, then "Show more", so the footer is never out of reach), each place once. An old link to a
+  later page starts at the top.
+- **Engaging, with real data only:** one row of tools (city, order, near me, filters), the groups
+  as one-tap pills with their icons, "Or try something else" after the first twelve places (other
+  kinds of place, a few from each group), an end that says how many you've seen and where to look
+  next, and "Back to the search" that steps aside while the list's own buttons are on screen.
+- **Ready for ads:** a place the search marks as promoted says "Sponsored" on its card; nothing is
+  promoted until BUKU sells ads.
