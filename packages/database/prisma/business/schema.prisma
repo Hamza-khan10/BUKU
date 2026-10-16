@@ -1,0 +1,1015 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// BUKU — a BUSINESS SHARD (docs/DATABASE.md §6, DB-010; diagram §9.3)
+//
+// Everything that belongs to one business, on the shard its ID was placed on (registry.place):
+// profile, team, services, staff and schedules, APPOINTMENTS, queues, reviews, billing, ads, the
+// AI receptionist, webhooks. Every shard of the family has this same schema;
+// scripts/provision-shards.ts migrates each one.
+//
+// Conventions (as on the user shard, DB-001…DB-019):
+//  • Keys are 64-bit snowflake IDs made by the services: `BigInt`. People (owners, customers,
+//    staff accounts) live on user shards: their IDs are plain BigInts, never foreign keys.
+//  • Every row carries its `business_id`, and a child points at its parent through
+//    (parent_id, business_id): a service can't be in another business's group, an appointment
+//    can't be with another business's employee (composite foreign keys).
+//  • Row-level security by business (DB-020): a session sees only the business it set.
+//  • Money is BIGINT in the currency's minor unit (DB-009); statuses are text with CHECKs.
+//  • Time-partitioned tables are never the target of a foreign key: their old partitions are
+//    detached on schedule, which a reference would block (DB-024).
+//
+// Constraints, exclusions, partitions, triggers, policies and grants are in the migration SQL.
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../../src/generated/business"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ═════════════════════════════ THE BUSINESS ═════════════════════════════
+
+/// A business on BUKU. Its owner is a person on a user shard.
+model Business {
+  id                      BigInt                                @id
+  ownerUserId             BigInt                                @map("owner_user_id")
+  /// The kind of business (reference data, D2c).
+  categoryId              BigInt                                @map("category_id")
+  createdAt               DateTime                              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                              @updatedAt @map("updated_at") @db.Timestamptz(6)
+  verifiedAt              DateTime?                             @map("verified_at") @db.Timestamptz(6)
+  businessTermsAcceptedAt DateTime?                             @map("business_terms_accepted_at") @db.Timestamptz(6)
+  deletedAt               DateTime?                             @map("deleted_at") @db.Timestamptz(6)
+  lat                     Float?
+  lng                     Float?
+  /// Visible reviews; kept by a trigger.
+  reviewCount             Int                                   @default(0) @map("review_count")
+  avgRating               Decimal                               @default(0) @map("avg_rating") @db.Decimal(3, 2)
+  publicId                String                                @unique @map("public_id") @db.Char(12)
+  /// The address on the website (/b/<slug>); global through lookup.handles.
+  slug                    String                                @unique @db.VarChar(200)
+  name                    String                                @db.VarChar(200)
+  /// pending | verified | suspended | rejected
+  status                  String                                @default("pending") @db.VarChar(20)
+  /// ISO 3166-1 alpha-2.
+  country                 String                                @db.Char(2)
+  /// ISO 4217: what its prices are in.
+  currency                String                                @db.Char(3)
+  /// IANA zone: all availability is worked out in it.
+  timezone                String                                @default("UTC") @db.VarChar(60)
+  city                    String                                @db.VarChar(100)
+  state                   String?                               @db.VarChar(100)
+  postalCode              String?                               @map("postal_code") @db.VarChar(20)
+  address                 String?                               @db.VarChar(500)
+  phone                   String?                               @db.VarChar(20)
+  email                   String?                               @db.VarChar(255)
+  website                 String?                               @db.VarChar(500)
+  description             String?                               @db.VarChar(5000)
+  logoStorageKey          String?                               @unique @map("logo_storage_key") @db.VarChar(300)
+  rejectionReason         String?                               @map("rejection_reason") @db.VarChar(1000)
+  businessTermsVersion    String?                               @map("business_terms_version") @db.VarChar(20)
+  /// Validated by the service (autoConfirm, …).
+  settings                Json                                  @default("{}")
+  /// From lat/lng, by a trigger; never written by the application.
+  location                Unsupported("geography(Point,4326)")?
+
+  photos                 BusinessPhoto[]
+  documents              BusinessDocument[]
+  legalProfile           BusinessLegalProfile?
+  members                BusinessMember[]
+  reports                BusinessReport[]
+  searchStats            BusinessSearchStats?
+  hours                  BusinessHours[]
+  bookingSettings        BookingSettings?
+  queueSettings          QueueSettings?
+  serviceGroups          ServiceGroup[]
+  services               Service[]
+  staff                  Staff[]
+  resources              Resource[]
+  availabilityRules      AvailabilityRule[]
+  availabilityExceptions AvailabilityException[]
+  staffShifts            StaffShift[]
+  appointments           Appointment[]
+  appointmentIndex       AppointmentIndex[]
+  appointmentEvents      AppointmentEvent[]
+  payments               Payment[]
+  reviews                Review[]
+  queueSessions          QueueSession[]
+  queueTickets           QueueTicket[]
+  ads                    BusinessAd[]
+  adEvents               AdEvent[]
+  aiReceptionistConfig   AiReceptionistConfig?
+  aiCallLogs             AiCallLog[]
+  webhooks               Webhook[]
+  webhookDeliveries      WebhookDelivery[]
+  subscriptions          Subscription[]
+  planRequests           PlanRequest[]
+
+  @@index([ownerUserId])
+  @@index([categoryId])
+  @@index([location], type: Gist)
+  @@map("businesses")
+}
+
+/// Public photos (media bucket), shown once the upload is confirmed and checked.
+model BusinessPhoto {
+  id          BigInt    @id
+  businessId  BigInt    @map("business_id")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  uploadedAt  DateTime? @map("uploaded_at") @db.Timestamptz(6)
+  sizeBytes   Int       @map("size_bytes")
+  sortOrder   Int       @default(0) @map("sort_order") @db.SmallInt
+  isPrimary   Boolean   @default(false) @map("is_primary")
+  storageKey  String    @unique @map("storage_key") @db.VarChar(300)
+  contentType String    @map("content_type") @db.VarChar(100)
+  altText     String?   @map("alt_text") @db.VarChar(300)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, sortOrder])
+  @@map("business_photos")
+}
+
+/// Verification documents (private bucket), seen by admins only through short-lived links.
+model BusinessDocument {
+  id           BigInt    @id
+  businessId   BigInt    @map("business_id")
+  /// The admin who reviewed it (a person on a user shard).
+  reviewedById BigInt?   @map("reviewed_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  uploadedAt   DateTime? @map("uploaded_at") @db.Timestamptz(6)
+  reviewedAt   DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  sizeBytes    Int       @map("size_bytes")
+  /// business_license | medical_license | id_proof | address_proof | tax_certificate | other
+  type         String    @db.VarChar(30)
+  /// awaiting_upload | pending | approved | rejected
+  status       String    @default("awaiting_upload") @db.VarChar(20)
+  storageKey   String    @unique @map("storage_key") @db.VarChar(300)
+  contentType  String    @map("content_type") @db.VarChar(100)
+  reviewNote   String?   @map("review_note") @db.VarChar(1000)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("business_documents")
+}
+
+/// Who is legally behind a business (KYB). Identifiers and contact details encrypted; the
+/// registration number's blind index lets admins spot one registration used twice.
+model BusinessLegalProfile {
+  businessId             BigInt   @id @map("business_id")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  registrationCountry    String   @map("registration_country") @db.Char(2)
+  /// Per country: "NTN", "Companies House", …
+  registrationType       String   @map("registration_type") @db.VarChar(100)
+  legalName              String   @map("legal_name") @db.VarChar(300)
+  registeredAddress      String   @map("registered_address") @db.VarChar(500)
+  responsibleName        String   @map("responsible_name") @db.VarChar(200)
+  responsibleRole        String   @map("responsible_role") @db.VarChar(100)
+  registrationNumberHash Bytes    @map("registration_number_hash")
+  registrationNumberEnc  Bytes    @map("registration_number_enc")
+  taxIdEnc               Bytes?   @map("tax_id_enc")
+  responsibleEmailEnc    Bytes?   @map("responsible_email_enc")
+  responsiblePhoneEnc    Bytes?   @map("responsible_phone_enc")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([registrationNumberHash])
+  @@map("business_legal_profiles")
+}
+
+/// Someone other than the owner with access to the business.
+model BusinessMember {
+  id          BigInt   @id
+  businessId  BigInt   @map("business_id")
+  userId      BigInt   @map("user_id")
+  createdById BigInt?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// manager | front_desk | staff
+  role        String   @db.VarChar(20)
+  /// active | disabled
+  status      String   @default("active") @db.VarChar(20)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([userId])
+  @@map("business_members")
+}
+
+/// "Report this business": one per person per business.
+model BusinessReport {
+  id           BigInt    @id
+  businessId   BigInt    @map("business_id")
+  reporterId   BigInt?   @map("reporter_id")
+  reviewedById BigInt?   @map("reviewed_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewedAt   DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  /// fake_business | wrong_information | inappropriate_content | scam_or_fraud | other
+  reason       String    @db.VarChar(30)
+  /// open | reviewed | dismissed
+  status       String    @default("open") @db.VarChar(20)
+  details      String?   @db.VarChar(2000)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, reporterId])
+  @@map("business_reports")
+}
+
+/// What search ranks by (D-076), recomputed from bookings and queues. Derived: safe to rebuild.
+model BusinessSearchStats {
+  businessId         BigInt   @id @map("business_id")
+  refreshedAt        DateTime @map("refreshed_at") @db.Timestamptz(6)
+  bookings7d         Int      @default(0) @map("bookings_7d")
+  bookingsPrev7d     Int      @default(0) @map("bookings_prev_7d")
+  queueJoins7d       Int      @default(0) @map("queue_joins_7d")
+  kept90d            Int      @default(0) @map("kept_90d")
+  businessCancels90d Int      @default(0) @map("business_cancels_90d")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("business_search_stats")
+}
+
+/// Public opening hours; several rows a day for split shifts.
+model BusinessHours {
+  id         BigInt  @id
+  businessId BigInt  @map("business_id")
+  /// 0 = Sunday … 6 = Saturday.
+  dayOfWeek  Int     @map("day_of_week") @db.SmallInt
+  isClosed   Boolean @default(false) @map("is_closed")
+  /// "HH:MM" in the business's zone.
+  openTime   String  @map("open_time") @db.VarChar(5)
+  closeTime  String  @map("close_time") @db.VarChar(5)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, dayOfWeek, openTime])
+  @@map("business_hours")
+}
+
+/// How a business takes bookings. No row: the defaults.
+model BookingSettings {
+  businessId                   BigInt   @id @map("business_id")
+  updatedAt                    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// How far ahead customers may book (D-037).
+  bookingHorizonDays           Int      @default(365) @map("booking_horizon_days") @db.SmallInt
+  /// Future bookings one customer may hold here (D-037).
+  maxFutureBookingsPerCustomer Int      @default(3) @map("max_future_bookings_per_customer") @db.SmallInt
+  /// Cancelling later than this is a late cancel (D-035).
+  cancellationWindowHours      Int      @default(12) @map("cancellation_window_hours") @db.SmallInt
+  minNoticeMinutes             Int      @default(60) @map("min_notice_minutes") @db.SmallInt
+  slotStepMinutes              Int      @default(15) @map("slot_step_minutes") @db.SmallInt
+  noShowGraceMinutes           Int      @default(15) @map("no_show_grace_minutes") @db.SmallInt
+  /// Customers who show up less often than this wait for approval (D-078); null: off.
+  approvalBelowShowUpPercent   Int?     @map("approval_below_show_up_percent") @db.SmallInt
+  /// automatic | manual
+  confirmationMode             String   @default("automatic") @map("confirmation_mode") @db.VarChar(10)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("booking_settings")
+}
+
+/// How a business runs its queue. No row: the defaults.
+model QueueSettings {
+  businessId             BigInt   @id @map("business_id")
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Remote joins only within this distance (D-038).
+  remoteJoinRadiusMeters Int      @default(5000) @map("remote_join_radius_meters")
+  gracePeriodSeconds     Int      @default(300) @map("grace_period_seconds")
+  avgServiceSeconds      Int      @default(300) @map("avg_service_seconds")
+  maxQueueSize           Int      @default(200) @map("max_queue_size") @db.SmallInt
+  ticketPrefix           String   @default("A") @map("ticket_prefix") @db.VarChar(3)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("queue_settings")
+}
+
+// ═════════════════════════════ SERVICES, TEAM, SCHEDULES ═════════════════════════════
+
+/// A business's own grouping of its services ("Haircuts", "Colour").
+model ServiceGroup {
+  id         BigInt   @id
+  businessId BigInt   @map("business_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  sortOrder  Int      @default(0) @map("sort_order") @db.SmallInt
+  name       String   @db.VarChar(100)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  services Service[]
+
+  @@unique([businessId, name])
+  @@unique([id, businessId])
+  @@map("service_groups")
+}
+
+/// Something a business offers, at a price, taking so long.
+model Service {
+  id              BigInt   @id
+  businessId      BigInt   @map("business_id")
+  groupId         BigInt?  @map("group_id")
+  /// In the currency's minor unit (DB-009).
+  priceMinor      BigInt   @map("price_minor")
+  depositMinor    BigInt?  @map("deposit_minor")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  durationMinutes Int      @map("duration_minutes") @db.SmallInt
+  /// Clean-up time after it: the employee is busy until then.
+  bufferMinutes   Int      @default(0) @map("buffer_minutes") @db.SmallInt
+  maxConcurrent   Int      @default(1) @map("max_concurrent") @db.SmallInt
+  sortOrder       Int      @default(0) @map("sort_order") @db.SmallInt
+  isActive        Boolean  @default(true) @map("is_active")
+  depositRequired Boolean  @default(false) @map("deposit_required")
+  currency        String   @db.Char(3)
+  name            String   @db.VarChar(200)
+  description     String?  @db.VarChar(2000)
+
+  business     Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  group        ServiceGroup?  @relation(fields: [groupId, businessId], references: [id, businessId], onDelete: Restrict)
+  staff        StaffService[]
+  appointments Appointment[]
+
+  @@unique([id, businessId])
+  @@index([businessId, isActive, sortOrder])
+  @@index([groupId])
+  @@map("services")
+}
+
+/// A member of a business's team, bookable for services. `userId` once they have an account.
+model Staff {
+  id              BigInt   @id
+  businessId      BigInt   @map("business_id")
+  userId          BigInt?  @map("user_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  isActive        Boolean  @default(true) @map("is_active")
+  displayName     String   @map("display_name") @db.VarChar(100)
+  bio             String?  @db.VarChar(1000)
+  specializations String[] @default([])
+
+  business          Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  photo             StaffPhoto?
+  services          StaffService[]
+  availabilityRules AvailabilityRule[]
+  exceptions        AvailabilityException[]
+  shifts            StaffShift[]
+  openShift         StaffOpenShift?
+  appointments      Appointment[]
+
+  @@unique([businessId, userId])
+  @@unique([id, businessId])
+  @@index([businessId, isActive])
+  @@index([userId])
+  @@map("staff")
+}
+
+/// An employee's photo, with their consent (D-051).
+model StaffPhoto {
+  id                   BigInt   @id
+  businessId           BigInt   @map("business_id")
+  staffId              BigInt   @map("staff_id")
+  consentConfirmedById BigInt?  @map("consent_confirmed_by_id")
+  consentConfirmedAt   DateTime @map("consent_confirmed_at") @db.Timestamptz(6)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  sizeBytes            Int      @map("size_bytes")
+  storageKey           String   @unique @map("storage_key") @db.VarChar(300)
+
+  staff Staff @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  /// One photo per employee (an employee belongs to one business).
+  @@unique([staffId, businessId])
+  @@index([businessId])
+  @@map("staff_photos")
+}
+
+/// Which employee does which service.
+model StaffService {
+  staffId    BigInt @map("staff_id")
+  serviceId  BigInt @map("service_id")
+  businessId BigInt @map("business_id")
+
+  staff   Staff   @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
+  service Service @relation(fields: [serviceId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  @@id([staffId, serviceId])
+  @@index([serviceId])
+  @@index([businessId])
+  @@map("staff_services")
+}
+
+/// Bookable capacity that isn't a person: a chair, a bay, a room.
+model Resource {
+  id         BigInt   @id
+  businessId BigInt   @map("business_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  isActive   Boolean  @default(true) @map("is_active")
+  name       String   @db.VarChar(100)
+  type       String   @db.VarChar(50)
+
+  business          Business                @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  availabilityRules AvailabilityRule[]
+  exceptions        AvailabilityException[]
+  appointments      Appointment[]
+
+  @@unique([id, businessId])
+  @@index([businessId, isActive])
+  @@map("resources")
+}
+
+/// A weekly schedule: business-wide, per employee or per resource.
+model AvailabilityRule {
+  id         BigInt   @id
+  businessId BigInt   @map("business_id")
+  staffId    BigInt?  @map("staff_id")
+  resourceId BigInt?  @map("resource_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  dayOfWeek  Int      @map("day_of_week") @db.SmallInt
+  isActive   Boolean  @default(true) @map("is_active")
+  startTime  String   @map("start_time") @db.VarChar(5)
+  endTime    String   @map("end_time") @db.VarChar(5)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staff    Staff?    @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
+  resource Resource? @relation(fields: [resourceId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  @@index([businessId, dayOfWeek])
+  @@index([staffId, dayOfWeek])
+  @@index([resourceId])
+  @@map("availability_rules")
+}
+
+/// A one-off change: a holiday, different hours, extra hours.
+model AvailabilityException {
+  id            BigInt   @id
+  businessId    BigInt   @map("business_id")
+  staffId       BigInt?  @map("staff_id")
+  resourceId    BigInt?  @map("resource_id")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  exceptionDate DateTime @map("exception_date") @db.Date
+  /// holiday | modified | extra_hours
+  type          String   @db.VarChar(20)
+  startTime     String?  @map("start_time") @db.VarChar(5)
+  endTime       String?  @map("end_time") @db.VarChar(5)
+  reason        String?  @db.VarChar(200)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staff    Staff?    @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
+  resource Resource? @relation(fields: [resourceId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  @@index([businessId, exceptionDate])
+  @@index([staffId, exceptionDate])
+  @@index([resourceId])
+  @@map("availability_exceptions")
+}
+
+/// An employee's shift: clocked in, clocked out. Partitioned monthly; kept 25 months.
+model StaffShift {
+  id           BigInt
+  startedAt    DateTime  @map("started_at") @db.Timestamptz(6)
+  businessId   BigInt    @map("business_id")
+  staffId      BigInt    @map("staff_id")
+  /// Who last recorded or corrected it (the employee, front desk or a manager).
+  recordedById BigInt?   @map("recorded_by_id")
+  endedAt      DateTime? @map("ended_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  note         String?   @db.VarChar(300)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staff    Staff    @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  @@id([id, startedAt])
+  @@index([businessId, startedAt])
+  @@index([staffId, startedAt])
+  @@map("staff_shifts")
+}
+
+/// The shift an employee is on right now: one at most (kept by a trigger on staff_shifts).
+model StaffOpenShift {
+  staffId    BigInt   @map("staff_id")
+  businessId BigInt   @map("business_id")
+  shiftId    BigInt   @map("shift_id")
+  startedAt  DateTime @map("started_at") @db.Timestamptz(6)
+
+  staff Staff @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  @@id([staffId, businessId])
+  @@index([businessId])
+  @@map("staff_open_shifts")
+}
+
+// ═════════════════════════════ APPOINTMENTS ═════════════════════════════
+
+/// A booking. Partitioned monthly by its start (made 25 months ahead: bookings open up to two
+/// years out). Its start never changes: moving it makes a new appointment (rescheduled_from_id),
+/// so it never moves partition. Uniqueness and double booking are guarded in appointment_index.
+model Appointment {
+  id                BigInt
+  startAt           DateTime  @map("start_at") @db.Timestamptz(6)
+  businessId        BigInt    @map("business_id")
+  /// The customer (a person on a user shard).
+  userId            BigInt    @map("user_id")
+  serviceId         BigInt    @map("service_id")
+  staffId           BigInt?   @map("staff_id")
+  resourceId        BigInt?   @map("resource_id")
+  rescheduledFromId BigInt?   @map("rescheduled_from_id")
+  checkedInById     BigInt?   @map("checked_in_by_id")
+  priceMinor        BigInt    @map("price_minor")
+  endAt             DateTime  @map("end_at") @db.Timestamptz(6)
+  /// End plus the service's buffer: the employee is busy until then.
+  blockedUntil      DateTime  @map("blocked_until") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  cancelledAt       DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  /// The customer arrived; status stays `confirmed` during the visit.
+  checkedInAt       DateTime? @map("checked_in_at") @db.Timestamptz(6)
+  /// "I'll book later": remind them around then.
+  rebookReminderAt  DateTime? @map("rebook_reminder_at") @db.Timestamptz(6)
+  reminder24hSentAt DateTime? @map("reminder_24h_sent_at") @db.Timestamptz(6)
+  reminder2hSentAt  DateTime? @map("reminder_2h_sent_at") @db.Timestamptz(6)
+  /// Optimistic concurrency: every update matches and increments it.
+  version           Int       @default(1)
+  /// Cancelled by the customer inside the cancellation window (D-035).
+  lateCancellation  Boolean   @default(false) @map("late_cancellation")
+  publicId          String    @map("public_id") @db.Char(12)
+  /// BK-XXXXXX: what the customer shows at the desk; unique within the business.
+  code              String    @db.VarChar(9)
+  /// pending | confirmed | rescheduled | completed | cancelled | no_show
+  status            String    @default("pending") @db.VarChar(20)
+  /// unpaid | deposit_paid | paid | refunded
+  paymentStatus     String    @default("unpaid") @map("payment_status") @db.VarChar(20)
+  cancelReasonCode  String?   @map("cancel_reason_code") @db.VarChar(30)
+  /// user | business | system
+  cancelledBy       String?   @map("cancelled_by") @db.VarChar(10)
+  currency          String    @db.Char(3)
+  /// Shown to the customer.
+  notes             String?   @db.VarChar(2000)
+  /// The business's own; never shown to the customer.
+  internalNotes     String?   @map("internal_notes") @db.VarChar(2000)
+  cancelReason      String?   @map("cancel_reason") @db.VarChar(1000)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  service  Service   @relation(fields: [serviceId, businessId], references: [id, businessId], onDelete: Restrict)
+  staff    Staff?    @relation(fields: [staffId, businessId], references: [id, businessId], onDelete: Restrict)
+  resource Resource? @relation(fields: [resourceId, businessId], references: [id, businessId], onDelete: Restrict)
+
+  @@id([id, startAt])
+  @@index([businessId, startAt])
+  @@index([staffId, startAt])
+  @@index([businessId, userId, startAt])
+  @@index([serviceId])
+  @@index([resourceId])
+  @@map("appointments")
+}
+
+/// One row per appointment, unpartitioned, kept by a trigger (DB-024): makes public IDs and
+/// codes unique (a partitioned table can't), finds an appointment by them without searching
+/// every month, and refuses double booking with exclusion constraints on the live ones.
+model AppointmentIndex {
+  appointmentId BigInt   @id @map("appointment_id")
+  /// The appointment's partition key: where to find it.
+  startAt       DateTime @map("start_at") @db.Timestamptz(6)
+  businessId    BigInt   @map("business_id")
+  userId        BigInt   @map("user_id")
+  staffId       BigInt?  @map("staff_id")
+  resourceId    BigInt?  @map("resource_id")
+  endAt         DateTime @map("end_at") @db.Timestamptz(6)
+  blockedUntil  DateTime @map("blocked_until") @db.Timestamptz(6)
+  /// pending or confirmed: what the double-booking rules apply to.
+  live          Boolean
+  publicId      String   @unique @map("public_id") @db.Char(12)
+  code          String   @db.VarChar(9)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, code])
+  @@map("appointment_index")
+}
+
+/// Every status change of an appointment, append-only. Partitioned monthly; kept 25 months.
+model AppointmentEvent {
+  id                 BigInt
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  businessId         BigInt   @map("business_id")
+  appointmentId      BigInt   @map("appointment_id")
+  appointmentStartAt DateTime @map("appointment_start_at") @db.Timestamptz(6)
+  actorId            BigInt?  @map("actor_id")
+  fromStatus         String?  @map("from_status") @db.VarChar(20)
+  toStatus           String   @map("to_status") @db.VarChar(20)
+  /// user | business | system
+  actorType          String   @map("actor_type") @db.VarChar(10)
+  reason             String?  @db.VarChar(1000)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@id([id, createdAt])
+  @@index([appointmentId])
+  @@index([businessId, createdAt])
+  @@map("appointment_events")
+}
+
+/// A payment for an appointment (deposits; needs a marketplace processor before production).
+model Payment {
+  id                    BigInt    @id
+  appointmentId         BigInt    @unique @map("appointment_id")
+  appointmentStartAt    DateTime  @map("appointment_start_at") @db.Timestamptz(6)
+  businessId            BigInt    @map("business_id")
+  userId                BigInt    @map("user_id")
+  amountMinor           BigInt    @map("amount_minor")
+  platformFeeMinor      BigInt    @default(0) @map("platform_fee_minor")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  capturedAt            DateTime? @map("captured_at") @db.Timestamptz(6)
+  refundedAt            DateTime? @map("refunded_at") @db.Timestamptz(6)
+  /// pending | authorized | captured | refunded | failed
+  status                String    @default("pending") @db.VarChar(20)
+  currency              String    @db.Char(3)
+  method                String?   @db.VarChar(30)
+  providerTransactionId String?   @unique @map("provider_transaction_id") @db.VarChar(200)
+  refundId              String?   @map("refund_id") @db.VarChar(200)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, createdAt])
+  @@map("payments")
+}
+
+/// A customer's review of a completed appointment (one each); a trigger keeps the business's
+/// rating and count.
+model Review {
+  id                 BigInt    @id
+  appointmentId      BigInt    @unique @map("appointment_id")
+  appointmentStartAt DateTime  @map("appointment_start_at") @db.Timestamptz(6)
+  businessId         BigInt    @map("business_id")
+  userId             BigInt    @map("user_id")
+  flaggedById        BigInt?   @map("flagged_by_id")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Changed by the customer (allowed for 7 days).
+  editedAt           DateTime? @map("edited_at") @db.Timestamptz(6)
+  ownerRespondedAt   DateTime? @map("owner_responded_at") @db.Timestamptz(6)
+  flaggedAt          DateTime? @map("flagged_at") @db.Timestamptz(6)
+  /// Hidden by an admin: kept, but no longer counted.
+  hiddenAt           DateTime? @map("hidden_at") @db.Timestamptz(6)
+  overallRating      Int       @map("overall_rating") @db.SmallInt
+  waitTimeRating     Int?      @map("wait_time_rating") @db.SmallInt
+  staffRating        Int?      @map("staff_rating") @db.SmallInt
+  cleanlinessRating  Int?      @map("cleanliness_rating") @db.SmallInt
+  valueRating        Int?      @map("value_rating") @db.SmallInt
+  isFlagged          Boolean   @default(false) @map("is_flagged")
+  isVisible          Boolean   @default(true) @map("is_visible")
+  comment            String?   @db.VarChar(2000)
+  ownerResponse      String?   @map("owner_response") @db.VarChar(2000)
+  flagReason         String?   @map("flag_reason") @db.VarChar(200)
+  hiddenReason       String?   @map("hidden_reason") @db.VarChar(300)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, isVisible, createdAt])
+  @@index([businessId, overallRating])
+  @@index([userId])
+  @@map("reviews")
+}
+
+// ═════════════════════════════ QUEUES ═════════════════════════════
+
+/// One queue per business per day; the live state is in Valkey, this is the record.
+model QueueSession {
+  id                 BigInt    @id
+  businessId         BigInt    @map("business_id")
+  sessionDate        DateTime  @map("session_date") @db.Date
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  openedAt           DateTime? @map("opened_at") @db.Timestamptz(6)
+  closedAt           DateTime? @map("closed_at") @db.Timestamptz(6)
+  currentNumber      Int       @default(0) @map("current_number")
+  lastCalledNumber   Int       @default(0) @map("last_called_number")
+  totalServed        Int       @default(0) @map("total_served")
+  avgServiceSeconds  Int       @default(300) @map("avg_service_seconds")
+  gracePeriodSeconds Int       @default(300) @map("grace_period_seconds")
+  maxQueueSize       Int       @default(200) @map("max_queue_size") @db.SmallInt
+  /// open | paused | closed
+  status             String    @default("open") @db.VarChar(10)
+  ticketPrefix       String    @default("A") @map("ticket_prefix") @db.VarChar(5)
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  tickets  QueueTicket[]
+
+  @@unique([businessId, sessionDate])
+  @@unique([id, businessId, sessionDate])
+  @@map("queue_sessions")
+}
+
+/// A place in a day's queue. Partitioned monthly by the session's date (DB-024: the session
+/// fixes the date, so "one number per session" holds across partitions); kept 13 months.
+model QueueTicket {
+  id                   BigInt
+  sessionDate          DateTime  @map("session_date") @db.Date
+  sessionId            BigInt    @map("session_id")
+  businessId           BigInt    @map("business_id")
+  /// Null for walk-ins added by the front desk.
+  userId               BigInt?   @map("user_id")
+  joinedAt             DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  calledAt             DateTime? @map("called_at") @db.Timestamptz(6)
+  servedAt             DateTime? @map("served_at") @db.Timestamptz(6)
+  completedAt          DateTime? @map("completed_at") @db.Timestamptz(6)
+  leftAt               DateTime? @map("left_at") @db.Timestamptz(6)
+  ticketNumber         Int       @map("ticket_number")
+  estimatedWaitSeconds Int?      @map("estimated_wait_seconds")
+  actualServiceSeconds Int?      @map("actual_service_seconds")
+  /// The last "people ahead" count alerted about, so each alert goes once.
+  lastAlertedAhead     Int?      @map("last_alerted_ahead") @db.SmallInt
+  /// Elderly or disabled priority lane.
+  priorityLane         Boolean   @default(false) @map("priority_lane")
+  joinedRemotely       Boolean   @default(false) @map("joined_remotely")
+  /// waiting | called | serving | completed | left | no_show
+  status               String    @default("waiting") @db.VarChar(10)
+  ticketPrefix         String    @default("A") @map("ticket_prefix") @db.VarChar(5)
+  walkInName           String?   @map("walk_in_name") @db.VarChar(100)
+  notes                String?   @db.VarChar(500)
+
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  session  QueueSession @relation(fields: [sessionId, businessId, sessionDate], references: [id, businessId, sessionDate], onDelete: Cascade)
+
+  @@id([id, sessionDate])
+  /// One number per session (the session fixes the date, so this is exact across partitions).
+  @@unique([sessionId, ticketNumber, sessionDate], map: "queue_tickets_number_key")
+  @@index([sessionId, status])
+  @@index([businessId, sessionDate])
+  @@map("queue_tickets")
+}
+
+// ═════════════════════════════ ADS ═════════════════════════════
+
+/// A business's ad campaign. Money in minor units.
+model BusinessAd {
+  id                     BigInt    @id
+  businessId             BigInt    @map("business_id")
+  categoryId             BigInt?   @map("category_id")
+  weeklyBudgetMinor      BigInt?   @map("weekly_budget_minor")
+  totalBudgetMinor       BigInt    @map("total_budget_minor")
+  amountSpentMinor       BigInt    @default(0) @map("amount_spent_minor")
+  revenueAttributedMinor BigInt    @default(0) @map("revenue_attributed_minor")
+  impressions            BigInt    @default(0)
+  clicks                 BigInt    @default(0)
+  bookings               BigInt    @default(0)
+  startDate              DateTime  @map("start_date") @db.Timestamptz(6)
+  endDate                DateTime  @map("end_date") @db.Timestamptz(6)
+  paidAt                 DateTime? @map("paid_at") @db.Timestamptz(6)
+  approvedAt             DateTime? @map("approved_at") @db.Timestamptz(6)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// featured_listing | category_spotlight | city_banner | appointment_boost | new_user_promo
+  type                   String    @db.VarChar(30)
+  /// draft | pending_approval | active | paused | expired | rejected
+  status                 String    @default("draft") @db.VarChar(20)
+  currency               String    @db.Char(3)
+  country                String?   @db.Char(2)
+  city                   String?   @db.VarChar(100)
+  rejectionReason        String?   @map("rejection_reason") @db.VarChar(1000)
+  paymentMethod          String?   @map("payment_method") @db.VarChar(30)
+  paymentRef             String?   @map("payment_ref") @db.VarChar(200)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  events   AdEvent[]
+
+  @@unique([id, businessId])
+  @@index([businessId, status])
+  @@map("business_ads")
+}
+
+/// An impression, click, view or booking from an ad. Partitioned monthly; kept 13 months.
+model AdEvent {
+  id         BigInt
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  adId       BigInt   @map("ad_id")
+  businessId BigInt   @map("business_id")
+  userId     BigInt?  @map("user_id")
+  /// impression | click | booking | profile_view
+  type       String   @db.VarChar(20)
+  sessionId  String?  @map("session_id") @db.VarChar(100)
+  /// Keyed hash of the IP (16 bytes), never the IP.
+  ipHash     Bytes?   @map("ip_hash")
+
+  business Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  ad       BusinessAd @relation(fields: [adId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  @@id([id, createdAt])
+  @@index([adId, type, createdAt])
+  @@index([businessId, type, createdAt])
+  @@map("ad_events")
+}
+
+// ═════════════════════════════ AI RECEPTIONIST ═════════════════════════════
+// Its knowledge (pgvector) is ai.business_knowledge_chunks, in the migration SQL.
+
+model AiReceptionistConfig {
+  businessId        BigInt   @id @map("business_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  totalCallsHandled Int      @default(0) @map("total_calls_handled")
+  totalBookingsMade Int      @default(0) @map("total_bookings_made")
+  isEnabled         Boolean  @default(false) @map("is_enabled")
+  phoneNumber       String?  @map("phone_number") @db.VarChar(20)
+  voiceId           String?  @map("voice_id") @db.VarChar(100)
+  greetingMessage   String?  @map("greeting_message") @db.VarChar(1000)
+  businessContext   String?  @map("business_context") @db.VarChar(8000)
+  /// [{ type: "staff_leave", staffId, reason, until }]
+  activeOverrides   Json     @default("[]") @map("active_overrides")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("ai_receptionist_configs")
+}
+
+/// A call the AI receptionist took. Partitioned monthly; kept 13 months.
+model AiCallLog {
+  id              BigInt
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  businessId      BigInt   @map("business_id")
+  appointmentId   BigInt?  @map("appointment_id")
+  durationSeconds Int?     @map("duration_seconds")
+  /// booked | not_booked | transferred | error
+  outcome         String   @db.VarChar(20)
+  callerPhoneEnc  Bytes?   @map("caller_phone_enc")
+  transcriptUrl   String?  @map("transcript_url") @db.VarChar(2000)
+  failureReason   String?  @map("failure_reason") @db.VarChar(1000)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@id([id, createdAt])
+  @@index([businessId, createdAt])
+  @@map("ai_call_logs")
+}
+
+// ═════════════════════════════ INTEGRATIONS ═════════════════════════════
+
+/// An outgoing webhook. Its signing secret is encrypted (it must be recoverable to sign).
+model Webhook {
+  id              BigInt    @id
+  businessId      BigInt    @map("business_id")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lastTriggeredAt DateTime? @map("last_triggered_at") @db.Timestamptz(6)
+  failureCount    Int       @default(0) @map("failure_count")
+  isActive        Boolean   @default(true) @map("is_active")
+  url             String    @db.VarChar(2000)
+  secretEnc       Bytes     @map("secret_enc")
+  events          String[]
+
+  business   Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@unique([id, businessId])
+  @@index([businessId, isActive])
+  @@map("webhooks")
+}
+
+/// One event sent to one webhook. Partitioned weekly by the event's own time (DB-019), so a
+/// webhook never gets one event twice; kept 30 days.
+model WebhookDelivery {
+  id             BigInt
+  eventAt        DateTime  @map("event_at") @db.Timestamptz(6)
+  webhookId      BigInt    @map("webhook_id")
+  businessId     BigInt    @map("business_id")
+  eventId        BigInt    @map("event_id")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deliveredAt    DateTime? @map("delivered_at") @db.Timestamptz(6)
+  nextRetryAt    DateTime? @map("next_retry_at") @db.Timestamptz(6)
+  responseStatus Int?      @map("response_status") @db.SmallInt
+  attemptCount   Int       @default(1) @map("attempt_count") @db.SmallInt
+  eventType      String    @map("event_type") @db.VarChar(100)
+  payload        Json
+  /// Truncated to 2 KB.
+  responseBody   String?   @map("response_body") @db.VarChar(2048)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  webhook  Webhook  @relation(fields: [webhookId, businessId], references: [id, businessId], onDelete: Cascade)
+
+  @@id([id, eventAt])
+  @@unique([webhookId, eventId, eventAt])
+  @@index([businessId, eventAt])
+  @@map("webhook_deliveries")
+}
+
+// ═════════════════════════════ BILLING ═════════════════════════════
+// Plans and prices are reference data (D2c); a business's subscription and requests are its own.
+
+/// A business's plan. Customers are free (D-101): no customer subscriptions.
+model Subscription {
+  id                     BigInt    @id
+  businessId             BigInt    @map("business_id")
+  planId                 BigInt    @map("plan_id")
+  /// The price being paid; null for admin grants and trials.
+  priceId                BigInt?   @map("price_id")
+  grantedById            BigInt?   @map("granted_by_id")
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// When the store last changed it: older store events are ignored.
+  providerUpdatedAt      DateTime? @map("provider_updated_at") @db.Timestamptz(6)
+  currentPeriodStart     DateTime? @map("current_period_start") @db.Timestamptz(6)
+  /// Paid or granted until; null for an open-ended grant.
+  currentPeriodEnd       DateTime? @map("current_period_end") @db.Timestamptz(6)
+  cancelledAt            DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  cancelAtPeriodEnd      Boolean   @default(false) @map("cancel_at_period_end")
+  /// web | android | ios
+  channel                String?   @db.VarChar(10)
+  /// paddle | google_play | app_store | manual | trial
+  provider               String    @db.VarChar(20)
+  /// active | past_due | cancelled | paused | trialing | expired
+  status                 String    @db.VarChar(20)
+  externalSubscriptionId String?   @unique @map("external_subscription_id") @db.VarChar(200)
+  externalCustomerId     String?   @map("external_customer_id") @db.VarChar(200)
+  grantNote              String?   @map("grant_note") @db.VarChar(300)
+
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  planRequest PlanRequest?
+
+  @@unique([id, businessId])
+  @@index([businessId, status])
+  @@index([planId, status])
+  @@map("subscriptions")
+}
+
+/// A business asking for a plan (e.g. Enterprise free of charge); an admin approves or declines.
+model PlanRequest {
+  id             BigInt    @id
+  businessId     BigInt    @map("business_id")
+  planId         BigInt    @map("plan_id")
+  requestedById  BigInt    @map("requested_by_id")
+  decidedById    BigInt?   @map("decided_by_id")
+  /// The grant made when approved.
+  subscriptionId BigInt?   @map("subscription_id")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  decidedAt      DateTime? @map("decided_at") @db.Timestamptz(6)
+  /// pending | approved | declined | withdrawn
+  status         String    @default("pending") @db.VarChar(20)
+  message        String    @db.VarChar(1000)
+  decisionNote   String?   @map("decision_note") @db.VarChar(500)
+
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId, businessId], references: [id, businessId], onDelete: Restrict)
+
+  @@unique([subscriptionId, businessId])
+  @@index([businessId, createdAt])
+  @@map("plan_requests")
+}
+
+// ═════════════════════════════ ON EVERY SHARD ═════════════════════════════
+
+/// What happened, who did it, from where. Append-only for every role; monthly partitions.
+model AuditLog {
+  id           BigInt
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  userId       BigInt?  @map("user_id")
+  resourceId   BigInt?  @map("resource_id")
+  action       String   @db.VarChar(100)
+  resourceType String   @map("resource_type") @db.VarChar(50)
+  ipAddress    String?  @map("ip_address") @db.Inet
+  userAgent    String?  @map("user_agent") @db.VarChar(500)
+  requestId    String?  @map("request_id") @db.VarChar(128)
+  oldValues    Json?    @map("old_values")
+  newValues    Json?    @map("new_values")
+
+  @@id([id, createdAt])
+  @@index([userId, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+  @@map("audit_logs")
+}
+
+/// Transactional outbox; each service sees only its own (row-level security). Daily, 14 days.
+model OutboxEvent {
+  id            BigInt
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  aggregateId   BigInt    @map("aggregate_id")
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  attempts      Int       @default(0)
+  aggregateType String    @map("aggregate_type") @db.VarChar(50)
+  source        String    @db.VarChar(50)
+  topic         String    @db.VarChar(100)
+  partitionKey  String    @map("partition_key") @db.VarChar(100)
+  payload       Json
+  headers       Json?
+  lastError     String?   @map("last_error") @db.VarChar(2000)
+
+  @@id([id, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}
+
+/// Idempotency ledger, partitioned by the event's own time (DB-019); daily, 14 days.
+model ProcessedEvent {
+  occurredAt  DateTime @map("occurred_at") @db.Timestamptz(6)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(6)
+  consumer    String   @db.VarChar(100)
+  eventId     String   @map("event_id") @db.VarChar(200)
+
+  @@id([consumer, eventId, occurredAt])
+  @@map("processed_events")
+}

@@ -6,9 +6,9 @@ compromised service. Every decision below has a number (DB-…) and a reason. Wh
 and the code disagree, this document is the plan and the code is the state; the build phases at
 the end say what is done.
 
-Status: **design approved by the owner's brief (2026-10-16). D1 (foundation) is built: the
-directory database, the shard registry, ID generators and the router. D2a is built: global
-lookups and the user shards, provisioned from the registry (§15). D2b (the business shard) is
+Status: **design approved by the owner's brief (2026-10-16). Built: D1 (the directory, the shard
+registry, ID generators, the router), D2a (global lookups, shards provisioned from the registry,
+the user shard) and D2b (the business shard) (§15). D2c (reference data and the search catalog) is
 next.** Website work pauses until D1–D3 are done (DB-000).
 
 ---
@@ -338,6 +338,7 @@ ID gives the shard (DB-011).
 | `user.push_token`           | the blind index of the device's token (a device is one person's)    |
 | `business.public_id`        | the 12 characters                                                   |
 | `business.slug`             | the slug                                                            |
+| `business.subscription`     | a hash of a Google Play or App Store subscription's own ID          |
 
 - **Written only through functions:** `lookup.claim` (taking a handle someone else has is
   refused and says by whom; only kinds that move between people by design, like a device's push
@@ -365,18 +366,19 @@ phones and slugs. One small, partitioned table does all of it.
 **Decision:** declarative range partitions, created ahead and dropped behind by `pg_partman`,
 scheduled by `pg_cron`:
 
-| Table (shard)                                | Partitioned by | Partition size | Kept online           | Then                                            |
-| -------------------------------------------- | -------------- | -------------- | --------------------- | ----------------------------------------------- |
-| `appointments` (business)                    | `start_at`     | month          | 25 months             | detached to cheap storage, still restorable     |
-| `appointment_events` (business)              | `created_at`   | month          | 25 months             | same                                            |
-| `queue_tickets` (business)                   | `created_at`   | month          | 13 months             | same                                            |
-| `staff_shifts` (business)                    | `started_at`   | month          | 25 months             | same                                            |
-| `notifications` (user)                       | `created_at`   | month          | 6 months              | dropped (they're also in email/push)            |
-| `refresh_tokens` (user)                      | `expires_at`   | month          | until expiry + 7 days | dropped                                         |
-| `outbox_events` (every shard)                | `created_at`   | day            | 7 days after sent     | dropped                                         |
-| `processed_events` (every consumer)          | `occurred_at`  | day            | 14 days               | dropped                                         |
-| `audit_logs` (every shard)                   | `created_at`   | month          | 25 months online      | copied to immutable storage first, kept 7 years |
-| `ad_events`, `webhook_deliveries` (business) | `created_at`   | month / week   | 13 months / 30 days   | dropped                                         |
+| Table (shard)                          | Partitioned by | Partition size | Kept online           | Then                                            |
+| -------------------------------------- | -------------- | -------------- | --------------------- | ----------------------------------------------- |
+| `appointments` (business)              | `start_at`     | month          | 25 months             | detached to cheap storage, still restorable     |
+| `appointment_events` (business)        | `created_at`   | month          | 25 months             | same                                            |
+| `queue_tickets` (business)             | `session_date` | month          | 13 months             | same                                            |
+| `staff_shifts` (business)              | `started_at`   | month          | 25 months             | same                                            |
+| `notifications` (user)                 | `created_at`   | month          | 6 months              | dropped (they're also in email/push)            |
+| `refresh_tokens` (user)                | `expires_at`   | month          | until expiry + 7 days | dropped                                         |
+| `outbox_events` (every shard)          | `created_at`   | day            | 7 days after sent     | dropped                                         |
+| `processed_events` (every consumer)    | `occurred_at`  | day            | 14 days               | dropped                                         |
+| `audit_logs` (every shard)             | `created_at`   | month          | 25 months online      | copied to immutable storage first, kept 7 years |
+| `ad_events`, `ai_call_logs` (business) | `created_at`   | month          | 13 months             | dropped                                         |
+| `webhook_deliveries` (business)        | `event_at`     | week           | 30 days               | dropped                                         |
 
 **Why:** these are the tables that reach billions of rows. Monthly partitions keep each one's
 indexes small, let queries on "this month" touch one partition, and turn deleting old data into
@@ -409,6 +411,35 @@ partition and the key catches it, while old days are still dropped whole.
 `notification_marks` (each scheduled message sent once) is not partitioned: its keys repeat over
 months, so it is one table keyed `(user_id, key)` and a sweeper removes marks older than 13
 months, in small batches, through a BRIN index on `created_at`.
+
+### DB-024 · Rules that must hold across partitions
+
+PostgreSQL enforces a unique key or an exclusion constraint on a partitioned table only within
+each partition, unless the key includes the partition key; and a foreign key that points into a
+partitioned table stops its old partitions from being detached. So, everywhere:
+
+- **Nothing points into a time-partitioned table** with a foreign key. Rows that refer to an
+  appointment (its events, its payment, its review) carry `(appointment_id,
+appointment_start_at)`, written in the same transaction; old months can always be detached.
+  Foreign keys _from_ partitioned tables to plain ones (an appointment's service and employee)
+  are kept.
+- **Where the rule's own key fixes the partition, the partition key joins the key**, and the rule
+  stays exact: a queue ticket is partitioned by its session's date, which its session fixes, so
+  "one number per session" is `UNIQUE (session_id, ticket_number, session_date)`, and the
+  composite foreign key to the session makes the date the session's own. The same holds for
+  webhook deliveries (by the event's time) and the idempotency ledger (DB-019).
+- **Where it doesn't, one small unpartitioned index table holds the rule**, kept by a trigger in
+  the same transaction, written by nothing else: `appointment_index`, one row per appointment
+  with its partition key. It makes public IDs unique and codes unique within their business
+  across every month, finds an appointment by either without searching every month, and refuses
+  double booking with exclusion constraints on the live appointments (pending, confirmed): an
+  employee from start to the end of the clean-up time, a resource, and a customer at the same
+  business. A violation aborts the appointment's own insert, as v1's constraints did.
+- **An appointment's time never changes** (a trigger refuses it): moving one makes a new
+  appointment (`rescheduled_from_id`), as rescheduling already does. So no row ever changes
+  partition, and everything that refers to it stays right.
+- An employee's one open shift is `staff_open_shifts`, keyed by the employee, kept by a trigger
+  on the monthly `staff_shifts`.
 
 ---
 
@@ -661,6 +692,8 @@ erDiagram
   businesses ||--o{ appointments : "takes"
   services ||--o{ appointments : "for"
   staff ||--o{ appointments : "with"
+  appointments ||--|| appointment_index : "indexed by (trigger)"
+  staff ||--o| staff_open_shifts : "is on"
   appointments ||--o{ appointment_events : "history"
   appointments ||--o| reviews : "reviewed in"
   businesses ||--o{ queue_sessions : "runs"
@@ -713,16 +746,35 @@ erDiagram
   appointments {
     bigint id PK
     timestamptz start_at PK
-    char public_id UK
-    char code UK
     bigint business_id FK
     bigint user_id
     bigint service_id FK
     bigint staff_id FK
+    bigint resource_id FK
     timestamptz end_at
+    timestamptz blocked_until
     text status
     timestamptz checked_in_at
     bigint price_minor
+    char public_id
+    text code
+  }
+  appointment_index {
+    bigint appointment_id PK
+    timestamptz start_at
+    bigint business_id FK
+    bigint user_id
+    bigint staff_id
+    bigint resource_id
+    timestamptz blocked_until
+    bool live
+    char public_id UK
+    text code
+  }
+  staff_open_shifts {
+    bigint staff_id PK
+    bigint business_id PK
+    bigint shift_id
   }
   appointment_events {
     bigint id PK
@@ -816,9 +868,15 @@ Where every current table goes. "→" is its v2 name when it changes.
 3. **Authentication:** SCRAM-SHA-256; one login role per service (kept from D-092), each granted only
    its own tables and only the verbs it uses; no service uses a superuser or owns tables; the
    migrator role is used only by migrations.
-4. **Row-level security** on business-shard tables as a second wall: each transaction sets
-   `buku.business_id` and policies allow only that business's rows, so a bug that forgets a
-   `WHERE business_id = …` returns nothing instead of another business's data.
+4. **Row-level security** on every business-shard table as a second wall: each transaction sets
+   `buku.business_id` (`forBusiness(tx, id)`: `SET LOCAL`, so a pooled connection never carries
+   it over) and policies allow only that business's rows, for reading and for writing; with
+   nothing set, nothing is visible. A bug that forgets a `WHERE business_id = …` returns nothing
+   instead of another business's data. The few services that must work across businesses
+   (reminders, search, admin) are made members of `buku_all_businesses` _with inherit_: the
+   service roles don't inherit by default, and that role has no rights of its own, it only
+   opens the policies. The schema owner (migrations, upkeep) is exempt. A test fails if any
+   table holding a business's rows lacks the policies.
 5. **Field encryption** of personal data (AES-256-GCM, keys versioned and rotatable, D-083) and
    keyed blind indexes (DB-008): a stolen backup or disk shows no emails or phone numbers.
 6. **Keys** live in a key manager (KMS), never in the database or its backups; services get them at
@@ -915,6 +973,22 @@ built for scans and aggregates over billions of rows.
 **Joins on the shards** are kept fast by co-location (DB-010): every join a page needs is inside
 one shard, on indexed keys.
 
+### DB-041 · Search, discovery and ad serving read one global catalog
+
+**The problem:** "places near me", "barbers in Lahore", searching by name, and choosing which ads
+to show all look across every business, and with businesses on many shards no single query can.
+v1 does all of it in Postgres (full-text search, trigram name matching, PostGIS) on one table.
+
+**Decision:** one **catalog** database: a row per business with what discovery needs (name,
+kind, city, location, rating, opening state, ranking statistics, running ads), kept up to date
+from the business shards' events. Search keeps v1's proven queries against it. The business shard
+keeps its own location for its own distance checks (the queue's join radius, D-038). Built in
+D2c with the reference data, which it joins.
+
+**Why not Elasticsearch now?** It is the next step if one Postgres catalog stops being enough
+(tens of millions of businesses, or heavy relevance tuning). Until then a catalog of a few
+million rows is fast in Postgres, exact, and has one less system to run.
+
 ---
 
 ## 14. Operations
@@ -974,13 +1048,13 @@ Website work resumes after D3.
 **D2, in slices.** The v2 databases are new databases next to v1's `buku`, which keeps serving the
 website and services unchanged until D3 moves each service over; nothing is migrated in place.
 
-| Slice                     | What                                                                                                                                                                                                                                        |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D2a** ✅ (2026-10-16)   | global lookups (DB-018); shard provisioning from the registry (DB-012, DB-023); the user shard (§9.2) with its partitions (DB-006, DB-019)                                                                                                  |
-| **D2b** Business shard    | every business table (§9.3), appointments partitioned by month; double booking guarded by small unpartitioned claim tables kept by trigger (a constraint across monthly partitions isn't possible), row-level security by business (DB-020) |
-| **D2c** Reference data    | categories, plans, prices, billing and notification settings, currencies on the directory, copied to every shard by logical replication (DB-015)                                                                                            |
-| **D2d** Rights per family | each service's rights on user and business shards and the directory's lookups, in the access map; applied by `apply-access` on every shard                                                                                                  |
-| **D2e** The v2 seed       | the development data set placed across shards through the router, as the services will                                                                                                                                                      |
+| Slice                     | What                                                                                                                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D2a** ✅ (2026-10-16)   | global lookups (DB-018); shard provisioning from the registry (DB-012, DB-023); the user shard (§9.2) with its partitions (DB-006, DB-019)                                    |
+| **D2b** ✅ (2026-10-17)   | every business table (§9.3), appointments partitioned by month, the rules across partitions (DB-024), row-level security by business (DB-020)                                 |
+| **D2c** Reference data    | categories, plans, prices, billing and notification settings, currencies on the directory, copied to every shard by logical replication (DB-015); the search catalog (DB-041) |
+| **D2d** Rights per family | each service's rights on user and business shards and the directory's lookups, in the access map; applied by `apply-access` on every shard                                    |
+| **D2e** The v2 seed       | the development data set placed across shards through the router, as the services will                                                                                        |
 
 **D2a, as built (2026-10-16).**
 
@@ -1004,3 +1078,36 @@ website and services unchanged until D3 moves each service over; nothing is migr
   default grants; the audit log append-only; malformed people refused; one appointment at a time;
   one queue at a time; a redelivered event caught across days; a sign-up end to end (placed,
   claimed, written, found again by email, the next shard opening at the limit).
+
+**D2b, as built (2026-10-17).**
+
+- The business shard (`prisma/business`): 38 tables. Every child carries `business_id` and points
+  at its parent through `(id, business_id)`; money in minor units; every status checked.
+  - **Time-partitioned:** appointments (25 months ahead, 12 back), appointment events, staff
+    shifts and queue tickets, all kept 25 or 13 months and then detached into `archive`; ad
+    events, AI call logs, webhook deliveries, audit, outbox and the idempotency ledger.
+  - **`appointment_index`** (DB-024): unique public IDs and codes, and the exclusion constraints
+    for employees (with clean-up time), resources and customers, kept by a trigger.
+  - **Triggers:** an appointment's time and customer can't change; one open shift per employee;
+    the business's rating follows its visible reviews; its location follows lat/lng; the audit
+    log is append-only.
+  - **The AI receptionist's knowledge** (`ai.business_knowledge_chunks`, pgvector, HNSW).
+- **Row-level security by business on all 37 tables** (DB-020): `current_business()`, set by
+  `forBusiness(tx, id)` in `@buku/database`; `buku_all_businesses`, made by `prepare-databases`,
+  for the services that work across businesses.
+- **A `business.subscription` handle kind**, for store subscriptions (DB-018).
+- **Provisioning makes both families**, and reports Prisma's own error when a migration fails.
+- **Tests:**
+  - provisioning;
+  - every business table guarded, and every foreign key indexed (on both families);
+  - one business at a time;
+  - cross-business access only through the role;
+  - composite keys holding even for the owner;
+  - double booking refused (employee, clean-up time, resource, customer), back to back allowed,
+    a cancellation freeing the time;
+  - codes unique across months and public IDs everywhere;
+  - finding by code;
+  - times that can't move;
+  - malformed appointments refused;
+  - one open shift; queue numbers and one live ticket; ratings and location;
+  - a webhook never sent one event twice; one trial and one open plan request.

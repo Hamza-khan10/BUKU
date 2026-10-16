@@ -9,12 +9,13 @@ import { clusterUrl, type Credentials } from './shards.js';
  * DB-023): creates it on its cluster if missing, takes away the template's default grants,
  * applies its family's migrations, and schedules its partition upkeep. Ready shards too, so the
  * next one is waiting before the current one fills. Idempotent: run it after adding shards and
- * after every release. Families without a schema here (none yet for 'business') are skipped.
+ * after every release. Families without a schema here are skipped.
  */
 
 /** The Prisma config of each shard family that has a schema. */
 export const SHARD_FAMILIES: Readonly<Record<string, string>> = {
   user: 'prisma.user.config.ts',
+  business: 'prisma.business.config.ts',
 };
 
 export interface ProvisionOptions {
@@ -107,18 +108,25 @@ export async function provisionShards(options: ProvisionOptions): Promise<Provis
     }
 
     // 3. Its family's migrations, as the schema owner.
-    execFileSync(
-      resolve(PACKAGE_DIR, 'node_modules/.bin/prisma'),
-      ['migrate', 'deploy', '--config', SHARD_FAMILIES[shard.entity]!],
-      {
-        cwd: PACKAGE_DIR,
-        env: {
-          ...process.env,
-          DATABASE_SHARD_MIGRATION_URL: clusterUrl(secret, name, options.migrator, env),
+    try {
+      execFileSync(
+        resolve(PACKAGE_DIR, 'node_modules/.bin/prisma'),
+        ['migrate', 'deploy', '--config', SHARD_FAMILIES[shard.entity]!],
+        {
+          cwd: PACKAGE_DIR,
+          env: {
+            ...process.env,
+            DATABASE_SHARD_MIGRATION_URL: clusterUrl(secret, name, options.migrator, env),
+          },
+          stdio: 'pipe',
+          encoding: 'utf8',
         },
-        stdio: 'pipe',
-      },
-    );
+      );
+    } catch (err) {
+      // Prisma's own words (which migration, which statement), not a buffer of bytes.
+      const { stdout = '', stderr = '' } = err as { stdout?: string; stderr?: string };
+      throw new Error(`migrating ${name} failed:\n${stdout}${stderr}`, { cause: err });
+    }
 
     // 4. Partitions made ahead and dropped behind, hourly, as the tables' owner (DB-006).
     const cron = createDatabaseClient({

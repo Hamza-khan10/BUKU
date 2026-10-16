@@ -982,3 +982,15 @@ script: created from a template with every extension, no default grants (DB-023)
 partitions made ahead hourly. The user shard is the first family built this way; the business
 shard, reference data, per-service rights and the v2 seed follow (D2b–D2e). v1's database keeps
 serving the website until D3.
+
+**D-108 · The business shard, with its rules held by the database (D2b).** Every business's
+rows live on its shard, each pointing at its parent through (id, business_id), so a row can never
+point at another business's service or employee. Appointments are kept in monthly partitions
+(25 months ahead). PostgreSQL can't enforce a unique key or an exclusion constraint across
+partitions, so one small index table, kept by a trigger in the same transaction, holds the rules
+that span months: unique public IDs and codes, and no double booking of an employee (with
+clean-up time), a resource or a customer (DATABASE.md DB-024). An appointment's time can't change
+(moving makes a new one), so nothing ever changes partition. Row-level security shows a session
+only the business it set; the few services that work across businesses get a role that opens
+the policies and nothing else (DB-020). Search, discovery and ads will read one global catalog
+fed by events (DB-041, built next with the reference data).

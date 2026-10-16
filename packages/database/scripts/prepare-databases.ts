@@ -14,6 +14,9 @@
  *   in template1 so every database made later (a new shard) has them too.
  * - pg_partman (time partitions, DB-006) in template1, usable by the migrator, so every shard
  *   database starts with it.
+ * - The role `buku_all_businesses` (DB-020): no login and no rights of its own; business shards'
+ *   row-level security lets its members (granted WITH INHERIT TRUE by apply-access) work across
+ *   businesses. It must exist before a business shard is migrated.
  *
  * Only fixed names below, never input: nothing here is built from anything a caller sends.
  */
@@ -63,6 +66,10 @@ try {
     );
   }
   await admin.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS pg_cron');
+  await admin.$executeRawUnsafe(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'buku_all_businesses') THEN
+      CREATE ROLE buku_all_businesses NOLOGIN NOINHERIT;
+    END IF; END $$`);
 } finally {
   await admin.$disconnect();
 }
