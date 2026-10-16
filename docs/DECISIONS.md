@@ -950,3 +950,14 @@ there come later, as their own phase (the owner's choice); browsing continues as
   next, and "Back to the search" that steps aside while the list's own buttons are on screen.
 - **Ready for ads:** a place the search marks as promoted says "Sponsored" on its card; nothing is
   promoted until BUKU sells ads.
+
+**D-105 · The database is rebuilt for hundreds of millions of people, before more website.** The
+owner found the database too basic to grow (few partitions, missing indexes, oversized hashes, UUID
+keys, no sharding, no backups) and left the design and its timing to us. The design is in
+[DATABASE.md](DATABASE.md), each choice numbered DB-… with its reason: 64-bit time-ordered internal
+IDs with random public IDs; user and business shards of a set size (10 million people by default,
+changeable at any time) recorded in a registry with each shard's lowest and highest ID; time
+partitions for everything that grows without end; every foreign key indexed; hashes stored as
+bytes at the size they need; TLS, row-level security and break-glass access; continuous backups
+with point-in-time recovery, a second region and tested restores. It is built now, while there is
+no production data; the website resumes after the services move to it.
