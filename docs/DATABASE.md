@@ -976,13 +976,13 @@ website and services unchanged until D3 moves each service over; nothing is migr
 
 | Slice                     | What                                                                                                                                                                                                                                        |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D2a** ✅ (2026-10-17)   | global lookups (DB-018); shard provisioning from the registry (DB-012, DB-023); the user shard (§9.2) with its partitions (DB-006, DB-019)                                                                                                  |
+| **D2a** ✅ (2026-10-16)   | global lookups (DB-018); shard provisioning from the registry (DB-012, DB-023); the user shard (§9.2) with its partitions (DB-006, DB-019)                                                                                                  |
 | **D2b** Business shard    | every business table (§9.3), appointments partitioned by month; double booking guarded by small unpartitioned claim tables kept by trigger (a constraint across monthly partitions isn't possible), row-level security by business (DB-020) |
 | **D2c** Reference data    | categories, plans, prices, billing and notification settings, currencies on the directory, copied to every shard by logical replication (DB-015)                                                                                            |
 | **D2d** Rights per family | each service's rights on user and business shards and the directory's lookups, in the access map; applied by `apply-access` on every shard                                                                                                  |
 | **D2e** The v2 seed       | the development data set placed across shards through the router, as the services will                                                                                                                                                      |
 
-**D2a, as built (2026-10-17).**
+**D2a, as built (2026-10-16).**
 
 - `lookup.handles` and `lookup.handle_kinds` on the directory (DB-018), with `claim`, `release`,
   `release_all` and `find`; ten kinds; 16 hash partitions; writers per kind.
