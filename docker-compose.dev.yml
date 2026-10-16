@@ -182,6 +182,8 @@ services:
         -c idle_in_transaction_session_timeout=60s
         -c shared_preload_libraries=pg_stat_statements,pg_cron,pgaudit
         -c cron.database_name=postgres
+        -c cron.use_background_workers=on
+        -c max_worker_processes=16
         -c pgaudit.log=ddl,role
         -c pgaudit.log_parameter=off
     volumes: [postgres-data:/var/lib/postgresql/data]
@@ -475,6 +477,30 @@ services:
     depends_on:
       db-prepare: { condition: service_completed_successfully }
 
+  # Every shard in the registry made a real, migrated database (packages/database/src/
+  # provision.ts): created on its cluster, migrated, partition upkeep scheduled. Idempotent.
+  db-shards:
+    <<: [*oneshot, *node-image, *node-hardening]
+    networks: [migrate]
+    working_dir: /app/packages/database
+    command: ['/app/node_modules/.bin/tsx', 'scripts/provision-shards.ts']
+    environment:
+      NODE_ENV: development
+      DATABASE_DIRECTORY_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_directory
+      POSTGRES_SUPERUSER_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}
+      BUKU_MIGRATOR_PASSWORD: ${BUKU_MIGRATOR_PASSWORD:?run pnpm bootstrap}
+      # The local cluster's address, as the registry names it (host and port only).
+      BUKU_DB_CLUSTER_LOCAL_1: postgresql://postgres:5432
+    volumes:
+      - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
+      - ./packages/database/src:/app/packages/database/src:ro
+      - ./packages/database/scripts:/app/packages/database/scripts:ro
+      - ./packages/database/prisma:/app/packages/database/prisma:ro
+      - ./packages/database/prisma.user.config.ts:/app/packages/database/prisma.user.config.ts:ro
+    depends_on:
+      db-migrate: { condition: service_completed_successfully }
+
   # Each service's own database role, with exactly its rights (D-092; packages/database/src/
   # access.ts). Runs after every migration, as the admin: roles, passwords, grants.
   db-access:
@@ -502,7 +528,7 @@ services:
       - ./packages/database/src:/app/packages/database/src:ro
       - ./packages/database/scripts:/app/packages/database/scripts:ro
     depends_on:
-      db-migrate: { condition: service_completed_successfully }
+      db-shards: { condition: service_completed_successfully }
 
   elasticsearch-init:
     profiles: [elasticsearch]

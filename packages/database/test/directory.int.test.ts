@@ -300,11 +300,112 @@ describe('who may do what in the directory', () => {
     const writable = await owner.$queryRaw<{ name: string }[]>`
       SELECT n.nspname || '.' || c.relname AS name
       FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname IN ('registry', 'ids') AND c.relkind IN ('r', 'p', 'S')
+      WHERE n.nspname IN ('registry', 'ids', 'lookup') AND c.relkind IN ('r', 'p', 'S')
         AND (has_table_privilege('buku_app', c.oid, 'INSERT') OR has_table_privilege('buku_app', c.oid, 'UPDATE')
           OR has_table_privilege('buku_app', c.oid, 'DELETE') OR has_table_privilege('buku_app', c.oid, 'TRUNCATE')
           OR (c.relkind = 'S' AND has_sequence_privilege('buku_app', c.oid, 'USAGE')))`;
     expect(writable).toEqual([]);
+  });
+});
+
+describe('global handles (DB-018)', () => {
+  const key = (n: number, size = 16) => Buffer.alloc(size, n);
+  type Claim = { claimed: boolean; previous_owner: bigint | null };
+  const claim = (kind: string, k: Buffer, owner: bigint, takeOver = false) =>
+    app.$queryRaw<Claim[]>`SELECT * FROM lookup.claim(${kind}, ${k}, ${owner}::bigint, ${takeOver})`.then(
+      (r) => r[0]!,
+    );
+  const find = (kind: string, k: Buffer) =>
+    app.$queryRaw<{ owner: bigint | null }[]>`SELECT lookup.find(${kind}, ${k}) AS owner`.then(
+      (r) => r[0]!.owner,
+    );
+  const release = (kind: string, k: Buffer, owner: bigint) =>
+    app.$queryRaw<{ ok: boolean }[]>`SELECT lookup.release(${kind}, ${k}, ${owner}::bigint) AS ok`.then(
+      (r) => r[0]!.ok,
+    );
+
+  beforeAll(async () => {
+    // Services write their own kinds; the tests' role is let in like the dev seed does, except
+    // to WhatsApp numbers (the notification service's alone, as the migration says).
+    await owner.$executeRaw`UPDATE lookup.handle_kinds SET writers = array_append(writers, 'buku_app')
+      WHERE name <> 'user.whatsapp' AND NOT ('buku_app' = ANY (writers))`;
+    await owner.$executeRaw`UPDATE lookup.handle_kinds SET writers = ARRAY['buku_svc_notification']
+      WHERE name = 'user.whatsapp'`;
+  });
+
+  it('one email, one person, across every shard: a second claim is refused and says by whom', async () => {
+    expect(await claim('user.email', key(1), 101n)).toEqual({ claimed: true, previous_owner: null });
+    // Claiming what is already yours is fine (a retried sign-up).
+    expect(await claim('user.email', key(1), 101n)).toEqual({ claimed: true, previous_owner: 101n });
+    expect(await claim('user.email', key(1), 202n)).toEqual({ claimed: false, previous_owner: 101n });
+    expect(await find('user.email', key(1))).toBe(101n);
+    // The same key of another kind is a different handle.
+    expect(await claim('user.phone', key(1), 202n)).toEqual({ claimed: true, previous_owner: null });
+    expect(await find('user.email', key(99))).toBeNull();
+  });
+
+  it('a device moves to whoever signs in on it; only the owner can give a handle back', async () => {
+    expect((await claim('user.push_token', key(2), 301n)).claimed).toBe(true);
+    expect(await claim('user.push_token', key(2), 302n, true)).toEqual({
+      claimed: true,
+      previous_owner: 301n,
+    });
+    expect(await find('user.push_token', key(2))).toBe(302n);
+    expect(await release('user.push_token', key(2), 301n)).toBe(false);
+    expect(await release('user.push_token', key(2), 302n)).toBe(true);
+    expect(await find('user.push_token', key(2))).toBeNull();
+  });
+
+  it('an erased account gives back every handle at once', async () => {
+    await claim('user.email', key(3), 401n);
+    await claim('user.public_id', Buffer.from('Ab3dEf6hIj9k'), 401n);
+    await claim('business.slug', Buffer.from('fade-studio'), 401n);
+    const n = await app.$queryRaw<{ n: number }[]>`SELECT lookup.release_all('user', 401::bigint) AS n`;
+    expect(n[0]!.n).toBe(2);
+    expect(await find('user.email', key(3))).toBeNull();
+    // Another family's handle with the same owner number is untouched.
+    expect(await find('business.slug', Buffer.from('fade-studio'))).toBe(401n);
+  });
+
+  it('refuses unknown kinds, wrong key sizes, and roles that may not write a kind', async () => {
+    await expect(claim('user.nickname', key(4), 1n)).rejects.toThrow(/unknown handle kind/);
+    await expect(claim('user.email', key(4, 15), 1n)).rejects.toThrow(/16 to 16 bytes/);
+    await expect(claim('user.public_id', Buffer.from('short'), 1n)).rejects.toThrow(/12 to 12 bytes/);
+    await expect(claim('user.email', key(4), 0n)).rejects.toThrow(/key and an owner/);
+    // WhatsApp numbers are the notification service's alone.
+    await expect(claim('user.whatsapp', key(4), 1n)).rejects.toThrow(/may not write user.whatsapp/);
+    // Nobody writes the table directly.
+    await expect(
+      app.$executeRawUnsafe(`INSERT INTO lookup.handles (owner_id, kind, key) VALUES (1, 1, '\\x00')`),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it('is split into 16 parts by key from the start', async () => {
+    const parts = await owner.$queryRaw<{ n: bigint }[]>`
+      SELECT count(*) AS n FROM pg_inherits WHERE inhparent = 'lookup.handles'::regclass`;
+    expect(parts[0]!.n).toBe(16n);
+  });
+
+  it('a new kind is a row, logged like any other change to the layout', async () => {
+    const before = await version();
+    await owner.handleKind.create({
+      data: {
+        kind: 200,
+        name: 'business.short_code',
+        entity: 'business',
+        keyMin: 4,
+        keyMax: 8,
+        writers: ['buku_app'],
+        description: 'test',
+      },
+    });
+    expect(await version()).toBeGreaterThan(before);
+    expect((await claim('business.short_code', Buffer.from('FADE'), 9n)).claimed).toBe(true);
+    await expect(
+      owner.handleKind.create({
+        data: { kind: 201, name: 'user.Bad Name', entity: 'user', keyMin: 1, keyMax: 2, description: 'x' },
+      }),
+    ).rejects.toThrow();
   });
 });
 

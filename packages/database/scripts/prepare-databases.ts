@@ -12,6 +12,8 @@
  * - pg_cron in the `postgres` database (scheduled jobs run from there into the others).
  * - pg_stat_statements (query costs) and pgaudit (schema and role changes) in every database, and
  *   in template1 so every database made later (a new shard) has them too.
+ * - pg_partman (time partitions, DB-006) in template1, usable by the migrator, so every shard
+ *   database starts with it.
  *
  * Only fixed names below, never input: nothing here is built from anything a caller sends.
  */
@@ -71,10 +73,23 @@ for (const name of MONITORED) {
     await db.$executeRawUnsafe('CREATE SCHEMA IF NOT EXISTS extensions');
     await db.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA extensions');
     await db.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS pgaudit');
+    if (name === 'template1') {
+      // Partition upkeep runs as the tables' owner (the migrator), from pg_cron.
+      await db.$executeRawUnsafe('CREATE SCHEMA IF NOT EXISTS partman');
+      await db.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman');
+      for (const sql of [
+        'GRANT USAGE, CREATE ON SCHEMA partman TO buku_migrator',
+        'GRANT ALL ON ALL TABLES IN SCHEMA partman TO buku_migrator',
+        'GRANT ALL ON ALL SEQUENCES IN SCHEMA partman TO buku_migrator',
+        'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA partman TO buku_migrator',
+        'GRANT EXECUTE ON ALL PROCEDURES IN SCHEMA partman TO buku_migrator',
+      ])
+        await db.$executeRawUnsafe(sql);
+    }
   } finally {
     await db.$disconnect();
   }
 }
 console.log(
-  `prepare-databases: ${DATABASES.join(', ')} ready; pg_cron, pg_stat_statements, pgaudit installed`,
+  `prepare-databases: ${DATABASES.join(', ')} ready; pg_cron, pg_stat_statements, pgaudit, pg_partman installed`,
 );

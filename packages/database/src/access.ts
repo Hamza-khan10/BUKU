@@ -262,18 +262,21 @@ export const ACCESS: Readonly<Record<ServiceName, Access>> = {
 
 /**
  * What every service may do in the DIRECTORY database (docs/DATABASE.md §6): read where people and
- * businesses live, lease an ID generator, and place a new row. Nothing is ever written to its
- * tables directly; who may place which family is a row (registry.entities.placed_by), checked by
- * registry.place() itself, so it changes without a deploy. The same rights as buku_app's (the
- * directory migration grants those).
+ * businesses live, lease an ID generator, place a new row, and find, claim or release handles
+ * (DB-018). Nothing is ever written to its tables directly; who may place which family
+ * (registry.entities.placed_by) and who may write which kind of handle
+ * (lookup.handle_kinds.writers) are rows, checked by the functions themselves, so they change
+ * without a deploy. The same rights as buku_app's (the directory migrations grant those).
  */
 export const DIRECTORY_ACCESS = {
+  schemas: ['registry', 'lookup'],
   reads: [
     'registry.regions',
     'registry.entities',
     'registry.clusters',
     'registry.shards',
     'registry.version',
+    'lookup.handle_kinds',
   ],
   executes: [
     'registry.route(text, bigint)',
@@ -282,6 +285,10 @@ export const DIRECTORY_ACCESS = {
     'registry.renew_generator(smallint, text, integer)',
     'registry.release_generator(smallint, text)',
     'registry.place(text, bigint)',
+    'lookup.claim(text, bytea, bigint, boolean)',
+    'lookup.release(text, bytea, bigint)',
+    'lookup.release_all(text, bigint)',
+    'lookup.find(text, bytea)',
   ],
 } as const;
 

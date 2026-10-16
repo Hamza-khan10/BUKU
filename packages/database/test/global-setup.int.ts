@@ -37,7 +37,7 @@ export default async function setup(): Promise<void> {
     maxConnections: 1,
   });
   try {
-    await directory.$executeRawUnsafe('DROP SCHEMA IF EXISTS registry, ids CASCADE');
+    await directory.$executeRawUnsafe('DROP SCHEMA IF EXISTS registry, ids, lookup CASCADE');
     await directory.$executeRawUnsafe('DROP TABLE IF EXISTS public._prisma_migrations');
   } finally {
     await directory.$disconnect();

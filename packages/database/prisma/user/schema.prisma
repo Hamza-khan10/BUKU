@@ -1,0 +1,421 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// BUKU — a USER SHARD (docs/DATABASE.md §6, DB-010; diagram §9.2)
+//
+// Everything that belongs to one person, on the shard their ID was placed on (registry.place):
+// account and sign-in, sessions, devices, preferences, notifications, favourites, and THEIR VIEW
+// of their bookings, queue ticket and businesses (kept from the business shards' events, DB-014).
+// Every shard of the family has this same schema; scripts/provision-shards.ts migrates each one.
+//
+// Conventions (DB-001…DB-017):
+//  • Keys are 64-bit snowflake IDs made by the services (no database default): `BigInt`.
+//  • IDs of rows on OTHER shards (a business, an appointment) are plain BigInts, never foreign keys.
+//  • Blind indexes are 16 bytes, token hashes 32 bytes, encrypted values raw bytes (DB-008).
+//  • Statuses and kinds are text with CHECK constraints in the migration, not enums (DB-017).
+//  • Fields are ordered by size (8, 4, 2, 1 bytes, then variable) so rows carry no padding (DB-016).
+//  • Partitioned tables (by time, pg_partman) have the time in their primary key (DB-006).
+//
+// Constraints, exclusions, partitions, partial indexes and grants are in the migration SQL.
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../../src/generated/user"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// A person: customer, business owner, team member or platform admin.
+model User {
+  id                  BigInt    @id
+  /// Employee accounts (D-034): the business that created it, which they sign in to with a username.
+  managedByBusinessId BigInt?   @map("managed_by_business_id")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  emailVerifiedAt     DateTime? @map("email_verified_at") @db.Timestamptz(6)
+  phoneVerifiedAt     DateTime? @map("phone_verified_at") @db.Timestamptz(6)
+  /// Explicit WhatsApp opt-in (WhatsApp Business policy).
+  whatsappOptInAt     DateTime? @map("whatsapp_opt_in_at") @db.Timestamptz(6)
+  termsAcceptedAt     DateTime? @map("terms_accepted_at") @db.Timestamptz(6)
+  passwordChangedAt   DateTime? @map("password_changed_at") @db.Timestamptz(6)
+  /// Sign-in locked until then after too many wrong passwords.
+  lockedUntil         DateTime? @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt         DateTime? @map("last_login_at") @db.Timestamptz(6)
+  /// Erasure requested: hidden at once, restorable by signing in during the grace period.
+  deletedAt           DateTime? @map("deleted_at") @db.Timestamptz(6)
+  /// When personal data was irreversibly removed after the grace period.
+  purgedAt            DateTime? @map("purged_at") @db.Timestamptz(6)
+  failedLoginCount    Int       @default(0) @map("failed_login_count") @db.SmallInt
+  /// A business issued a temporary password: no business access until they choose their own.
+  mustChangePassword  Boolean   @default(false) @map("must_change_password")
+  publicId            String    @unique @map("public_id") @db.Char(12)
+  /// user | staff | business_owner | super_admin
+  role                String    @default("user") @db.VarChar(20)
+  /// active | suspended | deleted
+  status              String    @default("active") @db.VarChar(20)
+  timezone            String    @default("UTC") @db.VarChar(60)
+  locale              String    @default("en") @db.VarChar(10)
+  termsVersion        String?   @map("terms_version") @db.VarChar(20)
+  name                String    @db.VarChar(200)
+  /// Employee accounts only: unique within the managing business.
+  username            String?   @db.VarChar(40)
+  /// Blind indexes (16 bytes, DB-008); globally unique through lookup.handles (DB-018).
+  emailHash           Bytes?    @unique @map("email_hash")
+  phoneHash           Bytes?    @unique @map("phone_hash")
+  /// A phone added but not yet verified: deliberately not unique (no one can block a number).
+  unverifiedPhoneHash Bytes?    @map("unverified_phone_hash")
+  /// AES-256-GCM ciphertexts (D-083).
+  emailEnc            Bytes?    @map("email_enc")
+  phoneEnc            Bytes?    @map("phone_enc")
+  unverifiedPhoneEnc  Bytes?    @map("unverified_phone_enc")
+  /// Argon2id PHC string; none for social-only accounts.
+  passwordHash        String?   @map("password_hash") @db.VarChar(255)
+  /// The picture from the sign-in provider, shown only to the person themself.
+  avatarUrl           String?   @map("avatar_url") @db.VarChar(2000)
+  /// An uploaded picture (private bucket, D-051).
+  avatarStorageKey    String?   @unique @map("avatar_storage_key") @db.VarChar(300)
+
+  mfa               UserMfa?
+  oauthAccounts     OAuthAccount[]
+  refreshTokens     RefreshToken[]
+  pushTokens        PushToken[]
+  notificationPrefs NotificationPreference?
+  notifications     Notification[]
+  notificationMarks NotificationMark[]
+  whatsappContact   WhatsappContact?
+  favourites        Favourite[]
+  appointments      UserAppointment[]
+  timeReservations  UserTimeReservation[]
+  activeTicket      UserActiveTicket?
+  businessRoles     UserBusinessRole[]
+
+  @@unique([managedByBusinessId, username])
+  @@map("users")
+}
+
+/// Two-step sign-in with an authenticator app (TOTP; D-081).
+model UserMfa {
+  userId         BigInt    @id @map("user_id")
+  /// The last 30-second step a code was accepted for: each code works once.
+  lastUsedStep   BigInt?   @map("last_used_step")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Null until a code proved the app works.
+  confirmedAt    DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  /// The TOTP secret, encrypted.
+  secretEnc      Bytes     @map("secret_enc")
+  /// SHA-256 (32 bytes) of each unused single-use recovery code.
+  recoveryHashes Bytes[]   @map("recovery_hashes")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_mfa")
+}
+
+/// A Google or Apple account linked for sign-in.
+model OAuthAccount {
+  id          BigInt   @id
+  userId      BigInt   @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// google | apple
+  provider    String   @db.VarChar(20)
+  /// Blind index of the provider's subject (16 bytes); global through lookup.handles.
+  subjectHash Bytes    @map("subject_hash")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, subjectHash])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+/// A session's refresh token, stored only as SHA-256. Rotated on every use; reusing a rotated
+/// one revokes its whole family. Partitioned weekly by expiry; dropped a week after (DB-006).
+model RefreshToken {
+  id            BigInt
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(6)
+  userId        BigInt    @map("user_id")
+  /// Every token of one sign-in shares the first token's ID.
+  familyId      BigInt    @map("family_id")
+  replacedById  BigInt?   @map("replaced_by_id")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt    DateTime? @map("last_used_at") @db.Timestamptz(6)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(6)
+  /// The session passed a second factor at sign-in.
+  mfa           Boolean   @default(false)
+  /// SHA-256 of the token (32 bytes).
+  tokenHash     Bytes     @map("token_hash")
+  revokedReason String?   @map("revoked_reason") @db.VarChar(50)
+  ipAddress     String?   @map("ip_address") @db.Inet
+  userAgent     String?   @map("user_agent") @db.VarChar(500)
+  deviceInfo    Json?     @map("device_info")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([id, expiresAt])
+  @@index([tokenHash])
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+/// A device that receives push notifications (one person at a time: lookup.handles).
+model PushToken {
+  id         BigInt   @id
+  userId     BigInt   @map("user_id")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  isActive   Boolean  @default(true) @map("is_active")
+  /// ios | android | web
+  platform   String   @db.VarChar(10)
+  token      String   @unique @db.VarChar(4096)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isActive])
+  @@map("push_tokens")
+}
+
+/// What a person wants to hear about, and how. Being called in a queue can't be switched off.
+model NotificationPreference {
+  userId                   BigInt    @id @map("user_id")
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  suggestionsConsentAt     DateTime? @map("suggestions_consent_at") @db.Timestamptz(6)
+  marketingConsentAt       DateTime? @map("marketing_consent_at") @db.Timestamptz(6)
+  pushBookingConfirmation  Boolean   @default(true) @map("push_booking_confirmation")
+  pushReminders            Boolean   @default(true) @map("push_reminders")
+  pushQueueUpdates         Boolean   @default(true) @map("push_queue_updates")
+  pushBusinessAlerts       Boolean   @default(true) @map("push_business_alerts")
+  whatsappUpdates          Boolean   @default(true) @map("whatsapp_updates")
+  smsReminders             Boolean   @default(true) @map("sms_reminders")
+  emailBookingConfirmation Boolean   @default(true) @map("email_booking_confirmation")
+  emailReminders           Boolean   @default(true) @map("email_reminders")
+  emailBusinessAlerts      Boolean   @default(true) @map("email_business_alerts")
+  /// Opt-in, with the time of consent.
+  suggestions              Boolean   @default(false)
+  marketingEmails          Boolean   @default(false) @map("marketing_emails")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+/// A message to a person on one channel. Partitioned monthly; kept 6 months (DB-006).
+model Notification {
+  id              BigInt
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  userId          BigInt    @map("user_id")
+  /// What it is about (on a business shard).
+  appointmentId   BigInt?   @map("appointment_id")
+  queueTicketId   BigInt?   @map("queue_ticket_id")
+  /// The device a push went to.
+  pushTokenId     BigInt?   @map("push_token_id")
+  sentAt          DateTime? @map("sent_at") @db.Timestamptz(6)
+  deliveredAt     DateTime? @map("delivered_at") @db.Timestamptz(6)
+  readAt          DateTime? @map("read_at") @db.Timestamptz(6)
+  type            String    @db.VarChar(50)
+  /// push | sms | email | in_app | whatsapp
+  channel         String    @db.VarChar(10)
+  /// pending | sent | delivered | failed | read
+  status          String    @default("pending") @db.VarChar(10)
+  /// WhatsApp: window | template (D-073).
+  whatsappPricing String?   @map("whatsapp_pricing") @db.VarChar(20)
+  title           String    @db.VarChar(200)
+  body            String    @db.VarChar(4000)
+  /// Deep-link payload: screen and IDs. No secrets, no personal data.
+  data            Json?
+  externalId      String?   @map("external_id") @db.VarChar(500)
+  failureReason   String?   @map("failure_reason") @db.VarChar(1000)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([id, createdAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+/// A scheduled message already sent to this person ("appt:<id>:r24"): each goes once, and
+/// suggestions are counted for frequency caps. Old marks are swept (13 months).
+model NotificationMark {
+  userId    BigInt   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  key       String   @db.VarChar(200)
+  kind      String   @db.VarChar(50)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, key])
+  @@index([userId, kind, createdAt])
+  /// The sweeper's way in: rows arrive in time order, so a few kilobytes cover millions.
+  @@index([createdAt], type: Brin, map: "notification_marks_created_at_brin")
+  @@map("notification_marks")
+}
+
+/// A person's WhatsApp number, linked by them (global through lookup.handles).
+model WhatsappContact {
+  userId        BigInt    @id @map("user_id")
+  linkedAt      DateTime  @map("linked_at") @db.Timestamptz(6)
+  /// Their last message to us: replies are free for 24 hours after it.
+  lastInboundAt DateTime? @map("last_inbound_at") @db.Timestamptz(6)
+  /// They replied STOP.
+  optedOutAt    DateTime? @map("opted_out_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  phoneHash     Bytes     @unique @map("phone_hash")
+  phoneEnc      Bytes     @map("phone_enc")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_contacts")
+}
+
+/// A business a person saved (the business is on a business shard).
+model Favourite {
+  userId     BigInt   @map("user_id")
+  businessId BigInt   @map("business_id")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, businessId])
+  @@map("favourites")
+}
+
+/// A person's view of one of their appointments (DB-014): what their lists need, kept from the
+/// business shard's events. `version` is the appointment's; older events are ignored.
+model UserAppointment {
+  userId              BigInt   @map("user_id")
+  appointmentId       BigInt   @map("appointment_id")
+  businessId          BigInt   @map("business_id")
+  version             BigInt
+  startAt             DateTime @map("start_at") @db.Timestamptz(6)
+  endAt               DateTime @map("end_at") @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  appointmentPublicId String   @map("appointment_public_id") @db.Char(12)
+  /// pending | confirmed | checked_in | completed | cancelled | no_show
+  status              String   @db.VarChar(20)
+  businessName        String   @map("business_name") @db.VarChar(200)
+  serviceName         String   @map("service_name") @db.VarChar(200)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, appointmentId])
+  @@unique([appointmentPublicId])
+  @@index([userId, startAt])
+  @@map("user_appointments")
+}
+
+/// The time a person is booked, across every business (DB-014, D-036): a booking first claims
+/// the time here (an exclusion constraint refuses overlaps), then writes the appointment on the
+/// business's shard. A claim not confirmed within 2 minutes is swept; ended ones are removed.
+model UserTimeReservation {
+  id            BigInt    @id
+  userId        BigInt    @map("user_id")
+  businessId    BigInt    @map("business_id")
+  /// Set once the appointment exists.
+  appointmentId BigInt?   @map("appointment_id")
+  startAt       DateTime  @map("start_at") @db.Timestamptz(6)
+  endAt         DateTime  @map("end_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// While held (no appointment yet): when the claim lapses.
+  expiresAt     DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startAt])
+  /// The sweeper: claims whose time has passed.
+  @@index([endAt])
+  @@map("user_time_reservations")
+}
+
+/// The one queue a person is waiting in (one at a time, across every business).
+model UserActiveTicket {
+  userId          BigInt   @id @map("user_id")
+  ticketId        BigInt   @map("ticket_id")
+  /// The ticket's partition key on the business shard, to find it directly.
+  ticketCreatedAt DateTime @map("ticket_created_at") @db.Timestamptz(6)
+  businessId      BigInt   @map("business_id")
+  sessionId       BigInt   @map("session_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_active_tickets")
+}
+
+/// The businesses a person works at, and as what (kept from the business shards' events).
+model UserBusinessRole {
+  userId       BigInt   @map("user_id")
+  businessId   BigInt   @map("business_id")
+  version      BigInt
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// owner | manager | staff
+  role         String   @db.VarChar(20)
+  /// invited | active | removed
+  status       String   @db.VarChar(20)
+  businessName String   @map("business_name") @db.VarChar(200)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, businessId])
+  @@map("user_business_roles")
+}
+
+// ═════════════════════════════ ON EVERY SHARD ═════════════════════════════
+
+/// What happened, who did it, from where. Append-only for every role; monthly partitions.
+model AuditLog {
+  id           BigInt
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Who did it (a person on any shard).
+  userId       BigInt?  @map("user_id")
+  resourceId   BigInt?  @map("resource_id")
+  action       String   @db.VarChar(100)
+  resourceType String   @map("resource_type") @db.VarChar(50)
+  ipAddress    String?  @map("ip_address") @db.Inet
+  userAgent    String?  @map("user_agent") @db.VarChar(500)
+  requestId    String?  @map("request_id") @db.VarChar(128)
+  oldValues    Json?    @map("old_values")
+  newValues    Json?    @map("new_values")
+
+  @@id([id, createdAt])
+  @@index([userId, createdAt])
+  @@index([resourceType, resourceId, createdAt])
+  @@map("audit_logs")
+}
+
+/// Transactional outbox: a row and its event in one transaction; a relay publishes it. Each
+/// service sees only its own (row-level security). Daily partitions; dropped after 14 days.
+model OutboxEvent {
+  id            BigInt
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  aggregateId   BigInt    @map("aggregate_id")
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  attempts      Int       @default(0)
+  aggregateType String    @map("aggregate_type") @db.VarChar(50)
+  /// The service that wrote it; only its relay publishes it (D-092).
+  source        String    @db.VarChar(50)
+  topic         String    @db.VarChar(100)
+  partitionKey  String    @map("partition_key") @db.VarChar(100)
+  payload       Json
+  headers       Json?
+  lastError     String?   @map("last_error") @db.VarChar(2000)
+
+  @@id([id, createdAt])
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}
+
+/// Idempotency ledger: (consumer, event) once. Partitioned by the event's OWN time (DB-019), so a
+/// redelivery always lands in the same partition and is caught; daily, kept 14 days.
+model ProcessedEvent {
+  occurredAt  DateTime @map("occurred_at") @db.Timestamptz(6)
+  processedAt DateTime @default(now()) @map("processed_at") @db.Timestamptz(6)
+  consumer    String   @db.VarChar(100)
+  eventId     String   @map("event_id") @db.VarChar(200)
+
+  @@id([consumer, eventId, occurredAt])
+  @@map("processed_events")
+}

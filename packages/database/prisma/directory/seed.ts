@@ -40,11 +40,16 @@ try {
       data: [{ region: REGION, code: 'pk', name: 'Pakistan' }],
       skipDuplicates: true,
     });
-    // In development every shard database sits on the one local server (DATABASE_URL); in
-    // production each cluster has its own secret.
+    // In development every shard database sits on the one local server, whose address (host and
+    // port only) is in BUKU_DB_CLUSTER_LOCAL_1; in production each cluster has its own setting.
     await tx.cluster.createMany({
-      data: [{ clusterId: 1, region: REGION, name: 'local-1', dsnSecret: 'DATABASE_URL' }],
+      data: [{ clusterId: 1, region: REGION, name: 'local-1', dsnSecret: 'BUKU_DB_CLUSTER_LOCAL_1' }],
       skipDuplicates: true,
+    });
+    // Directories seeded before D2 named the services' URL instead.
+    await tx.cluster.updateMany({
+      where: { clusterId: 1, dsnSecret: 'DATABASE_URL' },
+      data: { dsnSecret: 'BUKU_DB_CLUSTER_LOCAL_1' },
     });
     await tx.region.updateMany({
       where: { region: REGION, defaultClusterId: null },
@@ -69,6 +74,9 @@ try {
       ],
       skipDuplicates: true,
     });
+    // Local tools and tests sign in as buku_app: let it write handles too (DB-018).
+    await tx.$executeRaw`UPDATE lookup.handle_kinds SET writers = array_append(writers, 'buku_app')
+      WHERE NOT ('buku_app' = ANY (writers))`;
     for (const entity of ['user', 'business']) {
       const ready = await tx.shard.count({ where: { entity, region: REGION, status: 'ready' } });
       for (let i = ready; i < READY; i++) {

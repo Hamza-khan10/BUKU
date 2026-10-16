@@ -70,6 +70,7 @@ b64_32(){ openssl rand -base64 32; }
 set_if_empty POSTGRES_SUPERUSER_PASSWORD "$(hex 24)"
 set_if_empty BUKU_MIGRATOR_PASSWORD      "$(hex 24)"
 set_if_empty BUKU_APP_PASSWORD           "$(hex 24)"
+set_if_empty BUKU_DB_CLUSTER_LOCAL_1     "postgresql://localhost:$(get_value POSTGRES_HOST_PORT | grep . || echo 5432)"
 set_if_empty BUKU_DB_PASSWORD_AUTH         "$(hex 24)"
 set_if_empty BUKU_DB_PASSWORD_BOOKING      "$(hex 24)"
 set_if_empty BUKU_DB_PASSWORD_QUEUE        "$(hex 24)"

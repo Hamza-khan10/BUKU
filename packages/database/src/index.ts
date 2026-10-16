@@ -20,6 +20,15 @@ export {
   type DirectoryClient,
   type ShardInfo,
 } from './directory.js';
+export {
+  clusterUrl,
+  createUserShardClient,
+  ShardClients,
+  shardUrl,
+  UserShard,
+  type Credentials,
+  type UserShardClient,
+} from './shards.js';
 
 /**
  * Shared database client factory.

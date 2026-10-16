@@ -35,6 +35,7 @@
     "test:int": "vitest run --project integration",
     "db:generate": "pnpm --filter @buku/database generate",
     "db:prepare": "pnpm --filter @buku/database prepare:databases",
+    "db:shards": "pnpm --filter @buku/database shards:provision",
     "db:migrate:dev": "pnpm --filter @buku/database migrate:dev",
     "db:migrate:deploy": "pnpm --filter @buku/database migrate:deploy",
     "db:seed": "pnpm --filter @buku/database seed",

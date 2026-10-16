@@ -102,10 +102,11 @@ describe('what each service may do in the database (D-092)', () => {
 });
 
 describe('what each service may do in the directory database', () => {
-  const migration = readFileSync(
-    new URL('../prisma/directory/migrations/20261016120000_registry/migration.sql', import.meta.url),
-    'utf8',
-  );
+  const migration = ['20261016120000_registry', '20261017090000_lookups']
+    .map((m) =>
+      readFileSync(new URL(`../prisma/directory/migrations/${m}/migration.sql`, import.meta.url), 'utf8'),
+    )
+    .join('\n');
 
   it('names only tables and functions the directory has', () => {
     for (const t of DIRECTORY_ACCESS.reads) {
@@ -129,7 +130,9 @@ describe('what each service may do in the directory database', () => {
     expect(sql).toContain(
       'GRANT EXECUTE ON FUNCTION "registry"."route"(text, bigint), "registry"."region_of"(bigint), ' +
         '"registry"."lease_generator"(text, smallint, integer), "registry"."renew_generator"(smallint, text, integer), ' +
-        '"registry"."release_generator"(smallint, text), "registry"."place"(text, bigint) TO "buku_svc_auth"',
+        '"registry"."release_generator"(smallint, text), "registry"."place"(text, bigint), ' +
+        '"lookup"."claim"(text, bytea, bigint, boolean), "lookup"."release"(text, bytea, bigint), ' +
+        '"lookup"."release_all"(text, bigint), "lookup"."find"(text, bytea) TO "buku_svc_auth"',
     );
     expect(directoryAccessStatements('buku_directory', {})).toEqual([]);
   });
