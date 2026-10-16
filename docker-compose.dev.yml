@@ -98,6 +98,7 @@ x-shared-src: &shared-src # used by db-migrate
   - ./packages/validation/src:/app/packages/validation/src:ro
   - ./packages/database/src:/app/packages/database/src:ro
   - ./packages/database/prisma:/app/packages/database/prisma:ro
+  - ./packages/database/prisma.directory.config.ts:/app/packages/database/prisma.directory.config.ts:ro
   - ./packages/kafka/src:/app/packages/kafka/src:ro
 
 x-service-env: &service-env
@@ -179,7 +180,10 @@ services:
         -c log_min_duration_statement=500
         -c log_lock_waits=on
         -c idle_in_transaction_session_timeout=60s
-        -c shared_preload_libraries=pg_stat_statements
+        -c shared_preload_libraries=pg_stat_statements,pg_cron,pgaudit
+        -c cron.database_name=postgres
+        -c pgaudit.log=ddl,role
+        -c pgaudit.log_parameter=off
     volumes: [postgres-data:/var/lib/postgresql/data]
     ports: ['127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432']
     healthcheck:
@@ -427,23 +431,49 @@ services:
     depends_on:
       kafka-access: { condition: service_completed_successfully }
 
+  # Databases and extensions only the admin can create (the directory database, pg_cron,
+  # pgaudit; packages/database/scripts/prepare-databases.ts). Idempotent; before every migration.
+  db-prepare:
+    <<: [*oneshot, *node-image, *node-hardening]
+    networks: [migrate]
+    working_dir: /app/packages/database
+    command: ['/app/node_modules/.bin/tsx', 'scripts/prepare-databases.ts']
+    environment:
+      NODE_ENV: development
+      DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/postgres
+    volumes:
+      - ./packages/common/src:/app/packages/common/src:ro
+      - ./packages/validation/src:/app/packages/validation/src:ro
+      - ./packages/database/src:/app/packages/database/src:ro
+      - ./packages/database/scripts:/app/packages/database/scripts:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+
   db-migrate:
     <<: [*oneshot, *node-image, *node-hardening]
     networks: [migrate]
     working_dir: /app/packages/database
+    # The main database, then the directory (the shard registry, docs/DATABASE.md §6); each seeded.
     command:
-      ['sh', '-c', 'node_modules/.bin/prisma migrate deploy && /app/node_modules/.bin/tsx prisma/seed.ts']
+      - sh
+      - -c
+      - >-
+        node_modules/.bin/prisma migrate deploy &&
+        node_modules/.bin/prisma migrate deploy --config prisma.directory.config.ts &&
+        /app/node_modules/.bin/tsx prisma/seed.ts &&
+        /app/node_modules/.bin/tsx prisma/directory/seed.ts
     environment:
       NODE_ENV: development
       # Migrations run as the schema owner; the seed also uses PII keys to
       # encrypt demo users' contact details exactly like the real app will.
       DATABASE_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku
+      DATABASE_DIRECTORY_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_directory
       PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?run pnpm bootstrap}
       PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY:?run pnpm bootstrap}
     volumes: *shared-src
     depends_on:
-      postgres: { condition: service_healthy }
+      db-prepare: { condition: service_completed_successfully }
 
   # Each service's own database role, with exactly its rights (D-092; packages/database/src/
   # access.ts). Runs after every migration, as the admin: roles, passwords, grants.
@@ -455,6 +485,8 @@ services:
     environment:
       NODE_ENV: development
       DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku
+      # The same roles' rights in the directory (read the registry, lease ID generators, place rows).
+      DATABASE_DIRECTORY_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku_directory
       BUKU_DB_PASSWORD_AUTH: ${BUKU_DB_PASSWORD_AUTH:?run pnpm bootstrap}
       BUKU_DB_PASSWORD_BOOKING: ${BUKU_DB_PASSWORD_BOOKING:?run pnpm bootstrap}
       BUKU_DB_PASSWORD_QUEUE: ${BUKU_DB_PASSWORD_QUEUE:?run pnpm bootstrap}

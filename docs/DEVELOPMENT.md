@@ -42,6 +42,7 @@ password `buku-dev-password-2026`.
 | `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route) |
 | `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)            |
 | `pnpm db:studio`                                | Browse the database in Prisma Studio                                  |
+| `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent) |
 
 Services hot-reload: edit anything under `packages/*/src` or `services/*/src` and the affected
 containers restart within a second. After changing `package.json`/`pnpm-lock.yaml`, run
@@ -60,6 +61,26 @@ containers restart within a second. After changing `package.json`/`pnpm-lock.yam
 5. Add/adjust integration tests in `packages/database/test`.
    CI fails if `schema.prisma` and the migrations disagree.
 
+### Change the directory (shard registry)
+
+The directory database (`buku_directory`, docs/DATABASE.md DB-013) has its own schema and
+migrations: `packages/database/prisma/directory/`. Same steps as above, with
+`--config prisma.directory.config.ts` on every Prisma command (`pnpm db:migrate:deploy`,
+`pnpm db:generate` and CI already do both). Two rules for a new directory table: revoke
+`buku_app`'s default rights in its migration (services never write the registry; a test checks),
+and add a `registry.log_change()` trigger if it describes the layout, so changes are logged and
+routers notice them.
+
+Changing the layout itself (limits, shards, regions, clusters, who may place a family) needs no
+migration: it is data. The recipes are in DATABASE.md DB-017. Locally:
+
+```bash
+docker exec -it buku-postgres-1 psql -U buku_migrator -d buku_directory
+SET buku.actor = 'me: raising the user shard limit';   -- shows up in registry.changes
+UPDATE registry.shards SET row_limit = 20000000 WHERE entity = 'user' AND region = 0 AND shard_no = 1;
+SELECT * FROM registry.add_shard('user', 0::smallint);   -- one more ready shard
+```
+
 ### Give a service access to a table
 
 Every service signs in to Postgres as its own role (D-092). A new table is usable by no service
@@ -70,7 +91,9 @@ under `reads` (whole table or listed columns) or, rarely, `updates`/`inserts`/`d
 A "permission denied" in a service's log means the map is missing something; find which with
 `docker logs buku-postgres-1 2>&1 | grep -A1 "permission denied"`. Triggers run with the rights
 of whoever fired them: a trigger function that writes another service's table is made
-`SECURITY DEFINER` in its migration.
+`SECURITY DEFINER` in its migration. Rights in the directory are the same for every service
+(`DIRECTORY_ACCESS`: read the registry, lease ID generators, place rows); who may place which
+family is the `placed_by` column of `registry.entities`, not code.
 
 ### Use a new Valkey key
 
@@ -285,6 +308,7 @@ infra docker kong ci deps docs repo security release`.
 | Port already in use                                                    | Another local Postgres/Redis? Stop it, or change `POSTGRES_HOST_PORT` in `.env`.                                                                           |
 | After a Windows/WSL restart: Kong `Exited (127)`, services `unhealthy` | Docker started the containers before WSL's files were mounted. `docker compose -f docker-compose.dev.yml up -d --force-recreate` (data is kept).           |
 | Host tools get `Connection terminated unexpectedly`                    | After a restart the port forwarder can drop every host connection while the containers look healthy. Same fix: recreate the stack.                         |
+| `database "buku_directory" does not exist` (tests, Prisma)             | The directory is created by `pnpm db:prepare` (the `db-prepare` container does it on `pnpm dev`). Run it once on a stack created before D1.                |
 | Start completely fresh                                                 | `pnpm dev:wipe && pnpm dev`                                                                                                                                |
 
 ## Releases (Phase 5)

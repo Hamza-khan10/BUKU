@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ACCESS, NOT_WRITTEN_AT_RUN_TIME, roleOf, SERVICES } from '../src/access.js';
-import { accessStatements } from '../src/access-sql.js';
+import { ACCESS, DIRECTORY_ACCESS, NOT_WRITTEN_AT_RUN_TIME, roleOf, SERVICES } from '../src/access.js';
+import { accessStatements, directoryAccessStatements } from '../src/access-sql.js';
 
 /** Tables and their columns, as the Prisma schema names them in the database. */
 function schemaTables(): Map<string, Set<string>> {
@@ -98,5 +98,39 @@ describe('what each service may do in the database (D-092)', () => {
     expect(sql.some((s) => /NOBYPASSRLS/.test(s))).toBe(true);
     // A service with no password set gets no role.
     expect(sql.some((s) => s.includes('buku_svc_auth'))).toBe(false);
+  });
+});
+
+describe('what each service may do in the directory database', () => {
+  const migration = readFileSync(
+    new URL('../prisma/directory/migrations/20261016120000_registry/migration.sql', import.meta.url),
+    'utf8',
+  );
+
+  it('names only tables and functions the directory has', () => {
+    for (const t of DIRECTORY_ACCESS.reads) {
+      const [schema, table] = t.split('.');
+      expect(migration, t).toContain(`CREATE TABLE "${schema}"."${table}"`);
+    }
+    for (const f of DIRECTORY_ACCESS.executes) {
+      const [schema, name] = f.slice(0, f.indexOf('(')).split('.');
+      expect(migration, f).toContain(`CREATE FUNCTION "${schema}"."${name}"(`);
+    }
+  });
+
+  it('reads the registry and calls its functions, never writes it; no password, no rights', () => {
+    const sql = directoryAccessStatements('buku_directory', { auth: 'p'.repeat(32) });
+    expect(sql.every((s) => s.includes('"buku_svc_auth"'))).toBe(true);
+    const revoke = sql.findIndex((s) => s.startsWith('REVOKE ALL ON ALL TABLES'));
+    const grant = sql.findIndex((s) => s.startsWith('GRANT SELECT'));
+    expect(revoke).toBeGreaterThan(-1);
+    expect(revoke).toBeLessThan(grant);
+    expect(sql.some((s) => /GRANT (INSERT|UPDATE|DELETE|ALL)/.test(s))).toBe(false);
+    expect(sql).toContain(
+      'GRANT EXECUTE ON FUNCTION "registry"."route"(text, bigint), "registry"."region_of"(bigint), ' +
+        '"registry"."lease_generator"(text, smallint, integer), "registry"."renew_generator"(smallint, text, integer), ' +
+        '"registry"."release_generator"(smallint, text), "registry"."place"(text, bigint) TO "buku_svc_auth"',
+    );
+    expect(directoryAccessStatements('buku_directory', {})).toEqual([]);
   });
 });

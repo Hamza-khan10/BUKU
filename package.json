@@ -34,6 +34,7 @@
     "test:watch": "vitest --project unit",
     "test:int": "vitest run --project integration",
     "db:generate": "pnpm --filter @buku/database generate",
+    "db:prepare": "pnpm --filter @buku/database prepare:databases",
     "db:migrate:dev": "pnpm --filter @buku/database migrate:dev",
     "db:migrate:deploy": "pnpm --filter @buku/database migrate:deploy",
     "db:seed": "pnpm --filter @buku/database seed",

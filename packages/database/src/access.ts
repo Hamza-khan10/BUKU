@@ -261,6 +261,31 @@ export const ACCESS: Readonly<Record<ServiceName, Access>> = {
 };
 
 /**
+ * What every service may do in the DIRECTORY database (docs/DATABASE.md §6): read where people and
+ * businesses live, lease an ID generator, and place a new row. Nothing is ever written to its
+ * tables directly; who may place which family is a row (registry.entities.placed_by), checked by
+ * registry.place() itself, so it changes without a deploy. The same rights as buku_app's (the
+ * directory migration grants those).
+ */
+export const DIRECTORY_ACCESS = {
+  reads: [
+    'registry.regions',
+    'registry.entities',
+    'registry.clusters',
+    'registry.shards',
+    'registry.version',
+  ],
+  executes: [
+    'registry.route(text, bigint)',
+    'registry.region_of(bigint)',
+    'registry.lease_generator(text, smallint, integer)',
+    'registry.renew_generator(smallint, text, integer)',
+    'registry.release_generator(smallint, text)',
+    'registry.place(text, bigint)',
+  ],
+} as const;
+
+/**
  * Tables no service changes at run time: filled by migrations and seeds, only ever added to
  * (categories: owners' suggestions, D-098; audit_logs), or kept for features not built yet.
  */

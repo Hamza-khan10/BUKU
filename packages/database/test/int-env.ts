@@ -23,6 +23,9 @@ const port = process.env.POSTGRES_HOST_PORT ?? '5432';
 export const testEnv = {
   appUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_test`,
   migratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_test`,
+  // The directory database's test twin (shard registry, ID generator leases; docs/DATABASE.md §6).
+  directoryAppUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_directory_test`,
+  directoryMigratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_directory_test`,
   kafkaBrokers: process.env.TEST_KAFKA_BROKERS ?? 'localhost:9092',
   // Tests sign in to Kafka as the admin (D-092): they make their own consumer groups.
   kafkaSasl: {
