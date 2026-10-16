@@ -7,8 +7,9 @@ and the code disagree, this document is the plan and the code is the state; the 
 the end say what is done.
 
 Status: **design approved by the owner's brief (2026-10-16). D1 (foundation) is built: the
-directory database, the shard registry, ID generators and the router (§15). D2 next.** Website
-work pauses until D1–D3 are done (DB-000).
+directory database, the shard registry, ID generators and the router. D2a is built: global
+lookups and the user shards, provisioned from the registry (§15). D2b (the business shard) is
+next.** Website work pauses until D1–D3 are done (DB-000).
 
 ---
 
@@ -203,9 +204,21 @@ ID.
 
 ### DB-012 · Logical shards on physical clusters
 
-**Decision:** `registry.clusters` lists physical clusters (region, the name of the secret holding
-its connection string, status); each shard row points at one. Moving a shard means copying it to another cluster (logical replication),
-then switching the pointer in one transaction while writes for that shard pause for seconds.
+**Decision:** `registry.clusters` lists physical clusters (region, the name of the setting that
+holds its address, status); each shard row points at one. The address is host, port and TLS
+options only: every role signs in with its own credentials, so the registry never holds a
+password and one address serves every service. Moving a shard means copying it to another cluster
+(logical replication), then switching the pointer in one transaction while writes for that shard
+pause for seconds.
+
+**Making shards real** (`scripts/provision-shards.ts`, `pnpm db:shards`; the `db-shards`
+container): for every shard in the registry that isn't retired, ready ones included, it creates
+the database on its cluster from `template1` (so it starts with every extension, `pg_partman`
+included), takes away the template's default grants (DB-023), applies its family's migrations as
+the schema owner, records which shard it is (`buku.shard = 'user:0:1'`), and schedules its hourly
+partition upkeep in `pg_cron`. It is idempotent: run it after adding shards and after every
+release. Each shard keeps its own migration history, so one that missed a release is brought up
+to date on the next run.
 
 **Why:** shards can be rebalanced and tiered without downtime or any change to IDs or code.
 
@@ -263,7 +276,7 @@ operators (the owner role, through reviewed tooling), and every change lands in
   `user_time_reservations` (an exclusion constraint on `(user_id, time range)`), then writes the
   appointment on the business shard; if the second step fails, the claim is released. A sweeper
   removes claims with no appointment after 2 minutes.
-- **One queue at a time per person** works the same way (`user_active_ticket`, one row per person).
+- **One queue at a time per person** works the same way (`user_active_tickets`, one row per person).
 - **"My bookings" and "my businesses"** are read from small index tables on the person's shard
   (`user_appointments`, `user_business_roles`), kept up to date from the business shards' outbox
   events. They hold only what a list needs (IDs, times, names), so the person's pages are one-shard
@@ -303,6 +316,46 @@ registry that is data, with its rules in constraints and a log of every change, 
 safely by an operator in minutes, and a mistake is visible in the log and refused by the
 constraints rather than discovered later in production data.
 
+### DB-018 · Global lookups: what a person or business is found by, unique across every shard
+
+**The problem:** signing in starts from an email, a phone number or a Google or Apple account; a
+business page starts from its address (`/b/<slug>`) or public ID; a WhatsApp message arrives from
+a number. None of these says which shard to look on, and a unique index on one shard can't stop
+the same email being registered on another.
+
+**Decision:** one table of **handles** on the directory, `lookup.handles` (kind, key → owner ID),
+with its kinds in `lookup.handle_kinds`. The primary key `(kind, key)` makes every handle unique
+across all shards. Finding someone is two steps with no search: the handle gives the ID, and the
+ID gives the shard (DB-011).
+
+| Kind                        | Key                                                                 |
+| --------------------------- | ------------------------------------------------------------------- |
+| `user.email`, `user.phone`  | the 16-byte keyed blind index (DB-008), never the address or number |
+| `user.google`, `user.apple` | the blind index of the account's subject                            |
+| `user.public_id`            | the 12 characters                                                   |
+| `user.employee_login`       | the business's ID (8 bytes) + the username (D-034)                  |
+| `user.whatsapp`             | the blind index of the linked number                                |
+| `user.push_token`           | the blind index of the device's token (a device is one person's)    |
+| `business.public_id`        | the 12 characters                                                   |
+| `business.slug`             | the slug                                                            |
+
+- **Written only through functions:** `lookup.claim` (taking a handle someone else has is
+  refused and says by whom; only kinds that move between people by design, like a device's push
+  token, can be taken over), `lookup.release` (only by its owner), `lookup.release_all` (an
+  erased account), `lookup.find`. Each checks that the caller's role is one of the kind's
+  `writers` (the auth service for emails, the notification service for WhatsApp numbers, the
+  business service for slugs) and that the key is the kind's size.
+- **Split into 16 parts by a hash of the key** from the start (two or three handles per person
+  is hundreds of millions of rows), so it never has to be rebuilt to be split.
+- A new kind is a row (DB-017), logged like any other change to the layout.
+- Child rows (an appointment's public ID, a queue ticket) don't need handles: they are always
+  reached through their parent (the person's `user_appointments`, or the business whose page it
+  is), whose shard is already known.
+
+**Why not a hash of the email to pick the shard?** It would tie every person to a shard by their
+email (changing it would mean moving them) and would still need a table for Google accounts,
+phones and slugs. One small, partitioned table does all of it.
+
 ---
 
 ## 7. Partitioning and retention
@@ -319,9 +372,9 @@ scheduled by `pg_cron`:
 | `queue_tickets` (business)                   | `created_at`   | month          | 13 months             | same                                            |
 | `staff_shifts` (business)                    | `started_at`   | month          | 25 months             | same                                            |
 | `notifications` (user)                       | `created_at`   | month          | 6 months              | dropped (they're also in email/push)            |
-| `refresh_tokens` (user)                      | `expires_at`   | week           | until expiry + 7 days | dropped                                         |
+| `refresh_tokens` (user)                      | `expires_at`   | month          | until expiry + 7 days | dropped                                         |
 | `outbox_events` (every shard)                | `created_at`   | day            | 7 days after sent     | dropped                                         |
-| `processed_events` (every consumer)          | `processed_at` | day            | 14 days               | dropped                                         |
+| `processed_events` (every consumer)          | `occurred_at`  | day            | 14 days               | dropped                                         |
 | `audit_logs` (every shard)                   | `created_at`   | month          | 25 months online      | copied to immutable storage first, kept 7 years |
 | `ad_events`, `webhook_deliveries` (business) | `created_at`   | month / week   | 13 months / 30 days   | dropped                                         |
 
@@ -334,6 +387,28 @@ gain nothing from partitions and pay overhead, so they stay plain.
 primary key, so `appointments` has `PRIMARY KEY (id, start_at)` and rows that point at an
 appointment carry both (`appointment_id`, `appointment_start_at`). The snowflake ID alone stays
 unique (DB-002).
+
+**Made by `pg_partman`, run hourly by `pg_cron`** in every shard database, as the tables' owner:
+partitions exist ahead (3 months for monthly tables, a week for daily ones, and 25 months for
+refresh tokens, whose sessions can slide for up to two years) and expired ones are dropped by
+each table's retention. `infinite_time_partitions` keeps them coming through a quiet spell. A
+`_default` partition catches anything outside the range, and a row there is a monitoring alert
+(D4).
+
+### DB-019 · Ledgers that must catch duplicates are partitioned by the event's own time
+
+**Decision:** `processed_events` (a consumer's "already done" list) is partitioned by the
+event's `occurred_at` from its envelope, not by when it was processed, with the key
+`(consumer, event_id, occurred_at)`.
+
+**Why:** a unique key on a partitioned table only holds within a partition. Partitioned by
+processing time, an event delivered at 23:59 and again at 00:01 would land in two partitions and
+be processed twice. An event's own time never changes, so every redelivery lands in the same
+partition and the key catches it, while old days are still dropped whole.
+
+`notification_marks` (each scheduled message sent once) is not partitioned: its keys repeat over
+months, so it is one table keyed `(user_id, key)` and a sweeper removes marks older than 13
+months, in small batches, through a BRIN index on `created_at`.
 
 ---
 
@@ -479,7 +554,7 @@ erDiagram
   users ||--o{ favourites : "saves"
   users ||--o{ user_appointments : "sees (index)"
   users ||--o{ user_time_reservations : "claims time"
-  users ||--o| user_active_ticket : "waits with"
+  users ||--o| user_active_tickets : "waits with"
   users ||--o{ user_business_roles : "works at (index)"
   users ||--o{ whatsapp_contacts : "talks on"
   favourites }o..|| businesses : "points at"
@@ -528,25 +603,37 @@ erDiagram
     bigint user_id PK
     bigint appointment_id PK
     bigint business_id
+    bigint version
     timestamptz start_at
+    timestamptz end_at
+    char appointment_public_id UK
     text status
+    text business_name
+    text service_name
   }
   user_time_reservations {
     bigint id PK
     bigint user_id FK
-    tstzrange during
+    bigint business_id
     bigint appointment_id
+    timestamptz start_at
+    timestamptz end_at
     timestamptz expires_at
   }
-  user_active_ticket {
+  user_active_tickets {
     bigint user_id PK
     bigint ticket_id
+    timestamptz ticket_created_at
     bigint business_id
+    bigint session_id
   }
   user_business_roles {
     bigint user_id PK
     bigint business_id PK
+    bigint version
     text role
+    text status
+    text business_name
   }
 ```
 
@@ -699,7 +786,7 @@ Where every current table goes. "→" is its v2 name when it changes.
 | oauth_accounts, user_mfa, push_tokens, notification_preferences, notification_marks, whatsapp_contacts, favourites                                                                    | user shard                   | no                     | co-located by `user_id`                            |
 | refresh_tokens                                                                                                                                                                        | user shard                   | weekly by `expires_at` | dropped after expiry                               |
 | notifications                                                                                                                                                                         | user shard                   | monthly                | 6 months                                           |
-| — (new) user_appointments, user_time_reservations, user_active_ticket, user_business_roles                                                                                            | user shard                   | no                     | DB-014                                             |
+| — (new) user_appointments, user_time_reservations, user_active_tickets, user_business_roles                                                                                           | user shard                   | no                     | DB-014                                             |
 | businesses, business_members, business_hours, business_photos, business_documents, business_legal_profiles, business_reports, business_search_stats, booking_settings, queue_settings | business shard               | no                     | co-located by `business_id`                        |
 | services, service_categories → service_groups, staff, staff_services, staff_photos, resources, availability_rules, availability_exceptions                                            | business shard               | no                     |                                                    |
 | staff_attendance → staff_shifts                                                                                                                                                       | business shard               | monthly                |                                                    |
@@ -753,6 +840,18 @@ Where every current table goes. "→" is its v2 name when it changes.
 - Application audit rows (`audit_logs`) are append-only for every role (no `UPDATE`/`DELETE`
   grant), and each month's partition is copied to object storage with **object lock** (WORM) before
   it leaves the database: kept 7 years.
+
+### DB-023 · Shard databases grant nothing by default
+
+**Decision:** when a shard database is made, the default privileges it inherits from `template1`
+are taken away, so a table or partition the migrator creates is usable by nobody until a
+migration or `apply-access` grants it. Grants are on the parent tables only, never a partition.
+
+**Why:** with defaults on, every new table, and every partition `pg_partman` makes each hour, would
+quietly be readable and writable by the app role, including the audit log's (v1 had to revoke
+those one by one). With nothing by default, a forgotten grant is a loud "permission denied" in a
+test, never a silent hole; and since partitions are reached only through their parent, a service
+can't read or empty one directly.
 
 ---
 
@@ -840,7 +939,7 @@ one shard, on indexed keys.
 | Phase                 | What                                                                                                                                                                                                                                                     | Done when                                                                                                                                                 |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **D1 Foundation** ✅  | Postgres image with the extensions; directory schema (registry, generators, settings, currencies); the ID generator (`@buku/ids`: TypeScript and `buku_id()` in SQL) and public IDs; the shard router in `@buku/database` (one shard per family locally) | unit and integration tests for IDs (uniqueness under concurrency, ordering, region bits), allocation (limit reached → next shard, limit changed), routing |
-| **D2 Schema v2**      | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed                             | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
+| **D2 Schema v2** 🚧   | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed. In five slices, below      | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
 | **D3 Services**       | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
 | **D4 Safety**         | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
 | **D5 Proof at scale** | a synthetic data set (10M people, 1M businesses, 200M appointments) on a test cluster; the slow-query review                                                                                                                                             | the targets in §3 met for the main queries                                                                                                                |
@@ -871,3 +970,37 @@ Website work resumes after D3.
 - `currencies` moves to D2 with the rest of the reference data (DB-015), since they are copied to
   shards together. The shard databases themselves (`buku_user_pk_1`, …) are created by D2's
   provisioning; D1 records where they will be.
+
+**D2, in slices.** The v2 databases are new databases next to v1's `buku`, which keeps serving the
+website and services unchanged until D3 moves each service over; nothing is migrated in place.
+
+| Slice                     | What                                                                                                                                                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D2a** ✅ (2026-10-17)   | global lookups (DB-018); shard provisioning from the registry (DB-012, DB-023); the user shard (§9.2) with its partitions (DB-006, DB-019)                                                                                                  |
+| **D2b** Business shard    | every business table (§9.3), appointments partitioned by month; double booking guarded by small unpartitioned claim tables kept by trigger (a constraint across monthly partitions isn't possible), row-level security by business (DB-020) |
+| **D2c** Reference data    | categories, plans, prices, billing and notification settings, currencies on the directory, copied to every shard by logical replication (DB-015)                                                                                            |
+| **D2d** Rights per family | each service's rights on user and business shards and the directory's lookups, in the access map; applied by `apply-access` on every shard                                                                                                  |
+| **D2e** The v2 seed       | the development data set placed across shards through the router, as the services will                                                                                                                                                      |
+
+**D2a, as built (2026-10-17).**
+
+- `lookup.handles` and `lookup.handle_kinds` on the directory (DB-018), with `claim`, `release`,
+  `release_all` and `find`; ten kinds; 16 hash partitions; writers per kind.
+- `scripts/provision-shards.ts` (`pnpm db:shards`, the `db-shards` container, CI): every
+  registered shard created, stripped of default grants, migrated, tagged and given hourly
+  partition upkeep. `pg_partman` is in `template1`; `pg_cron` runs jobs in background workers.
+- The user shard (`prisma/user`): `users`, `user_mfa`, `oauth_accounts`, `refresh_tokens`
+  (monthly, 25 months ahead), `push_tokens`, `notification_preferences`, `notifications`
+  (monthly, 6 months), `notification_marks`, `whatsapp_contacts`, `favourites`,
+  `user_appointments`, `user_time_reservations` (the exclusion constraint for one appointment at
+  a time), `user_active_tickets`, `user_business_roles`, `audit_logs` (monthly, append-only),
+  `outbox_events` (daily, 14 days, row-level security by service), `processed_events` (daily by
+  the event's time, DB-019). Every status checked, every hash its size, every foreign key indexed.
+- `@buku/database`: `ShardClients` (a pool per shard, opened on first use), `clusterUrl` /
+  `shardUrl` (an address plus the caller's own credentials), the user shard's client.
+- A cluster's address is a setting naming host and port only (`BUKU_DB_CLUSTER_LOCAL_1`).
+- Tests: handles (one email per person across shards, take-over, release, sizes, writers, new
+  kinds logged); provisioning (idempotent, partitions ahead, upkeep scheduled, shard tag); no
+  default grants; the audit log append-only; malformed people refused; one appointment at a time;
+  one queue at a time; a redelivered event caught across days; a sign-up end to end (placed,
+  claimed, written, found again by email, the next shard opening at the limit).

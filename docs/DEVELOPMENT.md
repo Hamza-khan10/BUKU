@@ -43,6 +43,7 @@ password `buku-dev-password-2026`.
 | `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)            |
 | `pnpm db:studio`                                | Browse the database in Prisma Studio                                  |
 | `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent) |
+| `pnpm db:shards`                                | Make every registered shard a migrated database (idempotent)          |
 
 Services hot-reload: edit anything under `packages/*/src` or `services/*/src` and the affected
 containers restart within a second. After changing `package.json`/`pnpm-lock.yaml`, run
@@ -80,6 +81,26 @@ SET buku.actor = 'me: raising the user shard limit';   -- shows up in registry.c
 UPDATE registry.shards SET row_limit = 20000000 WHERE entity = 'user' AND region = 0 AND shard_no = 1;
 SELECT * FROM registry.add_shard('user', 0::smallint);   -- one more ready shard
 ```
+
+### Change a shard family's schema (the user shard)
+
+Every user shard has the same schema: `packages/database/prisma/user/` (business shards follow in
+D2b). Edit `schema.prisma`, then write the migration from the difference against a shard that is
+up to date:
+
+```bash
+cd packages/database
+pnpm exec prisma migrate diff --config prisma.user.config.ts --from-config-datasource \
+  --to-schema prisma/user/schema.prisma --script > /tmp/change.sql   # read it
+mkdir prisma/user/migrations/<timestamp>_<what> && mv /tmp/change.sql prisma/user/migrations/<timestamp>_<what>/migration.sql
+pnpm db:generate && pnpm db:shards   # every shard, ready ones included, gets it
+```
+
+Partitioned tables are declared `PARTITION BY RANGE` by hand in the migration and handed to
+`pg_partman` (`partman.create_parent`); a plain index Prisma doesn't know about must be in the
+schema (`@@index`), or the drift check fails (partial indexes, checks and exclusions live only in
+the SQL). Grant new tables to `buku_app` in the migration: shard databases grant nothing by
+default (DB-023).
 
 ### Give a service access to a table
 
@@ -309,6 +330,7 @@ infra docker kong ci deps docs repo security release`.
 | After a Windows/WSL restart: Kong `Exited (127)`, services `unhealthy` | Docker started the containers before WSL's files were mounted. `docker compose -f docker-compose.dev.yml up -d --force-recreate` (data is kept).           |
 | Host tools get `Connection terminated unexpectedly`                    | After a restart the port forwarder can drop every host connection while the containers look healthy. Same fix: recreate the stack.                         |
 | `database "buku_directory" does not exist` (tests, Prisma)             | The directory is created by `pnpm db:prepare` (the `db-prepare` container does it on `pnpm dev`). Run it once on a stack created before D1.                |
+| `BUKU_DB_CLUSTER_LOCAL_1 is not set`                                   | The local cluster's address (added in D2a). `pnpm bootstrap` adds it to `.env` without touching anything else.                                             |
 | Start completely fresh                                                 | `pnpm dev:wipe && pnpm dev`                                                                                                                                |
 
 ## Releases (Phase 5)

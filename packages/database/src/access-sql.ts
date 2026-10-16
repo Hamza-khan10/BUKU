@@ -94,11 +94,11 @@ export function directoryAccessStatements(
     const r = ident(roleOf(service));
     out.push(
       `GRANT CONNECT, TEMPORARY ON DATABASE ${ident(database)} TO ${r}`,
-      `REVOKE ALL ON ALL TABLES IN SCHEMA "registry", "ids" FROM ${r}`,
-      `REVOKE ALL ON ALL SEQUENCES IN SCHEMA "registry", "ids" FROM ${r}`,
-      `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA "registry", "ids" FROM ${r}`,
+      `REVOKE ALL ON ALL TABLES IN SCHEMA "registry", "ids", "lookup" FROM ${r}`,
+      `REVOKE ALL ON ALL SEQUENCES IN SCHEMA "registry", "ids", "lookup" FROM ${r}`,
+      `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA "registry", "ids", "lookup" FROM ${r}`,
       `REVOKE ALL ON SCHEMA "ids" FROM ${r}`,
-      `GRANT USAGE ON SCHEMA "registry" TO ${r}`,
+      `GRANT USAGE ON SCHEMA ${DIRECTORY_ACCESS.schemas.map(ident).join(', ')} TO ${r}`,
       `GRANT SELECT ON ${DIRECTORY_ACCESS.reads.map(qualified).join(', ')} TO ${r}`,
       `GRANT EXECUTE ON FUNCTION ${DIRECTORY_ACCESS.executes.map(qualified).join(', ')} TO ${r}`,
     );

@@ -971,3 +971,14 @@ are fixed for good. Building it found two flaws in the paper design, now fixed a
 closes at the highest ID it took, not the one that filled it (late IDs would otherwise land in the
 wrong range), and a placement that waited for a shard that filled meanwhile looks again instead
 of failing.
+
+**D-107 · People are found by handles, and shards are made from the registry (D2a).** Signing in
+starts from an email or a Google account, and a business page from its slug; none of them says
+which shard to look on, and a unique index on one shard can't stop the same email on another. So
+the directory keeps one table of handles (kind, key → owner), unique across every shard, with
+blind indexes rather than emails, written only through functions that check who may write each
+kind (DATABASE.md DB-018). Every shard in the registry is made a real database by one idempotent
+script: created from a template with every extension, no default grants (DB-023), migrated,
+partitions made ahead hourly. The user shard is the first family built this way; the business
+shard, reference data, per-service rights and the v2 seed follow (D2b–D2e). v1's database keeps
+serving the website until D3.

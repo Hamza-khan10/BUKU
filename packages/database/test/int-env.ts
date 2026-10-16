@@ -23,6 +23,11 @@ const port = process.env.POSTGRES_HOST_PORT ?? '5432';
 export const testEnv = {
   appUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_test`,
   migratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_test`,
+  // The test cluster's address (host and port only) and the roles that build shard databases on it.
+  cluster: `postgresql://${host}:${port}`,
+  admin: { user: 'buku_admin', password: required('POSTGRES_SUPERUSER_PASSWORD') },
+  migrator: { user: 'buku_migrator', password: required('BUKU_MIGRATOR_PASSWORD') },
+  app: { user: 'buku_app', password: required('BUKU_APP_PASSWORD') },
   // The directory database's test twin (shard registry, ID generator leases; docs/DATABASE.md §6).
   directoryAppUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_directory_test`,
   directoryMigratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_directory_test`,

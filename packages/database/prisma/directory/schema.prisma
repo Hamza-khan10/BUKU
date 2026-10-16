@@ -6,6 +6,9 @@
 //                families ("entities"), and the shards with their ID ranges and row limits;
 //                ID generator leases; a log of every change; a version routers watch.
 //  • ids.*       the database's own ID generator (the same 64-bit layout as @buku/common's).
+//  • lookup.*    global handles (DB-018): what a person or business is found by before its shard
+//                is known (an email's blind index, a Google account, a slug, a public ID), each
+//                unique across every shard.
 //
 // Everything that may need to change as BUKU grows is a row, not code: add a region, a cluster, a
 // shard family or a shard; change a limit. Statuses are text with CHECK constraints (not enums),
@@ -23,7 +26,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["registry", "ids"]
+  schemas  = ["registry", "ids", "lookup"]
 }
 
 /// A region data can be kept in (DB-002: the top 3 bits of an ID's generator say which).
@@ -180,4 +183,40 @@ model IdState {
 
   @@map("state")
   @@schema("ids")
+}
+
+/// A kind of handle (DB-018): what it identifies, how long its key is, and who may write it.
+model HandleKind {
+  kind        Int      @id @db.SmallInt
+  /// 'user.email', 'business.slug', … (lower case, family first).
+  name        String   @unique @db.VarChar(40)
+  /// The shard family its owners belong to.
+  entity      String   @db.VarChar(32)
+  /// Key length in bytes (a blind index is 16; a public ID 12).
+  keyMin      Int      @map("key_min") @db.SmallInt
+  keyMax      Int      @map("key_max") @db.SmallInt
+  /// Database roles allowed to claim and release handles of this kind.
+  writers     String[] @default([])
+  description String
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  handles Handle[]
+
+  @@map("handle_kinds")
+  @@schema("lookup")
+}
+
+/// One handle: a key of a kind, and the person or business it belongs to (hash-partitioned by key).
+model Handle {
+  ownerId   BigInt   @map("owner_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  kind      Int      @db.SmallInt
+  key       Bytes
+
+  kindRow HandleKind @relation(fields: [kind], references: [kind])
+
+  @@id([kind, key])
+  @@index([ownerId])
+  @@map("handles")
+  @@schema("lookup")
 }

@@ -98,12 +98,18 @@ jobs:
         run: pnpm db:prepare
       - name: Apply migrations to fresh databases (main and directory)
         run: pnpm db:migrate:deploy
+      - name: Register the development shards, then make each one a migrated database
+        run: |
+          pnpm --filter @buku/database exec tsx prisma/directory/seed.ts
+          pnpm db:shards
       - name: Fail if a schema and its migrations disagree
         working-directory: packages/database
         run: |
           pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
           pnpm exec prisma migrate diff --config prisma.directory.config.ts --from-config-datasource \
             --to-schema prisma/directory/schema.prisma --exit-code
+          pnpm exec prisma migrate diff --config prisma.user.config.ts --from-config-datasource \
+            --to-schema prisma/user/schema.prisma --exit-code
       - run: pnpm test:int
       - name: Service logs on failure
         if: failure()
