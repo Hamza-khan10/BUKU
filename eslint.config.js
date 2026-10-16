@@ -68,7 +68,7 @@ export default tseslint.config(
   },
   {
     // Scripts and seeds are CLI entrypoints: console output is their interface.
-    files: ['**/scripts/**', '**/prisma/seed*.ts', '*.config.js'],
+    files: ['**/scripts/**', '**/prisma/seed*.ts', '**/prisma/*/seed*.ts', '*.config.js'],
     rules: { 'no-console': 'off' },
   },
   {

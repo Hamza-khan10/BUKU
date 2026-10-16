@@ -1,4 +1,4 @@
-import { ACCESS, roleOf, SERVICES, type ServiceName } from './access.js';
+import { ACCESS, DIRECTORY_ACCESS, roleOf, SERVICES, type ServiceName } from './access.js';
 
 /** A SQL identifier, quoted. Every name here comes from code, but quoting keeps it exact. */
 const ident = (name: string) => `"${name.replace(/"/g, '""')}"`;
@@ -67,6 +67,41 @@ export function accessStatements(
       out.push(`GRANT USAGE ON SCHEMA partitions TO ${r}`);
       for (const t of a.partitions) out.push(`GRANT SELECT ON partitions.${ident(t)} TO ${r}`);
     }
+  }
+  return out;
+}
+
+/** "registry.shards" → "registry"."shards"; a function keeps its argument types as written. */
+const qualified = (name: string) => {
+  const [schema, rest] = name.split('.') as [string, string];
+  const open = rest.indexOf('(');
+  return open === -1
+    ? `${ident(schema)}.${ident(rest)}`
+    : `${ident(schema)}.${ident(rest.slice(0, open))}${rest.slice(open)}`;
+};
+
+/**
+ * The same roles' rights in the directory database (DIRECTORY_ACCESS), from any starting point.
+ * Run as an admin, connected to the directory, after accessStatements has made the roles.
+ */
+export function directoryAccessStatements(
+  database: string,
+  passwords: Partial<Record<ServiceName, string>>,
+): string[] {
+  const out: string[] = [];
+  for (const service of SERVICES) {
+    if (!passwords[service]) continue;
+    const r = ident(roleOf(service));
+    out.push(
+      `GRANT CONNECT, TEMPORARY ON DATABASE ${ident(database)} TO ${r}`,
+      `REVOKE ALL ON ALL TABLES IN SCHEMA "registry", "ids" FROM ${r}`,
+      `REVOKE ALL ON ALL SEQUENCES IN SCHEMA "registry", "ids" FROM ${r}`,
+      `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA "registry", "ids" FROM ${r}`,
+      `REVOKE ALL ON SCHEMA "ids" FROM ${r}`,
+      `GRANT USAGE ON SCHEMA "registry" TO ${r}`,
+      `GRANT SELECT ON ${DIRECTORY_ACCESS.reads.map(qualified).join(', ')} TO ${r}`,
+      `GRANT EXECUTE ON FUNCTION ${DIRECTORY_ACCESS.executes.map(qualified).join(', ')} TO ${r}`,
+    );
   }
   return out;
 }

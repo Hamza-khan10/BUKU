@@ -1,0 +1,80 @@
+/**
+ * Makes sure every database BUKU needs exists, with the extensions only an administrator can add
+ * (docs/DATABASE.md §14). Idempotent; runs before migrations, as the admin role (the Postgres
+ * superuser in development; the provider's admin role in production, where it is part of
+ * provisioning):
+ *
+ *   DATABASE_ADMIN_URL=postgresql://<admin>@host:5432/postgres tsx scripts/prepare-databases.ts
+ *
+ * On the host (`pnpm db:prepare`) the URL is assembled from the repo-root .env instead.
+ *
+ * - The directory database (the shard registry, DB-013) and its test twin.
+ * - pg_cron in the `postgres` database (scheduled jobs run from there into the others).
+ * - pg_stat_statements (query costs) and pgaudit (schema and role changes) in every database, and
+ *   in template1 so every database made later (a new shard) has them too.
+ *
+ * Only fixed names below, never input: nothing here is built from anything a caller sends.
+ */
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { config as loadEnv } from 'dotenv';
+import { createDatabaseClient } from '../src/index.js';
+
+const rootEnv = resolve(import.meta.dirname, '../../../.env');
+if (!process.env.DATABASE_ADMIN_URL && existsSync(rootEnv)) loadEnv({ path: rootEnv, quiet: true });
+const password = process.env.POSTGRES_SUPERUSER_PASSWORD;
+const url =
+  process.env.DATABASE_ADMIN_URL ??
+  (password
+    ? `postgresql://buku_admin:${encodeURIComponent(password)}@localhost:${process.env.POSTGRES_HOST_PORT ?? '5432'}/postgres`
+    : undefined);
+if (!url) {
+  console.error('prepare-databases: DATABASE_ADMIN_URL is not set');
+  process.exit(1);
+}
+
+/** Databases that must exist, besides the main one created with the server. */
+const DATABASES = ['buku_directory', 'buku_directory_test'] as const;
+/** Every database that gets the monitoring and audit extensions. */
+const MONITORED = ['template1', 'buku', 'buku_test', ...DATABASES] as const;
+
+const at = (database: string) => {
+  const u = new URL(url);
+  u.pathname = `/${database}`;
+  return createDatabaseClient({ url: u.toString(), applicationName: 'prepare-databases', maxConnections: 1 });
+};
+
+const admin = at('postgres');
+try {
+  for (const name of DATABASES) {
+    const found = await admin.$queryRaw<
+      { n: number }[]
+    >`SELECT 1 AS n FROM pg_database WHERE datname = ${name}`;
+    if (found.length === 0) {
+      // From template1, so it starts with the `extensions` schema and default privileges.
+      await admin.$executeRawUnsafe(`CREATE DATABASE "${name}" OWNER buku_migrator TEMPLATE template1`);
+      console.log(`prepare-databases: created ${name}`);
+    }
+    await admin.$executeRawUnsafe(`REVOKE ALL ON DATABASE "${name}" FROM PUBLIC`);
+    await admin.$executeRawUnsafe(
+      `GRANT CONNECT, TEMPORARY ON DATABASE "${name}" TO buku_migrator, buku_app`,
+    );
+  }
+  await admin.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS pg_cron');
+} finally {
+  await admin.$disconnect();
+}
+
+for (const name of MONITORED) {
+  const db = at(name);
+  try {
+    await db.$executeRawUnsafe('CREATE SCHEMA IF NOT EXISTS extensions');
+    await db.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS pg_stat_statements SCHEMA extensions');
+    await db.$executeRawUnsafe('CREATE EXTENSION IF NOT EXISTS pgaudit');
+  } finally {
+    await db.$disconnect();
+  }
+}
+console.log(
+  `prepare-databases: ${DATABASES.join(', ')} ready; pg_cron, pg_stat_statements, pgaudit installed`,
+);

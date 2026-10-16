@@ -7,10 +7,13 @@
  *
  *   DATABASE_ADMIN_URL=postgresql://<admin>@host:5432/buku \
  *   BUKU_DB_PASSWORD_AUTH=… BUKU_DB_PASSWORD_BOOKING=… … tsx scripts/apply-access.ts
+ *
+ * With DATABASE_DIRECTORY_ADMIN_URL set too, the same roles also get their rights in the
+ * directory database (DIRECTORY_ACCESS: read the registry, lease ID generators, place rows).
  */
 import { createDatabaseClient } from '../src/index.js';
 import { SERVICES, type ServiceName } from '../src/access.js';
-import { accessStatements } from '../src/access-sql.js';
+import { accessStatements, directoryAccessStatements } from '../src/access-sql.js';
 
 const url = process.env.DATABASE_ADMIN_URL;
 if (!url) {
@@ -39,4 +42,19 @@ try {
   );
 } finally {
   await db.$disconnect();
+}
+
+const directoryUrl = process.env.DATABASE_DIRECTORY_ADMIN_URL;
+if (directoryUrl) {
+  const directoryName = decodeURIComponent(new URL(directoryUrl).pathname.slice(1));
+  const directory = createDatabaseClient({ url: directoryUrl, applicationName: 'apply-access' });
+  try {
+    const statements = directoryAccessStatements(directoryName, passwords);
+    await directory.$transaction(async (tx) => {
+      for (const sql of statements) await tx.$executeRawUnsafe(sql);
+    });
+    console.log(`apply-access: the same roles on "${directoryName}"`);
+  } finally {
+    await directory.$disconnect();
+  }
 }

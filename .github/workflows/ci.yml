@@ -94,11 +94,16 @@ jobs:
           KAFKA_BROKERS=localhost:9092 KAFKA_SASL_USERNAME=buku-admin KAFKA_SASL_PASSWORD="$KAFKA_PASSWORD_ADMIN" pnpm kafka:topics
       - name: Start object storage and create buckets
         run: docker compose -f docker-compose.dev.yml run --rm s3-init
-      - name: Apply migrations to a fresh database
+      - name: Create the directory databases and admin-only extensions
+        run: pnpm db:prepare
+      - name: Apply migrations to fresh databases (main and directory)
         run: pnpm db:migrate:deploy
-      - name: Fail if schema.prisma and migrations disagree
+      - name: Fail if a schema and its migrations disagree
         working-directory: packages/database
-        run: pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+        run: |
+          pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+          pnpm exec prisma migrate diff --config prisma.directory.config.ts --from-config-datasource \
+            --to-schema prisma/directory/schema.prisma --exit-code
       - run: pnpm test:int
       - name: Service logs on failure
         if: failure()

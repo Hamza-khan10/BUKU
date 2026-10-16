@@ -8,13 +8,14 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "generate": "prisma generate",
+    "generate": "prisma generate && prisma generate --config prisma.directory.config.ts",
+    "prepare:databases": "tsx scripts/prepare-databases.ts",
     "validate": "prisma validate",
     "migrate:dev": "prisma migrate dev",
     "migrate:create": "prisma migrate dev --create-only",
-    "migrate:deploy": "prisma migrate deploy",
+    "migrate:deploy": "prisma migrate deploy && prisma migrate deploy --config prisma.directory.config.ts",
     "migrate:status": "prisma migrate status",
-    "seed": "tsx prisma/seed.ts",
+    "seed": "tsx prisma/seed.ts && tsx prisma/directory/seed.ts",
     "studio": "prisma studio"
   },
   "dependencies": {

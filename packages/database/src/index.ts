@@ -10,6 +10,16 @@ export { recordAudit, type AuditEntry } from './audit.js';
 export { businessRoleOf, requireBusinessPermission } from './authz.js';
 export { showUpCounts, showUpLabels, type ShowUpCounts } from './reputation.js';
 export { applyRetention, RETENTION, type RetentionResult } from './retention.js';
+export {
+  createDirectoryClient,
+  Directory,
+  IdLeaseLostError,
+  LeasedIdGenerator,
+  ShardNotFoundError,
+  ShardRouter,
+  type DirectoryClient,
+  type ShardInfo,
+} from './directory.js';
 
 /**
  * Shared database client factory.

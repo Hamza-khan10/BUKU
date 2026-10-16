@@ -1,0 +1,183 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// BUKU — the DIRECTORY database (docs/DATABASE.md §6, DB-011…DB-013)
+//
+// One per deployment (its own cluster in production), read by every service:
+//  • registry.*  where every person and business lives: regions, physical clusters, the shard
+//                families ("entities"), and the shards with their ID ranges and row limits;
+//                ID generator leases; a log of every change; a version routers watch.
+//  • ids.*       the database's own ID generator (the same 64-bit layout as @buku/common's).
+//
+// Everything that may need to change as BUKU grows is a row, not code: add a region, a cluster, a
+// shard family or a shard; change a limit. Statuses are text with CHECK constraints (not enums),
+// so a new status needs no type migration. The one thing fixed for good is the ID layout and its
+// epoch (DB-002): changing them would break the order of every ID already made.
+//
+// Constraints, functions and triggers Prisma can't express are in the migration SQL.
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../../src/generated/directory"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["registry", "ids"]
+}
+
+/// A region data can be kept in (DB-002: the top 3 bits of an ID's generator say which).
+model Region {
+  /// 0..7, the code inside IDs.
+  region           Int      @id @db.SmallInt
+  /// 'pk', 'eu', … (lower case letters).
+  code             String   @unique @db.VarChar(16)
+  name             String   @db.VarChar(100)
+  active           Boolean  @default(true)
+  /// Where new shards in this region are created by default.
+  defaultClusterId Int?     @map("default_cluster_id") @db.SmallInt
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  defaultCluster Cluster?  @relation("RegionDefaultCluster", fields: [defaultClusterId], references: [clusterId])
+  clusters       Cluster[] @relation("ClusterRegion")
+  shards         Shard[]
+
+  @@map("regions")
+  @@schema("registry")
+}
+
+/// A shard family: what is placed by ID range (people, businesses, and any later family).
+model Entity {
+  entity          String   @id @db.VarChar(32)
+  description     String
+  /// Rows per shard for new shards (changeable at any time; DB-011).
+  defaultRowLimit BigInt   @map("default_row_limit")
+  /// How a new shard's database is named: {entity}, {region} (code) and {shard} are filled in.
+  databasePattern String   @map("database_pattern") @db.VarChar(100)
+  /// Database roles allowed to place new rows of this family (checked by registry.place()).
+  placedBy        String[] @default([]) @map("placed_by")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  shards Shard[]
+
+  @@map("entities")
+  @@schema("registry")
+}
+
+/// A physical PostgreSQL cluster (primary + standbys) that hosts logical shards (DB-012).
+model Cluster {
+  clusterId Int      @id @map("cluster_id") @db.SmallInt
+  region    Int      @db.SmallInt
+  name      String   @unique @db.VarChar(64)
+  /// The NAME of the secret holding the connection string, never the string itself.
+  dsnSecret String   @map("dsn_secret") @db.VarChar(128)
+  /// active | draining | retired
+  status    String   @default("active") @db.VarChar(16)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  regionRow       Region   @relation("ClusterRegion", fields: [region], references: [region])
+  defaultInRegion Region[] @relation("RegionDefaultCluster")
+  shards          Shard[]
+
+  @@map("clusters")
+  @@schema("registry")
+}
+
+/// A logical shard: one database on a cluster, holding one range of a family's IDs (DB-011, DB-013).
+model Shard {
+  entity       String    @db.VarChar(32)
+  region       Int       @db.SmallInt
+  shardNo      Int       @map("shard_no")
+  /// First ID in this shard; NULL while it waits to be opened ('ready').
+  minId        BigInt?   @map("min_id")
+  /// Last ID in this shard; NULL until it fills.
+  maxId        BigInt?   @map("max_id")
+  /// The highest ID placed so far: the shard closes exactly here, and every ID up to it is known to
+  /// be in this shard (routers trust their cached copy up to it).
+  lastId       BigInt?   @map("last_id")
+  rowLimit     BigInt    @map("row_limit")
+  rowCount     BigInt    @default(0) @map("row_count")
+  /// ready | open | full | read_only | moving | retired
+  status       String    @db.VarChar(16)
+  clusterId    Int       @map("cluster_id") @db.SmallInt
+  databaseName String    @map("database_name") @db.VarChar(63)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  openedAt     DateTime? @map("opened_at") @db.Timestamptz(6)
+  closedAt     DateTime? @map("closed_at") @db.Timestamptz(6)
+
+  entityRow Entity  @relation(fields: [entity], references: [entity])
+  regionRow Region  @relation(fields: [region], references: [region])
+  cluster   Cluster @relation(fields: [clusterId], references: [clusterId])
+
+  @@id([entity, region, shardNo])
+  @@index([clusterId])
+  @@index([region])
+  @@map("shards")
+  @@schema("registry")
+}
+
+/// One of the 1,024 ID generators (DB-002), leased by a running service instance at a time.
+model IdGenerator {
+  generatorId  Int       @id @map("generator_id") @db.SmallInt
+  /// service (leased by running instances) | database (set on a database for its own inserts)
+  purpose      String    @db.VarChar(16)
+  leasedBy     String?   @map("leased_by") @db.VarChar(200)
+  leaseExpires DateTime? @map("lease_expires") @db.Timestamptz(6)
+
+  @@index([purpose, leaseExpires])
+  @@map("id_generators")
+  @@schema("registry")
+}
+
+/// Every change to regions, clusters, families and shards (limits, status, placement), by whom.
+model Change {
+  id        BigInt   @id @default(autoincrement())
+  at        DateTime @default(now()) @db.Timestamptz(6)
+  /// The database role that made it, and the application's name for who asked (when set).
+  dbRole    String   @map("db_role") @db.VarChar(63)
+  actor     String?  @db.VarChar(200)
+  tableName String   @map("table_name") @db.VarChar(63)
+  operation String   @db.VarChar(8)
+  oldRow    Json?    @map("old_row")
+  newRow    Json?    @map("new_row")
+
+  @@index([at])
+  @@map("changes")
+  @@schema("registry")
+}
+
+/// A number that goes up whenever the registry's layout changes; routers re-read when it does.
+model Version {
+  id        Int      @id @default(1) @db.SmallInt
+  version   BigInt   @default(1)
+  changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  @@map("version")
+  @@schema("registry")
+}
+
+/// When a full shard had no 'ready' shard to hand over to (it keeps taking rows past its limit).
+model Alert {
+  id         BigInt    @id @default(autoincrement())
+  at         DateTime  @default(now()) @db.Timestamptz(6)
+  kind       String    @db.VarChar(32)
+  entity     String    @db.VarChar(32)
+  region     Int       @db.SmallInt
+  shardNo    Int       @map("shard_no")
+  detail     String
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  @@index([resolvedAt])
+  @@map("alerts")
+  @@schema("registry")
+}
+
+/// The database's own ID generator state: the last millisecond and sequence per generator.
+model IdState {
+  generatorId Int    @id @map("generator_id") @db.SmallInt
+  lastMs      BigInt @map("last_ms")
+  lastSeq     Int    @map("last_seq")
+
+  @@map("state")
+  @@schema("ids")
+}

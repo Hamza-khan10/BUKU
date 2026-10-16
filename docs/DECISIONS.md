@@ -961,3 +961,13 @@ partitions for everything that grows without end; every foreign key indexed; has
 bytes at the size they need; TLS, row-level security and break-glass access; continuous backups
 with point-in-time recovery, a second region and tested restores. It is built now, while there is
 no production data; the website resumes after the services move to it.
+
+**D-106 · The shard registry is data that can change, and D1 is built on it.** The owner asked
+that everything can be adjusted as features are added. So regions, clusters, shard families,
+shards, limits and which service may place which family are rows in the directory database,
+guarded by constraints, with every change logged (who, when, before and after) and a version that
+routers watch, so nothing needs a deploy (DATABASE.md DB-017). Only the ID layout and its epoch
+are fixed for good. Building it found two flaws in the paper design, now fixed and tested: a shard
+closes at the highest ID it took, not the one that filled it (late IDs would otherwise land in the
+wrong range), and a placement that waited for a shard that filled meanwhile looks again instead
+of failing.

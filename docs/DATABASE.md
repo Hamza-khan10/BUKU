@@ -6,8 +6,9 @@ compromised service. Every decision below has a number (DB-…) and a reason. Wh
 and the code disagree, this document is the plan and the code is the state; the build phases at
 the end say what is done.
 
-Status: **design approved by the owner's brief (2026-10-16); phase D1 next.** Website work pauses
-until D1–D3 are done (DB-000).
+Status: **design approved by the owner's brief (2026-10-16). D1 (foundation) is built: the
+directory database, the shard registry, ID generators and the router (§15). D2 next.** Website
+work pauses until D1–D3 are done (DB-000).
 
 ---
 
@@ -119,12 +120,24 @@ volume and invites enumeration attacks. Public IDs are random, so they leak noth
      (good until 2095)                                 (1,024 generators)   (4,096 IDs per ms each)
 ```
 
-- **Generators** are leased from the directory (`id_generators`, DB-013) by each running service
-  instance, so two instances never share one; a lease that isn't renewed expires.
+- **Generators** are leased from the directory (`registry.id_generators`, DB-013) by each running
+  service instance, so two instances never share one. A lease lasts 60 seconds and is renewed every
+  20; one that isn't renewed expires, and an expired generator is handed out again only 30 seconds
+  later. The instance itself stops making IDs 5 seconds before its lease could run out, by its own
+  monotonic clock, even if it can't reach the directory to hear so (`LeasedIdGenerator`). So an
+  instance that freezes and wakes up late can never make the same IDs as its successor.
 - The **top 3 generator bits name the region** (8 regions), so an ID says where it was made
-  without a lookup.
-- A SQL function `buku_id()` makes IDs inside the database (migrations, seeds), from generators
-  reserved for that purpose.
+  without a lookup: `(id >> 19) & 7`.
+- Of each region's 128 generators, 120 are for service instances and the last 8 for **databases'
+  own inserts**: `ids.buku_id()` makes IDs inside a database (migrations, seeds, back-fills) from
+  the generator set on it (`ALTER DATABASE … SET buku.generator_id`).
+- When more than 4,096 IDs are asked for in one millisecond, or the clock steps backwards, a
+  generator moves its own clock on instead of waiting or repeating, so IDs stay unique and in order.
+- IDs travel between services and to the website as **decimal strings** (JSON numbers lose
+  precision past 2⁵³), and anything that isn't a positive 64-bit decimal is refused before it
+  reaches a query (`idFromString`). The code is `@buku/common` (`IdGenerator`, `parseId`,
+  `publicId`) and the directory migration (`ids.next_id`), with the same layout and epoch, tested
+  against each other.
 
 **Why:** time-ordered IDs keep inserts at the end of every index (no random page splits, unlike
 UUIDv4), sort by creation time for free, and let partitions be pruned by ID range. No central
@@ -157,9 +170,20 @@ business's appointments together, under one lock.
 
 ### DB-011 · Range shards of 10 million, a limit that can be changed at any time
 
-**Decision:** each shard family has a registry (§6.2). A shard covers one range of internal IDs:
-`min_id` from its first row, `max_id` set when it fills. A shard accepts new rows until its
+**Decision:** each shard family has a registry (DB-013). A shard covers one range of internal
+IDs: `min_id` from its first row, `max_id` set when it fills. A shard accepts new rows until its
 `row_limit` is reached, then closes and the next one opens.
+
+- Shards are made ahead of need as **`ready`** (their database created and waiting), so opening
+  the next one is a row update in the same transaction as the row that filled the last, never a
+  wait for provisioning. Operators keep two or more ready per family and region.
+- A shard closes at the **highest ID it has taken** (`last_id`), not at the ID that happened to
+  fill it: IDs from many instances arrive slightly out of order, and closing at a late, lower one
+  would put rows already placed inside the next shard's range. An ID made just before the switch
+  that arrives just after it still goes to the shard whose range holds it, and is counted there.
+- If a shard fills and **no shard is ready**, nobody is turned away: the open shard keeps taking
+  rows past its limit, and one alert is raised (`registry.alerts`). The first placement after a
+  ready shard is added closes it and resolves the alert.
 
 - Default limits: **users 10,000,000 per shard** (the owner's brief); **businesses 1,000,000 per
   shard**, because one business brings far more rows than one person (appointments, tickets,
@@ -179,68 +203,54 @@ ID.
 
 ### DB-012 · Logical shards on physical clusters
 
-**Decision:** `shard_clusters` lists physical clusters (region, connection secret name, role); each
-shard row points at one. Moving a shard means copying it to another cluster (logical replication),
+**Decision:** `registry.clusters` lists physical clusters (region, the name of the secret holding
+its connection string, status); each shard row points at one. Moving a shard means copying it to another cluster (logical replication),
 then switching the pointer in one transaction while writes for that shard pause for seconds.
 
 **Why:** shards can be rebalanced and tiered without downtime or any change to IDs or code.
 
 ### DB-013 · The registry
 
-On the directory cluster, schema `registry`:
+Its own database, `buku_directory` (the directory cluster in production), schemas `registry` and
+`ids`. The full definition, with every constraint, is
+`packages/database/prisma/directory/migrations/20261016120000_registry/migration.sql`; in short:
 
-```sql
-CREATE TABLE registry.shard_settings (
-  entity           text PRIMARY KEY CHECK (entity IN ('user', 'business')),
-  default_row_limit bigint NOT NULL CHECK (default_row_limit > 0),
-  updated_at       timestamptz NOT NULL DEFAULT now(),
-  updated_by       bigint                        -- the admin who changed it (audited)
-);
+| Table                    | One row per                         | What it holds                                                                                                                                                                                 |
+| ------------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `registry.regions`       | region (0..7, the code inside IDs)  | `code` ('pk'), name, active, the default cluster for new shards                                                                                                                               |
+| `registry.entities`      | shard family ('user', 'business')   | the default `row_limit` for new shards, the database name pattern (`buku_{entity}_{region}_{shard}`), `placed_by`: the database roles allowed to place its rows                               |
+| `registry.clusters`      | physical cluster                    | region, name, `dsn_secret` (the **name** of the secret holding its connection string: a check refuses anything that looks like a connection string), status (active, draining, retired)       |
+| `registry.shards`        | logical shard                       | family, region, number; `min_id`, `max_id`, `last_id`; `row_limit`, `row_count`; status (ready, open, full, read_only, moving, retired); cluster; database name; when created, opened, closed |
+| `registry.id_generators` | generator (1,024)                   | purpose (service, database), who holds the lease, until when                                                                                                                                  |
+| `registry.changes`       | change to any table above           | when, which database role, who asked (`buku.actor`), the row before and after                                                                                                                 |
+| `registry.version`       | (one row)                           | a number that goes up with every change; routers re-read when it moves                                                                                                                        |
+| `registry.alerts`        | open problem                        | a shard that filled with none ready to take over                                                                                                                                              |
+| `ids.state`              | generator used inside this database | the last millisecond and sequence                                                                                                                                                             |
 
-CREATE TABLE registry.shard_clusters (
-  cluster_id   smallint PRIMARY KEY,
-  region       smallint NOT NULL,              -- 0..7, the same code as in IDs
-  name         text NOT NULL UNIQUE,           -- 'pk-1', 'eu-1'
-  dsn_secret   text NOT NULL,                  -- the NAME of the secret holding the DSN, never the DSN
-  status       text NOT NULL CHECK (status IN ('active', 'draining', 'retired')),
-  created_at   timestamptz NOT NULL DEFAULT now()
-);
+The database guarantees the rules, whatever a caller sends: one open shard per family and region
+(a unique index); ranges that never overlap (an exclusion constraint); a `ready` shard has no
+range, an open one has no end, a full one has one; `last_id` inside the range; names, codes,
+patterns and role lists in strict formats (no spaces, quotes, markup or emoji can get in).
 
-CREATE TABLE registry.shards (
-  entity        text NOT NULL CHECK (entity IN ('user', 'business')),
-  region        smallint NOT NULL,
-  shard_no      integer NOT NULL,              -- 1, 2, 3… per entity and region
-  min_id        bigint NOT NULL,               -- first ID in this shard
-  max_id        bigint,                        -- last ID; NULL while the shard is open
-  row_limit     bigint NOT NULL CHECK (row_limit > 0),
-  row_count     bigint NOT NULL DEFAULT 0,     -- rows placed here (kept by the allocator)
-  status        text NOT NULL CHECK (status IN ('open', 'full', 'read_only', 'moving')),
-  cluster_id    smallint NOT NULL REFERENCES registry.shard_clusters,
-  database_name text NOT NULL,                 -- the logical shard's database on that cluster
-  opened_at     timestamptz NOT NULL DEFAULT now(),
-  closed_at     timestamptz,
-  PRIMARY KEY (entity, region, shard_no),
-  CHECK (max_id IS NULL OR max_id >= min_id),
-  CHECK ((status = 'open') = (max_id IS NULL))
-);
--- One open shard per entity and region; ranges never overlap.
-CREATE UNIQUE INDEX shards_one_open ON registry.shards (entity, region) WHERE status = 'open';
-ALTER TABLE registry.shards ADD CONSTRAINT shards_no_overlap
-  EXCLUDE USING gist (entity WITH =, region WITH =, int8range(min_id, max_id, '[]') WITH &&);
+**Placing a new person or business** is `registry.place(family, id)`, one short transaction on
+the directory: it checks the caller's role is in the family's `placed_by`, locks the shard whose
+range holds the ID (opening the first ready one if the family has none open yet), counts the row,
+moves `last_id`, and closes and hands over at the limit (DB-011). If the shard it waited for filled
+meanwhile, it looks again and finds the next one. 400 placements at once, arriving in random order,
+are counted exactly, every row on the shard whose range holds it (tested).
 
-CREATE TABLE registry.id_generators (
-  generator_id  smallint PRIMARY KEY CHECK (generator_id BETWEEN 0 AND 1023),
-  region        smallint NOT NULL,             -- = generator_id >> 7
-  leased_by     text,                          -- service instance
-  lease_expires timestamptz
-);
-```
+**Finding an existing row's shard** costs no round trip almost always. Every service keeps a copy
+of the registry (`ShardRouter`, a few hundred rows) and trusts it only where it can't be out of
+date: a closed range never changes, and in the open shard every ID up to `last_id` stays there for
+good. Only an ID newer than that might belong to a shard that opened a moment ago; for those the
+router first checks the registry (one tiny query, shared by every lookup waiting at that moment).
+It also re-reads by itself every 5 seconds when the version has moved.
 
-**Placing a new person or business** (one short transaction on the directory, row-locked):
-take the open shard for the entity and region, make the ID, add one to `row_count`; if the count
-reaches `row_limit`, set `max_id`, mark it `full` and open the next shard with `min_id` = the next
-ID. Routing an existing ID reads a cached copy of the registry (a few hundred rows), refreshed on a
-version bump, so it costs no round trip.
+**Who may do what:** services read the registry and call its functions, and never write its
+tables (`DIRECTORY_ACCESS` in `packages/database/src/access.ts`, applied by
+`scripts/apply-access.ts`). Leasing, placing and routing are functions; changing the layout is for
+operators (the owner role, through reviewed tooling), and every change lands in
+`registry.changes`.
 
 ### DB-014 · Rules that cross shards
 
@@ -264,6 +274,34 @@ version bump, so it costs no round trip.
 Categories, plans and prices, billing and notification settings, cities: a few thousand rows
 that every shard reads. They live on the directory and are copied to every shard (read-only there)
 by logical replication, so joins with them stay local.
+
+### DB-017 · Built to be changed: what will change is a row, not code
+
+**Decision:** everything about the layout that will change as BUKU grows is data in the registry,
+checked by constraints and logged: regions, clusters, shard families, shards, limits, and who may
+place what. Statuses are `text` with `CHECK` constraints rather than enum types, so adding one is a
+one-line constraint change, not a type migration. Routers re-read the registry when its version
+moves, so no change needs a deploy or a restart.
+
+| To…                                | Do this (as an operator, with `SET buku.actor = '<who and why>'` so the log says)                                                                   |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| change a shard's limit             | `UPDATE registry.shards SET row_limit = … WHERE entity = … AND region = … AND shard_no = …` (lower than its count: it closes at its next row)       |
+| change the limit for new shards    | `UPDATE registry.entities SET default_row_limit = … WHERE entity = …`                                                                               |
+| add capacity                       | `SELECT * FROM registry.add_shard('user', 0)` (a `ready` shard, numbered next, named by the pattern; D2's provisioning creates its database)        |
+| add a region                       | insert into `registry.regions` (a free code 0..7) and a cluster for it; set its default cluster; add ready shards. Its 128 generators already exist |
+| add a cluster, or move new shards  | insert into `registry.clusters`; point the region's `default_cluster_id` at it                                                                      |
+| add a shard family                 | insert into `registry.entities` (name, limit, database pattern, `placed_by`); add ready shards; the router needs no change                          |
+| let another service place a family | `UPDATE registry.entities SET placed_by = …`                                                                                                        |
+| move a shard to another cluster    | copy it (logical replication), set `status = 'moving'` for the switch-over seconds, then `cluster_id = …` and back to `full`/`open` (DB-012)        |
+| add a status, an alert kind        | change the `CHECK` constraint in a migration                                                                                                        |
+
+**What is fixed for good:** the ID layout and its epoch (DB-002). Every ID already made depends on
+them; changing either would break their order and their region bits. Everything else can change.
+
+**Why:** the owner's brief: the database must keep up with features added over the years. A
+registry that is data, with its rules in constraints and a log of every change, can be adjusted
+safely by an operator in minutes, and a mistake is visible in the log and refused by the
+constraints rather than discovered later in production data.
 
 ---
 
@@ -354,39 +392,51 @@ only where it exists.
 
 ```mermaid
 erDiagram
-  shard_settings ||--o{ shards : "default limit for"
-  shard_clusters ||--o{ shards : hosts
-  id_generators }o..|| shard_clusters : "region of"
+  regions ||--o{ clusters : "has"
+  regions ||--o{ shards : "holds"
+  entities ||--o{ shards : "family of"
+  clusters ||--o{ shards : hosts
+  id_generators }o..|| regions : "top 3 bits name"
   categories ||--o{ categories : "group of"
   plans ||--o{ plan_prices : "priced as"
   plans ||--o{ billing_settings : "used by"
   currencies ||--o{ plan_prices : "in"
 
+  regions {
+    smallint region PK
+    text code UK
+    text name
+    smallint default_cluster_id FK
+  }
+  entities {
+    text entity PK
+    bigint default_row_limit
+    text database_pattern
+    text_array placed_by
+  }
+  clusters {
+    smallint cluster_id PK
+    smallint region FK
+    text name UK
+    text dsn_secret
+    text status
+  }
   shards {
     text entity PK
     smallint region PK
     int shard_no PK
     bigint min_id
     bigint max_id
+    bigint last_id
     bigint row_limit
     bigint row_count
     text status
     smallint cluster_id FK
-  }
-  shard_settings {
-    text entity PK
-    bigint default_row_limit
-  }
-  shard_clusters {
-    smallint cluster_id PK
-    smallint region
-    text name
-    text dsn_secret
-    text status
+    text database_name
   }
   id_generators {
     smallint generator_id PK
-    smallint region
+    text purpose
     text leased_by
     timestamptz lease_expires
   }
@@ -778,6 +828,10 @@ one shard, on indexed keys.
   saturation, partition coverage (a missing future partition is an alert).
 - **Migrations:** expand → migrate → contract; every shard migrated by the same migration, tracked
   per shard; large indexes `CONCURRENTLY`.
+- **Databases and admin-only extensions** (the directory, `pg_cron`, `pgaudit`,
+  `pg_stat_statements`, also in `template1` so every new shard database has them) are created by
+  `scripts/prepare-databases.ts`, idempotent, before migrations: `pnpm db:prepare`, the `db-prepare`
+  container, and CI.
 
 ---
 
@@ -785,10 +839,35 @@ one shard, on indexed keys.
 
 | Phase                 | What                                                                                                                                                                                                                                                     | Done when                                                                                                                                                 |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D1 Foundation**     | Postgres image with the extensions; directory schema (registry, generators, settings, currencies); the ID generator (`@buku/ids`: TypeScript and `buku_id()` in SQL) and public IDs; the shard router in `@buku/database` (one shard per family locally) | unit and integration tests for IDs (uniqueness under concurrency, ordering, region bits), allocation (limit reached → next shard, limit changed), routing |
+| **D1 Foundation** ✅  | Postgres image with the extensions; directory schema (registry, generators, settings, currencies); the ID generator (`@buku/ids`: TypeScript and `buku_id()` in SQL) and public IDs; the shard router in `@buku/database` (one shard per family locally) | unit and integration tests for IDs (uniqueness under concurrency, ordering, region bits), allocation (limit reached → next shard, limit changed), routing |
 | **D2 Schema v2**      | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed                             | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
 | **D3 Services**       | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
 | **D4 Safety**         | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
 | **D5 Proof at scale** | a synthetic data set (10M people, 1M businesses, 200M appointments) on a test cluster; the slow-query review                                                                                                                                             | the targets in §3 met for the main queries                                                                                                                |
 
 Website work resumes after D3.
+
+**D1, as built (2026-10-16).**
+
+- Postgres image with `pg_partman`, `pg_cron`, `pgaudit` and `pg_stat_statements` preloaded;
+  `prepare-databases` creates `buku_directory` (and its test twin) and the admin-only extensions.
+- The directory (DB-013, DB-017): regions, clusters, shard families, shards with ready shards and
+  `last_id`, generator leases, the change log, the version and alerts; `registry.place`,
+  `registry.route`, `registry.add_shard`, lease functions, `ids.next_id` / `ids.buku_id`.
+- `@buku/common`: `IdGenerator`, `parseId`, `regionOfId`, `idFromString`, `publicId`. They live in
+  the existing common package, next to `uuidv7`, rather than a new `@buku/ids`: every service
+  already depends on it.
+- `@buku/database`: `createDirectoryClient`, `LeasedIdGenerator`, `ShardRouter`; each service
+  role's directory rights (`DIRECTORY_ACCESS`); a development seed (Pakistan, one local cluster,
+  `user` 10M and `business` 1M per shard, two ready shards each).
+- Tests: IDs (100,000 in one millisecond, clock going backwards, layout identical to SQL, bad
+  input refused, public IDs unbiased); placement (rollover, late IDs, no ready shard, regions, 400
+  at once), changes logged and versioned, constraints refusing bad data, rights, leases (including
+  an instance cut off from the directory stopping by itself), the router (certain vs checked,
+  shared checks, watching for changes).
+- Two corrections to the design found while building it, both above: a shard closes at the highest
+  ID it took, not the one that filled it (DB-011); a placement that waited for a shard that filled
+  meanwhile looks again (DB-013).
+- `currencies` moves to D2 with the rest of the reference data (DB-015), since they are copied to
+  shards together. The shard databases themselves (`buku_user_pk_1`, …) are created by D2's
+  provisioning; D1 records where they will be.
