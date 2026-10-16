@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "generate": "prisma generate && prisma generate --config prisma.directory.config.ts && prisma generate --config prisma.user.config.ts",
+    "generate": "prisma generate && prisma generate --config prisma.directory.config.ts && prisma generate --config prisma.user.config.ts && prisma generate --config prisma.business.config.ts",
     "prepare:databases": "tsx scripts/prepare-databases.ts",
     "shards:provision": "tsx scripts/provision-shards.ts",
     "validate": "prisma validate",

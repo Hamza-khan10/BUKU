@@ -21,11 +21,15 @@ export {
   type ShardInfo,
 } from './directory.js';
 export {
+  BusinessShard,
   clusterUrl,
+  createBusinessShardClient,
   createUserShardClient,
+  forBusiness,
   ShardClients,
   shardUrl,
   UserShard,
+  type BusinessShardClient,
   type Credentials,
   type UserShardClient,
 } from './shards.js';

@@ -1,5 +1,6 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { ShardInfo, ShardRouter } from './directory.js';
+import { PrismaClient as BusinessShardPrismaClient } from './generated/business/client.js';
 import { PrismaClient as UserShardPrismaClient } from './generated/user/client.js';
 
 /**
@@ -9,6 +10,7 @@ import { PrismaClient as UserShardPrismaClient } from './generated/user/client.j
  */
 
 export * as UserShard from './generated/user/client.js';
+export * as BusinessShard from './generated/business/client.js';
 
 export interface Credentials {
   user: string;
@@ -54,6 +56,38 @@ export function createUserShardClient(options: {
   return new UserShardPrismaClient({ adapter });
 }
 export type UserShardClient = ReturnType<typeof createUserShardClient>;
+
+/**
+ * A business shard's client. Its tables have row-level security by business (DB-020): run each
+ * unit of work in a transaction that first calls `forBusiness(tx, id)`.
+ */
+export function createBusinessShardClient(options: {
+  url: string;
+  applicationName: string;
+  maxConnections?: number;
+}) {
+  const adapter = new PrismaPg({
+    connectionString: options.url,
+    max: options.maxConnections ?? 5,
+    application_name: options.applicationName,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+  return new BusinessShardPrismaClient({ adapter });
+}
+export type BusinessShardClient = ReturnType<typeof createBusinessShardClient>;
+
+/**
+ * Scope a transaction to one business (DB-020): from here to the end of the transaction, rows of
+ * every other business are invisible and can't be written. Set inside the transaction (`SET
+ * LOCAL`), so a pooled connection never carries it to the next request.
+ */
+export async function forBusiness(
+  tx: { $executeRaw: (query: TemplateStringsArray, ...values: unknown[]) => Promise<number> },
+  businessId: bigint,
+): Promise<void> {
+  await tx.$executeRaw`SELECT set_config('buku.business_id', ${businessId.toString()}, true)`;
+}
 
 /**
  * One connection pool per shard database, opened on first use: `forId` finds a row's shard

@@ -350,3 +350,13 @@ describe('a sign-up, end to end', () => {
     expect(first.taken).toBe(false);
   });
 });
+
+describe('indexes', () => {
+  it('every foreign key has an index that starts with it (DB-007)', async () => {
+    const missing = await owner1.$queryRaw<{ fk: string }[]>`
+      SELECT c.conname AS fk FROM pg_constraint c
+      WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace AND c.conparentid = 0
+        AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indkey[0] = c.conkey[1])`;
+    expect(missing).toEqual([]);
+  });
+});

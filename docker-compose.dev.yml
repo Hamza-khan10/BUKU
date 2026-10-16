@@ -498,6 +498,7 @@ services:
       - ./packages/database/scripts:/app/packages/database/scripts:ro
       - ./packages/database/prisma:/app/packages/database/prisma:ro
       - ./packages/database/prisma.user.config.ts:/app/packages/database/prisma.user.config.ts:ro
+      - ./packages/database/prisma.business.config.ts:/app/packages/database/prisma.business.config.ts:ro
     depends_on:
       db-migrate: { condition: service_completed_successfully }
 

@@ -82,11 +82,12 @@ UPDATE registry.shards SET row_limit = 20000000 WHERE entity = 'user' AND region
 SELECT * FROM registry.add_shard('user', 0::smallint);   -- one more ready shard
 ```
 
-### Change a shard family's schema (the user shard)
+### Change a shard family's schema (user or business shard)
 
-Every user shard has the same schema: `packages/database/prisma/user/` (business shards follow in
-D2b). Edit `schema.prisma`, then write the migration from the difference against a shard that is
-up to date:
+Every shard of a family has the same schema: `packages/database/prisma/user/` or
+`prisma/business/` (with `prisma.user.config.ts` / `prisma.business.config.ts`; the commands
+below use the user family). Edit `schema.prisma`, then write the migration from the difference
+against a shard that is up to date:
 
 ```bash
 cd packages/database
@@ -101,6 +102,19 @@ Partitioned tables are declared `PARTITION BY RANGE` by hand in the migration an
 schema (`@@index`), or the drift check fails (partial indexes, checks and exclusions live only in
 the SQL). Grant new tables to `buku_app` in the migration: shard databases grant nothing by
 default (DB-023).
+
+On a **business shard**, a new table that holds a business's rows gets `business_id`, a
+composite foreign key to its parent's `(id, business_id)`, and the two row-level security
+policies (`one_business`, `all_businesses`; copy them from the first migration); a test fails
+otherwise. Nothing may point into a time-partitioned table with a foreign key (DB-024). Code that
+reads or writes a business shard does it inside a transaction scoped to the business:
+
+```ts
+await shard.$transaction(async (tx) => {
+  await forBusiness(tx, businessId); // SET LOCAL buku.business_id: other businesses vanish
+  return tx.appointment.findMany({ where: { startAt: { gte: from, lt: to } } });
+});
+```
 
 ### Give a service access to a table
 
