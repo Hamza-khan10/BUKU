@@ -10,7 +10,7 @@ import {
   type Database,
   type DirectoryClient,
 } from '../src/index.js';
-import { provisionShards } from '../src/provision.js';
+import { dropDatabase, provisionShards, waitForReferenceCopy } from '../src/provision.js';
 import { testEnv } from './int-env.js';
 
 /**
@@ -40,10 +40,12 @@ beforeAll(async () => {
     url: `postgresql://${testEnv.admin.user}:${encodeURIComponent(testEnv.admin.password)}@${new URL(testEnv.cluster).host}/postgres`,
     applicationName: 'business-shard-int-test',
   });
-  await server.$executeRawUnsafe(
-    `SELECT cron.unschedule(jobid) FROM cron.job WHERE jobname = 'partman:${SHARD}'`,
-  );
-  await server.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${SHARD}" WITH (FORCE)`);
+  // Last run's shard, its reference copy first (global setup does this too).
+  await dropDatabase({
+    serverUrl: testEnv.adminUrl('postgres'),
+    database: SHARD,
+    publisherUrl: testEnv.adminUrl('buku_directory_test'),
+  });
   await directory.region.createMany({
     data: [{ region: 0, code: 'pk', name: 'Pakistan' }],
     skipDuplicates: true,
@@ -68,6 +70,11 @@ beforeAll(async () => {
     migrator: testEnv.migrator,
     env,
     families: ['business'],
+    reference: {
+      conninfo: testEnv.referenceSource,
+      replicator: testEnv.replicator,
+      publisherUrl: testEnv.adminUrl('buku_directory_test'),
+    },
   });
   expect(made).toEqual([expect.objectContaining({ databaseName: SHARD, created: true })]);
   app = createBusinessShardClient({
@@ -517,5 +524,52 @@ describe('the rest of a business’s day', () => {
     await expect(
       asBusiness(b.id, (tx) => tx.planRequest.create({ data: { id: ids.next(), ...request } })),
     ).rejects.toThrow();
+  });
+});
+
+describe('the reference data on a business shard (DB-015)', () => {
+  const COUNT = 'SELECT count(*) AS n FROM reference.categories';
+  const count = async (rows: Promise<{ n: bigint }[]>) => (await rows)[0]!.n;
+
+  it('arrives by itself, follows every change on the directory, and is read-only here', async () => {
+    const shardAdmin = createDatabaseClient({
+      url: testEnv.adminUrl(SHARD),
+      applicationName: 'business-shard-int-test',
+    });
+    try {
+      await waitForReferenceCopy(shardAdmin, SHARD);
+    } finally {
+      await shardAdmin.$disconnect();
+    }
+    expect(await count(owner.$queryRawUnsafe(COUNT))).toBe(await count(directory.$queryRawUnsafe(COUNT)));
+    expect(await app.plan.count()).toBe(8);
+
+    // A kind added and renamed on the directory shows up here.
+    const id = ids.next();
+    await directory.$executeRaw`INSERT INTO reference.categories (id, parent_id, depth, slug, name)
+      VALUES (${id}, 1, 1, ${`test-kind-${id}`}, 'Test kind')`;
+    await expect
+      .poll(() => app.category.findUnique({ where: { id } }).then((c) => c?.name), { timeout: 20_000 })
+      .toBe('Test kind');
+    await directory.$executeRaw`UPDATE reference.categories SET name = 'Renamed kind' WHERE id = ${id}`;
+    await expect
+      .poll(() => app.category.findUnique({ where: { id } }).then((c) => c?.name), { timeout: 20_000 })
+      .toBe('Renamed kind');
+    await directory.$executeRaw`DELETE FROM reference.categories WHERE id = ${id}`;
+    await expect.poll(() => app.category.count({ where: { id } }), { timeout: 20_000 }).toBe(0);
+
+    // Nobody changes the copy itself.
+    await expect(
+      app.$executeRawUnsafe(`UPDATE reference.plans SET name = 'Free for all' WHERE code = 'business_free'`),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it('has exactly the directory’s columns (a change must be made to both)', async () => {
+    const COLUMNS = `SELECT table_name || '.' || column_name || ':' || data_type || ':' || is_nullable AS c
+      FROM information_schema.columns WHERE table_schema = 'reference' ORDER BY table_name, ordinal_position`;
+    const columns = async (rows: Promise<{ c: string }[]>) => (await rows).map((r) => r.c);
+    const source = await columns(directory.$queryRawUnsafe(COLUMNS));
+    expect(source.length).toBeGreaterThan(50);
+    expect(await columns(owner.$queryRawUnsafe(COLUMNS))).toEqual(source);
   });
 });

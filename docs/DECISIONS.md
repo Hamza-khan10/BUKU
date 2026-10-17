@@ -994,3 +994,15 @@ clean-up time), a resource or a customer (DATABASE.md DB-024). An appointment's 
 only the business it set; the few services that work across businesses get a role that opens
 the policies and nothing else (DB-020). Search, discovery and ads will read one global catalog
 fed by events (DB-041, built next with the reference data).
+
+**D-109 · Reference data is copied by the database itself, and search reads one catalog (D2c).**
+Kinds of business, plans and prices, billing and notification settings, and currencies live on
+the directory, seeded with exactly what v1 had, and PostgreSQL logical replication keeps a
+read-only copy on every business shard and in the catalog, so the joins that need them stay
+local and a change reaches every copy within a second or two (DATABASE.md DB-015). The risks of
+replication are handled in code: each copy's slot is made before its subscription, so it works on
+one server too; dropping a database drops its copy and slot first, so no forgotten slot can fill
+the disk. Category names are refused at the database if they carry code, emoji or invisible
+characters, in any script. The catalog database holds every business as search and discovery see
+them, with v1's search document kept by triggers, so v1's search queries carry over (DB-041); the
+search service fills it from events in D3.

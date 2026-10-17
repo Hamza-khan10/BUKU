@@ -1,6 +1,7 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { ShardInfo, ShardRouter } from './directory.js';
 import { PrismaClient as BusinessShardPrismaClient } from './generated/business/client.js';
+import { PrismaClient as CatalogPrismaClient } from './generated/catalog/client.js';
 import { PrismaClient as UserShardPrismaClient } from './generated/user/client.js';
 
 /**
@@ -11,6 +12,7 @@ import { PrismaClient as UserShardPrismaClient } from './generated/user/client.j
 
 export * as UserShard from './generated/user/client.js';
 export * as BusinessShard from './generated/business/client.js';
+export * as Catalog from './generated/catalog/client.js';
 
 export interface Credentials {
   user: string;
@@ -124,3 +126,20 @@ export class ShardClients<C extends { $disconnect(): Promise<void> }> {
     await Promise.all(clients.map((c) => c.$disconnect()));
   }
 }
+
+/** The catalog (DB-041): what search and discovery read, kept from business events. */
+export function createCatalogClient(options: {
+  url: string;
+  applicationName: string;
+  maxConnections?: number;
+}) {
+  const adapter = new PrismaPg({
+    connectionString: options.url,
+    max: options.maxConnections ?? 5,
+    application_name: options.applicationName,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+  });
+  return new CatalogPrismaClient({ adapter });
+}
+export type CatalogClient = ReturnType<typeof createCatalogClient>;

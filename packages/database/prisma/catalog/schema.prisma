@@ -1,0 +1,353 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// BUKU — the CATALOG database (docs/DATABASE.md DB-041)
+//
+// One row per business as discovery sees it, across every business shard: what search, "near
+// me", category pages and ad serving need, in one place, so v1's search queries (full text,
+// trigram typo tolerance, PostGIS distance) keep working. It is a read model: kept up to date
+// from the business shards' events (search-service, D3), never the source of anything. A row can
+// be rebuilt from its shard at any time.
+//
+//  • catalog.*    businesses, their active services, hours, closures, today's queue, running ads.
+//  • reference.*  a read-only copy of the directory's reference data (DB-015), by logical
+//                 replication: kinds of business for names and the category tree.
+//
+// `version` on a row is the newest event applied (a snowflake ID, so time-ordered): an older event
+// arriving late is ignored. Triggers keep the search document and the location (migration SQL).
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../../src/generated/catalog"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["catalog", "reference"]
+}
+
+/// A business as discovery sees it.
+model CatalogBusiness {
+  businessId         BigInt                                @id @map("business_id")
+  categoryId         BigInt                                @map("category_id")
+  version            BigInt
+  /// The lowest active price in the business's currency (minor units), for the card.
+  minPriceMinor      BigInt?                               @map("min_price_minor")
+  /// When the business joined BUKU ("newest" sort).
+  createdAt          DateTime                              @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime                              @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  lat                Float?
+  lng                Float?
+  avgRating          Decimal                               @default(0) @map("avg_rating") @db.Decimal(3, 2)
+  reviewCount        Int                                   @default(0) @map("review_count")
+  /// Ranking figures (D-076), from the business shard's search stats.
+  bookings7d         Int                                   @default(0) @map("bookings_7d")
+  bookingsPrev7d     Int                                   @default(0) @map("bookings_prev_7d")
+  queueJoins7d       Int                                   @default(0) @map("queue_joins_7d")
+  kept90d            Int                                   @default(0) @map("kept_90d")
+  businessCancels90d Int                                   @default(0) @map("business_cancels_90d")
+  verified           Boolean                               @default(false)
+  /// It runs a queue (has queue settings).
+  offersQueue        Boolean                               @default(false) @map("offers_queue")
+  publicId           String                                @unique @map("public_id") @db.Char(12)
+  slug               String                                @unique @db.VarChar(200)
+  name               String                                @db.VarChar(200)
+  /// pending | verified | suspended | rejected | deleted
+  status             String                                @db.VarChar(20)
+  country            String                                @db.Char(2)
+  currency           String                                @db.Char(3)
+  timezone           String                                @db.VarChar(60)
+  city               String                                @db.VarChar(100)
+  address            String?                               @db.VarChar(500)
+  description        String?                               @db.VarChar(5000)
+  logoStorageKey     String?                               @map("logo_storage_key") @db.VarChar(300)
+  coverStorageKey    String?                               @map("cover_storage_key") @db.VarChar(300)
+  /// Kept by a trigger: name (A), kind and services (B), description (C), city (D).
+  searchVector       Unsupported("tsvector")?              @map("search_vector")
+  /// Kept by a trigger from lat/lng.
+  location           Unsupported("geography(Point,4326)")?
+
+  services CatalogService[]
+  hours    CatalogHours[]
+  closures CatalogClosure[]
+  queue    CatalogQueue?
+  ads      CatalogAd[]
+
+  @@index([categoryId])
+  @@index([createdAt])
+  @@index([location], type: Gist)
+  @@index([searchVector], type: Gin)
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "businesses_name_trgm_idx")
+  @@map("businesses")
+  @@schema("catalog")
+}
+
+/// An active service: its name feeds search and suggestions, its price the card.
+model CatalogService {
+  serviceId  BigInt @id @map("service_id")
+  businessId BigInt @map("business_id")
+  version    BigInt
+  priceMinor BigInt @map("price_minor")
+  currency   String @db.Char(3)
+  name       String @db.VarChar(200)
+
+  business CatalogBusiness @relation(fields: [businessId], references: [businessId], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "services_name_trgm_idx")
+  @@map("services")
+  @@schema("catalog")
+}
+
+/// Opening hours ("open now", "open on"), replaced whole when they change.
+model CatalogHours {
+  businessId BigInt  @map("business_id")
+  dayOfWeek  Int     @map("day_of_week") @db.SmallInt
+  isClosed   Boolean @default(false) @map("is_closed")
+  openTime   String  @map("open_time") @db.VarChar(5)
+  closeTime  String  @map("close_time") @db.VarChar(5)
+
+  business CatalogBusiness @relation(fields: [businessId], references: [businessId], onDelete: Cascade)
+
+  @@id([businessId, dayOfWeek, openTime])
+  @@map("hours")
+  @@schema("catalog")
+}
+
+/// A day the whole business is closed or keeps different hours (past ones are swept).
+model CatalogClosure {
+  /// The availability exception's ID on the business shard.
+  id          BigInt   @id
+  businessId  BigInt   @map("business_id")
+  closureDate DateTime @map("closure_date") @db.Date
+  /// holiday | modified
+  type        String   @db.VarChar(20)
+  startTime   String?  @map("start_time") @db.VarChar(5)
+  endTime     String?  @map("end_time") @db.VarChar(5)
+
+  business CatalogBusiness @relation(fields: [businessId], references: [businessId], onDelete: Cascade)
+
+  @@index([businessId, closureDate])
+  @@map("closures")
+  @@schema("catalog")
+}
+
+/// Today's queue: open or not, and how many are waiting.
+model CatalogQueue {
+  businessId  BigInt   @id @map("business_id")
+  version     BigInt
+  sessionDate DateTime @map("session_date") @db.Date
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  waiting     Int      @default(0)
+  isOpen      Boolean  @map("is_open")
+
+  business CatalogBusiness @relation(fields: [businessId], references: [businessId], onDelete: Cascade)
+
+  @@map("queues")
+  @@schema("catalog")
+}
+
+/// An ad that may run, and where (D-104: "Sponsored" places in explore).
+model CatalogAd {
+  adId             BigInt   @id @map("ad_id")
+  businessId       BigInt   @map("business_id")
+  categoryId       BigInt?  @map("category_id")
+  version          BigInt
+  totalBudgetMinor BigInt   @map("total_budget_minor")
+  amountSpentMinor BigInt   @default(0) @map("amount_spent_minor")
+  startDate        DateTime @map("start_date") @db.Timestamptz(6)
+  endDate          DateTime @map("end_date") @db.Timestamptz(6)
+  /// featured_listing | category_spotlight | city_banner | appointment_boost | new_user_promo
+  type             String   @db.VarChar(30)
+  /// active | paused | …: only active ones run.
+  status           String   @db.VarChar(20)
+  country          String?  @db.Char(2)
+  city             String?  @db.VarChar(100)
+
+  business CatalogBusiness @relation(fields: [businessId], references: [businessId], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("ads")
+  @@schema("catalog")
+}
+
+// ═════════════════════════════ REFERENCE DATA (copies) ═════════════════════════════
+// The directory's reference data (DB-015), copied by logical replication. Read-only.
+
+/// Copy of the directory's reference data (DB-015), kept by logical replication: read-only.
+/// An ISO 4217 currency and its minor unit: amounts are stored × 10^exponent (DB-009).
+model Currency {
+  code     String  @id @db.Char(3)
+  exponent Int     @db.SmallInt
+  active   Boolean @default(true)
+  name     String  @db.VarChar(60)
+
+  @@map("currencies")
+  @@schema("reference")
+}
+
+/// Copy of the directory's reference data (DB-015), kept by logical replication: read-only.
+/// A kind of business, in a two-level tree (groups, then kinds; D-100). Owners can suggest one
+/// (D-098): usable at once, kept out of public lists until reviewed.
+model Category {
+  id            BigInt   @id
+  parentId      BigInt?  @map("parent_id")
+  /// Who suggested it; null for BUKU's own.
+  suggestedById BigInt?  @map("suggested_by_id")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  depth         Int      @default(0) @db.SmallInt
+  sortOrder     Int      @default(0) @map("sort_order") @db.SmallInt
+  isActive      Boolean  @default(true) @map("is_active")
+  pending       Boolean  @default(false)
+  slug          String   @unique @db.VarChar(100)
+  name          String   @db.VarChar(100)
+  /// The name reduced to what it means: one category per meaning (D-098).
+  nameKey       String?  @unique @map("name_key") @db.VarChar(120)
+  icon          String?  @db.VarChar(10)
+
+  @@index([parentId])
+  @@map("categories")
+  @@schema("reference")
+}
+
+/// Copy of the directory's reference data (DB-015), kept by logical replication: read-only.
+/// A plan people or businesses can be on (D-065): data admins edit at any time.
+model Plan {
+  id                BigInt    @id
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Archived: hidden and can't be bought; subscribers keep it until moved.
+  archivedAt        DateTime? @map("archived_at") @db.Timestamptz(6)
+  sortOrder         Int       @default(0) @map("sort_order") @db.SmallInt
+  isPublic          Boolean   @default(true) @map("is_public")
+  /// Stable identifier used by code and admins ("business_essential").
+  code              String    @unique @db.VarChar(50)
+  /// user | business
+  audience          String    @db.VarChar(10)
+  name              String    @db.VarChar(100)
+  tagline           String?   @db.VarChar(200)
+  /// Pricing-page bullet points, in order.
+  benefits          Json      @default("[]")
+  /// { limitKey: number | null }: null or missing means unlimited.
+  limits            Json      @default("{}")
+  /// { featureKey: boolean }: missing means off.
+  features          Json      @default("{}")
+  externalProductId String?   @unique @map("external_product_id") @db.VarChar(200)
+
+  @@index([audience, archivedAt])
+  @@map("plans")
+  @@schema("reference")
+}
+
+/// Copy of the directory's reference data (DB-015), kept by logical replication: read-only.
+/// A plan's price on one channel, in the currency's minor unit.
+model PlanPrice {
+  id              BigInt    @id
+  planId          BigInt    @map("plan_id")
+  amountMinor     BigInt    @map("amount_minor")
+  createdById     BigInt?   @map("created_by_id")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  archivedAt      DateTime? @map("archived_at") @db.Timestamptz(6)
+  trialDays       Int       @default(0) @map("trial_days") @db.SmallInt
+  /// The amount already includes sales tax or VAT.
+  taxInclusive    Boolean   @default(false) @map("tax_inclusive")
+  /// web | android | ios
+  channel         String    @db.VarChar(10)
+  currency        String    @db.Char(3)
+  /// month | year
+  interval        String    @default("month") @db.VarChar(10)
+  /// The store's ID for this price (Paddle, Play, App Store), once set up.
+  externalPriceId String?   @unique @map("external_price_id") @db.VarChar(200)
+
+  @@index([planId, archivedAt])
+  @@index([currency])
+  @@map("plan_prices")
+  @@schema("reference")
+}
+
+/// Copy of the directory's reference data (DB-015), kept by logical replication: read-only.
+/// Billing per audience: on or off, the default plan, trials.
+model BillingSettings {
+  /// user | business
+  audience           String   @id @db.VarChar(10)
+  /// For accounts without an active subscription.
+  defaultPlanId      BigInt   @map("default_plan_id")
+  /// What everyone gets while charging is off.
+  planWhenDisabledId BigInt   @map("plan_when_disabled_id")
+  /// What a trial gives (null: no trials).
+  trialPlanId        BigInt?  @map("trial_plan_id")
+  updatedById        BigInt?  @map("updated_by_id")
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  trialDays          Int      @default(30) @map("trial_days") @db.SmallInt
+  enabled            Boolean  @default(false)
+  trialEnabled       Boolean  @default(true) @map("trial_enabled")
+
+  @@index([defaultPlanId])
+  @@index([planWhenDisabledId])
+  @@index([trialPlanId])
+  @@map("billing_settings")
+  @@schema("reference")
+}
+
+/// Copy of the directory's reference data (DB-015), kept by logical replication: read-only.
+/// What each sales channel keeps (for the profit calculator).
+model BillingChannelFee {
+  /// web | android | ios
+  channel    String   @id @db.VarChar(10)
+  fixedMinor BigInt   @default(0) @map("fixed_minor")
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  percent    Decimal  @db.Decimal(5, 2)
+  currency   String   @default("USD") @db.Char(3)
+  notes      String?  @db.VarChar(300)
+
+  @@map("billing_channel_fees")
+  @@schema("reference")
+}
+
+/// Copy of the directory's reference data (DB-015), kept by logical replication: read-only.
+/// What running BUKU costs per month (for the profit calculator).
+model BillingCostItem {
+  id           BigInt    @id
+  monthlyMinor BigInt    @map("monthly_minor")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  archivedAt   DateTime? @map("archived_at") @db.Timestamptz(6)
+  /// infrastructure | messaging | software | other
+  category     String    @db.VarChar(30)
+  currency     String    @default("USD") @db.Char(3)
+  name         String    @db.VarChar(100)
+  notes        String?   @db.VarChar(300)
+
+  @@map("billing_cost_items")
+  @@schema("reference")
+}
+
+/// Copy of the directory's reference data (DB-015), kept by logical replication: read-only.
+/// How notifications go out (one row, id 1; D-073).
+model NotificationSettings {
+  id                         Int      @id @default(1) @db.SmallInt
+  updatedById                BigInt?  @map("updated_by_id")
+  updatedAt                  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Cap on the month's estimated WhatsApp spend, in US cents; 0: never pay for a message.
+  whatsappMonthlyBudgetCents Int      @default(0) @map("whatsapp_monthly_budget_cents")
+  /// Replies inside the 24-hour window that Meta doesn't charge for, per month.
+  whatsappFreeWindowPerMonth Int      @default(1000) @map("whatsapp_free_window_per_month")
+  /// Estimated price of one paid WhatsApp message, in US cents (a rate, not an amount).
+  whatsappMessageCostCents   Decimal  @default(4) @map("whatsapp_message_cost_cents") @db.Decimal(8, 4)
+  /// Night time (local hours): reminders and suggestions wait until it ends.
+  quietStartHour             Int      @default(21) @map("quiet_start_hour") @db.SmallInt
+  quietEndHour               Int      @default(9) @map("quiet_end_hour") @db.SmallInt
+  suggestionMinDays          Int      @default(7) @map("suggestion_min_days") @db.SmallInt
+  suggestionMaxPer30Days     Int      @default(3) @map("suggestion_max_per_30_days") @db.SmallInt
+  suggestionMaxIgnored       Int      @default(3) @map("suggestion_max_ignored") @db.SmallInt
+  emailEnabled               Boolean  @default(true) @map("email_enabled")
+  whatsappEnabled            Boolean  @default(false) @map("whatsapp_enabled")
+  reminder24h                Boolean  @default(true) @map("reminder_24h")
+  reminder2h                 Boolean  @default(true) @map("reminder_2h")
+  suggestionsEnabled         Boolean  @default(true) @map("suggestions_enabled")
+  /// Message types that may go as PAID templates outside the free 24-hour window.
+  whatsappPaidTypes          String[] @default([]) @map("whatsapp_paid_types")
+
+  @@map("notification_settings")
+  @@schema("reference")
+}

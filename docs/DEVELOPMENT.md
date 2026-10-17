@@ -62,6 +62,26 @@ containers restart within a second. After changing `package.json`/`pnpm-lock.yam
 5. Add/adjust integration tests in `packages/database/test`.
    CI fails if `schema.prisma` and the migrations disagree.
 
+### Change reference data (kinds of business, plans, currencies…)
+
+Reference data lives on the directory (`reference.*`, docs/DATABASE.md DB-015) and is copied by
+logical replication to every business shard and the catalog. Change rows on the directory only;
+the copies follow within a second or two and are read-only.
+
+To change its **shape**: edit the model in `prisma/directory/schema.prisma` and write the
+directory migration; a **new table** is also added to the publication there
+(`ALTER PUBLICATION "buku_reference" ADD TABLE …`). Then make the same change to the copies, in
+`prisma/business/schema.prisma` and `prisma/catalog/schema.prisma` (same columns, no relations), with
+a migration in each. Run `pnpm db:migrate:deploy && pnpm db:shards`: provisioning refreshes every
+subscription, so a new table starts copying. Tests fail if a reference table isn't published or a
+copy's columns differ from the source.
+
+### The catalog (search and discovery)
+
+`buku_catalog` (`prisma/catalog`, DB-041) holds every business as discovery sees it. It is a read
+model: filled from the business shards' events (D3), safe to rebuild. Its migrations run with the
+others (`pnpm db:migrate:deploy`); its client is `createCatalogClient`.
+
 ### Change the directory (shard registry)
 
 The directory database (`buku_directory`, docs/DATABASE.md DB-013) has its own schema and
@@ -330,22 +350,24 @@ infra docker kong ci deps docs repo security release`.
 
 ## Troubleshooting
 
-| Symptom                                                                | Cause / fix                                                                                                                                                |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.env` errors: `... run pnpm bootstrap`                                | Secrets missing. `pnpm bootstrap` fills only empty values; it never overwrites.                                                                            |
-| Elasticsearch exits / unhealthy                                        | `vm.max_map_count` too low — see setup above. Needs ~1.3 GB RAM.                                                                                           |
-| A service is `unhealthy`                                               | `docker compose -f docker-compose.dev.yml logs <svc>`; its `/ready` lists which dependency is down. Config errors print every invalid variable at startup. |
-| `504` from the gateway right after a restart                           | Kong DNS cache; resolved within 5 s (`KONG_DNS_VALID_TTL`).                                                                                                |
-| `ERR_PNPM_NO_MATURE_MATCHING_VERSION`                                  | Supply-chain guard: that version is < 24 h old. Pick the previous version or wait.                                                                         |
-| `ERR_PNPM_...BUILD` for a new dependency                               | It wants to run an install script. Review it, then add it to `allowBuilds` in `pnpm-workspace.yaml` with a comment.                                        |
-| Prisma: "Environment variable not found" on the host                   | Run from the repo root after `pnpm bootstrap`; `prisma.config.ts` reads the root `.env`.                                                                   |
-| Out of memory in WSL                                                   | Give WSL ≥ 8 GB in `%UserProfile%\.wslconfig` (`[wsl2]\nmemory=8GB`), don't run `--profile tools` unless needed.                                           |
-| Port already in use                                                    | Another local Postgres/Redis? Stop it, or change `POSTGRES_HOST_PORT` in `.env`.                                                                           |
-| After a Windows/WSL restart: Kong `Exited (127)`, services `unhealthy` | Docker started the containers before WSL's files were mounted. `docker compose -f docker-compose.dev.yml up -d --force-recreate` (data is kept).           |
-| Host tools get `Connection terminated unexpectedly`                    | After a restart the port forwarder can drop every host connection while the containers look healthy. Same fix: recreate the stack.                         |
-| `database "buku_directory" does not exist` (tests, Prisma)             | The directory is created by `pnpm db:prepare` (the `db-prepare` container does it on `pnpm dev`). Run it once on a stack created before D1.                |
-| `BUKU_DB_CLUSTER_LOCAL_1 is not set`                                   | The local cluster's address (added in D2a). `pnpm bootstrap` adds it to `.env` without touching anything else.                                             |
-| Start completely fresh                                                 | `pnpm dev:wipe && pnpm dev`                                                                                                                                |
+| Symptom                                                                | Cause / fix                                                                                                                                                 |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.env` errors: `... run pnpm bootstrap`                                | Secrets missing. `pnpm bootstrap` fills only empty values; it never overwrites.                                                                             |
+| Elasticsearch exits / unhealthy                                        | `vm.max_map_count` too low — see setup above. Needs ~1.3 GB RAM.                                                                                            |
+| A service is `unhealthy`                                               | `docker compose -f docker-compose.dev.yml logs <svc>`; its `/ready` lists which dependency is down. Config errors print every invalid variable at startup.  |
+| `504` from the gateway right after a restart                           | Kong DNS cache; resolved within 5 s (`KONG_DNS_VALID_TTL`).                                                                                                 |
+| `ERR_PNPM_NO_MATURE_MATCHING_VERSION`                                  | Supply-chain guard: that version is < 24 h old. Pick the previous version or wait.                                                                          |
+| `ERR_PNPM_...BUILD` for a new dependency                               | It wants to run an install script. Review it, then add it to `allowBuilds` in `pnpm-workspace.yaml` with a comment.                                         |
+| Prisma: "Environment variable not found" on the host                   | Run from the repo root after `pnpm bootstrap`; `prisma.config.ts` reads the root `.env`.                                                                    |
+| Out of memory in WSL                                                   | Give WSL ≥ 8 GB in `%UserProfile%\.wslconfig` (`[wsl2]\nmemory=8GB`), don't run `--profile tools` unless needed.                                            |
+| Port already in use                                                    | Another local Postgres/Redis? Stop it, or change `POSTGRES_HOST_PORT` in `.env`.                                                                            |
+| After a Windows/WSL restart: Kong `Exited (127)`, services `unhealthy` | Docker started the containers before WSL's files were mounted. `docker compose -f docker-compose.dev.yml up -d --force-recreate` (data is kept).            |
+| Host tools get `Connection terminated unexpectedly`                    | After a restart the port forwarder can drop every host connection while the containers look healthy. Same fix: recreate the stack.                          |
+| `database "buku_directory" does not exist` (tests, Prisma)             | The directory is created by `pnpm db:prepare` (the `db-prepare` container does it on `pnpm dev`). Run it once on a stack created before D1.                 |
+| `BUKU_REPLICATOR_PASSWORD must be 16-128 letters…` (db:prepare)        | Added in D2c, for copying reference data. `pnpm bootstrap` adds it to `.env` without touching anything else.                                                |
+| A reference copy stopped following changes                             | `pnpm db:shards` refreshes every subscription. To drop a database that has one, use `dropDatabase` (src/provision.ts): it removes the replication slot too. |
+| `BUKU_DB_CLUSTER_LOCAL_1 is not set`                                   | The local cluster's address (added in D2a). `pnpm bootstrap` adds it to `.env` without touching anything else.                                              |
+| Start completely fresh                                                 | `pnpm dev:wipe && pnpm dev`                                                                                                                                 |
 
 ## Releases (Phase 5)
 

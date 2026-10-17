@@ -1,13 +1,38 @@
 /**
  * Vitest global setup for the integration project: rebuilds the `buku_test`
  * schema from scratch and applies every migration, exactly as a production
- * deploy would (`prisma migrate deploy`); the same for the directory's test
- * twin, `buku_directory_test` (created by `pnpm db:prepare`).
+ * deploy would (`prisma migrate deploy`); the same for the directory's and
+ * the catalog's test twins, `buku_directory_test` and `buku_catalog_test`
+ * (created by `pnpm db:prepare`).
+ *
+ * The last run's shard databases (buku_test_*) and reference copies go first,
+ * subscriptions and replication slots before anything else: a slot left behind
+ * would keep the server's WAL forever.
  */
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { createDatabaseClient } from '../src/index.js';
+import { dropDatabase, dropReferenceCopy } from '../src/provision.js';
 import { testEnv } from './int-env.js';
+
+const packageDir = resolve(import.meta.dirname, '..');
+const prisma = (args: string[], env: Record<string, string>) =>
+  execFileSync(resolve(packageDir, 'node_modules/.bin/prisma'), args, {
+    cwd: packageDir,
+    env: { ...process.env, ...env },
+    stdio: 'pipe',
+  });
+
+/** Drop these schemas (and Prisma's history) as the owner, so migrations start from nothing. */
+async function reset(url: string, schemas: string) {
+  const db = createDatabaseClient({ url, applicationName: 'test-setup', maxConnections: 1 });
+  try {
+    await db.$executeRawUnsafe(`DROP SCHEMA IF EXISTS ${schemas} CASCADE`);
+    await db.$executeRawUnsafe('DROP TABLE IF EXISTS public._prisma_migrations');
+  } finally {
+    await db.$disconnect();
+  }
+}
 
 export default async function setup(): Promise<void> {
   const db = createDatabaseClient({
@@ -23,32 +48,50 @@ export default async function setup(): Promise<void> {
   } finally {
     await db.$disconnect();
   }
+  prisma(['migrate', 'deploy'], { DATABASE_MIGRATION_URL: testEnv.migratorUrl });
 
-  const packageDir = resolve(import.meta.dirname, '..');
-  execFileSync(resolve(packageDir, 'node_modules/.bin/prisma'), ['migrate', 'deploy'], {
-    cwd: packageDir,
-    env: { ...process.env, DATABASE_MIGRATION_URL: testEnv.migratorUrl },
-    stdio: 'pipe',
-  });
+  // The last run's copies of the test directory: shard databases, then the catalog's copy, then
+  // any slot nobody holds any more (a run that crashed).
+  const publisherUrl = testEnv.adminUrl('buku_directory_test');
+  const server = createDatabaseClient({ url: testEnv.adminUrl('postgres'), applicationName: 'test-setup' });
+  try {
+    const shards = await server.$queryRaw<{ name: string }[]>`
+      SELECT datname::text AS name FROM pg_database WHERE datname LIKE 'buku\\_test\\_%'`;
+    for (const { name } of shards) {
+      await dropDatabase({ serverUrl: testEnv.adminUrl('postgres'), database: name, publisherUrl });
+    }
+    const catalog = createDatabaseClient({
+      url: testEnv.adminUrl('buku_catalog_test'),
+      applicationName: 'test-setup',
+    });
+    try {
+      await dropReferenceCopy(catalog, 'buku_catalog_test', publisherUrl);
+    } finally {
+      await catalog.$disconnect();
+    }
+    await server.$executeRaw`SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots
+      WHERE database = 'buku_directory_test' AND NOT active`;
+  } finally {
+    await server.$disconnect();
+  }
 
+  // The directory: its publication isn't in a schema, so it goes by name.
   const directory = createDatabaseClient({
     url: testEnv.directoryMigratorUrl,
     applicationName: 'test-setup',
-    maxConnections: 1,
   });
   try {
-    await directory.$executeRawUnsafe('DROP SCHEMA IF EXISTS registry, ids, lookup CASCADE');
-    await directory.$executeRawUnsafe('DROP TABLE IF EXISTS public._prisma_migrations');
+    await directory.$executeRawUnsafe('DROP PUBLICATION IF EXISTS buku_reference');
   } finally {
     await directory.$disconnect();
   }
-  execFileSync(
-    resolve(packageDir, 'node_modules/.bin/prisma'),
-    ['migrate', 'deploy', '--config', 'prisma.directory.config.ts'],
-    {
-      cwd: packageDir,
-      env: { ...process.env, DATABASE_DIRECTORY_MIGRATION_URL: testEnv.directoryMigratorUrl },
-      stdio: 'pipe',
-    },
-  );
+  await reset(testEnv.directoryMigratorUrl, 'registry, ids, lookup, reference');
+  prisma(['migrate', 'deploy', '--config', 'prisma.directory.config.ts'], {
+    DATABASE_DIRECTORY_MIGRATION_URL: testEnv.directoryMigratorUrl,
+  });
+
+  await reset(testEnv.catalogMigratorUrl, 'catalog, reference');
+  prisma(['migrate', 'deploy', '--config', 'prisma.catalog.config.ts'], {
+    DATABASE_CATALOG_MIGRATION_URL: testEnv.catalogMigratorUrl,
+  });
 }

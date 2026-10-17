@@ -99,6 +99,7 @@ x-shared-src: &shared-src # used by db-migrate
   - ./packages/database/src:/app/packages/database/src:ro
   - ./packages/database/prisma:/app/packages/database/prisma:ro
   - ./packages/database/prisma.directory.config.ts:/app/packages/database/prisma.directory.config.ts:ro
+  - ./packages/database/prisma.catalog.config.ts:/app/packages/database/prisma.catalog.config.ts:ro
   - ./packages/kafka/src:/app/packages/kafka/src:ro
 
 x-service-env: &service-env
@@ -183,7 +184,11 @@ services:
         -c shared_preload_libraries=pg_stat_statements,pg_cron,pgaudit
         -c cron.database_name=postgres
         -c cron.use_background_workers=on
-        -c max_worker_processes=16
+        -c wal_level=logical
+        -c max_wal_senders=32
+        -c max_replication_slots=32
+        -c max_logical_replication_workers=16
+        -c max_worker_processes=32
         -c pgaudit.log=ddl,role
         -c pgaudit.log_parameter=off
     volumes: [postgres-data:/var/lib/postgresql/data]
@@ -443,6 +448,8 @@ services:
     environment:
       NODE_ENV: development
       DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/postgres
+      # The role reference data is copied with (DB-015).
+      BUKU_REPLICATOR_PASSWORD: ${BUKU_REPLICATOR_PASSWORD:?run pnpm bootstrap}
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
@@ -462,6 +469,7 @@ services:
       - >-
         node_modules/.bin/prisma migrate deploy &&
         node_modules/.bin/prisma migrate deploy --config prisma.directory.config.ts &&
+        node_modules/.bin/prisma migrate deploy --config prisma.catalog.config.ts &&
         /app/node_modules/.bin/tsx prisma/seed.ts &&
         /app/node_modules/.bin/tsx prisma/directory/seed.ts
     environment:
@@ -470,6 +478,7 @@ services:
       # encrypt demo users' contact details exactly like the real app will.
       DATABASE_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku
       DATABASE_DIRECTORY_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_directory
+      DATABASE_CATALOG_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_catalog
       PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?run pnpm bootstrap}
       PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY:?run pnpm bootstrap}
@@ -491,6 +500,10 @@ services:
       BUKU_MIGRATOR_PASSWORD: ${BUKU_MIGRATOR_PASSWORD:?run pnpm bootstrap}
       # The local cluster's address, as the registry names it (host and port only).
       BUKU_DB_CLUSTER_LOCAL_1: postgresql://postgres:5432
+      # Reference data is copied to business shards and the catalog (DB-015). The servers reach
+      # the directory as localhost (one server); the replicator signs in with this.
+      BUKU_REFERENCE_SOURCE: host=localhost port=5432 dbname=buku_directory
+      BUKU_REPLICATOR_PASSWORD: ${BUKU_REPLICATOR_PASSWORD:?run pnpm bootstrap}
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro

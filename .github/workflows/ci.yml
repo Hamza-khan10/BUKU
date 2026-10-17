@@ -112,6 +112,8 @@ jobs:
             --to-schema prisma/user/schema.prisma --exit-code
           pnpm exec prisma migrate diff --config prisma.business.config.ts --from-config-datasource \
             --to-schema prisma/business/schema.prisma --exit-code
+          pnpm exec prisma migrate diff --config prisma.catalog.config.ts --from-config-datasource \
+            --to-schema prisma/catalog/schema.prisma --exit-code
       - run: pnpm test:int
       - name: Service logs on failure
         if: failure()

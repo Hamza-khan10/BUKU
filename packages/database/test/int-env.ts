@@ -28,6 +28,18 @@ export const testEnv = {
   admin: { user: 'buku_admin', password: required('POSTGRES_SUPERUSER_PASSWORD') },
   migrator: { user: 'buku_migrator', password: required('BUKU_MIGRATOR_PASSWORD') },
   app: { user: 'buku_app', password: required('BUKU_APP_PASSWORD') },
+  replicator: { user: 'buku_replicator', password: required('BUKU_REPLICATOR_PASSWORD') },
+  /** The administrator on one database of the test cluster. */
+  adminUrl: (database: string) =>
+    `postgresql://buku_admin:${encodeURIComponent(required('POSTGRES_SUPERUSER_PASSWORD'))}@${host}:${port}/${database}`,
+  /**
+   * The test directory as the database server reaches it (reference data is copied from it,
+   * DB-015): itself, so localhost on the server's own port.
+   */
+  referenceSource: 'host=localhost port=5432 dbname=buku_directory_test',
+  // The catalog's test twin (DB-041).
+  catalogAppUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_catalog_test`,
+  catalogMigratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_catalog_test`,
   // The directory database's test twin (shard registry, ID generator leases; docs/DATABASE.md §6).
   directoryAppUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_directory_test`,
   directoryMigratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_directory_test`,
