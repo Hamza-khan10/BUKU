@@ -8,7 +8,10 @@ import {
   ShardRouter,
   type DirectoryClient,
 } from '../src/index.js';
+import { directoryAccessStatements } from '../src/access-sql.js';
+import { applyStatements } from '../src/apply-access.js';
 import { testEnv } from './int-env.js';
+import { asService, ensureServiceRoles, passwords } from './service-roles.js';
 
 /**
  * The directory (docs/DATABASE.md §6, DB-011…DB-013): where every row of a shard family lives,
@@ -616,6 +619,42 @@ describe('ShardRouter', () => {
       await expect.poll(() => router.route('watched', 1n)?.shardNo, { timeout: 2000 }).toBe(1);
     } finally {
       router.stop();
+    }
+  });
+});
+
+describe('each service’s rights on the directory (D2d)', () => {
+  beforeAll(async () => {
+    await ensureServiceRoles();
+    await applyStatements(
+      testEnv.adminUrl('buku_directory_test'),
+      directoryAccessStatements('buku_directory_test', passwords),
+    );
+  });
+
+  it('reference data is edited only by its owners; everyone reads it', async () => {
+    const billing = asService('billing', 'buku_directory_test');
+    const business = asService('business', 'buku_directory_test');
+    const booking = asService('booking', 'buku_directory_test');
+    try {
+      await billing.$executeRawUnsafe(
+        `UPDATE reference.plans SET sort_order = sort_order WHERE code = 'business_free'`,
+      );
+      await business.$executeRawUnsafe(
+        `INSERT INTO reference.categories (id, parent_id, depth, slug, name, pending, suggested_by_id)
+         VALUES (${BigInt(Date.now()) * 1000n}, 1, 1, 'owner-suggested-${Date.now()}', 'Owner suggested', true, 42)`,
+      );
+      await expect(booking.$executeRawUnsafe(`UPDATE reference.plans SET name = 'x'`)).rejects.toThrow(
+        /permission denied/,
+      );
+      await expect(business.$executeRawUnsafe(`DELETE FROM reference.categories`)).rejects.toThrow(
+        /permission denied/,
+      );
+      expect(
+        await booking.$queryRawUnsafe<{ n: bigint }[]>('SELECT count(*) AS n FROM reference.currencies'),
+      ).toEqual([{ n: 38n }]);
+    } finally {
+      await Promise.all([billing.$disconnect(), business.$disconnect(), booking.$disconnect()]);
     }
   });
 });

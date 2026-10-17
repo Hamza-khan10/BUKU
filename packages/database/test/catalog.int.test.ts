@@ -8,7 +8,11 @@ import {
   type Database,
   type DirectoryClient,
 } from '../src/index.js';
+import { CATALOG_ACCESS } from '../src/access.js';
+import { databaseAccessStatements } from '../src/access-sql.js';
+import { applyStatements } from '../src/apply-access.js';
 import { ensureReferenceCopy, waitForReferenceCopy } from '../src/provision.js';
+import { asService, ensureServiceRoles, passwords } from './service-roles.js';
 import { testEnv } from './int-env.js';
 
 /**
@@ -140,5 +144,37 @@ describe('the catalog (DB-041)', () => {
     await expect(listed('Bad Status', { status: 'open' })).rejects.toThrow();
     await expect(listed('Half Place', { lat: 31.5 })).rejects.toThrow();
     await expect(listed('No Version', { version: 0n })).rejects.toThrow();
+  });
+});
+
+describe('each service’s rights on the catalog (D2d)', () => {
+  beforeAll(async () => {
+    await ensureServiceRoles();
+    await applyStatements(
+      testEnv.adminUrl('buku_catalog_test'),
+      databaseAccessStatements('buku_catalog_test', CATALOG_ACCESS, passwords, {
+        schemas: ['catalog', 'reference'],
+      }),
+    );
+  });
+
+  it('search keeps it, ads reads which ads may run, nobody else gets in', async () => {
+    const search = asService('search', 'buku_catalog_test');
+    const ads = asService('ads', 'buku_catalog_test');
+    const booking = asService('booking', 'buku_catalog_test');
+    try {
+      const b = await listed('Rights Check');
+      await search.$executeRawUnsafe(
+        `UPDATE catalog.businesses SET review_count = 3 WHERE business_id = ${b}`,
+      );
+      await ads.$queryRawUnsafe('SELECT count(*) FROM catalog.ads');
+      await expect(ads.$executeRawUnsafe(`DELETE FROM catalog.ads`)).rejects.toThrow(/permission denied/);
+      await expect(search.$executeRawUnsafe(`DELETE FROM reference.plans`)).rejects.toThrow(
+        /permission denied/,
+      );
+      await expect(booking.$queryRawUnsafe('SELECT 1')).rejects.toThrow(/CONNECT|permission denied/);
+    } finally {
+      await Promise.all([search.$disconnect(), ads.$disconnect(), booking.$disconnect()]);
+    }
   });
 });

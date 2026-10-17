@@ -11,7 +11,9 @@ import {
   type DirectoryClient,
   type UserShardClient,
 } from '../src/index.js';
+import { applyShardAccess } from '../src/apply-access.js';
 import { provisionShards } from '../src/provision.js';
+import { asService, ensureServiceRoles, passwords } from './service-roles.js';
 import { testEnv } from './int-env.js';
 
 /**
@@ -358,5 +360,60 @@ describe('indexes', () => {
       WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace AND c.conparentid = 0
         AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c.conrelid AND i.indkey[0] = c.conkey[1])`;
     expect(missing).toEqual([]);
+  });
+});
+
+describe('each service’s rights on a user shard (D2d)', () => {
+  let booking: Database;
+  let notification: Database;
+  beforeAll(async () => {
+    await ensureServiceRoles();
+    await applyShardAccess(testEnv.adminUrl(SHARDS[0]!), 'user', passwords);
+    booking = asService('booking', SHARDS[0]!);
+    notification = asService('notification', SHARDS[0]!);
+  });
+  afterAll(async () => {
+    await booking?.$disconnect();
+    await notification?.$disconnect();
+  });
+
+  it('booking reads who a person is, never their credentials, and claims their time', async () => {
+    const u = await shard1.user.create({ data: person({ passwordHash: '$argon2id$test' }) });
+    const seen = await booking.$queryRawUnsafe<{ name: string }[]>(
+      `SELECT name FROM users WHERE id = ${u.id}`,
+    );
+    expect(seen[0]!.name).toBe('Test Person');
+    await expect(
+      booking.$queryRawUnsafe(`SELECT password_hash FROM users WHERE id = ${u.id}`),
+    ).rejects.toThrow(/permission denied/);
+    await expect(booking.$executeRawUnsafe(`UPDATE users SET name = 'x' WHERE id = ${u.id}`)).rejects.toThrow(
+      /permission denied/,
+    );
+    await booking.$executeRawUnsafe(
+      `INSERT INTO user_time_reservations (id, user_id, business_id, start_at, end_at, expires_at)
+       VALUES (${ids.next()}, ${u.id}, 9, '2027-05-01 10:00Z', '2027-05-01 10:30Z', now() + interval '2 minutes')`,
+    );
+  });
+
+  it('notification may switch a device off, and change nothing else about it', async () => {
+    const u = await shard1.user.create({ data: person() });
+    const token = await shard1.pushToken.create({
+      data: { id: ids.next(), userId: u.id, platform: 'web', token: `t-${u.id}` },
+    });
+    await notification.$executeRawUnsafe(`UPDATE push_tokens SET is_active = false WHERE id = ${token.id}`);
+    await expect(
+      notification.$executeRawUnsafe(`UPDATE push_tokens SET token = 'stolen' WHERE id = ${token.id}`),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it('search and analytics have nothing on a user shard: no connection', async () => {
+    for (const service of ['search', 'analytics'] as const) {
+      const db = asService(service, SHARDS[0]!);
+      try {
+        await expect(db.$queryRawUnsafe('SELECT 1'), service).rejects.toThrow(/CONNECT|permission denied/);
+      } finally {
+        await db.$disconnect();
+      }
+    }
   });
 });

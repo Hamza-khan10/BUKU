@@ -150,6 +150,14 @@ of whoever fired them: a trigger function that writes another service's table is
 (`DIRECTORY_ACCESS`: read the registry, lease ID generators, place rows); who may place which
 family is the `placed_by` column of `registry.entities`, not code.
 
+**Database v2** has a map per kind of database in the same file: `USER_SHARD_ACCESS`,
+`BUSINESS_SHARD_ACCESS`, `CATALOG_ACCESS`, and `DIRECTORY_REFERENCE_ACCESS` for the reference data
+a service edits. A new table goes in its family's map (or its `…_NOT_WRITTEN` list, with why);
+`pnpm test` checks every table is covered and every name exists. `apply-access` applies it to
+every shard in the registry. On a business shard, work across businesses runs in a transaction
+that calls `forAllBusinesses(tx, '<service>')` (the service's `buku_svc_<name>_all` role; only
+services in `CROSS_BUSINESS` have one); everything else calls `forBusiness(tx, id)` first.
+
 ### Use a new Valkey key
 
 Each service signs in to Valkey as its own user and may touch only the key prefixes on its line

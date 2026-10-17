@@ -527,6 +527,9 @@ services:
       DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku
       # The same roles' rights in the directory (read the registry, lease ID generators, place rows).
       DATABASE_DIRECTORY_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku_directory
+      # …the catalog, and every shard in the registry (reached through its cluster's address).
+      DATABASE_CATALOG_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku_catalog
+      BUKU_DB_CLUSTER_LOCAL_1: postgresql://postgres:5432
       BUKU_DB_PASSWORD_AUTH: ${BUKU_DB_PASSWORD_AUTH:?run pnpm bootstrap}
       BUKU_DB_PASSWORD_BOOKING: ${BUKU_DB_PASSWORD_BOOKING:?run pnpm bootstrap}
       BUKU_DB_PASSWORD_QUEUE: ${BUKU_DB_PASSWORD_QUEUE:?run pnpm bootstrap}
