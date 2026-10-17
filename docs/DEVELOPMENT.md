@@ -44,6 +44,7 @@ password `buku-dev-password-2026`.
 | `pnpm db:studio`                                | Browse the database in Prisma Studio                                  |
 | `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent) |
 | `pnpm db:shards`                                | Make every registered shard a migrated database (idempotent)          |
+| `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)       |
 
 Services hot-reload: edit anything under `packages/*/src` or `services/*/src` and the affected
 containers restart within a second. After changing `package.json`/`pnpm-lock.yaml`, run

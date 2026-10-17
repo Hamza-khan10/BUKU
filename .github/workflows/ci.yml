@@ -102,6 +102,8 @@ jobs:
         run: |
           pnpm --filter @buku/database exec tsx prisma/directory/seed.ts
           pnpm db:shards
+      - name: Seed database v2 the way the services will (fails on any broken rule)
+        run: pnpm db:seed:v2
       - name: Fail if a schema and its migrations disagree
         working-directory: packages/database
         run: |

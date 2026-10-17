@@ -2,6 +2,7 @@ import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { SignJWT, importPKCS8 } from 'jose';
 import { describe, expect, it } from 'vitest';
 import {
+  ciphertextToBytes,
   CONFIRMATION_CODE_PATTERN,
   createBlindIndexer,
   createFieldCipher,
@@ -76,7 +77,62 @@ describe('field encryption (AES-256-GCM)', () => {
   });
 });
 
+describe('field encryption as bytes (database v2, DB-008)', () => {
+  const keyring = parseKeyring(`k1:${key()},k2:${key()}`, 'k2');
+  const cipher = createFieldCipher(keyring);
+
+  it('round-trips, is smaller than the text form, and says which key wrote it', () => {
+    const bytes = cipher.encryptBytes('alice@example.com', 'users.email');
+    const text = cipher.encrypt('alice@example.com', 'users.email');
+    expect(bytes.length).toBeLessThan(text.length);
+    expect([bytes[0], bytes[1], bytes.subarray(2, 4).toString('ascii')]).toEqual([1, 2, 'k2']);
+    expect(cipher.decryptBytes(bytes, 'users.email')).toBe('alice@example.com');
+    expect(cipher.needsReEncryption(bytes)).toBe(false);
+  });
+
+  it('refuses another column, a changed byte, an unknown key and garbage', () => {
+    const bytes = cipher.encryptBytes('+923001234567', 'users.phone');
+    expect(() => cipher.decryptBytes(bytes, 'users.email')).toThrow(DecryptionError);
+    const tampered = Buffer.from(bytes);
+    tampered[tampered.length - 1]! ^= 1;
+    expect(() => cipher.decryptBytes(tampered, 'users.phone')).toThrow(DecryptionError);
+    const other = createFieldCipher(parseKeyring(`k9:${key()}`, 'k9'));
+    expect(() => other.decryptBytes(bytes, 'users.phone')).toThrow(/Unknown key id/);
+    for (const junk of [
+      Buffer.alloc(0),
+      Buffer.from([2, 1, 65]),
+      Buffer.from([1, 0]),
+      Buffer.from([1, 2, 107, 50]),
+    ]) {
+      expect(() => cipher.decryptBytes(junk, 'users.phone')).toThrow(DecryptionError);
+    }
+  });
+
+  it('a v1 value becomes v2 bytes without the key, and still decrypts', () => {
+    const old = createFieldCipher(parseKeyring(`k1:${key()}`, 'k1'));
+    const both = createFieldCipher({ activeKeyId: 'k2', keys: new Map([...keyring.keys]) });
+    const legacy = createFieldCipher({ activeKeyId: 'k1', keys: keyring.keys });
+    const text = legacy.encrypt('bob@example.com', 'users.email');
+    const bytes = ciphertextToBytes(text);
+    expect(both.decryptBytes(bytes, 'users.email')).toBe('bob@example.com');
+    // Written with k1 while k2 is active: due for re-encryption, in either form.
+    expect(both.needsReEncryption(bytes)).toBe(true);
+    expect(both.needsReEncryption(text)).toBe(true);
+    expect(() => ciphertextToBytes('not:a:ciphertext')).toThrow(DecryptionError);
+    expect(() => old.decryptBytes(bytes, 'users.email')).toThrow(DecryptionError);
+  });
+});
+
 describe('blind index', () => {
+  it('in v2 is the first 16 bytes of the same HMAC, so a v1 hash converts by truncation', () => {
+    const indexer = createBlindIndexer(randomBytes(32));
+    const v1 = indexer.hash('users.email', 'alice@example.com');
+    const v2 = indexer.digest16('users.email', 'alice@example.com');
+    expect(v2.length).toBe(16);
+    expect(v2.toString('hex')).toBe(v1.slice(0, 32));
+    expect(indexer.digest16('users.phone', 'alice@example.com').equals(v2)).toBe(false);
+  });
+
   const indexer = createBlindIndexer(randomBytes(32));
 
   it('is deterministic for equal normalized values', () => {

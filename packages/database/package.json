@@ -17,6 +17,7 @@
     "migrate:deploy": "prisma migrate deploy && prisma migrate deploy --config prisma.directory.config.ts && prisma migrate deploy --config prisma.catalog.config.ts",
     "migrate:status": "prisma migrate status",
     "seed": "tsx prisma/seed.ts && tsx prisma/directory/seed.ts",
+    "seed:v2": "tsx prisma/seed-v2.ts",
     "studio": "prisma studio"
   },
   "dependencies": {

@@ -17,6 +17,14 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
  * - AAD ("additional authenticated data") binds a ciphertext to its column,
  *   e.g. "users.email". Copying an encrypted email into another column or
  *   table makes decryption fail instead of silently returning data.
+ *
+ * Database v2 stores the same thing as bytes (`bytea`, docs/DATABASE.md DB-008), about a quarter
+ * smaller and with no encoding step:
+ *
+ *   0x01 | keyId length (1 byte) | keyId (ASCII) | iv (12) | ciphertext || authTag (16)
+ *
+ * Same algorithm, keys and context: `ciphertextToBytes` turns a v1 value into its v2 bytes
+ * without the key (moving data needs no decryption).
  */
 
 const FORMAT_PREFIX = 'enc';
@@ -24,6 +32,7 @@ const FORMAT_VERSION = '1';
 const IV_BYTES = 12; // NIST-recommended IV size for GCM
 const TAG_BYTES = 16;
 const KEY_BYTES = 32;
+const BINARY_VERSION = 1;
 
 export interface Keyring {
   activeKeyId: string;
@@ -65,20 +74,78 @@ export interface FieldCipher {
   encrypt(plaintext: string, context: string): string;
   /** Decrypt; throws DecryptionError if tampered, wrong context, or unknown key. */
   decrypt(ciphertext: string, context: string): string;
+  /** The same, as bytes (database v2 `bytea` columns). */
+  encryptBytes(plaintext: string, context: string): Buffer;
+  decryptBytes(ciphertext: Uint8Array, context: string): string;
   /** True if this value was written with a non-active key and should be re-encrypted. */
-  needsReEncryption(ciphertext: string): boolean;
+  needsReEncryption(ciphertext: string | Uint8Array): boolean;
+}
+
+/** The parts of a binary ciphertext; throws DecryptionError when it isn't one. */
+function splitBytes(data: Uint8Array): { keyId: string; iv: Buffer; body: Buffer } {
+  const b = Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  if (b.length < 2 || b[0] !== BINARY_VERSION) throw new DecryptionError('Malformed ciphertext');
+  const idLength = b[1]!;
+  const start = 2 + idLength;
+  if (idLength < 1 || idLength > 16 || b.length < start + IV_BYTES + TAG_BYTES) {
+    throw new DecryptionError('Malformed ciphertext');
+  }
+  return {
+    keyId: b.subarray(2, start).toString('ascii'),
+    iv: b.subarray(start, start + IV_BYTES),
+    body: b.subarray(start + IV_BYTES),
+  };
+}
+
+/** A v1 text ciphertext as v2 bytes, unchanged inside: no key needed. */
+export function ciphertextToBytes(ciphertext: string): Buffer {
+  const parts = ciphertext.split(':');
+  if (parts.length !== 5 || parts[0] !== FORMAT_PREFIX || parts[1] !== FORMAT_VERSION) {
+    throw new DecryptionError('Malformed ciphertext');
+  }
+  const [, , keyId, ivB64, bodyB64] = parts as [string, string, string, string, string];
+  const id = Buffer.from(keyId, 'ascii');
+  const iv = Buffer.from(ivB64, 'base64url');
+  const body = Buffer.from(bodyB64, 'base64url');
+  if (id.length < 1 || id.length > 16 || iv.length !== IV_BYTES || body.length < TAG_BYTES) {
+    throw new DecryptionError('Malformed ciphertext');
+  }
+  return Buffer.concat([Buffer.from([BINARY_VERSION, id.length]), id, iv, body]);
 }
 
 export function createFieldCipher(keyring: Keyring): FieldCipher {
   const activeKey = keyring.keys.get(keyring.activeKeyId);
   if (!activeKey) throw new Error('Active key missing from keyring');
 
+  const seal = (plaintext: string, context: string) => {
+    const iv = randomBytes(IV_BYTES);
+    const cipher = createCipheriv('aes-256-gcm', activeKey, iv, { authTagLength: TAG_BYTES });
+    cipher.setAAD(Buffer.from(context, 'utf8'));
+    return {
+      iv,
+      body: Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final(), cipher.getAuthTag()]),
+    };
+  };
+  const open = (keyId: string, iv: Buffer, body: Buffer, context: string) => {
+    const key = keyring.keys.get(keyId);
+    if (!key) throw new DecryptionError(`Unknown key id "${keyId}"`);
+    const decipher = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
+    decipher.setAAD(Buffer.from(context, 'utf8'));
+    decipher.setAuthTag(body.subarray(body.length - TAG_BYTES));
+    try {
+      return Buffer.concat([
+        decipher.update(body.subarray(0, body.length - TAG_BYTES)),
+        decipher.final(),
+      ]).toString('utf8');
+    } catch {
+      // Do not leak which check failed (tag vs. AAD vs. key): all are "not authentic".
+      throw new DecryptionError('Ciphertext failed authentication');
+    }
+  };
+
   return {
     encrypt(plaintext, context) {
-      const iv = randomBytes(IV_BYTES);
-      const cipher = createCipheriv('aes-256-gcm', activeKey, iv, { authTagLength: TAG_BYTES });
-      cipher.setAAD(Buffer.from(context, 'utf8'));
-      const body = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final(), cipher.getAuthTag()]);
+      const { iv, body } = seal(plaintext, context);
       return [
         FORMAT_PREFIX,
         FORMAT_VERSION,
@@ -94,29 +161,27 @@ export function createFieldCipher(keyring: Keyring): FieldCipher {
         throw new DecryptionError('Malformed ciphertext');
       }
       const [, , keyId, ivB64, bodyB64] = parts as [string, string, string, string, string];
-      const key = keyring.keys.get(keyId);
-      if (!key) throw new DecryptionError(`Unknown key id "${keyId}"`);
       const iv = Buffer.from(ivB64, 'base64url');
       const body = Buffer.from(bodyB64, 'base64url');
       if (iv.length !== IV_BYTES || body.length < TAG_BYTES)
         throw new DecryptionError('Malformed ciphertext');
+      return open(keyId, iv, body, context);
+    },
 
-      const decipher = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
-      decipher.setAAD(Buffer.from(context, 'utf8'));
-      decipher.setAuthTag(body.subarray(body.length - TAG_BYTES));
-      try {
-        return Buffer.concat([
-          decipher.update(body.subarray(0, body.length - TAG_BYTES)),
-          decipher.final(),
-        ]).toString('utf8');
-      } catch {
-        // Do not leak which check failed (tag vs. AAD vs. key): all are "not authentic".
-        throw new DecryptionError('Ciphertext failed authentication');
-      }
+    encryptBytes(plaintext, context) {
+      const { iv, body } = seal(plaintext, context);
+      const id = Buffer.from(keyring.activeKeyId, 'ascii');
+      return Buffer.concat([Buffer.from([BINARY_VERSION, id.length]), id, iv, body]);
+    },
+
+    decryptBytes(ciphertext, context) {
+      const { keyId, iv, body } = splitBytes(ciphertext);
+      return open(keyId, iv, body, context);
     },
 
     needsReEncryption(ciphertext) {
-      return ciphertext.split(':')[2] !== keyring.activeKeyId;
+      const keyId = typeof ciphertext === 'string' ? ciphertext.split(':')[2] : splitBytes(ciphertext).keyId;
+      return keyId !== keyring.activeKeyId;
     },
   };
 }
