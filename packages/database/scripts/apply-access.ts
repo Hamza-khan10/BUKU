@@ -8,19 +8,21 @@
  *   DATABASE_ADMIN_URL=postgresql://<admin>@host:5432/buku \
  *   BUKU_DB_PASSWORD_AUTH=… BUKU_DB_PASSWORD_BOOKING=… … tsx scripts/apply-access.ts
  *
- * With DATABASE_DIRECTORY_ADMIN_URL set too, the same roles also get their rights in the
- * directory database (DIRECTORY_ACCESS: read the registry, lease ID generators, place rows).
+ * Then, with each URL set, the same roles' rights in database v2 (src/apply-access.ts): the
+ * directory (DATABASE_DIRECTORY_ADMIN_URL: registry, leases, placing, handles, reference data),
+ * the catalog (DATABASE_CATALOG_ADMIN_URL), and every shard in the registry, reached through its
+ * cluster's address (the setting its `dsn_secret` names, e.g. BUKU_DB_CLUSTER_LOCAL_1) with the
+ * same administrator. Business-shard work across businesses goes through each service's
+ * buku_svc_<name>_all role (DB-020), made here too.
  */
-import { createDatabaseClient } from '../src/index.js';
 import { SERVICES, type ServiceName } from '../src/access.js';
-import { accessStatements, directoryAccessStatements } from '../src/access-sql.js';
+import { applyAccess } from '../src/apply-access.js';
 
 const url = process.env.DATABASE_ADMIN_URL;
 if (!url) {
   console.error('apply-access: DATABASE_ADMIN_URL is not set');
   process.exit(1);
 }
-const database = decodeURIComponent(new URL(url).pathname.slice(1));
 const passwords: Partial<Record<ServiceName, string>> = {};
 for (const s of SERVICES) {
   const value = process.env[`BUKU_DB_PASSWORD_${s.toUpperCase()}`];
@@ -31,30 +33,14 @@ for (const s of SERVICES) {
   if (value) passwords[s] = value;
 }
 
-const db = createDatabaseClient({ url, applicationName: 'apply-access' });
-try {
-  const statements = accessStatements(database, passwords);
-  await db.$transaction(async (tx) => {
-    for (const sql of statements) await tx.$executeRawUnsafe(sql);
-  });
-  console.log(
-    `apply-access: ${Object.keys(passwords).length} service roles on "${database}": ${Object.keys(passwords).join(', ')}`,
-  );
-} finally {
-  await db.$disconnect();
-}
-
-const directoryUrl = process.env.DATABASE_DIRECTORY_ADMIN_URL;
-if (directoryUrl) {
-  const directoryName = decodeURIComponent(new URL(directoryUrl).pathname.slice(1));
-  const directory = createDatabaseClient({ url: directoryUrl, applicationName: 'apply-access' });
-  try {
-    const statements = directoryAccessStatements(directoryName, passwords);
-    await directory.$transaction(async (tx) => {
-      for (const sql of statements) await tx.$executeRawUnsafe(sql);
-    });
-    console.log(`apply-access: the same roles on "${directoryName}"`);
-  } finally {
-    await directory.$disconnect();
-  }
-}
+const admin = new URL(url);
+await applyAccess({
+  mainUrl: url,
+  directoryUrl: process.env.DATABASE_DIRECTORY_ADMIN_URL,
+  catalogUrl: process.env.DATABASE_CATALOG_ADMIN_URL,
+  shards: process.env.DATABASE_DIRECTORY_ADMIN_URL
+    ? { admin: { user: decodeURIComponent(admin.username), password: decodeURIComponent(admin.password) } }
+    : undefined,
+  passwords,
+  log: (line) => console.log(`apply-access: ${line}`),
+});

@@ -8,9 +8,9 @@ the end say what is done.
 
 Status: **design approved by the owner's brief (2026-10-16). Built: D1 (the directory, the shard
 registry, ID generators, the router), D2a (global lookups, shards provisioned from the registry,
-the user shard), D2b (the business shard) and D2c (reference data copied by replication, and the
-search catalog) (§15). D2d (rights per service) is next.** Website work pauses until D1–D3 are
-done (DB-000).
+the user shard), D2b (the business shard), D2c (reference data copied by replication, and the
+search catalog) and D2d (each service's rights everywhere) (§15). D2e (the v2 seed) is next.**
+Website work pauses until D1–D3 are done (DB-000).
 
 ---
 
@@ -894,17 +894,26 @@ Where every current table goes. "→" is its v2 name when it changes.
 2. **Transport:** `hostssl` only, TLS 1.3 minimum, server certificate verified by every client
    (`sslmode=verify-full`).
 3. **Authentication:** SCRAM-SHA-256; one login role per service (kept from D-092), each granted only
-   its own tables and only the verbs it uses; no service uses a superuser or owns tables; the
-   migrator role is used only by migrations.
+   its own tables and only the verbs it uses, in every kind of database: `USER_SHARD_ACCESS`,
+   `BUSINESS_SHARD_ACCESS`, `CATALOG_ACCESS` and the directory's (`DIRECTORY_ACCESS`,
+   `DIRECTORY_REFERENCE_ACCESS`) in `packages/database/src/access.ts`, applied to every shard in
+   the registry by `apply-access`. A service with nothing in a kind of database can't even connect
+   to it; reference copies, the appointment index and open shifts are written by no service; only
+   auth reads credentials. No service uses a superuser or owns tables; the migrator role is used
+   only by migrations.
 4. **Row-level security** on every business-shard table as a second wall: each transaction sets
    `buku.business_id` (`forBusiness(tx, id)`: `SET LOCAL`, so a pooled connection never carries
    it over) and policies allow only that business's rows, for reading and for writing; with
    nothing set, nothing is visible. A bug that forgets a `WHERE business_id = …` returns nothing
-   instead of another business's data. The few services that must work across businesses
-   (reminders, search, admin) are made members of `buku_all_businesses` _with inherit_: the
-   service roles don't inherit by default, and that role has no rights of its own, it only
-   opens the policies. The schema owner (migrations, upkeep) is exempt. A test fails if any
-   table holding a business's rows lacks the policies.
+   instead of another business's data. Work that is meant to span businesses (reminders, admin
+   queues, ranking statistics) uses the service's second role, `buku_svc_<name>_all`: the same
+   table rights, plus membership of `buku_all_businesses` with inherit (that role has no rights
+   of its own, it only opens the policies). The service's login role may switch to it but
+   doesn't inherit it, so it takes an explicit `forAllBusinesses(tx, service)` (`SET LOCAL ROLE`)
+   in that one transaction; a request handler never does, and a query that forgets its business
+   still sees nothing. Each service's reason is written next to it (`CROSS_BUSINESS`). The schema
+   owner (migrations, upkeep) is exempt. A test fails if any table holding a business's rows
+   lacks the policies.
 5. **Field encryption** of personal data (AES-256-GCM, keys versioned and rotatable, D-083) and
    keyed blind indexes (DB-008): a stolen backup or disk shows no emails or phone numbers.
 6. **Keys** live in a key manager (KMS), never in the database or its backups; services get them at
@@ -1089,13 +1098,13 @@ Website work resumes after D3.
 **D2, in slices.** The v2 databases are new databases next to v1's `buku`, which keeps serving the
 website and services unchanged until D3 moves each service over; nothing is migrated in place.
 
-| Slice                     | What                                                                                                                                          |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D2a** ✅ (2026-10-16)   | global lookups (DB-018); shard provisioning from the registry (DB-012, DB-023); the user shard (§9.2) with its partitions (DB-006, DB-019)    |
-| **D2b** ✅ (2026-10-17)   | every business table (§9.3), appointments partitioned by month, the rules across partitions (DB-024), row-level security by business (DB-020) |
-| **D2c** ✅ (2026-10-17)   | reference data on the directory, copied to every business shard and the catalog by logical replication (DB-015); the search catalog (DB-041)  |
-| **D2d** Rights per family | each service's rights on user and business shards and the directory's lookups, in the access map; applied by `apply-access` on every shard    |
-| **D2e** The v2 seed       | the development data set placed across shards through the router, as the services will                                                        |
+| Slice                   | What                                                                                                                                                            |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D2a** ✅ (2026-10-16) | global lookups (DB-018); shard provisioning from the registry (DB-012, DB-023); the user shard (§9.2) with its partitions (DB-006, DB-019)                      |
+| **D2b** ✅ (2026-10-17) | every business table (§9.3), appointments partitioned by month, the rules across partitions (DB-024), row-level security by business (DB-020)                   |
+| **D2c** ✅ (2026-10-17) | reference data on the directory, copied to every business shard and the catalog by logical replication (DB-015); the search catalog (DB-041)                    |
+| **D2d** ✅ (2026-10-17) | each service's rights on user and business shards, the catalog and the directory, in the access map; cross-business roles; applied by `apply-access` everywhere |
+| **D2e** The v2 seed     | the development data set placed across shards through the router, as the services will                                                                          |
 
 **D2a, as built (2026-10-16).**
 
@@ -1172,3 +1181,32 @@ website and services unchanged until D3 moves each service over; nothing is migr
   column-for-column the same as the source; the catalog's document (name, kind and group,
   services, description, city), its map point, typo-tolerant names and distance, a rename on the
   directory reaching documents by replication; nothing left behind (no stray slot after a run).
+
+**D2d, as built (2026-10-17).**
+
+- Access maps per kind of database in `src/access.ts`, drawn from v1's map (D-092):
+  `USER_SHARD_ACCESS`, `BUSINESS_SHARD_ACCESS`, `CATALOG_ACCESS`, and the reference data each
+  service edits on the directory (billing: plans, prices and billing settings; business: adds and
+  reviews kinds of business; notification: its settings). Tables nobody writes are listed with
+  why (`BUSINESS_SHARD_NOT_WRITTEN`: trigger-kept, replicated, or not built yet).
+- Cross-business roles (`CROSS_BUSINESS`, DB-020): `buku_svc_<name>_all` for eight services,
+  switched to with `forAllBusinesses`, never inherited; the outbox's policy on both shard families
+  lets each such role publish as its service.
+- `apply-access` (library `src/apply-access.ts`) applies the v1 database, the roles, the
+  directory, the catalog and every shard in the registry; the `db-access` container does it on
+  `pnpm dev`, after provisioning.
+- Tests:
+  - **Unit:** every v2 table written by someone or deliberately by no one; every table and column
+    named exists; copies and trigger-kept tables never granted; audit logs only appended; no
+    other service reading credentials; cross-business roles switched to, not inherited.
+  - **Integration, signed in as each service's real role:**
+    - booking writing its own tables for the business it set, and refused the profile, the index
+      and the copy;
+    - notification seeing every business only after switching, still read-only, its role
+      unborrowable;
+    - each service publishing only its own events, from either role;
+    - booking reading a person but not their password;
+    - notification switching a device off and nothing more;
+    - search keeping the catalog and ads reading it;
+    - only billing editing plans;
+    - services with nothing in a database unable to connect.

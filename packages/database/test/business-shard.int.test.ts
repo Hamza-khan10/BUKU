@@ -4,13 +4,16 @@ import {
   createBusinessShardClient,
   createDatabaseClient,
   createDirectoryClient,
+  forAllBusinesses,
   forBusiness,
   shardUrl,
   type BusinessShardClient,
   type Database,
   type DirectoryClient,
 } from '../src/index.js';
+import { applyShardAccess } from '../src/apply-access.js';
 import { dropDatabase, provisionShards, waitForReferenceCopy } from '../src/provision.js';
+import { asService, ensureServiceRoles, passwords } from './service-roles.js';
 import { testEnv } from './int-env.js';
 
 /**
@@ -571,5 +574,91 @@ describe('the reference data on a business shard (DB-015)', () => {
     const source = await columns(directory.$queryRawUnsafe(COLUMNS));
     expect(source.length).toBeGreaterThan(50);
     expect(await columns(owner.$queryRawUnsafe(COLUMNS))).toEqual(source);
+  });
+});
+
+describe('each service’s rights on a business shard (D2d)', () => {
+  let booking: Database;
+  let notification: Database;
+  beforeAll(async () => {
+    await ensureServiceRoles();
+    await applyShardAccess(testEnv.adminUrl(SHARD), 'business', passwords);
+    booking = asService('booking', SHARD);
+    notification = asService('notification', SHARD);
+  });
+  afterAll(async () => {
+    await booking?.$disconnect();
+    await notification?.$disconnect();
+  });
+  const inBusiness = (db: Database, businessId: bigint, sql: string) =>
+    db.$transaction(async (tx) => {
+      await forBusiness(tx, businessId);
+      return tx.$executeRawUnsafe(sql);
+    });
+
+  it('booking writes its own tables, for the business it set, and nothing else', async () => {
+    const b = await aBusiness('rights-own');
+    await inBusiness(
+      booking,
+      b.id,
+      `INSERT INTO services (id, business_id, price_minor, duration_minutes, currency, name, updated_at)
+       VALUES (${ids.next()}, ${b.id}, 50000, 30, 'PKR', 'Beard trim', now())`,
+    );
+    // The profile is the business service's; the index its trigger's; the copy replication's.
+    await expect(
+      inBusiness(booking, b.id, `UPDATE businesses SET name = 'x' WHERE id = ${b.id}`),
+    ).rejects.toThrow(/permission denied/);
+    await expect(booking.$executeRawUnsafe('DELETE FROM appointment_index')).rejects.toThrow(
+      /permission denied/,
+    );
+    await expect(booking.$executeRawUnsafe(`UPDATE reference.plans SET name = 'x'`)).rejects.toThrow(
+      /permission denied/,
+    );
+  });
+
+  it('notification sees every business only after switching to its cross-business role, and still only reads', async () => {
+    const a = await aBusiness('rights-one');
+    const c = await aBusiness('rights-two');
+    await book(a, day(20, 9));
+    await book(c, day(20, 9));
+    const count = `SELECT count(*) AS n FROM appointments WHERE business_id IN (${a.id}, ${c.id})`;
+    const plain = await notification.$queryRawUnsafe<{ n: bigint }[]>(count);
+    expect(plain[0]!.n).toBe(0n);
+    const all = await notification.$transaction(async (tx) => {
+      await forAllBusinesses(tx, 'notification');
+      return tx.$queryRawUnsafe<{ n: bigint }[]>(count);
+    });
+    expect(all[0]!.n).toBe(2n);
+    await expect(
+      notification.$transaction(async (tx) => {
+        await forAllBusinesses(tx, 'notification');
+        await tx.$executeRawUnsafe(`UPDATE appointments SET notes = 'x' WHERE business_id = ${a.id}`);
+      }),
+    ).rejects.toThrow(/permission denied/);
+    // Another service can't borrow it.
+    await expect(booking.$transaction((tx) => forAllBusinesses(tx, 'notification'))).rejects.toThrow(
+      /permission denied to set role/,
+    );
+  });
+
+  it('a service publishes only its own events, from its cross-business role too', async () => {
+    const event = (source: string) =>
+      `INSERT INTO outbox_events (id, aggregate_id, aggregate_type, source, topic, partition_key, payload)
+       VALUES (${ids.next()}, 1, 'test', '${source}', 'test.topic', '1', '{}')`;
+    await booking.$executeRawUnsafe(event('booking-service'));
+    await expect(booking.$executeRawUnsafe(event('queue-service'))).rejects.toThrow(/row-level security/);
+    await booking.$transaction(async (tx) => {
+      await forAllBusinesses(tx, 'booking');
+      await tx.$executeRawUnsafe(event('booking-service'));
+    });
+  });
+
+  it('a service with nothing here can’t connect', async () => {
+    const analytics = asService('analytics', SHARD);
+    try {
+      await expect(analytics.$queryRawUnsafe('SELECT 1')).rejects.toThrow(/CONNECT|permission denied/);
+    } finally {
+      await analytics.$disconnect();
+    }
   });
 });

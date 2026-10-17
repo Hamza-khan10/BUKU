@@ -304,3 +304,358 @@ export const NOT_WRITTEN_AT_RUN_TIME = [
   'ai_call_logs',
   'audit_logs', // appended to by everyone (inserts), changed by no one
 ] as const;
+
+// ═══════════════════════════════ DATABASE v2 (D2d) ═══════════════════════════════
+// The same rule as above, per kind of database (docs/DATABASE.md DB-010, DB-015, DB-041): each
+// service gets exactly what it needs on user shards, business shards and the catalog, and the
+// few reference tables it edits on the directory. Applied by scripts/apply-access.ts to every
+// shard in the registry. Tables outside `public` are written schema-qualified ('reference.plans').
+
+/** What any service may read about a person on a user shard: never credentials, hashes or locks. */
+const SHARD_PERSON = [
+  'id',
+  'public_id',
+  'name',
+  'role',
+  'status',
+  'timezone',
+  'locale',
+  'deleted_at',
+  'created_at',
+  'updated_at',
+  'managed_by_business_id',
+  'must_change_password',
+] as const;
+
+/** Every reference table (DB-015): copied read-only to business shards and the catalog. */
+export const REFERENCE_TABLES = [
+  'reference.currencies',
+  'reference.categories',
+  'reference.plans',
+  'reference.plan_prices',
+  'reference.billing_settings',
+  'reference.billing_channel_fees',
+  'reference.billing_cost_items',
+  'reference.notification_settings',
+] as const;
+const REFERENCE_READS: Reads = Object.fromEntries(REFERENCE_TABLES.map((t) => [t, '*']));
+
+/** Each service's own idempotency rows and outbox events (row-level security keeps them apart). */
+const CONSUMES = ['processed_events'] as const;
+const PUBLISHES = ['outbox_events'] as const;
+
+/** A user shard: one person's account and their view of everything else (§9.2). */
+export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
+  auth: {
+    owns: [
+      'users',
+      'user_mfa',
+      'oauth_accounts',
+      'refresh_tokens',
+      'push_tokens',
+      'user_business_roles',
+      ...PUBLISHES,
+      ...CONSUMES,
+    ],
+    // "Download my data": everything that is the person's.
+    reads: {
+      audit_logs: '*',
+      favourites: '*',
+      notifications: '*',
+      notification_preferences: '*',
+      whatsapp_contacts: '*',
+      user_appointments: '*',
+      user_active_tickets: '*',
+    },
+    // A new account starts with the default notification settings.
+    inserts: ['audit_logs', 'notification_preferences'],
+    // Deleting an account (D-043): what is the person's goes.
+    deletes: [
+      'favourites',
+      'notifications',
+      'notification_marks',
+      'notification_preferences',
+      'whatsapp_contacts',
+      'user_appointments',
+      'user_time_reservations',
+      'user_active_tickets',
+    ],
+  },
+  booking: {
+    // Claims the person's time before writing the appointment (DB-014), and keeps their list.
+    owns: ['user_time_reservations', 'user_appointments', ...PUBLISHES, ...CONSUMES],
+    reads: { users: SHARD_PERSON },
+    inserts: ['audit_logs'],
+  },
+  queue: {
+    // One queue at a time, across every business (DB-014).
+    owns: ['user_active_tickets', ...PUBLISHES, ...CONSUMES],
+    reads: { users: SHARD_PERSON },
+    inserts: ['audit_logs'],
+  },
+  notification: {
+    owns: [
+      'notifications',
+      'notification_marks',
+      'notification_preferences',
+      'whatsapp_contacts',
+      ...CONSUMES,
+    ],
+    reads: {
+      // Emails and texts go to verified addresses only.
+      users: [
+        ...SHARD_PERSON,
+        'email_enc',
+        'email_verified_at',
+        'phone_enc',
+        'phone_verified_at',
+        'whatsapp_opt_in_at',
+      ],
+      push_tokens: '*',
+      favourites: '*',
+      user_appointments: '*',
+      user_business_roles: '*',
+    },
+    inserts: ['audit_logs'],
+    updates: { push_tokens: ['is_active', 'last_seen_at'] },
+  },
+  business: {
+    owns: ['favourites', ...PUBLISHES, ...CONSUMES],
+    reads: { users: SHARD_PERSON },
+    inserts: ['audit_logs'],
+  },
+  billing: { owns: [...CONSUMES], reads: { users: SHARD_PERSON }, inserts: ['audit_logs'] },
+  search: { owns: [] },
+  ads: { owns: [] },
+  analytics: { owns: [] },
+};
+
+/**
+ * A business shard: everything that is one business's (§9.3). Row-level security still shows each
+ * transaction one business; `appointment_index` and `staff_open_shifts` are written only by their
+ * triggers; the reference copy only by replication.
+ */
+export const BUSINESS_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
+  auth: {
+    owns: ['business_members', ...PUBLISHES, ...CONSUMES],
+    // "Download my data" and erasing an account touch what the person did at businesses.
+    reads: {
+      ...REFERENCE_READS,
+      businesses: '*',
+      appointments: '*',
+      queue_tickets: '*',
+      queue_sessions: '*',
+      reviews: '*',
+      services: '*',
+      staff: '*',
+      subscriptions: '*',
+    },
+    inserts: ['audit_logs'],
+    // Deleting an account: the words people wrote are removed, the records stay (D-043).
+    updates: { reviews: ['comment'], appointments: ['notes'], queue_tickets: ['notes'] },
+  },
+  booking: {
+    owns: [
+      'services',
+      'service_groups',
+      'staff',
+      'staff_services',
+      'resources',
+      'availability_rules',
+      'availability_exceptions',
+      'booking_settings',
+      'appointments',
+      'appointment_events',
+      'staff_shifts',
+      'reviews',
+      ...PUBLISHES,
+      ...CONSUMES,
+    ],
+    reads: {
+      ...REFERENCE_READS,
+      appointment_index: '*',
+      staff_open_shifts: '*',
+      businesses: '*',
+      business_hours: '*',
+      business_members: '*',
+      business_search_stats: '*',
+      staff_photos: '*',
+      queue_tickets: '*',
+      subscriptions: '*',
+    },
+    inserts: ['audit_logs'],
+  },
+  queue: {
+    owns: ['queue_settings', 'queue_sessions', 'queue_tickets', ...PUBLISHES, ...CONSUMES],
+    reads: {
+      ...REFERENCE_READS,
+      businesses: '*',
+      business_hours: '*',
+      business_members: '*',
+      staff: '*',
+      staff_shifts: '*',
+      staff_open_shifts: '*',
+      appointments: '*',
+      subscriptions: '*',
+    },
+    inserts: ['audit_logs'],
+  },
+  notification: {
+    owns: [...CONSUMES],
+    reads: {
+      ...REFERENCE_READS,
+      appointments: '*',
+      businesses: '*',
+      business_hours: '*',
+      business_members: '*',
+      booking_settings: '*',
+      services: '*',
+      staff: '*',
+      staff_services: '*',
+      reviews: '*',
+      queue_tickets: '*',
+      queue_sessions: '*',
+      subscriptions: '*',
+    },
+    inserts: ['audit_logs'],
+  },
+  business: {
+    owns: [
+      'businesses',
+      'business_hours',
+      'business_photos',
+      'business_documents',
+      'business_legal_profiles',
+      'business_reports',
+      'staff_photos',
+      ...PUBLISHES,
+      ...CONSUMES,
+    ],
+    reads: {
+      ...REFERENCE_READS,
+      business_members: '*',
+      business_search_stats: '*', // reliability on the business's page (D-077)
+      staff: '*',
+      services: '*',
+      reviews: '*',
+      appointments: '*',
+      queue_tickets: '*',
+      subscriptions: '*',
+    },
+    inserts: ['audit_logs'],
+  },
+  billing: {
+    owns: ['subscriptions', 'plan_requests', 'payments', ...PUBLISHES, ...CONSUMES],
+    reads: {
+      ...REFERENCE_READS,
+      businesses: '*',
+      business_members: '*',
+      business_photos: '*',
+      services: '*',
+      staff: '*',
+      appointments: '*',
+      queue_tickets: '*',
+    },
+    inserts: ['audit_logs'],
+  },
+  search: {
+    owns: ['business_search_stats', ...CONSUMES],
+    reads: {
+      ...REFERENCE_READS,
+      businesses: '*',
+      services: '*',
+      business_hours: '*',
+      business_photos: '*',
+      availability_exceptions: '*',
+      queue_settings: '*',
+      queue_sessions: '*',
+      queue_tickets: '*',
+      appointments: '*',
+      reviews: '*',
+    },
+  },
+  ads: { owns: ['business_ads', 'ad_events', ...PUBLISHES], reads: { ...REFERENCE_READS, businesses: '*' } },
+  analytics: { owns: [] },
+};
+
+/** Business-shard tables no service writes: kept by triggers or replication, or not built yet. */
+export const BUSINESS_SHARD_NOT_WRITTEN = [
+  'appointment_index', // its trigger on appointments (DB-024)
+  'staff_open_shifts', // its trigger on staff_shifts
+  'audit_logs', // appended to by everyone, changed by no one
+  'ai_receptionist_configs',
+  'ai_call_logs',
+  'webhooks',
+  'webhook_deliveries',
+  'ai.business_knowledge_chunks',
+  ...REFERENCE_TABLES, // replication
+] as const;
+
+/** User-shard tables no service changes at run time. */
+export const USER_SHARD_NOT_WRITTEN = ['audit_logs'] as const;
+
+/**
+ * The catalog (DB-041): the search service keeps it from the business shards' events; ads reads
+ * which ads may run where. Nobody else.
+ */
+export const CATALOG_ACCESS: Readonly<Record<ServiceName, Access>> = {
+  auth: { owns: [] },
+  booking: { owns: [] },
+  queue: { owns: [] },
+  notification: { owns: [] },
+  business: { owns: [] },
+  billing: { owns: [] },
+  search: {
+    owns: [
+      'catalog.businesses',
+      'catalog.services',
+      'catalog.hours',
+      'catalog.closures',
+      'catalog.queues',
+      'catalog.ads',
+    ],
+    reads: REFERENCE_READS,
+  },
+  ads: { owns: [], reads: { ...REFERENCE_READS, 'catalog.ads': '*', 'catalog.businesses': '*' } },
+  analytics: { owns: [] },
+};
+
+/**
+ * Reference data each service edits on the directory (DB-015), besides what every service may do
+ * there (DIRECTORY_ACCESS). Every change reaches the copies by replication.
+ */
+export const DIRECTORY_REFERENCE_ACCESS: Readonly<Partial<Record<ServiceName, Access>>> = {
+  billing: {
+    owns: [
+      'reference.plans',
+      'reference.plan_prices',
+      'reference.billing_settings',
+      'reference.billing_channel_fees',
+      'reference.billing_cost_items',
+    ],
+  },
+  // Owners add kinds of business BUKU doesn't list yet (D-098); admins review them.
+  business: { owns: [], inserts: ['reference.categories'], updates: { 'reference.categories': '*' } },
+  notification: { owns: [], updates: { 'reference.notification_settings': '*' } },
+};
+
+/**
+ * Services that also work across businesses on business shards, and why (DB-020). Each gets a
+ * second role, `buku_svc_<name>_all`, with the same rights plus membership of
+ * buku_all_businesses; its login role may switch to it (SET LOCAL ROLE, `forAllBusinesses`) but
+ * doesn't inherit it, so a request handler that forgets its business still sees nothing, and only
+ * a job that says so sees every business, for that one transaction.
+ */
+export const CROSS_BUSINESS: Readonly<Partial<Record<ServiceName, string>>> = {
+  auth: 'erasing an account touches every business the person used',
+  booking: 'sweeping appointments nobody confirmed or attended, across businesses',
+  queue: 'closing yesterday’s queues everywhere',
+  notification: 'reminders and suggestions for every business’s appointments',
+  business: 'admins reviewing new businesses, documents and reports',
+  billing: 'renewals, trials ending, and admins’ plan requests',
+  search: 'ranking statistics and rebuilding the catalog',
+  ads: 'admins approving ads, and their budgets',
+};
+
+/** The role a service switches to for work across businesses. */
+export const allBusinessesRoleOf = (service: ServiceName) => `buku_svc_${service}_all`;

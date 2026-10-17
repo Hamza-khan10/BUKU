@@ -92,6 +92,20 @@ export async function forBusiness(
 }
 
 /**
+ * Open a transaction to every business (DB-020), for work that is meant to (reminders, admin
+ * queues, ranking statistics): switches to the service's cross-business role,
+ * buku_svc_<service>_all, until the transaction ends. Only services listed in CROSS_BUSINESS have
+ * one; a request handler never calls this, so a query that forgets its business still sees nothing.
+ */
+export async function forAllBusinesses(
+  tx: { $executeRawUnsafe: (query: string) => Promise<number> },
+  service: string,
+): Promise<void> {
+  if (!/^[a-z]+$/.test(service)) throw new Error(`not a service name: ${service}`);
+  await tx.$executeRawUnsafe(`SET LOCAL ROLE "buku_svc_${service}_all"`);
+}
+
+/**
  * One connection pool per shard database, opened on first use: `forId` finds a row's shard
  * through the router; `forShard` when it is already known (a new row just placed).
  */

@@ -27,6 +27,7 @@ export {
   createBusinessShardClient,
   createCatalogClient,
   createUserShardClient,
+  forAllBusinesses,
   forBusiness,
   ShardClients,
   shardUrl,

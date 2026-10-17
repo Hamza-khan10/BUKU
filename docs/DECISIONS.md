@@ -1006,3 +1006,12 @@ the disk. Category names are refused at the database if they carry code, emoji o
 characters, in any script. The catalog database holds every business as search and discovery see
 them, with v1's search document kept by triggers, so v1's search queries carry over (DB-041); the
 search service fills it from events in D3.
+
+**D-110 · Each service's rights, in every database v2 has (D2d).** v1's rule (D-092: each service
+signs in as its own role and gets exactly the tables and verbs it needs) now covers user shards,
+business shards, the catalog and the directory's reference data, one map per kind of database,
+applied to every shard in the registry. A service with nothing in a kind of database can't
+connect to it; reference copies and trigger-kept tables are written by no one; only auth reads
+credentials. Work across businesses no longer weakens row-level security: it goes through a
+second role per service that the service must switch to, in that one transaction, so a request
+handler that forgets its business still sees nothing (DATABASE.md DB-020).

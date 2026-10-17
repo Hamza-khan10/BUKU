@@ -29,6 +29,12 @@ export const testEnv = {
   migrator: { user: 'buku_migrator', password: required('BUKU_MIGRATOR_PASSWORD') },
   app: { user: 'buku_app', password: required('BUKU_APP_PASSWORD') },
   replicator: { user: 'buku_replicator', password: required('BUKU_REPLICATOR_PASSWORD') },
+  /** Each service's own database password (D-092), as `pnpm bootstrap` made them. */
+  servicePasswords: Object.fromEntries(
+    ['auth', 'booking', 'queue', 'notification', 'business', 'billing', 'search', 'ads', 'analytics'].map(
+      (s) => [s, required(`BUKU_DB_PASSWORD_${s.toUpperCase()}`)],
+    ),
+  ),
   /** The administrator on one database of the test cluster. */
   adminUrl: (database: string) =>
     `postgresql://buku_admin:${encodeURIComponent(required('POSTGRES_SUPERUSER_PASSWORD'))}@${host}:${port}/${database}`,
