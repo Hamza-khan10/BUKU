@@ -8,8 +8,9 @@ the end say what is done.
 
 Status: **design approved by the owner's brief (2026-10-16). Built: D1 (the directory, the shard
 registry, ID generators, the router), D2a (global lookups, shards provisioned from the registry,
-the user shard) and D2b (the business shard) (§15). D2c (reference data and the search catalog) is
-next.** Website work pauses until D1–D3 are done (DB-000).
+the user shard), D2b (the business shard) and D2c (reference data copied by replication, and the
+search catalog) (§15). D2d (rights per service) is next.** Website work pauses until D1–D3 are
+done (DB-000).
 
 ---
 
@@ -284,9 +285,36 @@ operators (the owner role, through reviewed tooling), and every change lands in
 
 ### DB-015 · Reference data is global and copied, not sharded
 
-Categories, plans and prices, billing and notification settings, cities: a few thousand rows
-that every shard reads. They live on the directory and are copied to every shard (read-only there)
-by logical replication, so joins with them stay local.
+Currencies, kinds of business, plans and prices, billing and notification settings: a few thousand
+rows that many queries join with. They live on the directory (schema `reference`) and are copied,
+read-only, to every business shard and to the catalog (DB-041) by PostgreSQL **logical
+replication**, so those joins stay local. User shards don't keep a copy: nothing there joins with
+it yet, and every copy costs a replication slot (adding one is a flag in `SHARD_FAMILIES`).
+
+- **The source:** `reference.*` on the directory, seeded by migration with v1's final data and
+  fixed IDs (127 kinds of business, 8 plans, 6 prices, the billing and notification settings), plus
+  38 currencies with their ISO 4217 minor units. Later rows (an owner's suggested kind, D-098) get
+  snowflake IDs. Admins change it there, with every rule in a CHECK.
+- **Published** as `buku_reference`. A new reference table is added to it in its own migration (a
+  test fails otherwise), and the same columns are added to the copies (a test compares the columns
+  of every copy with the source).
+- **Copied by** `buku_replicator` (`LOGIN REPLICATION`, reads only the published tables;
+  `BUKU_REPLICATOR_PASSWORD`). Provisioning makes each copy's replication slot on the directory
+  first and then the subscription (that also works on one server, where letting `CREATE
+SUBSCRIPTION` make the slot would wait on itself); on later runs it refreshes the subscription
+  (new tables, a rotated password).
+- **A copy is never written by anyone** but replication: no grants beyond `SELECT`, no foreign keys
+  pointing at it from shard rows (a replicated delete would not wait for them), no checks (the
+  source holds those). A change on the directory reaches every copy within a second or two.
+- **Dropping a database drops its copy first** (`dropDatabase`: subscription, then slot). A slot
+  nobody reads keeps every WAL file on the directory from then on, until its disk fills; slots
+  are monitored in D4.
+- Triggers that must react to a replicated change (the catalog's search documents when a kind is
+  renamed) are marked `ENABLE ALWAYS`: replication skips ordinary triggers.
+
+A kind of business is shared by everyone, so its name is held to what can't harm anyone even if
+it arrives some other way than the API: no control or invisible characters, no characters used in
+markup or code, no emoji or pictographs, no stray spaces, at least two letters, any script.
 
 ### DB-017 · Built to be changed: what will change is a row, not code
 
@@ -884,6 +912,9 @@ Where every current table goes. "→" is its v2 name when it changes.
 7. **Timeouts per role** (`statement_timeout`, `idle_in_transaction_session_timeout`, `lock_timeout`)
    so one bad query can't hold a shard.
 8. **Encryption at rest** of every disk and every backup (DB-033).
+9. **Replication's own credential:** each copy's subscription stores the replicator's connection,
+   password included, readable only by superusers; the replicator can read the published reference
+   tables and nothing else.
 
 ### DB-021 · People who touch the database
 
@@ -982,8 +1013,14 @@ v1 does all of it in Postgres (full-text search, trigram name matching, PostGIS)
 **Decision:** one **catalog** database: a row per business with what discovery needs (name,
 kind, city, location, rating, opening state, ranking statistics, running ads), kept up to date
 from the business shards' events. Search keeps v1's proven queries against it. The business shard
-keeps its own location for its own distance checks (the queue's join radius, D-038). Built in
-D2c with the reference data, which it joins.
+keeps its own location for its own distance checks (the queue's join radius, D-038).
+
+Built in D2c (`buku_catalog`, `prisma/catalog`): `catalog.businesses` (with v1's search document,
+name A, kind and its group B, active services B, description C, city D, and its map point, both
+kept by triggers; GIN, trigram and GiST indexes), `catalog.services`, `hours`, `closures`,
+`queues` (today's), `ads` (those that may run), and a reference copy (DB-015). Every row carries
+the `version` of the newest event applied, so a late event never overwrites a newer one. The
+search service fills it from the business shards' events in D3.
 
 **Why not Elasticsearch now?** It is the next step if one Postgres catalog stops being enough
 (tens of millions of businesses, or heavy relevance tuning). Until then a catalog of a few
@@ -1001,10 +1038,14 @@ million rows is fast in Postgres, exact, and has one less system to run.
   saturation, partition coverage (a missing future partition is an alert).
 - **Migrations:** expand → migrate → contract; every shard migrated by the same migration, tracked
   per shard; large indexes `CONCURRENTLY`.
-- **Databases and admin-only extensions** (the directory, `pg_cron`, `pgaudit`,
-  `pg_stat_statements`, also in `template1` so every new shard database has them) are created by
+- **Databases and admin-only extensions** (the directory, the catalog, `pg_cron`, `pgaudit`,
+  `pg_stat_statements`, `pg_partman` in `template1` so every new shard database has them), and the
+  roles `buku_all_businesses` and `buku_replicator`, are created by
   `scripts/prepare-databases.ts`, idempotent, before migrations: `pnpm db:prepare`, the `db-prepare`
   container, and CI.
+- **Logical replication** needs `wal_level = logical`, with room for a slot and a worker per copy
+  (`max_replication_slots`, `max_wal_senders`, `max_logical_replication_workers`,
+  `max_worker_processes`; set in `docker-compose.dev.yml`).
 
 ---
 
@@ -1048,13 +1089,13 @@ Website work resumes after D3.
 **D2, in slices.** The v2 databases are new databases next to v1's `buku`, which keeps serving the
 website and services unchanged until D3 moves each service over; nothing is migrated in place.
 
-| Slice                     | What                                                                                                                                                                          |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D2a** ✅ (2026-10-16)   | global lookups (DB-018); shard provisioning from the registry (DB-012, DB-023); the user shard (§9.2) with its partitions (DB-006, DB-019)                                    |
-| **D2b** ✅ (2026-10-17)   | every business table (§9.3), appointments partitioned by month, the rules across partitions (DB-024), row-level security by business (DB-020)                                 |
-| **D2c** Reference data    | categories, plans, prices, billing and notification settings, currencies on the directory, copied to every shard by logical replication (DB-015); the search catalog (DB-041) |
-| **D2d** Rights per family | each service's rights on user and business shards and the directory's lookups, in the access map; applied by `apply-access` on every shard                                    |
-| **D2e** The v2 seed       | the development data set placed across shards through the router, as the services will                                                                                        |
+| Slice                     | What                                                                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D2a** ✅ (2026-10-16)   | global lookups (DB-018); shard provisioning from the registry (DB-012, DB-023); the user shard (§9.2) with its partitions (DB-006, DB-019)    |
+| **D2b** ✅ (2026-10-17)   | every business table (§9.3), appointments partitioned by month, the rules across partitions (DB-024), row-level security by business (DB-020) |
+| **D2c** ✅ (2026-10-17)   | reference data on the directory, copied to every business shard and the catalog by logical replication (DB-015); the search catalog (DB-041)  |
+| **D2d** Rights per family | each service's rights on user and business shards and the directory's lookups, in the access map; applied by `apply-access` on every shard    |
+| **D2e** The v2 seed       | the development data set placed across shards through the router, as the services will                                                        |
 
 **D2a, as built (2026-10-16).**
 
@@ -1111,3 +1152,23 @@ website and services unchanged until D3 moves each service over; nothing is migr
   - malformed appointments refused;
   - one open shift; queue numbers and one live ticket; ratings and location;
   - a webhook never sent one event twice; one trial and one open plan request.
+
+**D2c, as built (2026-10-17).**
+
+- `reference.*` on the directory (DB-015), seeded with v1's final reference data and fixed IDs,
+  and 38 currencies; published as `buku_reference`. Category names held to safe characters by
+  CHECK (any script; no code, emoji or invisible characters).
+- Copies on every business shard (`reference` schema, read-only) and in the catalog, made and
+  refreshed by provisioning (`ensureReferenceCopy`, `waitForReferenceCopy`), removed safely
+  (`dropReferenceCopy`, `dropDatabase`). `buku_replicator` and `BUKU_REPLICATOR_PASSWORD`;
+  Postgres runs with `wal_level = logical`.
+- The catalog database (`buku_catalog`, `prisma/catalog`): businesses with v1's search document
+  and map point kept by triggers, their active services, hours, closures, today's queue, running
+  ads; a reference copy whose renames reach the documents through replication. Its own rows are
+  filled from the business shards' events in D3.
+- Tests: the reference data as v1 left it; category names refused with code, emoji or invisible
+  characters and accepted in Urdu and Hindi; every reference table published; the copy on a
+  business shard arriving, following an insert, rename and delete on the directory, read-only, and
+  column-for-column the same as the source; the catalog's document (name, kind and group,
+  services, description, city), its map point, typo-tolerant names and distance, a rename on the
+  directory reaching documents by replication; nothing left behind (no stray slot after a run).

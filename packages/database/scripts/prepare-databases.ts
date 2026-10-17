@@ -8,7 +8,11 @@
  *
  * On the host (`pnpm db:prepare`) the URL is assembled from the repo-root .env instead.
  *
- * - The directory database (the shard registry, DB-013) and its test twin.
+ * - The directory database (the shard registry, DB-013), the catalog (search and discovery,
+ *   DB-041), and their test twins.
+ * - `buku_replicator` (BUKU_REPLICATOR_PASSWORD): copies reference data from the directory to
+ *   every business shard and the catalog (logical replication, DB-015). It can replicate and
+ *   read the published tables, nothing else.
  * - pg_cron in the `postgres` database (scheduled jobs run from there into the others).
  * - pg_stat_statements (query costs) and pgaudit (schema and role changes) in every database, and
  *   in template1 so every database made later (a new shard) has them too.
@@ -37,9 +41,16 @@ if (!url) {
   console.error('prepare-databases: DATABASE_ADMIN_URL is not set');
   process.exit(1);
 }
+const replicatorPassword = process.env.BUKU_REPLICATOR_PASSWORD;
+if (!replicatorPassword || !/^[A-Za-z0-9_-]{16,128}$/.test(replicatorPassword)) {
+  console.error(
+    'prepare-databases: BUKU_REPLICATOR_PASSWORD must be 16-128 letters, digits, _ or - (run pnpm bootstrap)',
+  );
+  process.exit(1);
+}
 
 /** Databases that must exist, besides the main one created with the server. */
-const DATABASES = ['buku_directory', 'buku_directory_test'] as const;
+const DATABASES = ['buku_directory', 'buku_directory_test', 'buku_catalog', 'buku_catalog_test'] as const;
 /** Every database that gets the monitoring and audit extensions. */
 const MONITORED = ['template1', 'buku', 'buku_test', ...DATABASES] as const;
 
@@ -70,6 +81,16 @@ try {
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'buku_all_businesses') THEN
       CREATE ROLE buku_all_businesses NOLOGIN NOINHERIT;
     END IF; END $$`);
+  await admin.$executeRawUnsafe(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'buku_replicator') THEN
+      CREATE ROLE buku_replicator LOGIN REPLICATION NOINHERIT;
+    END IF; END $$`);
+  // The password was checked above: letters, digits, _ and - only.
+  await admin.$executeRawUnsafe(
+    `ALTER ROLE buku_replicator WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS CONNECTION LIMIT 100 PASSWORD '${replicatorPassword}'`,
+  );
+  for (const directory of ['buku_directory', 'buku_directory_test'])
+    await admin.$executeRawUnsafe(`GRANT CONNECT ON DATABASE "${directory}" TO buku_replicator`);
 } finally {
   await admin.$disconnect();
 }

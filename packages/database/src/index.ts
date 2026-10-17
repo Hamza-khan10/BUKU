@@ -22,14 +22,17 @@ export {
 } from './directory.js';
 export {
   BusinessShard,
+  Catalog,
   clusterUrl,
   createBusinessShardClient,
+  createCatalogClient,
   createUserShardClient,
   forBusiness,
   ShardClients,
   shardUrl,
   UserShard,
   type BusinessShardClient,
+  type CatalogClient,
   type Credentials,
   type UserShardClient,
 } from './shards.js';

@@ -409,6 +409,65 @@ describe('global handles (DB-018)', () => {
   });
 });
 
+describe('reference data (DB-015)', () => {
+  it('starts as v1 left it: kinds of business, plans in minor units, charging off', async () => {
+    const own = { suggestedById: null, id: { lte: 127n } };
+    expect(await owner.category.count({ where: { ...own, depth: 0 } })).toBe(11);
+    expect(await owner.category.count({ where: { ...own, depth: 1 } })).toBe(116);
+    expect(await owner.category.findUniqueOrThrow({ where: { slug: 'barbershop' } })).toMatchObject({
+      parentId: 1n,
+    });
+    const essential = await owner.plan.findUniqueOrThrow({
+      where: { code: 'business_essential' },
+      include: { prices: true },
+    });
+    expect(essential.prices.map((p) => [p.channel, p.currency, p.amountMinor])).toEqual([
+      ['web', 'USD', 2499n],
+    ]);
+    const settings = await owner.billingSettings.findMany({ orderBy: { audience: 'asc' } });
+    expect(settings.map((b) => [b.audience, b.enabled])).toEqual([
+      ['business', false],
+      ['user', false],
+    ]);
+    expect(await owner.currency.findUniqueOrThrow({ where: { code: 'KWD' } })).toMatchObject({ exponent: 3 });
+  });
+
+  it('a kind’s name can’t carry code, emoji or invisible characters; any script is welcome', async () => {
+    const add = (name: string) =>
+      owner.category.create({
+        data: {
+          id: BigInt(Math.floor(Math.random() * 1e12)) + 10_000_000n,
+          parentId: 1n,
+          depth: 1,
+          slug: `t-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+          name,
+        },
+      });
+    for (const bad of [
+      '<script>x</script>',
+      'Hair 💇',
+      'Nails\u200B',
+      ' Spaced ',
+      'Two  spaces',
+      'X',
+      'a/b',
+      'Cut; DROP TABLE',
+    ])
+      await expect(add(bad), bad).rejects.toThrow();
+    for (const good of ['Hair & Beauty', 'Barber’s Den', 'نائی کی دکان', 'नाई की दुकान', 'Café-Bar'])
+      await add(good);
+  });
+
+  it('every reference table is published to the copies', async () => {
+    const unpublished = await owner.$queryRaw<{ t: string }[]>`
+      SELECT c.relname AS t FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'reference' AND c.relkind = 'r'
+        AND NOT EXISTS (SELECT 1 FROM pg_publication_tables p
+                        WHERE p.pubname = 'buku_reference' AND p.schemaname = 'reference' AND p.tablename = c.relname)`;
+    expect(unpublished).toEqual([]);
+  });
+});
+
 describe('ID generator leases (DB-002)', () => {
   // Region 7: no other test leases there.
   const lease = (instance: string, ttl = 30) =>
