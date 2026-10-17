@@ -114,6 +114,20 @@ export const databaseEnv = z.object({
   DATABASE_POOL_SIZE: z.coerce.number().int().min(1).max(50).default(10),
 });
 
+/**
+ * Database v2 (docs/DATABASE.md §6): the directory and the catalog, signed in as the service's own
+ * role (the credentials of DATABASE_URL; each URL defaults to DATABASE_URL's server with the
+ * database's name). Shards are reached through the cluster addresses the registry names
+ * (BUKU_DB_CLUSTER_*), read from the environment as they are needed.
+ */
+export const databaseV2Env = z.object({
+  DATABASE_DIRECTORY_URL: z.url({ protocol: /^postgres(ql)?$/ }).optional(),
+  DATABASE_CATALOG_URL: z.url({ protocol: /^postgres(ql)?$/ }).optional(),
+  /** The region this instance makes IDs in (DB-002): 0 = Pakistan. */
+  BUKU_REGION: z.coerce.number().int().min(0).max(7).default(0),
+  DATABASE_SHARD_POOL_SIZE: z.coerce.number().int().min(1).max(50).default(5),
+});
+
 export const redisEnv = z.object({
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
 });

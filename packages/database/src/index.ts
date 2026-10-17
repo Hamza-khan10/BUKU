@@ -21,6 +21,16 @@ export {
   type ShardInfo,
 } from './directory.js';
 export {
+  businessRoleOnShard,
+  DataPlane,
+  recordShardAudit,
+  sameServer,
+  type BusinessTx,
+  type DataPlaneOptions,
+  type ShardAuditEntry,
+  type UserTx,
+} from './data-plane.js';
+export {
   BusinessShard,
   Catalog,
   clusterUrl,
