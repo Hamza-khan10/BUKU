@@ -259,6 +259,17 @@ export class ShardRouter {
   }
 
   /**
+   * Every shard of a family that holds rows (not 'ready'), in every region, as of a fresh read of
+   * the registry: for work that visits each one (a sweep across businesses).
+   */
+  async shards(entity: string): Promise<ShardInfo[]> {
+    await this.#checkFromNow();
+    return [...this.#ranges.entries()]
+      .filter(([key]) => key.startsWith(`${entity}:`))
+      .flatMap(([, list]) => list);
+  }
+
+  /**
    * The shard holding this ID, from the cached copy, when the copy is certain; null when it might
    * be out of date for this ID (then use `locate`).
    */

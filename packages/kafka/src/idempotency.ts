@@ -1,4 +1,5 @@
-import type { Database, Transaction } from '@buku/database';
+import type { Database, Transaction, UserTx } from '@buku/database';
+import type { EventEnvelope } from './envelope.js';
 
 /**
  * Run `fn` at most once per (consumer, eventId), atomically with its DB writes.
@@ -27,4 +28,21 @@ export async function processOnce(
     await fn(tx);
     return true;
   });
+}
+
+/**
+ * The same on a database v2 shard (D3): the ledger there is partitioned by the event's own time
+ * (DB-019), so a redelivery on another day is still caught. Runs inside the caller's transaction
+ * on the shard the side effect lands on; false when the event was already handled.
+ */
+export async function processOnceOnShard(
+  tx: Pick<UserTx, '$executeRaw'>,
+  consumer: string,
+  event: Pick<EventEnvelope, 'id' | 'occurredAt'>,
+): Promise<boolean> {
+  const inserted = await tx.$executeRaw`
+    INSERT INTO processed_events (consumer, event_id, occurred_at)
+    VALUES (${consumer}, ${event.id}, ${new Date(event.occurredAt)})
+    ON CONFLICT DO NOTHING`;
+  return inserted > 0;
 }

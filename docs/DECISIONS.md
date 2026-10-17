@@ -1025,3 +1025,12 @@ row passes the same rights and row-level security as real traffic, and it checks
 The byte formats it uses convert from v1's exactly (a blind index by truncation, a ciphertext
 without the key), so D3 can move existing data without reading anyone's email. This completes D2;
 D3 moves the services onto v2.
+
+**D-112 · Services move to database v2 together, on an integration branch (D3).** The services read
+each other's data (booking reads businesses, notification reads appointments), so moving them one
+at a time onto `main` would leave the app half on each database and serving stale data. Each
+service's move is its own reviewed pull request into `feat/db-v2-services`, checked by CI and
+CodeQL there; when all of them are on v2 and the whole stack's tests pass, one pull request brings
+it to `main`. `main` and the website keep working on v1 until then. There is no production data,
+so v2 starts from its own seed. APIs show public IDs for people, businesses and appointments and
+row IDs only inside a business (DATABASE.md DB-042).

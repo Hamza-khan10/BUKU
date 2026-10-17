@@ -116,6 +116,9 @@ x-service-env: &service-env
   JWT_AUDIENCE: ${JWT_AUDIENCE:-buku-api}
   DATABASE_URL: postgresql://buku_app:${BUKU_APP_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku
   DATABASE_POOL_SIZE: '5'
+  # Database v2 (D3): shards are reached through the cluster addresses the registry names; the
+  # directory and catalog default to DATABASE_URL's server, with the service's own role.
+  BUKU_DB_CLUSTER_LOCAL_1: postgresql://postgres:5432
 
 # Object storage: for services that store files (business, auth) or link to them (search).
 x-s3-env: &s3-env

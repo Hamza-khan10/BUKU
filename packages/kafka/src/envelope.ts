@@ -17,7 +17,9 @@ import { isTopic, type Topic } from './topics.js';
  *   data          the payload; never secrets, and PII only when essential
  */
 export const EventEnvelopeSchema = z.object({
-  id: z.uuid(),
+  // A database v2 event's ID is a 64-bit snowflake (DB-002), as a decimal string; v1's are UUIDs
+  // until the last service moves (D3).
+  id: z.union([z.uuid(), z.string().regex(/^[1-9][0-9]{0,18}$/)]),
   type: z.string().refine(isTopic, 'unknown topic'),
   version: z.number().int().min(1),
   source: z.string().min(1).max(100),
@@ -46,11 +48,13 @@ export interface CreateEventInput<T> {
   version?: number;
   correlationId?: string;
   occurredAt?: Date;
+  /** Database v2: the event's own snowflake ID (DataPlane.id()), as a decimal string. */
+  id?: string;
 }
 
 export function createEvent<T>(input: CreateEventInput<T>): EventEnvelope<T> {
   return {
-    id: randomUUID(),
+    id: input.id ?? randomUUID(),
     type: input.type,
     version: input.version ?? 1,
     source: input.source,

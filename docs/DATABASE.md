@@ -6,7 +6,7 @@ compromised service. Every decision below has a number (DB-…) and a reason. Wh
 and the code disagree, this document is the plan and the code is the state; the build phases at
 the end say what is done.
 
-Status: **design approved by the owner's brief (2026-10-16). D1 and D2 are built (§15): the
+Status: **design approved by the owner's brief (2026-10-16). D1 and D2 are built, D3 is under way (§15): the
 directory, the shard registry, ID generators and the router; global lookups; user and business
 shards provisioned from the registry; reference data copied by replication; the search catalog;
 each service's rights everywhere; and the development data placed across shards the way the
@@ -150,6 +150,32 @@ generator is far beyond need.
 **Not chosen:** keeping UUIDv7 (twice the size, awkward ranges); a central sequence per table
 (a single point of failure, and block allocation adds complexity for nothing the snowflake doesn't
 already give).
+
+### DB-042 · What APIs show: public IDs for what people share, row IDs only inside a business
+
+**Decision:**
+
+- **People, businesses and appointments** appear in URLs, API responses and receipts by their
+  **public ID** (12 Base62 characters, DB-001), never their internal ID. A business is also
+  reached by its slug. Each is found again through a global handle (DB-018) or, for an
+  appointment, through its business or the person's own list.
+- **Rows that only exist inside a business** (its services, team, resources, hours, photos,
+  documents, queue tickets) appear by their **64-bit ID as a decimal string**, always under their
+  business (`/businesses/<public id>/services/<id>`), behind authorization and row-level
+  security.
+- **A person's sign-in token** carries their own internal ID (as a decimal string) in `sub`,
+  plus whether they must still change a temporary password (D-034), which lives on their shard
+  and is checked by services without another lookup.
+- **Events** between services carry internal IDs (an internal channel).
+- Validation: `zPublicId` and `zId` in `@buku/common` (a decimal string becomes a bigint, anything
+  else is refused before it reaches a query); JSON never carries a 64-bit number (it would lose
+  precision).
+
+**Why:** public IDs are random, so the things people share and link to can't be counted or
+guessed (DB-001). A row inside a business is only ever reached by someone already allowed into
+that business, so its snowflake reveals nothing they can't see, and giving every child row a
+second, random ID would cost an index per table for no protection. Snowflakes do show when a row
+was made, which is visible on the page anyway.
 
 ---
 
@@ -1237,3 +1263,41 @@ website and services unchanged until D3 moves each service over; nothing is migr
 
 **D2 is complete.** v1's `buku` database still serves the website and services unchanged; D3 moves
 each service onto v2 through the router, then retires v1.
+
+**D3, in slices** (on the integration branch `feat/db-v2-services`, D-112). Services read each
+other's data, so moving them one by one straight onto `main` would leave the running app half on
+v1 and half on v2. Each slice is its own pull request into the integration branch, with CI and
+CodeQL; when every service is on v2 and the stack's tests pass, one pull request brings it to
+`main`, and the website resumes. There is no production data, so nothing is copied from v1: v2
+starts from its own seed (D2e).
+
+| Slice                          | What                                                                                                                                                                                                                         |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D3a** Foundation             | API identifiers (DB-042); the services' data plane (`DataPlane`: router, leased IDs, shard pools, `inBusiness`, `acrossBusinesses`, handles); v2 events (shard outbox, relays per shard, dedupe by the event's time); config |
+| **D3b** auth                   | sign-up and sign-in, sessions, two-step sign-in, Google, employee logins, account erasure, data export, admin roles                                                                                                          |
+| **D3c** business               | profiles, photos, documents, legal profiles, reports, favourites, members, suggested kinds of business                                                                                                                       |
+| **D3d** booking                | services, team, schedules, appointments (the customer's time first), check-in, shifts, reviews                                                                                                                               |
+| **D3e** queue                  | sessions, tickets, one queue at a time                                                                                                                                                                                       |
+| **D3f** notification           | preferences, messages, marks, WhatsApp, push; reminders and suggestions across business shards                                                                                                                               |
+| **D3g** billing                | plans on the directory, subscriptions and requests on business shards, store handles                                                                                                                                         |
+| **D3h** search, ads, analytics | the catalog kept from events; v1's search queries against it; ads from the catalog                                                                                                                                           |
+| **D3i** apps                   | the website and admin app on public IDs; the whole stack's acceptance and browser tests                                                                                                                                      |
+| **D3j** retire v1              | services stop using the v1 database; it leaves the stack                                                                                                                                                                     |
+
+**D3a, as built (2026-10-17).**
+
+- DB-042 decided; `zId` and `zPublicId` in `@buku/common`; `databaseV2Env` (the directory and
+  catalog URLs default to `DATABASE_URL`'s server, signed in as the service's role).
+- `DataPlane` (`@buku/database`): started per service with its own credentials; `id()`,
+  `user(id)`, `placeUser`, `placeBusiness`, `inBusiness` (one business, DB-020),
+  `acrossBusinesses` (every business shard through the service's cross-business role, only for
+  services that have one), `acrossUsers`, handles; `recordShardAudit`, `businessRoleOnShard`;
+  `ShardRouter.shards(family)`.
+- `@buku/kafka`: event IDs may be snowflakes; `enqueueShardEvent`; the relay publishes v2 outboxes
+  (`shard: true`), one per shard with `ShardOutboxRelays` (new shards picked up within a minute);
+  `processOnceOnShard` (deduped by the event's own time).
+- Every service's container knows the local cluster's address; CodeQL also scans pull requests into
+  the integration branch.
+- Tests: the ID validators; a service's plane scoping work to one business and sweeping every
+  shard through its cross-business role (refused for a service without one); an event written with
+  its change, published from the shard with v2 IDs, and handled once.
