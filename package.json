@@ -39,6 +39,7 @@
     "db:migrate:dev": "pnpm --filter @buku/database migrate:dev",
     "db:migrate:deploy": "pnpm --filter @buku/database migrate:deploy",
     "db:seed": "pnpm --filter @buku/database seed",
+    "db:seed:v2": "pnpm --filter @buku/database seed:v2",
     "db:studio": "pnpm --filter @buku/database studio",
     "kafka:topics": "pnpm --filter @buku/kafka topics:sync",
     "changeset": "changeset",

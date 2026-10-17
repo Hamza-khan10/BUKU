@@ -1015,3 +1015,13 @@ connect to it; reference copies and trigger-kept tables are written by no one; o
 credentials. Work across businesses no longer weakens row-level security: it goes through a
 second role per service that the service must switch to, in that one transaction, so a request
 handler that forgets its business still sees nothing (DATABASE.md DB-020).
+
+**D-111 · Database v2 has its development data, written the way the services will (D2e).** The same
+world as the v1 seed (20 businesses in four cities, 71 people, 200 appointments, reviews, queues) is
+placed across shards by the registry, with emails and slugs claimed as global handles, contact
+details encrypted as bytes, each booking claiming the customer's time before the business's
+appointment is written, and the catalog filled for search. It signs in as the tools' role, so every
+row passes the same rights and row-level security as real traffic, and it checks itself at the end.
+The byte formats it uses convert from v1's exactly (a blind index by truncation, a ciphertext
+without the key), so D3 can move existing data without reading anyone's email. This completes D2;
+D3 moves the services onto v2.

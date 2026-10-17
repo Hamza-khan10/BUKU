@@ -492,10 +492,23 @@ services:
     <<: [*oneshot, *node-image, *node-hardening]
     networks: [migrate]
     working_dir: /app/packages/database
-    command: ['/app/node_modules/.bin/tsx', 'scripts/provision-shards.ts']
+    # Then the database v2 development data, placed the way the services will (D2e).
+    command:
+      [
+        'sh',
+        '-c',
+        '/app/node_modules/.bin/tsx scripts/provision-shards.ts && /app/node_modules/.bin/tsx prisma/seed-v2.ts',
+      ]
     environment:
       NODE_ENV: development
       DATABASE_DIRECTORY_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_directory
+      # The seed signs in as the tools' role, so it passes the same rights and policies as traffic.
+      DATABASE_DIRECTORY_URL: postgresql://buku_app:${BUKU_APP_PASSWORD}@postgres:5432/buku_directory
+      DATABASE_CATALOG_URL: postgresql://buku_app:${BUKU_APP_PASSWORD}@postgres:5432/buku_catalog
+      BUKU_APP_PASSWORD: ${BUKU_APP_PASSWORD:?run pnpm bootstrap}
+      PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?run pnpm bootstrap}
+      PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
+      PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY:?run pnpm bootstrap}
       POSTGRES_SUPERUSER_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}
       BUKU_MIGRATOR_PASSWORD: ${BUKU_MIGRATOR_PASSWORD:?run pnpm bootstrap}
       # The local cluster's address, as the registry names it (host and port only).

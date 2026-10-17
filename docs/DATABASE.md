@@ -6,11 +6,12 @@ compromised service. Every decision below has a number (DB-…) and a reason. Wh
 and the code disagree, this document is the plan and the code is the state; the build phases at
 the end say what is done.
 
-Status: **design approved by the owner's brief (2026-10-16). Built: D1 (the directory, the shard
-registry, ID generators, the router), D2a (global lookups, shards provisioned from the registry,
-the user shard), D2b (the business shard), D2c (reference data copied by replication, and the
-search catalog) and D2d (each service's rights everywhere) (§15). D2e (the v2 seed) is next.**
-Website work pauses until D1–D3 are done (DB-000).
+Status: **design approved by the owner's brief (2026-10-16). D1 and D2 are built (§15): the
+directory, the shard registry, ID generators and the router; global lookups; user and business
+shards provisioned from the registry; reference data copied by replication; the search catalog;
+each service's rights everywhere; and the development data placed across shards the way the
+services will. D3 (moving the services onto v2) is next.** Website work pauses until D1–D3 are
+done (DB-000).
 
 ---
 
@@ -499,6 +500,12 @@ appointment_start_at)`, written in the same transaction; old months can always b
 | IP addresses (ads, security)                      | hex hash                        | `bytea` 16 bytes, keyed                                    | same as blind indexes                                                                                                                                  |
 
 At 100M people this alone saves ~30 GB of table and index space on user shards.
+
+In code (`@buku/common`): `indexer.digest16()` is the first 16 bytes of the same HMAC as v1's
+hex hash, so every v1 blind index becomes its v2 form by keeping its first 32 hex characters (no
+email has to be read again); `cipher.encryptBytes()` / `decryptBytes()` are the same AES-256-GCM,
+keys and context as bytes (`0x01 | key id length | key id | iv | ciphertext || tag`), and
+`ciphertextToBytes()` turns a v1 value into those bytes without the key.
 
 ### DB-009 · Money in integer minor units
 
@@ -1063,7 +1070,7 @@ million rows is fast in Postgres, exact, and has one less system to run.
 | Phase                 | What                                                                                                                                                                                                                                                     | Done when                                                                                                                                                 |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **D1 Foundation** ✅  | Postgres image with the extensions; directory schema (registry, generators, settings, currencies); the ID generator (`@buku/ids`: TypeScript and `buku_id()` in SQL) and public IDs; the shard router in `@buku/database` (one shard per family locally) | unit and integration tests for IDs (uniqueness under concurrency, ordering, region bits), allocation (limit reached → next shard, limit changed), routing |
-| **D2 Schema v2** 🚧   | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed. In five slices, below      | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
+| **D2 Schema v2** ✅   | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed. In five slices, below      | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
 | **D3 Services**       | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
 | **D4 Safety**         | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
 | **D5 Proof at scale** | a synthetic data set (10M people, 1M businesses, 200M appointments) on a test cluster; the slow-query review                                                                                                                                             | the targets in §3 met for the main queries                                                                                                                |
@@ -1104,7 +1111,7 @@ website and services unchanged until D3 moves each service over; nothing is migr
 | **D2b** ✅ (2026-10-17) | every business table (§9.3), appointments partitioned by month, the rules across partitions (DB-024), row-level security by business (DB-020)                   |
 | **D2c** ✅ (2026-10-17) | reference data on the directory, copied to every business shard and the catalog by logical replication (DB-015); the search catalog (DB-041)                    |
 | **D2d** ✅ (2026-10-17) | each service's rights on user and business shards, the catalog and the directory, in the access map; cross-business roles; applied by `apply-access` everywhere |
-| **D2e** The v2 seed     | the development data set placed across shards through the router, as the services will                                                                          |
+| **D2e** ✅ (2026-10-17) | the development data placed across shards through the registry and the router, as the services will; encrypted values as bytes                                  |
 
 **D2a, as built (2026-10-16).**
 
@@ -1210,3 +1217,23 @@ website and services unchanged until D3 moves each service over; nothing is migr
     - search keeping the catalog and ads reading it;
     - only billing editing plans;
     - services with nothing in a database unable to connect.
+
+**D2e, as built (2026-10-17).**
+
+- `prisma/seed-v2.ts` (`pnpm db:seed:v2`; the `db-shards` container runs it after provisioning;
+  CI runs it on fresh databases): v1's development world (4 cities, 20 businesses, 71 people, 200
+  appointments, 30 reviews, 10 queue sessions, favourites, notifications) written as the services
+  will in D3. IDs from a leased generator; every person and business placed by the registry;
+  emails, phones, slugs and public IDs claimed as handles; contact details encrypted as bytes with
+  16-byte blind indexes; each live booking claims the customer's time on their shard before the
+  appointment is written on the business's (whose index refuses double booking) and then lands in
+  the customer's list; business-shard writes scoped to one business; the catalog filled as search
+  will fill it. It signs in as the tools' role, so every row passes the same rights and
+  row-level security as traffic, and checks at the end that the world holds together (placements
+  counted, live appointments matching claimed times). Idempotent; refuses production.
+- The development data is shared by both seeds (`prisma/seed-data.ts`).
+- `@buku/common`: `encryptBytes`, `decryptBytes`, `ciphertextToBytes`, `digest16` (DB-008), tested
+  (round trips, wrong context, tampering, unknown keys, rotation, v1 conversion, truncation).
+
+**D2 is complete.** v1's `buku` database still serves the website and services unchanged; D3 moves
+each service onto v2 through the router, then retires v1.

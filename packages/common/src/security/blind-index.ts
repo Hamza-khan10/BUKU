@@ -16,7 +16,13 @@ import { createHmac } from 'node:crypto';
  * columns produce unrelated hashes.
  */
 export interface BlindIndexer {
+  /** The full HMAC-SHA-256, hex (v1 columns). */
   hash(context: string, normalizedValue: string): string;
+  /**
+   * Its first 16 bytes (database v2, DB-008): collision-free at any number of people we'll ever
+   * have, and a v1 hash becomes this by keeping its first 32 hex characters.
+   */
+  digest16(context: string, normalizedValue: string): Buffer;
 }
 
 export function createBlindIndexer(key: Buffer): BlindIndexer {
@@ -24,6 +30,14 @@ export function createBlindIndexer(key: Buffer): BlindIndexer {
   return {
     hash(context, normalizedValue) {
       return createHmac('sha256', key).update(context).update('\0').update(normalizedValue).digest('hex');
+    },
+    digest16(context, normalizedValue) {
+      return createHmac('sha256', key)
+        .update(context)
+        .update('\0')
+        .update(normalizedValue)
+        .digest()
+        .subarray(0, 16);
     },
   };
 }
