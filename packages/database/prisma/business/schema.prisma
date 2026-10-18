@@ -612,6 +612,8 @@ model AppointmentIndex {
   business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
 
   @@unique([businessId, code])
+  /// One person's appointments in every business: "download my data" and erasure (D3b).
+  @@index([userId])
   @@map("appointment_index")
   @@schema("public")
 }

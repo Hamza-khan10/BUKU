@@ -8,16 +8,25 @@ import {
   verifyPassword,
   recordSecurityEvent,
 } from '@buku/common';
-import { recordAudit, type Database } from '@buku/database';
+import {
+  employeeLoginKey,
+  recordShardAudit,
+  ShardNotFoundError,
+  type DataPlane,
+  type UserShard,
+} from '@buku/database';
+import { auditCtx, auditPerson } from '../audit.js';
 import type { RequestContext } from '../http/context.js';
 import type { MfaService } from '../mfa/mfa-service.js';
-import { auditCtx, type DeviceInfo, type SessionService } from '../sessions/session-service.js';
-import type { SignInResult, UserService } from '../users/user-service.js';
+import type { DeviceInfo, SessionService } from '../sessions/session-service.js';
+import { sessionUserOf, type SignInResult, type UserService } from '../users/user-service.js';
 import type { BreachedPasswords } from './breached-passwords.js';
 
 /**
  * Password sign-in for employee accounts (D-034): business + username +
- * password, for staff phones and shared tablets.
+ * password, for staff phones and shared tablets. The business is found by its address (the
+ * `business.slug` handle), the account by the business and username (`user.employee_login`),
+ * the membership on the business's shard (database v2, D3).
  *
  *  • Wrong business, wrong username and wrong password all give the same
  *    answer in about the same time, so the form can't be used to discover
@@ -27,7 +36,8 @@ import type { BreachedPasswords } from './breached-passwords.js';
  *    guesser gains nothing by continuing. The business can unlock at once by
  *    resetting the password.
  *  • A business-issued (temporary) password must be replaced before the
- *    account gets any business access (see `businessRoleOf`).
+ *    account gets any business access: its tokens say so (`pwc`), and
+ *    `requireBusinessPermissionOnShard` gives it no role until then.
  *  • Changing the password signs the account out on EVERY device, this one
  *    included (D-029); the app then signs in with the new password.
  */
@@ -47,7 +57,7 @@ export interface PasswordSignInInput {
 export class PasswordAuthService {
   constructor(
     private readonly deps: {
-      db: Database;
+      plane: DataPlane;
       users: UserService;
       sessions: SessionService;
       mfa: Pick<MfaService, 'beginSession'>;
@@ -58,15 +68,10 @@ export class PasswordAuthService {
   ) {}
 
   async signIn(input: PasswordSignInInput, ctx: RequestContext): Promise<SignInResult> {
-    const { db } = this.deps;
-    const business = await db.business.findFirst({
-      where: { slug: input.business, deletedAt: null },
-      select: { id: true },
-    });
-    const account = business
-      ? await db.user.findFirst({ where: { managedByBusinessId: business.id, username: input.username } })
-      : null;
-    if (!business || !account?.passwordHash) {
+    const { plane } = this.deps;
+    const businessId = await plane.handles.find('business.slug', Buffer.from(input.business, 'utf8'));
+    const account = businessId === null ? null : await this.employee(businessId, input.username);
+    if (businessId === null || !account?.passwordHash) {
       await verifyPassword(input.password, await getDummyPasswordHash()); // same timing as a real check
       throw invalidCredentials();
     }
@@ -79,10 +84,12 @@ export class PasswordAuthService {
     }
 
     // Only someone who knows the password learns that access was turned off.
-    const membership = await db.businessMember.findFirst({
-      where: { businessId: business.id, userId: account.id },
-      select: { status: true },
-    });
+    const membership = await plane.inBusiness(businessId, (tx) =>
+      tx.businessMember.findFirst({
+        where: { businessId, userId: account.id, business: { deletedAt: null } },
+        select: { status: true },
+      }),
+    );
     if (account.status !== 'active' || membership?.status !== 'active') {
       throw new AppError(
         'Your access to this business is turned off. Please speak to the business owner.',
@@ -91,7 +98,9 @@ export class PasswordAuthService {
       );
     }
 
-    const user = await db.user.update({
+    const user = await (
+      await plane.user(account.id)
+    ).user.update({
       where: { id: account.id },
       data: {
         failedLoginCount: 0,
@@ -101,13 +110,13 @@ export class PasswordAuthService {
         ...(needsRehash(account.passwordHash) && { passwordHash: await hashPassword(input.password) }),
       },
     });
-    const session = await this.deps.mfa.beginSession(user, input.device ?? {}, ctx);
-    await recordAudit(db, {
+    const session = await this.deps.mfa.beginSession(sessionUserOf(user), input.device ?? {}, ctx);
+    await auditPerson(plane, user.id, {
       userId: user.id,
       action: 'auth.member_signed_in',
       resourceType: 'user',
       resourceId: user.id,
-      newValues: { businessId: business.id },
+      newValues: { businessId: businessId.toString() },
       ...auditCtx(ctx),
     });
     return { user: await this.deps.users.toMe(user), isNewUser: false, session };
@@ -115,12 +124,12 @@ export class PasswordAuthService {
 
   /** Change one's own password. Every session of the account ends, this one included. */
   async changePassword(
-    userId: string,
+    userId: bigint,
     input: { currentPassword: string; newPassword: string },
     ctx: RequestContext,
   ): Promise<void> {
-    const { db } = this.deps;
-    const user = await db.user.findUnique({ where: { id: userId } });
+    const db = await this.deps.plane.user(userId);
+    const user = await db.user.findFirst({ where: { id: userId, deletedAt: null } });
     if (!user) throw AppError.notFound('User', ErrorCodes.USER_NOT_FOUND);
     if (!user.passwordHash) {
       throw AppError.conflict('This account signs in with Google or Apple and has no password');
@@ -166,7 +175,7 @@ export class PasswordAuthService {
           lockedUntil: null,
         },
       });
-      await recordAudit(tx, {
+      await recordShardAudit(tx, this.deps.plane.id(), {
         userId,
         action: 'auth.password_changed',
         resourceType: 'user',
@@ -178,22 +187,41 @@ export class PasswordAuthService {
     });
   }
 
+  /** The business's employee account with this username, if there is one. */
+  private async employee(businessId: bigint, username: string): Promise<UserShard.User | null> {
+    const { plane } = this.deps;
+    const owner = await plane.handles.find('user.employee_login', employeeLoginKey(businessId, username));
+    if (owner === null) return null;
+    try {
+      return await (
+        await plane.user(owner)
+      ).user.findFirst({
+        where: { id: owner, managedByBusinessId: businessId, username, deletedAt: null },
+      });
+    } catch (err) {
+      if (err instanceof ShardNotFoundError) return null;
+      throw err;
+    }
+  }
+
   /**
    * One more wrong password, counted atomically (parallel guesses can't slip
    * past the limit). Returns the lock expiry if this attempt locked the account.
    */
-  private async recordFailure(userId: string, ctx: RequestContext): Promise<Date | null> {
+  private async recordFailure(userId: bigint, ctx: RequestContext): Promise<Date | null> {
     const { maxAttempts, lockoutMinutes } = this.deps.settings;
-    const [row] = await this.deps.db.$queryRaw<{ locked_until: Date | null }[]>`
+    const [row] = await (
+      await this.deps.plane.user(userId)
+    ).$queryRaw<{ locked_until: Date | null }[]>`
       UPDATE users SET
         failed_login_count = CASE WHEN failed_login_count + 1 >= ${maxAttempts}::int
                                   THEN 0 ELSE failed_login_count + 1 END,
         locked_until = CASE WHEN failed_login_count + 1 >= ${maxAttempts}::int
                             THEN now() + make_interval(mins => ${lockoutMinutes}::int) ELSE locked_until END
-      WHERE id = ${userId}::uuid
+      WHERE id = ${userId}
       RETURNING locked_until`;
     const lockedUntil = row?.locked_until && row.locked_until > new Date() ? row.locked_until : null;
-    await recordAudit(this.deps.db, {
+    await auditPerson(this.deps.plane, userId, {
       userId,
       action: lockedUntil ? 'auth.account_locked' : 'auth.password_failed',
       resourceType: 'user',

@@ -16,6 +16,8 @@ export interface AuthContext {
   expiresAt: number;
   /** The session passed a second factor (D-081). */
   mfa: boolean;
+  /** Still on a business-issued temporary password (D-034): no business access yet. */
+  mustChangePassword: boolean;
 }
 
 declare global {
@@ -128,6 +130,7 @@ export function authenticate(options: AuthenticateOptions): RequestHandler {
       tokenId: claims.jti,
       expiresAt: claims.exp,
       mfa: claims.mfa === true,
+      mustChangePassword: claims.pwc === true,
       ...(claims.sid ? { sessionId: claims.sid } : {}),
     };
     next();

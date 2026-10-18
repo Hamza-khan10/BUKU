@@ -39,6 +39,12 @@ export interface AccessTokenClaims {
   sid?: string;
   /** The session passed a second factor at sign-in (D-081). Platform admins need it. */
   mfa?: boolean;
+  /**
+   * The account is still on a temporary password a business gave it (D-034): no business access
+   * until it chooses its own. Carried in the token because the account and the business live on
+   * different shards (database v2, D3); changing the password ends every session, so it can't go stale.
+   */
+  pwc?: boolean;
 }
 
 export interface VerifiedAccessToken extends AccessTokenClaims {
@@ -77,6 +83,7 @@ export async function createJwtSigner(options: SignerOptions): Promise<JwtSigner
         role: claims.role,
         ...(claims.sid ? { sid: claims.sid } : {}),
         ...(claims.mfa ? { mfa: true } : {}),
+        ...(claims.pwc ? { pwc: true } : {}),
       })
         .setProtectedHeader({ alg: ALGORITHM, kid: options.keyId, typ: 'JWT' })
         .setSubject(claims.sub)
@@ -143,6 +150,7 @@ export async function createJwtVerifier(
         exp: payload.exp!,
         ...(typeof payload.sid === 'string' ? { sid: payload.sid } : {}),
         ...(payload.mfa === true ? { mfa: true } : {}),
+        ...(payload.pwc === true ? { pwc: true } : {}),
       };
     },
   };

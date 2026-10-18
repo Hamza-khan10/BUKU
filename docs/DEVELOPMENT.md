@@ -63,6 +63,15 @@ containers restart within a second. After changing `package.json`/`pnpm-lock.yam
 5. Add/adjust integration tests in `packages/database/test`.
    CI fails if `schema.prisma` and the migrations disagree.
 
+### Integration tests of a service on database v2
+
+Services on v2 (auth so far, D3) test against a world of their own: the directory
+`buku_directory_services_test` with one user shard and one business shard, rebuilt by the
+integration tests' global setup with every service's rights applied as in production
+(`packages/database/test/services-world.ts`). A service's tests start a `DataPlane` as the
+service's own role (`servicesWorld.urlFor('auth')`), and a second one as `buku_app` for fixtures
+and checks. After pulling, run `pnpm db:prepare` once so that directory exists.
+
 ### Change reference data (kinds of business, plans, currencies…)
 
 Reference data lives on the directory (`reference.*`, docs/DATABASE.md DB-015) and is copied by

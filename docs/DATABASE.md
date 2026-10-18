@@ -388,7 +388,7 @@ ID gives the shard (DB-011).
 | `user.email`, `user.phone`  | the 16-byte keyed blind index (DB-008), never the address or number |
 | `user.google`, `user.apple` | the blind index of the account's subject                            |
 | `user.public_id`            | the 12 characters                                                   |
-| `user.employee_login`       | the business's ID (8 bytes) + the username (D-034)                  |
+| `user.employee_login`       | the business's ID (8 bytes, big-endian) + the username (D-034)      |
 | `user.whatsapp`             | the blind index of the linked number                                |
 | `user.push_token`           | the blind index of the device's token (a device is one person's)    |
 | `business.public_id`        | the 12 characters                                                   |
@@ -1301,3 +1301,43 @@ starts from its own seed (D2e).
 - Tests: the ID validators; a service's plane scoping work to one business and sweeping every
   shard through its cross-business role (refused for a service without one); an event written with
   its change, published from the shard with v2 IDs, and handled once.
+
+**D3b, as built (2026-10-17).** auth-service runs on v2 (D-113); nothing of it uses v1 any more.
+
+- **Accounts** live on the person's user shard. An account's row is written first and its handles
+  claimed after (email, then the Google or Apple account, then the public ID); if another sign-in
+  holds one of them, the claimed ones are given back and the row removed, and the sign-in tries
+  again and finds the winner's account. So a handle always leads to an account, and two first
+  sign-ins at once (a double tap) still make one. Handle keys: `users.email` and
+  `oauth_accounts.google`/`oauth_accounts.apple` blind-index contexts for the email and the
+  provider's subject; `push_tokens.token` for a device's token (taken over when a device signs in
+  to another account, which then loses it); `user.employee_login` is the business ID as 8 bytes
+  (big-endian) then the username (`employeeLoginKey`).
+- **Sessions:** a refresh token is `<user ID>.<256 random bits>`: the ID routes it to the person's
+  shard, and the stored SHA-256 covers the whole token, so a changed ID finds nothing. A session's
+  ID is its first token's ID; access tokens carry `sub` (the internal ID), `sid` and `pwc` (a
+  business-issued temporary password not yet changed, DB-042).
+- **Employee logins:** the business by its slug's handle, the account by `user.employee_login`, the
+  membership on the business's shard. A closed employee account keeps its business but gives its
+  username back (`users_employee_login` now requires a username only of live employee accounts).
+- **Teams:** the membership on the business's shard, the account and the person's own view
+  (`user_business_roles`) on theirs; each step on one shard that fails after a step on another is
+  undone. Plan limits are read on the business's shard from its subscriptions and the replicated
+  plans (`assertBusinessLimitOnShard` in `@buku/billing`). `requireBusinessPermissionOnShard` gives
+  an account on a temporary password no role.
+- **Data rights:** the export and erasure find the person's appointments (through
+  `appointment_index`, now indexed by person), reviews and queue tickets (now indexed by person)
+  in every business at once, through auth's cross-business role. Erasure blanks only the words
+  people wrote, by plain SQL (auth may write those columns and nothing else, so not even
+  `updated_at`), then anonymizes the account and gives back every handle auth writes. The WhatsApp
+  number's handle is notification-service's: it gives it back on `users.deleted` (D3f).
+- **APIs:** people by public ID (`/me`, team members' `userId`), businesses by public ID in URLs
+  (`/v1/businesses/<public id>/members`), sessions and members by decimal ID (`zId`). Tokens from
+  v1 (a UUID `sub`) are refused.
+- **Rights:** auth reads `appointment_index`, and the `user_id` of `notification_marks` and
+  `user_time_reservations` (a DELETE reads the columns it filters on).
+- **Tests:** services have a v2 world of their own (`packages/database/test/services-world.ts`): a
+  directory, `buku_directory_services_test` (made by `pnpm db:prepare`), with a user shard and a
+  business shard and its reference copy, every service's rights applied as in production, rebuilt
+  by the integration tests' global setup. auth's 60 integration tests run there as auth's own
+  role; fixtures go through a second data plane as `buku_app`.

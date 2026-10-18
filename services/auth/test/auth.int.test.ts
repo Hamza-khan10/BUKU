@@ -7,31 +7,42 @@ import {
   createLogger,
   createRedisClient,
   createRevocationStore,
+  generateConfirmationCode,
   parseKeyring,
+  publicId,
   Readiness,
   type BlindIndexer,
   type FieldCipher,
+  type JwtSigner,
 } from '@buku/common';
-import { businessRoleOf, createDatabaseClient, type Database } from '@buku/database';
+import {
+  businessRoleOnShard,
+  createDirectoryClient,
+  DataPlane,
+  employeeLoginKey,
+  type DirectoryClient,
+  type UserShardClient,
+} from '@buku/database';
 import type { Express } from 'express';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose';
 import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
-import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
+import { SERVICES_DIRECTORY, servicesWorld } from '../../../packages/database/test/services-world.js';
 import { buildAuthApp } from '../src/app.js';
 import type { DataRightsService } from '../src/users/data-rights.js';
-import { appointmentData, createBusinessFixture } from '../../../packages/database/test/fixtures.js';
 import { createOidcVerifierWithKeys } from '../src/identity/oidc.js';
 import { base32Decode, hotp, stepAt } from '../src/mfa/totp.js';
 import { createS3Storage, MediaLinks, PictureUploads, type ObjectStorage } from '@buku/media';
 import sharp from 'sharp';
 
 /**
- * auth-service against the real test database and Valkey. A locally
- * generated key pair plays the role of Google's signing keys, so we can mint
- * valid, forged, expired and wrong-audience ID tokens at will.
+ * auth-service against database v2 (D3): its own role on the services' test world (a directory,
+ * a user shard and a business shard; packages/database/test/services-world.ts) and Valkey. A
+ * locally generated key pair plays the role of Google's signing keys, so we can mint valid,
+ * forged, expired and wrong-audience ID tokens at will. Fixtures and checks go through a second
+ * data plane signed in as buku_app, the tools' and tests' role.
  */
 const GOOGLE_CLIENT_ID = 'buku-test.apps.googleusercontent.com';
 const TERMS = '1.0';
@@ -40,8 +51,14 @@ let app: Express;
 /** The same service with development sign-in switched on (never in production). */
 let devApp: Express;
 let rights: DataRightsService;
-let db: Database;
+/** auth-service's own way into database v2. */
+let plane: DataPlane;
+/** Fixtures and checks, as buku_app. */
+let world: DataPlane;
+/** The directory as billing-service, which owns the billing settings there. */
+let billing: DirectoryClient;
 let redis: Redis;
+let signer: JwtSigner;
 let googleKey: CryptoKey;
 let foreignKey: CryptoKey;
 let cipher: FieldCipher;
@@ -71,16 +88,28 @@ async function signUp(overrides: Record<string, unknown> = {}) {
     ...overrides,
   });
   expect(res.status).toBe(201);
-  return res.body.data as {
+  const data = res.body.data as {
     user: { id: string; email: string };
     accessToken: string;
     refreshToken: string;
     sessionId: string;
   };
+  return { ...data, userId: subOf(data.accessToken) };
 }
 
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 const userIdOf = (body: unknown) => (body as { data: { user: { id: string } } }).data.user.id;
+const claimsOf = (token: string) =>
+  JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()) as {
+    sub: string;
+    role: string;
+    mfa?: boolean;
+    pwc?: boolean;
+  };
+/** The person's internal ID, from their access token (DB-042: APIs show public IDs). */
+const subOf = (token: string) => BigInt(claimsOf(token).sub);
+/** The person's shard, as buku_app. */
+const shardOf = (userId: bigint): Promise<UserShardClient> => world.user(userId);
 
 /** A fresh client IP per simulated user (the service trusts one proxy hop, like behind Kong). */
 // Random, so re-running the suite within a minute never reuses a rate-limit bucket.
@@ -89,7 +118,24 @@ const newIp = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}
 const post = (path: string, ip = newIp()) => request(app).post(path).set('X-Forwarded-For', ip);
 
 beforeAll(async () => {
-  db = createDatabaseClient({ url: testEnv.appUrl, applicationName: 'auth-int-test', maxConnections: 5 });
+  plane = await DataPlane.start({
+    service: 'auth',
+    databaseUrl: servicesWorld.urlFor('auth'),
+    directoryUrl: servicesWorld.urlFor('auth', SERVICES_DIRECTORY),
+    env: servicesWorld.env,
+    instance: `auth-int-test:${process.pid}`,
+  });
+  world = await DataPlane.start({
+    service: 'business',
+    databaseUrl: servicesWorld.appUrl(),
+    directoryUrl: servicesWorld.appUrl(SERVICES_DIRECTORY),
+    env: servicesWorld.env,
+    instance: `auth-int-fixtures:${process.pid}`,
+  });
+  billing = createDirectoryClient({
+    url: servicesWorld.urlFor('billing', SERVICES_DIRECTORY),
+    applicationName: 'auth-int-test',
+  });
   redis = createRedisClient({ url: testEnv.redisUrl, connectionName: 'auth-int-test' });
 
   const google = await generateKeyPair('RS256');
@@ -99,7 +145,7 @@ beforeAll(async () => {
 
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const jwt = { issuer: 'https://auth.test', audience: 'buku-api' };
-  const signer = await createJwtSigner({
+  signer = await createJwtSigner({
     ...jwt,
     keyId: 'k1',
     privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
@@ -120,7 +166,7 @@ beforeAll(async () => {
     forcePathStyle: true,
   });
   const deps: Parameters<typeof buildAuthApp>[0] = {
-    db,
+    plane,
     redis,
     signer,
     verifier,
@@ -161,7 +207,7 @@ beforeAll(async () => {
     },
     http: {
       service: 'auth-test',
-      logger: createLogger({ service: 'auth-test', level: 'silent' }),
+      logger: createLogger({ service: 'auth-test', level: process.env.TEST_LOG_LEVEL ?? 'silent' }),
       readiness: new Readiness(),
       trustProxyHops: 1,
     },
@@ -171,32 +217,155 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.$disconnect();
-  await redis.quit();
+  await plane?.close();
+  await world?.close();
+  await billing?.$disconnect();
+  await redis?.quit();
 });
 
 /** Passwords the breach check reports as seen, and whether it's unreachable (see deps.breaches). */
 const breached = new Map<string, number>();
 let breachCheckDown = false;
 
+// ── Business fixtures, written as the business service will (D3c) ──────────
+
+/**
+ * A business on the business shard: placed, its address and public ID claimed as global handles,
+ * with one service. `ownerUserId` defaults to someone who isn't in these tests.
+ */
+async function aBusiness(ownerUserId = 1n) {
+  const id = world.id();
+  const suffix = randomUUID().slice(-12);
+  const slug = `team-barber-${suffix}`;
+  const pid = publicId();
+  await world.placeBusiness(id);
+  for (const [kind, key] of [
+    ['business.slug', Buffer.from(slug, 'utf8')],
+    ['business.public_id', Buffer.from(pid, 'ascii')],
+  ] as const)
+    expect((await world.handles.claim(kind, key, id)).claimed).toBe(true);
+  const serviceId = world.id();
+  await world.inBusiness(id, async (tx) => {
+    await tx.business.create({
+      data: {
+        id,
+        ownerUserId,
+        categoryId: 1n,
+        publicId: pid,
+        slug,
+        name: `Team Barber ${suffix}`,
+        country: 'PK',
+        currency: 'PKR',
+        timezone: 'Asia/Karachi',
+        city: 'Lahore',
+        lat: 31.5204,
+        lng: 74.3587,
+      },
+    });
+    await tx.service.create({
+      data: {
+        id: serviceId,
+        businessId: id,
+        priceMinor: 150_000n,
+        durationMinutes: 30,
+        currency: 'PKR',
+        name: 'Haircut',
+      },
+    });
+  });
+  return { id, publicId: pid, slug, name: `Team Barber ${suffix}`, serviceId };
+}
+type Business = Awaited<ReturnType<typeof aBusiness>>;
+
+/** An appointment at the business for a person, starting `days` from now. */
+async function anAppointment(b: Business, userId: bigint, days: number, extra: Record<string, unknown> = {}) {
+  const startAt = new Date(Math.floor(Date.now() / 3_600_000 + days * 24) * 3_600_000);
+  const row = {
+    id: world.id(),
+    startAt,
+    endAt: new Date(startAt.getTime() + 30 * 60_000),
+    blockedUntil: new Date(startAt.getTime() + 30 * 60_000),
+    businessId: b.id,
+    userId,
+    serviceId: b.serviceId,
+    priceMinor: 150_000n,
+    currency: 'PKR',
+    publicId: publicId(),
+    code: generateConfirmationCode(),
+    status: 'confirmed',
+    ...extra,
+  };
+  await world.inBusiness(b.id, (tx) => tx.appointment.create({ data: row }));
+  return row;
+}
+
+/** Billing switched on for businesses while `fn` runs (the directory's settings, replicated). */
+async function withBusinessBilling<T>(fn: () => Promise<T>): Promise<T> {
+  const set = async (enabled: boolean) => {
+    await billing.billingSettings.update({ where: { audience: 'business' }, data: { enabled } });
+    // The business shard's copy follows by replication (DB-015).
+    const probe = await aBusiness();
+    await expect
+      .poll(
+        () =>
+          world.inBusiness(probe.id, async (tx) => {
+            const settings = await tx.billingSettings.findUnique({ where: { audience: 'business' } });
+            return settings?.enabled;
+          }),
+        { timeout: 15_000, interval: 100 },
+      )
+      .toBe(enabled);
+  };
+  await set(true);
+  try {
+    return await fn();
+  } finally {
+    await set(false);
+  }
+}
+
+/** A plan granted by an admin, on the business's shard. */
+async function givePlan(businessId: bigint, code: string) {
+  await world.inBusiness(businessId, async (tx) => {
+    const plan = await tx.plan.findUniqueOrThrow({ where: { code } });
+    await tx.subscription.create({
+      data: {
+        id: world.id(),
+        businessId,
+        planId: plan.id,
+        provider: 'manual',
+        status: 'active',
+        grantNote: 'test',
+      },
+    });
+  });
+}
+
 describe('Sign in with Google', () => {
   it('creates an account (201), encrypts the email, emits users.registered, returns tokens', async () => {
     const s = await signUp();
     expect(s.user.email).toMatch(/@example\.com$/);
+    expect(s.user.id).toMatch(/^[0-9A-Za-z]{12}$/); // the public ID (DB-042)
     expect(s.accessToken.split('.')).toHaveLength(3);
-    expect(s.refreshToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    // The person's ID routes the refresh token to their shard; the rest is 256 random bits.
+    expect(s.refreshToken).toMatch(new RegExp(`^${s.userId}\\.[A-Za-z0-9_-]{43}$`));
 
-    const row = await db.user.findUniqueOrThrow({ where: { id: s.user.id } });
-    expect(row.emailEncrypted).toMatch(/^enc:1:k1:/);
-    expect(row.emailEncrypted).not.toContain('@');
+    const db = await shardOf(s.userId);
+    const row = await db.user.findUniqueOrThrow({ where: { id: s.userId } });
+    expect(row.publicId).toBe(s.user.id);
+    expect(Buffer.from(row.emailEnc!).includes(s.user.email)).toBe(false);
+    expect(row.emailHash).toHaveLength(16);
     expect(row.termsVersion).toBe(TERMS);
+    // One account per address on every shard: the email and the Google account are global handles.
+    expect(await world.handles.find('user.email', Buffer.from(row.emailHash!))).toBe(s.userId);
 
-    const events = await db.outboxEvent.findMany({ where: { aggregateId: s.user.id } });
+    const events = await db.outboxEvent.findMany({ where: { aggregateId: s.userId } });
     expect(events.map((e) => e.topic)).toEqual(['users.registered']);
     expect(JSON.stringify(events[0]!.payload)).not.toContain('@example.com'); // no PII in events
 
-    const stored = await db.refreshToken.findFirstOrThrow({ where: { userId: s.user.id } });
-    expect(stored.tokenHash).not.toBe(s.refreshToken); // only the hash is stored
+    const stored = await db.refreshToken.findFirstOrThrow({ where: { userId: s.userId } });
+    expect(Buffer.from(stored.tokenHash).toString('utf8')).not.toContain(s.refreshToken); // only the hash
+    expect(stored.familyId.toString()).toBe(s.sessionId);
   });
 
   it('signs an existing user back in (200) without creating a new account', async () => {
@@ -278,7 +447,20 @@ describe('Sign in with Google', () => {
     const answers = await Promise.all([signIn(), signIn()]);
     expect(answers.map((a) => a.status).sort()).toEqual([200, 201]);
     expect(new Set(answers.map((a) => userIdOf(a.body))).size).toBe(1);
-    expect(await db.oAuthAccount.count({ where: { providerUserId: sub } })).toBe(1);
+    const owner = await world.handles.find('user.google', indexer.digest16('oauth_accounts.google', sub));
+    expect(owner).toBe(subOf(answers[0].body.data.accessToken));
+    const db = await shardOf(owner!);
+    expect(await db.oAuthAccount.count({ where: { userId: owner! } })).toBe(1);
+    // The loser's half-made account is gone.
+    expect(
+      await db.user.count({ where: { emailHash: indexer.digest16('users.email', `${sub}@example.com`) } }),
+    ).toBe(1);
+  });
+
+  it('a token from before database v2 (a v1 user ID) is refused', async () => {
+    const old = await signer.sign({ sub: randomUUID(), role: 'user' });
+    const res = await request(app).get('/v1/auth/me').set(bearer(old.token));
+    expect([res.status, res.body.error.code]).toEqual([401, 'TOKEN_INVALID']);
   });
 });
 
@@ -326,8 +508,9 @@ describe('Sessions: stay signed in, rotate, detect theft', () => {
     const s = await signUp();
     const rotated = await post('/v1/auth/refresh').send({ refreshToken: s.refreshToken });
     // Simulate the replay happening after the grace window.
+    const db = await shardOf(s.userId);
     await db.refreshToken.updateMany({
-      where: { familyId: s.sessionId, revokedReason: 'rotated' },
+      where: { familyId: BigInt(s.sessionId), revokedReason: 'rotated' },
       data: { revokedAt: new Date(Date.now() - 60_000) },
     });
 
@@ -345,7 +528,7 @@ describe('Sessions: stay signed in, rotate, detect theft', () => {
     const me = await request(app).get('/v1/auth/me').set(bearer(rotated.body.data.accessToken));
     expect(me.body.error).toMatchObject({ code: 'SESSION_REVOKED', details: { reason: 'reuse_detected' } });
     expect(
-      await db.auditLog.count({ where: { action: 'auth.refresh_token_reuse_detected', userId: s.user.id } }),
+      await db.auditLog.count({ where: { action: 'auth.refresh_token_reuse_detected', userId: s.userId } }),
     ).toBe(1);
   });
 
@@ -426,10 +609,18 @@ describe('Sessions: stay signed in, rotate, detect theft', () => {
   });
 
   it('rejects garbage and forged refresh tokens without revealing anything', async () => {
-    const res = await post('/v1/auth/refresh').send({ refreshToken: 'A'.repeat(43) });
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('TOKEN_INVALID');
-    expect((await post('/v1/auth/logout').send({ refreshToken: 'A'.repeat(43) })).status).toBe(204);
+    const s = await signUp();
+    for (const forged of [
+      'A'.repeat(43),
+      `${s.userId}.${'A'.repeat(43)}`, // a real person, a made-up secret
+      `${s.userId + 1n}.${s.refreshToken.split('.')[1]}`, // a real secret, moved to someone else
+      `999999999999999999.${'A'.repeat(43)}`, // nobody's
+    ]) {
+      const res = await post('/v1/auth/refresh').send({ refreshToken: forged });
+      expect([res.status, res.body.error.code]).toEqual([401, 'TOKEN_INVALID']);
+      expect((await post('/v1/auth/logout').send({ refreshToken: forged })).status).toBe(204);
+    }
+    expect((await request(app).get('/v1/auth/me').set(bearer(s.accessToken))).status).toBe(200);
   });
 });
 
@@ -442,6 +633,7 @@ describe('My account', () => {
       id: s.user.id,
       email: s.user.email,
       phone: null,
+      account: { type: 'personal' },
       onboarding: { phoneRequired: true },
     });
   });
@@ -460,7 +652,8 @@ describe('My account', () => {
       .set(bearer(s.accessToken))
       .send({ role: 'super_admin' });
     expect(escalate.status).toBe(400);
-    expect((await db.user.findUniqueOrThrow({ where: { id: s.user.id } })).role).toBe('user');
+    const row = await (await shardOf(s.userId)).user.findUniqueOrThrow({ where: { id: s.userId } });
+    expect(row.role).toBe('user');
   });
 
   it('stores the phone number encrypted with the WhatsApp consent time', async () => {
@@ -475,8 +668,8 @@ describe('My account', () => {
       whatsappOptIn: true,
       onboarding: { phoneRequired: false },
     });
-    const row = await db.user.findUniqueOrThrow({ where: { id: s.user.id } });
-    expect(row.unverifiedPhoneEncrypted).not.toContain('923001234567');
+    const row = await (await shardOf(s.userId)).user.findUniqueOrThrow({ where: { id: s.userId } });
+    expect(Buffer.from(row.unverifiedPhoneEnc!).includes('923001234567')).toBe(false);
     expect(row.whatsappOptInAt).not.toBeNull();
 
     expect(
@@ -493,11 +686,13 @@ describe('My account', () => {
     const s = await signUp();
     const verified = '+923005550001';
     // Simulate a number verified earlier (OTP verification is a later feature).
-    await db.user.update({
-      where: { id: s.user.id },
+    await (
+      await shardOf(s.userId)
+    ).user.update({
+      where: { id: s.userId },
       data: {
-        phoneEncrypted: cipher.encrypt(verified, 'users.phone'),
-        phoneHash: indexer.hash('users.phone', verified),
+        phoneEnc: cipher.encryptBytes(verified, 'users.phone'),
+        phoneHash: indexer.digest16('users.phone', verified),
       },
     });
     const changed = await request(app)
@@ -541,6 +736,21 @@ describe('My account', () => {
     ).toBe(204);
   });
 
+  it('a device signing in to another account moves to it, and leaves the first', async () => {
+    const [a, b] = [await signUp(), await signUp()];
+    const token = `fcm-${randomUUID()}`;
+    for (const s of [a, b])
+      await post('/v1/auth/push-tokens').set(bearer(s.accessToken)).send({ token, platform: 'ios' });
+    expect(await (await shardOf(a.userId)).pushToken.count({ where: { userId: a.userId, token } })).toBe(0);
+    expect(await (await shardOf(b.userId)).pushToken.count({ where: { userId: b.userId, token } })).toBe(1);
+    expect(await world.handles.find('user.push_token', indexer.digest16('push_tokens.token', token))).toBe(
+      b.userId,
+    );
+    expect(
+      (await request(app).delete(`/v1/auth/push-tokens/${token}`).set(bearer(a.accessToken))).status,
+    ).toBe(404);
+  });
+
   it('requires authentication for every account endpoint', async () => {
     for (const [method, path] of [
       ['get', '/v1/auth/me'],
@@ -554,28 +764,25 @@ describe('My account', () => {
 });
 
 describe('My data: export and deletion', () => {
-  it('exports everything about me — and nothing about anyone else', async () => {
-    const s = await signUp();
-    const other = await signUp();
-    const f = await createBusinessFixture(db);
-    await db.appointment.create({
+  /** A linked WhatsApp number, as notification-service writes it. */
+  const linkWhatsapp = async (userId: bigint, phone: string) =>
+    (await shardOf(userId)).whatsappContact.create({
       data: {
-        ...appointmentData(f, new Date('2031-05-01T10:00:00Z')),
-        userId: s.user.id,
-        internalNotes: 'business-only note',
-      },
-    });
-    await db.appointment.create({
-      data: { ...appointmentData(f, new Date('2031-05-02T10:00:00Z')), userId: other.user.id },
-    });
-    await db.whatsappContact.create({
-      data: {
-        userId: s.user.id,
-        phoneEncrypted: cipher.encrypt('+923001234567', 'whatsapp.phone'),
-        phoneHash: randomUUID().replace(/-/g, '').padEnd(64, '0'),
+        userId,
+        phoneEnc: cipher.encryptBytes(phone, 'whatsapp.phone'),
+        phoneHash: randomBytes(16),
         linkedAt: new Date(),
       },
     });
+
+  it('exports everything about me, from every business — and nothing about anyone else', async () => {
+    const s = await signUp();
+    const other = await signUp();
+    const b = await aBusiness();
+    await anAppointment(b, s.userId, 7, { internalNotes: 'business-only note' });
+    await anAppointment(b, other.userId, 8);
+    await (await shardOf(s.userId)).favourite.create({ data: { userId: s.userId, businessId: b.id } });
+    await linkWhatsapp(s.userId, '+923001234567');
 
     const res = await request(app).get('/v1/auth/me/export').set(bearer(s.accessToken));
     expect(res.status).toBe(200);
@@ -587,7 +794,10 @@ describe('My data: export and deletion', () => {
     expect(data.account.email).toBe(s.user.email);
     expect(data.signInMethods).toEqual([expect.objectContaining({ provider: 'google' })]);
     expect(data.appointments).toHaveLength(1);
-    expect(data.appointments[0].business.name).toBe(f.business.name);
+    expect(data.appointments[0]).toMatchObject({ business: { name: b.name }, priceMinor: '150000' });
+    expect(data.favourites).toEqual([
+      expect.objectContaining({ business: { name: b.name, city: 'Lahore' } }),
+    ]);
     expect(data.whatsapp).toMatchObject({ phone: '+923001234567', stoppedAt: null });
     expect(JSON.stringify(data)).not.toContain('business-only note');
     expect(JSON.stringify(data)).not.toContain(other.user.id);
@@ -597,8 +807,10 @@ describe('My data: export and deletion', () => {
   it('requires a recent sign-in to delete the account', async () => {
     const s = await signUp();
     // Pretend this session was signed in 20 minutes ago (refreshes don't count).
-    await db.refreshToken.updateMany({
-      where: { familyId: s.sessionId },
+    await (
+      await shardOf(s.userId)
+    ).refreshToken.updateMany({
+      where: { familyId: BigInt(s.sessionId) },
       data: { createdAt: new Date(Date.now() - 20 * 60_000) },
     });
     const res = await request(app)
@@ -620,18 +832,12 @@ describe('My data: export and deletion', () => {
 
   it('deleting signs out everywhere, stops notifications, and tells other services', async () => {
     const s = await signUp();
+    const device = `fcm-${randomUUID()}`;
     await request(app)
       .post('/v1/auth/push-tokens')
       .set(bearer(s.accessToken))
-      .send({ token: `fcm-${randomUUID()}`, platform: 'ios' });
-    await db.whatsappContact.create({
-      data: {
-        userId: s.user.id,
-        phoneEncrypted: cipher.encrypt('+923001234568', 'whatsapp.phone'),
-        phoneHash: randomUUID().replace(/-/g, '').padEnd(64, '0'),
-        linkedAt: new Date(),
-      },
-    });
+      .send({ token: device, platform: 'ios' });
+    await linkWhatsapp(s.userId, '+923001234568');
     const res = await request(app)
       .delete('/v1/auth/me')
       .set(bearer(s.accessToken))
@@ -641,9 +847,14 @@ describe('My data: export and deletion', () => {
 
     const me = await request(app).get('/v1/auth/me').set(bearer(s.accessToken));
     expect(me.body.error).toMatchObject({ code: 'SESSION_REVOKED', details: { reason: 'account_deleted' } });
-    expect(await db.pushToken.count({ where: { userId: s.user.id } })).toBe(0);
-    expect(await db.whatsappContact.count({ where: { userId: s.user.id } })).toBe(0);
-    const topics = (await db.outboxEvent.findMany({ where: { aggregateId: s.user.id } })).map((e) => e.topic);
+    const db = await shardOf(s.userId);
+    expect(await db.pushToken.count({ where: { userId: s.userId } })).toBe(0);
+    expect(await db.whatsappContact.count({ where: { userId: s.userId } })).toBe(0);
+    // The device is free for whoever signs in on it next.
+    expect(
+      await world.handles.find('user.push_token', indexer.digest16('push_tokens.token', device)),
+    ).toBeNull();
+    const topics = (await db.outboxEvent.findMany({ where: { aggregateId: s.userId } })).map((e) => e.topic);
     expect(topics).toContain('users.deleted');
   });
 
@@ -668,8 +879,9 @@ describe('My data: export and deletion', () => {
     });
     expect(restored.status).toBe(200);
     expect(restored.body.data.user.id).toBe(first.body.data.user.id);
+    const userId = subOf(first.body.data.accessToken);
     expect(
-      (await db.user.findUniqueOrThrow({ where: { id: first.body.data.user.id } })).deletedAt,
+      (await (await shardOf(userId)).user.findUniqueOrThrow({ where: { id: userId } })).deletedAt,
     ).toBeNull();
   });
 
@@ -683,10 +895,8 @@ describe('My data: export and deletion', () => {
       .delete('/v1/auth/me')
       .set(bearer(first.body.data.accessToken))
       .send({ confirmation: 'DELETE' });
-    await db.user.update({
-      where: { id: first.body.data.user.id, deletedAt: undefined },
-      data: { status: 'suspended' },
-    });
+    const userId = subOf(first.body.data.accessToken);
+    await (await shardOf(userId)).user.update({ where: { id: userId }, data: { status: 'suspended' } });
     const attempt = await post('/v1/auth/oauth/google').send({
       idToken: await googleIdToken({ sub }),
       restoreAccount: true,
@@ -695,41 +905,54 @@ describe('My data: export and deletion', () => {
     expect(attempt.body.error.message).toMatch(/suspended/);
   });
 
-  it('after the grace period, personal data is purged for good; records stay anonymous', async () => {
+  it('after the grace period, personal data is purged for good — at every business too', async () => {
     const sub = randomUUID();
     const first = await post('/v1/auth/oauth/google').send({
       idToken: await googleIdToken({ sub }),
       acceptedTermsVersion: TERMS,
     });
-    const userId = first.body.data.user.id as string;
+    const userId = subOf(first.body.data.accessToken);
     await request(app)
       .put('/v1/auth/me/phone')
       .set(bearer(first.body.data.accessToken))
       .send({ phone: '+923001112233', whatsappOptIn: true });
-    const f = await createBusinessFixture(db);
-    const appt = await db.appointment.create({
-      data: {
-        ...appointmentData(f, new Date('2020-01-01T10:00:00Z')),
-        userId,
-        status: 'completed',
-        notes: 'my private note',
-      },
-    });
-    await db.review.create({
-      data: {
-        appointmentId: appt.id,
-        userId,
-        businessId: f.business.id,
-        overallRating: 5,
-        comment: 'Great, ask for Ali',
-      },
+    const b = await aBusiness();
+    const appt = await anAppointment(b, userId, -7, { status: 'completed', notes: 'my private note' });
+    const today = new Date(new Date().toISOString().slice(0, 10));
+    const queueSession = world.id();
+    await world.inBusiness(b.id, async (tx) => {
+      await tx.review.create({
+        data: {
+          id: world.id(),
+          appointmentId: appt.id,
+          appointmentStartAt: appt.startAt,
+          userId,
+          businessId: b.id,
+          overallRating: 5,
+          comment: 'Great, ask for Ali',
+        },
+      });
+      await tx.queueSession.create({ data: { id: queueSession, businessId: b.id, sessionDate: today } });
+      await tx.queueTicket.create({
+        data: {
+          id: world.id(),
+          sessionDate: today,
+          sessionId: queueSession,
+          businessId: b.id,
+          userId,
+          ticketNumber: 1,
+          status: 'completed',
+          notes: 'by the window please',
+        },
+      });
     });
     await request(app)
       .delete('/v1/auth/me')
       .set(bearer(first.body.data.accessToken))
       .send({ confirmation: 'DELETE' });
+    const db = await shardOf(userId);
     await db.user.update({
-      where: { id: userId, deletedAt: undefined },
+      where: { id: userId },
       data: { deletedAt: new Date(Date.now() - 31 * 86_400_000) },
     });
     await db.notificationMark.create({ data: { key: `test:${randomUUID()}`, kind: 'rebook', userId } });
@@ -737,28 +960,34 @@ describe('My data: export and deletion', () => {
     expect(await rights.purgeDue()).toBeGreaterThanOrEqual(1);
     expect(await db.notificationMark.count({ where: { userId } })).toBe(0);
 
-    const purged = await db.user.findFirstOrThrow({ where: { id: userId, deletedAt: undefined } });
+    const purged = await db.user.findUniqueOrThrow({ where: { id: userId } });
     expect(purged).toMatchObject({
       name: 'Deleted user',
-      emailEncrypted: null,
+      emailEnc: null,
       emailHash: null,
-      unverifiedPhoneEncrypted: null,
+      unverifiedPhoneEnc: null,
       whatsappOptInAt: null,
     });
     expect(purged.purgedAt).not.toBeNull();
     expect(await db.oAuthAccount.count({ where: { userId } })).toBe(0);
-    const review = await db.review.findUniqueOrThrow({ where: { appointmentId: appt.id } });
-    expect(review).toMatchObject({ overallRating: 5, comment: null }); // rating kept, words gone
-    expect((await db.appointment.findUniqueOrThrow({ where: { id: appt.id } })).notes).toBeNull();
+    await world.inBusiness(b.id, async (tx) => {
+      // Ratings and records stay, the words don't.
+      expect(await tx.review.findUniqueOrThrow({ where: { appointmentId: appt.id } })).toMatchObject({
+        overallRating: 5,
+        comment: null,
+      });
+      expect((await tx.appointment.findFirstOrThrow({ where: { id: appt.id } })).notes).toBeNull();
+      expect((await tx.queueTicket.findFirstOrThrow({ where: { userId } })).notes).toBeNull();
+    });
     expect(await rights.purgeDue()).toBe(0); // idempotent
 
-    // The same Google account can now start a completely fresh account.
+    // Its handles are given back: the same Google account can start a completely fresh account.
     const fresh = await post('/v1/auth/oauth/google').send({
       idToken: await googleIdToken({ sub }),
       acceptedTermsVersion: TERMS,
     });
     expect(fresh.status).toBe(201);
-    expect(fresh.body.data.user.id).not.toBe(userId);
+    expect(fresh.body.data.user.id).not.toBe(first.body.data.user.id);
   });
 });
 
@@ -773,29 +1002,13 @@ describe('Business team: employee accounts', () => {
   /** A Google user who owns a fresh business. */
   async function owner() {
     const s = await signUp();
-    const suffix = randomUUID().slice(-12);
-    const category = await db.category.create({ data: { name: `Cat ${suffix}`, slug: `cat-${suffix}` } });
-    const business = await db.business.create({
-      data: {
-        ownerId: s.user.id,
-        categoryId: category.id,
-        name: `Team Barber ${suffix}`,
-        slug: `team-barber-${suffix}`,
-        city: 'Lahore',
-        country: 'PK',
-        lat: 31.5204,
-        lng: 74.3587,
-        timezone: 'Asia/Karachi',
-        currency: 'PKR',
-      },
-    });
-    return { ...s, business };
+    return { ...s, business: await aBusiness(s.userId) };
   }
 
-  const team = (businessId: string) => `/v1/businesses/${businessId}/members`;
+  const team = (businessPublicId: string) => `/v1/businesses/${businessPublicId}/members`;
 
-  async function addMember(token: string, businessId: string, body: Record<string, unknown>) {
-    return post(team(businessId)).set(bearer(token)).send(body);
+  async function addMember(token: string, businessPublicId: string, body: Record<string, unknown>) {
+    return post(team(businessPublicId)).set(bearer(token)).send(body);
   }
 
   const login = (business: string, username: string, password: string) =>
@@ -812,7 +1025,7 @@ describe('Business team: employee accounts', () => {
     role: string,
     username = `emp-${randomInt(1e9)}`,
   ) {
-    const created = await addMember(o.accessToken, o.business.id, { name: 'Ali Raza', username, role });
+    const created = await addMember(o.accessToken, o.business.publicId, { name: 'Ali Raza', username, role });
     expect(created.status).toBe(201);
     const first = await login(o.business.slug, username, created.body.data.temporaryPassword);
     expect(first.status).toBe(200);
@@ -824,7 +1037,7 @@ describe('Business team: employee accounts', () => {
     expect(signedIn.status).toBe(200);
     return {
       memberId: created.body.data.member.id as string,
-      userId: created.body.data.member.userId as string,
+      userId: subOf(signedIn.body.data.accessToken),
       username,
       accessToken: signedIn.body.data.accessToken as string,
       refreshToken: signedIn.body.data.refreshToken as string,
@@ -833,7 +1046,7 @@ describe('Business team: employee accounts', () => {
 
   it('the owner creates an employee: a temporary password shown once, stored only as a hash', async () => {
     const o = await owner();
-    const res = await addMember(o.accessToken, o.business.id, {
+    const res = await addMember(o.accessToken, o.business.publicId, {
       name: '  Ali <b>Raza</b> ',
       username: ' Ali.Front ',
       role: 'front_desk',
@@ -842,6 +1055,8 @@ describe('Business team: employee accounts', () => {
     const { member, temporaryPassword } = res.body.data;
     expect(temporaryPassword).toMatch(/^[a-z2-9]{4}(-[a-z2-9]{4}){3}$/);
     expect(member).toMatchObject({
+      id: expect.stringMatching(/^\d+$/),
+      userId: expect.stringMatching(/^[0-9A-Za-z]{12}$/),
       name: 'Ali Raza',
       username: 'ali.front',
       role: 'front_desk',
@@ -850,7 +1065,9 @@ describe('Business team: employee accounts', () => {
       passwordChangePending: true,
     });
 
-    const row = await db.user.findUniqueOrThrow({ where: { id: member.userId } });
+    const userId = (await world.idOfPublic('user', member.userId))!;
+    const db = await shardOf(userId);
+    const row = await db.user.findUniqueOrThrow({ where: { id: userId } });
     expect(row).toMatchObject({
       role: 'staff',
       managedByBusinessId: o.business.id,
@@ -858,39 +1075,54 @@ describe('Business team: employee accounts', () => {
     });
     expect(row.passwordHash).toMatch(/^\$argon2id\$/);
     expect(row.emailHash).toBeNull();
+    // Their own view of where they work, on their shard (DB-014).
+    expect(
+      await db.userBusinessRole.findUniqueOrThrow({
+        where: { userId_businessId: { userId, businessId: o.business.id } },
+      }),
+    ).toMatchObject({ role: 'front_desk', status: 'active', businessName: o.business.name });
 
-    const audit = await db.auditLog.findFirstOrThrow({
-      where: { action: 'business.member_created', resourceId: member.id },
-    });
-    expect(JSON.stringify(audit)).not.toContain(temporaryPassword);
+    const audit = await world.inBusiness(o.business.id, (tx) =>
+      tx.auditLog.findFirstOrThrow({
+        where: { action: 'business.member_created', resourceId: BigInt(member.id) },
+      }),
+    );
+    expect(
+      JSON.stringify(audit, (_, v: unknown) => (typeof v === 'bigint' ? v.toString() : v)),
+    ).not.toContain(temporaryPassword);
 
-    const list = await request(app).get(team(o.business.id)).set(bearer(o.accessToken));
+    const list = await request(app).get(team(o.business.publicId)).set(bearer(o.accessToken));
     expect(list.body.data).toHaveLength(1);
     expect(JSON.stringify(list.body.data)).not.toContain(temporaryPassword);
   });
 
   it('a temporary password gives no business access until it is changed; changing it signs out everywhere', async () => {
     const o = await owner();
-    const created = await addMember(o.accessToken, o.business.id, {
+    const created = await addMember(o.accessToken, o.business.publicId, {
       name: 'Sana',
       username: 'sana',
       role: 'manager',
     });
     const temp = created.body.data.temporaryPassword;
-    const userId = created.body.data.member.userId;
 
     const first = await login(o.business.slug, 'SANA', temp);
     expect(first.status).toBe(200);
     expect(first.body.data.user).toMatchObject({
       role: 'staff',
       email: null,
-      account: { type: 'employee', businessId: o.business.id, username: 'sana', mustChangePassword: true },
+      account: {
+        type: 'employee',
+        businessId: o.business.publicId,
+        username: 'sana',
+        mustChangePassword: true,
+      },
       onboarding: { phoneRequired: false },
     });
-    expect(await businessRoleOf(db, o.business.id, userId)).toBeNull();
+    // The token says so (the account and the business are on different shards)...
+    expect(claimsOf(first.body.data.accessToken).pwc).toBe(true);
     // ...so the team (and everything else in the business) is out of reach.
     expect(
-      (await request(app).get(team(o.business.id)).set(bearer(first.body.data.accessToken))).status,
+      (await request(app).get(team(o.business.publicId)).set(bearer(first.body.data.accessToken))).status,
     ).toBe(404);
 
     const changed = await post('/v1/auth/password')
@@ -907,8 +1139,15 @@ describe('Business team: employee accounts', () => {
     // Signing straight back in works — the new token is not caught by the revocation a moment ago.
     const again = await login(o.business.slug, 'sana', NEW_PASSWORD);
     expect(again.body.data.user.account.mustChangePassword).toBe(false);
+    expect(claimsOf(again.body.data.accessToken).pwc).toBeUndefined();
     expect((await request(app).get('/v1/auth/me').set(bearer(again.body.data.accessToken))).status).toBe(200);
-    expect(await businessRoleOf(db, o.business.id, userId)).toBe('manager');
+    expect(
+      (await request(app).get(team(o.business.publicId)).set(bearer(again.body.data.accessToken))).status,
+    ).toBe(200);
+    const userId = subOf(again.body.data.accessToken);
+    expect(
+      await world.inBusiness(o.business.id, (tx) => businessRoleOnShard(tx, o.business.id, userId)),
+    ).toBe('manager');
   });
 
   it('wrong business, wrong username and wrong password look exactly the same', async () => {
@@ -941,10 +1180,10 @@ describe('Business team: employee accounts', () => {
     // Even the right password is not checked while locked.
     expect((await login(o.business.slug, e.username, NEW_PASSWORD)).body.error.code).toBe('ACCOUNT_LOCKED');
 
-    const list = await request(app).get(team(o.business.id)).set(bearer(o.accessToken));
+    const list = await request(app).get(team(o.business.publicId)).set(bearer(o.accessToken));
     expect(list.body.data[0].locked).toBe(true);
 
-    const reset = await post(`${team(o.business.id)}/${e.memberId}/reset-password`).set(
+    const reset = await post(`${team(o.business.publicId)}/${e.memberId}/reset-password`).set(
       bearer(o.accessToken),
     );
     expect(reset.status).toBe(200);
@@ -962,20 +1201,20 @@ describe('Business team: employee accounts', () => {
     const manager = await employee(o, 'manager');
     const otherManager = await employee(o, 'manager');
 
-    const staff = await addMember(manager.accessToken, o.business.id, {
+    const staff = await addMember(manager.accessToken, o.business.publicId, {
       name: 'Bilal',
       username: 'bilal',
       role: 'staff',
     });
     expect(staff.status).toBe(201);
-    const promote = await addMember(manager.accessToken, o.business.id, {
+    const promote = await addMember(manager.accessToken, o.business.publicId, {
       name: 'X',
       username: 'xman',
       role: 'manager',
     });
     expect(promote.status).toBe(403);
 
-    const path = `${team(o.business.id)}`;
+    const path = `${team(o.business.publicId)}`;
     const staffId = staff.body.data.member.id;
     expect(
       (
@@ -1010,22 +1249,35 @@ describe('Business team: employee accounts', () => {
     const o = await owner();
     const frontDesk = await employee(o, 'front_desk');
     const outsider = await signUp();
-    expect((await request(app).get(team(o.business.id)).set(bearer(frontDesk.accessToken))).status).toBe(403);
-    expect((await request(app).get(team(o.business.id)).set(bearer(outsider.accessToken))).status).toBe(404);
-    expect((await request(app).get(team(o.business.id))).status).toBe(401);
+    expect(
+      (await request(app).get(team(o.business.publicId)).set(bearer(frontDesk.accessToken))).status,
+    ).toBe(403);
+    expect((await request(app).get(team(o.business.publicId)).set(bearer(outsider.accessToken))).status).toBe(
+      404,
+    );
+    // A business nobody has: the same answer.
+    expect((await request(app).get(team(publicId())).set(bearer(o.accessToken))).status).toBe(404);
+    expect((await request(app).get(team(o.business.publicId))).status).toBe(401);
   });
 
   it('turning access off ends the employee’s sessions at once; turning it back on restores sign-in', async () => {
     const o = await owner();
     const e = await employee(o, 'staff');
     const off = await request(app)
-      .patch(`${team(o.business.id)}/${e.memberId}`)
+      .patch(`${team(o.business.publicId)}/${e.memberId}`)
       .set(bearer(o.accessToken))
       .send({ status: 'disabled' });
     expect(off.body.data.status).toBe('disabled');
     const me = await request(app).get('/v1/auth/me').set(bearer(e.accessToken));
     expect(me.body.error.details.reason).toBe('access_removed');
     expect((await post('/v1/auth/refresh').send({ refreshToken: e.refreshToken })).status).toBe(401);
+    // Their own view follows.
+    const view = await (
+      await shardOf(e.userId)
+    ).userBusinessRole.findUniqueOrThrow({
+      where: { userId_businessId: { userId: e.userId, businessId: o.business.id } },
+    });
+    expect(view.status).toBe('disabled');
 
     // Only someone with the right password learns that access is off.
     expect((await login(o.business.slug, e.username, pw())).body.error.code).toBe('INVALID_CREDENTIALS');
@@ -1034,7 +1286,7 @@ describe('Business team: employee accounts', () => {
     expect(blocked.body.error.code).toBe('ACCOUNT_SUSPENDED');
 
     await request(app)
-      .patch(`${team(o.business.id)}/${e.memberId}`)
+      .patch(`${team(o.business.publicId)}/${e.memberId}`)
       .set(bearer(o.accessToken))
       .send({ status: 'active' });
     expect((await login(o.business.slug, e.username, NEW_PASSWORD)).status).toBe(200);
@@ -1046,23 +1298,30 @@ describe('Business team: employee accounts', () => {
     expect(
       (
         await request(app)
-          .delete(`${team(o.business.id)}/${e.memberId}`)
+          .delete(`${team(o.business.publicId)}/${e.memberId}`)
           .set(bearer(o.accessToken))
       ).status,
     ).toBe(204);
 
     // Other services are told, so they can clean up (business-service deletes the employee's photo).
-    const outbox = await db.outboxEvent.findFirstOrThrow({
-      where: { topic: 'businesses.member_removed', aggregateId: o.business.id },
+    const outbox = await world.inBusiness(o.business.id, (tx) =>
+      tx.outboxEvent.findFirstOrThrow({
+        where: { topic: 'businesses.member_removed', aggregateId: o.business.id },
+      }),
+    );
+    expect(outbox.payload).toMatchObject({
+      data: { businessId: o.business.id.toString(), userId: e.userId.toString() },
     });
-    expect(outbox.payload).toMatchObject({ data: { businessId: o.business.id, userId: e.userId } });
 
     expect((await login(o.business.slug, 'farah', NEW_PASSWORD)).status).toBe(401);
     expect((await request(app).get('/v1/auth/me').set(bearer(e.accessToken))).status).toBe(401);
-    const row = await db.user.findFirstOrThrow({ where: { id: e.userId, deletedAt: { not: null } } });
+    const db = await shardOf(e.userId);
+    const row = await db.user.findUniqueOrThrow({ where: { id: e.userId } });
     expect(row).toMatchObject({ username: null, passwordHash: null });
+    expect(row.deletedAt).not.toBeNull();
+    expect(await db.userBusinessRole.count({ where: { userId: e.userId } })).toBe(0);
 
-    const reused = await addMember(o.accessToken, o.business.id, {
+    const reused = await addMember(o.accessToken, o.business.publicId, {
       name: 'New Farah',
       username: 'farah',
       role: 'staff',
@@ -1071,10 +1330,10 @@ describe('Business team: employee accounts', () => {
   });
 
   it('team logins follow the plan: Starter 1; turned-off accounts free a place; Enterprise unlimited', async () => {
-    await withBilling(db, 'business', async () => {
+    await withBusinessBilling(async () => {
       const o = await owner();
       const add = (username: string) =>
-        addMember(o.accessToken, o.business.id, { name: 'Emp', username, role: 'staff' });
+        addMember(o.accessToken, o.business.publicId, { name: 'Emp', username, role: 'staff' });
       const first = await add('first');
       expect(first.status).toBe(201);
       const second = await add('second');
@@ -1083,14 +1342,18 @@ describe('Business team: employee accounts', () => {
         'PLAN_LIMIT_REACHED',
         { limit: 'team_accounts', max: 1, used: 1, plan: 'business_free' },
       ]);
-      const path = `${team(o.business.id)}/${first.body.data.member.id}`;
+      // The refused account left nothing behind: the username is free.
+      expect(
+        await plane.handles.find('user.employee_login', employeeLoginKey(o.business.id, 'second')),
+      ).toBeNull();
+      const path = `${team(o.business.publicId)}/${first.body.data.member.id}`;
       await request(app).patch(path).set(bearer(o.accessToken)).send({ status: 'disabled' });
       expect((await add('second')).status).toBe(201);
       expect(
         (await request(app).patch(path).set(bearer(o.accessToken)).send({ status: 'active' })).status,
       ).toBe(409);
 
-      await givePlan(db, { businessId: o.business.id }, 'business_enterprise');
+      await givePlan(o.business.id, 'business_enterprise');
       expect(
         (await request(app).patch(path).set(bearer(o.accessToken)).send({ status: 'active' })).status,
       ).toBe(200);
@@ -1102,10 +1365,10 @@ describe('Business team: employee accounts', () => {
     const a = await owner();
     const b = await owner();
     expect(
-      (await addMember(a.accessToken, a.business.id, { name: 'One', username: 'zain', role: 'staff' }))
+      (await addMember(a.accessToken, a.business.publicId, { name: 'One', username: 'zain', role: 'staff' }))
         .status,
     ).toBe(201);
-    const dup = await addMember(a.accessToken, a.business.id, {
+    const dup = await addMember(a.accessToken, a.business.publicId, {
       name: 'Two',
       username: 'ZAIN',
       role: 'staff',
@@ -1113,12 +1376,17 @@ describe('Business team: employee accounts', () => {
     expect(dup.status).toBe(409);
     expect(dup.body.error.code).toBe('USERNAME_TAKEN');
     expect(
-      (await addMember(b.accessToken, b.business.id, { name: 'Three', username: 'zain', role: 'staff' }))
-        .status,
+      (
+        await addMember(b.accessToken, b.business.publicId, {
+          name: 'Three',
+          username: 'zain',
+          role: 'staff',
+        })
+      ).status,
     ).toBe(201);
   });
 
-  it('refuses unknown fields, owner role, bad usernames and weak new passwords', async () => {
+  it('refuses unknown fields, owner role, bad usernames, bad IDs and weak new passwords', async () => {
     const o = await owner();
     for (const body of [
       { name: 'A', username: 'abc', role: 'owner' },
@@ -1126,8 +1394,20 @@ describe('Business team: employee accounts', () => {
       { name: 'A', username: 'a b c', role: 'staff' },
       { name: 'A', username: 'abcd', role: 'staff', passwordHash: 'x' },
     ]) {
-      expect((await addMember(o.accessToken, o.business.id, body)).status).toBe(400);
+      expect((await addMember(o.accessToken, o.business.publicId, body)).status).toBe(400);
     }
+    // Businesses by public ID, members by their own: anything else is refused before any lookup.
+    expect((await request(app).get(team(o.business.id.toString())).set(bearer(o.accessToken))).status).toBe(
+      400,
+    );
+    expect(
+      (
+        await request(app)
+          .patch(`${team(o.business.publicId)}/abc`)
+          .set(bearer(o.accessToken))
+          .send({ role: 'staff' })
+      ).status,
+    ).toBe(400);
 
     const e = await employee(o, 'staff', 'hamid');
     const weak = await post('/v1/auth/password')
@@ -1239,7 +1519,7 @@ describe('Profile picture (private)', () => {
     const done = await upload(me.accessToken, await selfie());
     expect(done.status).toBe(200);
     const url: string = done.body.data.avatarUrl;
-    expect(url).toContain(`/${testEnv.s3.privateBucket}/users/${me.user.id}/avatar/`);
+    expect(url).toContain(`/${testEnv.s3.privateBucket}/users/${me.userId}/avatar/`);
     expect(url).toMatch(/X-Amz-Expires=3600/);
 
     const picture = Buffer.from(await (await fetch(url)).arrayBuffer());
@@ -1258,8 +1538,10 @@ describe('Profile picture (private)', () => {
 
   it('replacing deletes the old file; removing clears it (and the sign-in provider picture)', async () => {
     const me = await signUp();
-    await db.user.update({
-      where: { id: me.user.id },
+    await (
+      await shardOf(me.userId)
+    ).user.update({
+      where: { id: me.userId },
       data: { avatarUrl: 'https://lh3.googleusercontent.com/a/x' },
     });
     const first = await upload(me.accessToken, await selfie());
@@ -1292,13 +1574,14 @@ describe('Profile picture (private)', () => {
     const me = await signUp();
     const done = await upload(me.accessToken, await selfie());
     const key = keyOf(done.body.data.avatarUrl);
+    const db = await shardOf(me.userId);
     await db.user.update({
-      where: { id: me.user.id },
+      where: { id: me.userId },
       data: { deletedAt: new Date(Date.now() - 31 * 86_400_000) },
     });
     await rights.purgeDue();
     expect(await storage.head(testEnv.s3.privateBucket, key)).toBeNull();
-    const row = await db.user.findFirstOrThrow({ where: { id: me.user.id, deletedAt: { not: null } } });
+    const row = await db.user.findUniqueOrThrow({ where: { id: me.userId } });
     expect(row.avatarStorageKey).toBeNull();
   });
 });
@@ -1311,7 +1594,7 @@ describe('Access review (SOC 2)', () => {
   /** An admin: signed up, promoted in the database, then a fresh token carrying the role. */
   async function admin() {
     const s = await signUp();
-    await db.user.update({ where: { id: s.user.id }, data: { role: 'super_admin' } });
+    await (await shardOf(s.userId)).user.update({ where: { id: s.userId }, data: { role: 'super_admin' } });
     const r = await post('/v1/auth/refresh').send({ refreshToken: s.refreshToken });
     expect(r.status).toBe(200);
     // Admin tools need two-step sign-in (D-081).
@@ -1328,12 +1611,13 @@ describe('Access review (SOC 2)', () => {
     const me = await admin();
     const idle = await admin();
     // Idle for 100 days: no sign-in, no session use.
+    const db = await shardOf(idle.userId);
     await db.user.update({
-      where: { id: idle.user.id },
+      where: { id: idle.userId },
       data: { lastLoginAt: new Date(Date.now() - 100 * 86_400_000) },
     });
     await db.refreshToken.updateMany({
-      where: { userId: idle.user.id },
+      where: { userId: idle.userId },
       data: {
         lastUsedAt: new Date(Date.now() - 100 * 86_400_000),
         createdAt: new Date(Date.now() - 100 * 86_400_000),
@@ -1349,7 +1633,9 @@ describe('Access review (SOC 2)', () => {
     expect(byId.get(idle.user.id)).toMatchObject({ dormant: true });
     expect(res.body.data.businessAccess).toHaveProperty('owners');
     expect(
-      await db.auditLog.count({ where: { userId: me.user.id, action: 'access_review.generated' } }),
+      await (
+        await shardOf(me.userId)
+      ).auditLog.count({ where: { userId: me.userId, action: 'access_review.generated' } }),
     ).toBe(1);
   });
 
@@ -1361,9 +1647,6 @@ describe('Access review (SOC 2)', () => {
 });
 
 describe('Two-step sign-in (D-081)', () => {
-  const claimsOf = (token: string) =>
-    JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()) as { mfa?: boolean; role: string };
-
   /** Signs up (Google) and turns MFA on; returns the secret and recovery codes. */
   async function withMfa(sub = randomUUID()) {
     const s = await signUp({ idToken: await googleIdToken({ sub }) });
@@ -1448,13 +1731,15 @@ describe('Two-step sign-in (D-081)', () => {
     const locked = await post('/v1/auth/mfa/verify').send({ mfaToken: token, code: codeFor(me.secret, 1) });
     expect([locked.status, locked.body.error.code]).toEqual([429, 'MFA_LOCKED']);
     expect(
-      await db.auditLog.count({ where: { userId: me.user.id, action: 'auth.mfa_failed' } }),
+      await (
+        await shardOf(me.userId)
+      ).auditLog.count({ where: { userId: me.userId, action: 'auth.mfa_failed' } }),
     ).toBeGreaterThanOrEqual(5);
   });
 
   it('platform admins: admin tools refuse a session without it; with it they work; they can’t switch it off', async () => {
     const s = await signUp();
-    await db.user.update({ where: { id: s.user.id }, data: { role: 'super_admin' } });
+    await (await shardOf(s.userId)).user.update({ where: { id: s.userId }, data: { role: 'super_admin' } });
     const adminToken = (await post('/v1/auth/refresh').send({ refreshToken: s.refreshToken })).body.data
       .accessToken;
     const denied = await request(app).get('/v1/admin/access-review').set(bearer(adminToken));
@@ -1489,13 +1774,13 @@ describe('Two-step sign-in (D-081)', () => {
     expect(res.status).toBe(204);
     const again = await signInAgain(me.sub);
     expect(again.body.data.accessToken).toBeTruthy();
+    const db = await shardOf(me.userId);
     expect(
       await db.auditLog.count({
-        where: { userId: me.user.id, action: { in: ['mfa.enabled', 'mfa.disabled'] } },
+        where: { userId: me.userId, action: { in: ['mfa.enabled', 'mfa.disabled'] } },
       }),
     ).toBe(2);
-    const secret = await db.userMfa.findUnique({ where: { userId: me.user.id } });
-    expect(secret).toBeNull();
+    expect(await db.userMfa.findUnique({ where: { userId: me.userId } })).toBeNull();
   });
 
   it('lost the phone: a recovery code gets new codes or turns it off, and works only once', async () => {
@@ -1525,7 +1810,7 @@ describe('Two-step sign-in (D-081)', () => {
       .set(bearer(me.accessToken))
       .send({ recoveryCode: fresh[0] });
     expect(off.status).toBe(204);
-    expect(await db.userMfa.findUnique({ where: { userId: me.user.id } })).toBeNull();
+    expect(await (await shardOf(me.userId)).userMfa.findUnique({ where: { userId: me.userId } })).toBeNull();
     // Then a new phone can be set up.
     expect((await request(app).post('/v1/auth/mfa/setup').set(bearer(me.accessToken))).status).toBe(200);
   });
