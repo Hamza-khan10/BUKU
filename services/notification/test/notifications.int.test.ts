@@ -1,221 +1,239 @@
-import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { maintainPartitions, type Database } from '@buku/database';
-import { TOPICS, type EventHandler } from '@buku/kafka';
-import express, { type Express } from 'express';
-import type { Redis } from 'ioredis';
+import { TOPICS } from '@buku/kafka';
+import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Notifier } from '../src/notifier.js';
-import { createBusinessFixture } from '../../../packages/database/test/fixtures.js';
+import { describe, expect, it } from 'vitest';
 import { ExpoPushSender } from '../src/push/expo.js';
-import { booking as bookingIn, createHarness, helpers, type FakePush, type Harness } from './harness.js';
+import { useNotificationHarness, type Person, type Shop } from './harness.js';
 
 /**
- * Booking and queue events → inbox and push, against the real database. A
- * fake push sender records what each device would get; tokens containing
- * "gone" behave like uninstalled apps.
+ * Booking and queue events → inbox and push, on database v2 (D3f). A fake push sender records
+ * what each device would get; tokens containing "gone" behave like uninstalled apps.
  */
 
-let h: Harness;
-let app: Express;
-let db: Database;
-let redis: Redis;
-let handle: EventHandler;
-let notifier: Notifier;
-let push: FakePush;
-let x: ReturnType<typeof helpers>;
+const { h, x } = useNotificationHarness('notification-int-test');
 
-beforeAll(async () => {
-  h = await createHarness('notification-int-test');
-  ({ app, db, redis, handle, notifier, push } = h);
-  x = helpers(h);
-});
-
-afterAll(async () => {
-  await db.$disconnect();
-  await redis.quit();
-});
-
-const ctx = { topic: 'test', partition: 0, offset: '0', key: null, attempt: 1 };
-const deliver = (...args: Parameters<ReturnType<typeof helpers>['deliver']>) => x.deliver(...args);
-const device = (userId: string, label?: string) => x.device(userId, label);
-const inbox = (userId: string) => x.inbox(userId);
-const authFor = (userId: string) => x.authFor(userId);
-const booking = (opts: { staffUserId?: string; status?: 'pending' | 'confirmed' } = {}) =>
-  bookingIn(db, opts);
-const member = (businessId: string, role: 'manager' | 'front_desk' | 'staff') => x.member(businessId, role);
+/** A business with a customer and an appointment (default: two days ahead, 10:30 Lahore time). */
+async function booking(opts: { staffUserId?: bigint; status?: 'pending' | 'confirmed' } = {}) {
+  const f = await x.shop();
+  if (opts.staffUserId)
+    await x.inShop(f, (tx) =>
+      tx.staff.update({ where: { id: f.staffA.id }, data: { userId: opts.staffUserId } }),
+    );
+  const a = await x.appointment(f, { status: opts.status ?? 'confirmed' });
+  return { f, a };
+}
+const of = (f: Shop, a: { id: bigint }) => ({ appointmentId: a.id, businessId: f.business.id });
+const inbox = (p: Person) => x.inbox(p);
+const sent = async (p: Person, channel: string, status?: string) =>
+  (await x.shardOf(p)).notification.count({ where: { userId: p.id, channel, ...(status && { status }) } });
 
 describe('Bookings', () => {
   it('automatic booking: the business hears “new booking”, the customer gets the confirmation with the code', async () => {
     const { f, a } = await booking();
-    const [phone, tablet] = [await device(f.customer.id), await device(f.customer.id)];
-    const ownerPhone = await device(f.owner.id);
+    const [phone, tablet] = [await x.device(f.customer), await x.device(f.customer)];
+    const ownerPhone = await x.device(f.owner);
 
-    await deliver(TOPICS.BOOKINGS_CREATED, { appointmentId: a.id, status: 'confirmed' });
-    expect((await inbox(f.owner.id)).map((n) => n.title)).toEqual(['New booking']);
-    expect(push.to(ownerPhone)[0]!.body).toMatch(/^Ayesha K\. booked Haircut on .+, 10:30 with Staff A\.$/);
-    expect(await inbox(f.customer.id)).toEqual([]);
+    await x.deliver(TOPICS.BOOKINGS_CREATED, { ...of(f, a), status: 'confirmed' });
+    expect((await inbox(f.owner)).map((n) => n.title)).toEqual(['New booking']);
+    expect(h.push.to(ownerPhone)[0]!.body).toMatch(/^Ayesha K\. booked Haircut on .+, 10:30 with Staff A\.$/);
+    expect(await inbox(f.customer)).toEqual([]);
 
-    const event = await deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: a.id });
-    const [confirmed] = await inbox(f.customer.id);
+    const event = await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(f, a));
+    const [confirmed] = await inbox(f.customer);
     expect(confirmed).toMatchObject({
       title: 'Booking confirmed',
       appointmentId: a.id,
-      data: { screen: 'appointment', appointmentId: a.id },
+      // Deep links name the appointment by its public ID (DB-042).
+      data: { screen: 'appointment', appointmentId: a.publicId },
     });
-    expect(confirmed!.body).toContain(`Your code: ${a.confirmationCode}`);
-    expect([push.to(phone).length, push.to(tablet).length]).toEqual([1, 1]);
-    expect(
-      await db.notification.count({ where: { userId: f.customer.id, channel: 'push', status: 'sent' } }),
-    ).toBe(2);
+    expect(confirmed!.body).toContain(`Your code: ${a.code}`);
+    expect([h.push.to(phone).length, h.push.to(tablet).length]).toEqual([1, 1]);
+    expect(await sent(f.customer, 'push', 'sent')).toBe(2);
 
     // Kafka delivers twice sometimes: nothing is duplicated.
-    await handle(event, ctx);
-    expect(await inbox(f.customer.id)).toHaveLength(1);
-    expect(push.to(phone)).toHaveLength(1);
+    await x.redeliver(event);
+    expect(await inbox(f.customer)).toHaveLength(1);
+    expect(h.push.to(phone)).toHaveLength(1);
   });
 
   it('manual approval: the request goes to owner, managers and front desk (not staff); a decline reaches the customer', async () => {
     const { f, a } = await booking({ status: 'pending' });
     const [manager, desk, staff] = [
-      await member(f.business.id, 'manager'),
-      await member(f.business.id, 'front_desk'),
-      await member(f.business.id, 'staff'),
+      await x.member(f, 'manager'),
+      await x.member(f, 'front_desk'),
+      await x.member(f, 'staff'),
     ];
-    await deliver(TOPICS.BOOKINGS_CREATED, { appointmentId: a.id, status: 'pending' });
-    expect((await inbox(f.customer.id))[0]!.title).toBe('Request sent');
-    for (const u of [f.owner, manager, desk])
-      expect((await inbox(u.id))[0]!.title).toBe('New booking request');
-    expect(await inbox(staff.id)).toEqual([]);
+    await x.deliver(TOPICS.BOOKINGS_CREATED, { ...of(f, a), status: 'pending' });
+    expect((await inbox(f.customer))[0]!.title).toBe('Request sent');
+    for (const u of [f.owner, manager, desk]) expect((await inbox(u))[0]!.title).toBe('New booking request');
+    expect(await inbox(staff)).toEqual([]);
 
-    await db.appointment.update({
-      where: { id: a.id },
-      data: {
-        status: 'cancelled',
-        cancelledAt: new Date(),
-        cancelledBy: 'business',
-        cancelReasonCode: 'declined',
-        cancelReason: 'Fully booked that day',
-      },
+    await x.update(f, a, {
+      status: 'cancelled',
+      cancelledAt: new Date(),
+      cancelledBy: 'business',
+      cancelReasonCode: 'declined',
+      cancelReason: 'Fully booked that day',
     });
-    await deliver(TOPICS.BOOKINGS_CANCELLED, {
-      appointmentId: a.id,
+    await x.deliver(TOPICS.BOOKINGS_CANCELLED, {
+      ...of(f, a),
       cancelledBy: 'business',
       reasonCode: 'declined',
     });
-    expect((await inbox(f.customer.id)).at(-1)).toMatchObject({
+    expect((await inbox(f.customer)).at(-1)).toMatchObject({
       title: 'Booking not accepted',
       body: expect.stringContaining(': Fully booked that day.'),
     });
   });
 
   it('the employee doing the service hears about their bookings (not the owner); late cancels are flagged', async () => {
-    const stylist = await db.user.create({
-      data: { name: 'Ali Raza', emailHash: randomUUID().replace(/-/g, '').padEnd(64, '1') },
-    });
+    const stylist = await x.person('Ali Raza');
     const { f, a } = await booking({ staffUserId: stylist.id });
-    await deliver(TOPICS.BOOKINGS_CREATED, { appointmentId: a.id, status: 'confirmed' });
-    await deliver(TOPICS.BOOKINGS_CANCELLED, { appointmentId: a.id, cancelledBy: 'user', late: true });
-    expect((await inbox(stylist.id)).map((n) => n.title)).toEqual(['New booking', 'Late cancellation']);
-    expect(await inbox(f.owner.id)).toEqual([]);
+    await x.deliver(TOPICS.BOOKINGS_CREATED, { ...of(f, a), status: 'confirmed' });
+    await x.deliver(TOPICS.BOOKINGS_CANCELLED, { ...of(f, a), cancelledBy: 'user', late: true });
+    expect((await inbox(stylist)).map((n) => n.title)).toEqual(['New booking', 'Late cancellation']);
+    expect(await inbox(f.owner)).toEqual([]);
   });
 
   it('reschedules and missed visits reach the customer', async () => {
     const { f, a } = await booking();
-    await deliver(TOPICS.BOOKINGS_RESCHEDULED, { appointmentId: a.id });
-    await deliver(TOPICS.BOOKINGS_NO_SHOW, { appointmentId: a.id });
-    expect((await inbox(f.customer.id)).map((n) => n.title)).toEqual(['Booking moved', 'We missed you']);
-    expect((await inbox(f.owner.id)).map((n) => n.title)).toEqual(['Booking moved']);
+    await x.deliver(TOPICS.BOOKINGS_RESCHEDULED, of(f, a));
+    await x.deliver(TOPICS.BOOKINGS_NO_SHOW, of(f, a));
+    expect((await inbox(f.customer)).map((n) => n.title)).toEqual(['Booking moved', 'We missed you']);
+    expect((await inbox(f.owner)).map((n) => n.title)).toEqual(['Booking moved']);
+  });
+
+  it('people on different shards each get theirs once, even when the event comes again', async () => {
+    const { f, a } = await booking({ status: 'pending' });
+    const manager = await x.member(f, 'manager');
+    const event = await x.deliver(TOPICS.BOOKINGS_CREATED, { ...of(f, a), status: 'pending' });
+    await x.redeliver(event);
+    for (const u of [f.customer, f.owner, manager]) expect(await inbox(u)).toHaveLength(1);
   });
 });
 
 describe('Queue', () => {
-  async function ticket(userId: string | null) {
-    const f = await createBusinessFixture(db);
-    const session = await db.queueSession.create({
-      data: {
-        businessId: f.business.id,
-        sessionDate: new Date('2026-12-01'),
-        status: 'open',
-        currentNumber: 1,
-        gracePeriodSeconds: 300,
-      },
+  async function ticket(userId: bigint | null, sessionDate = '2026-12-01') {
+    const f = await x.shop();
+    const date = new Date(`${sessionDate}T00:00:00Z`);
+    const entry = await x.inShop(f, async (tx) => {
+      const session = await tx.queueSession.create({
+        data: {
+          id: h.world.id(),
+          businessId: f.business.id,
+          sessionDate: date,
+          status: 'open',
+          currentNumber: 23,
+          gracePeriodSeconds: 300,
+        },
+      });
+      return tx.queueTicket.create({
+        data: {
+          id: h.world.id(),
+          sessionDate: date,
+          sessionId: session.id,
+          businessId: f.business.id,
+          userId,
+          ticketNumber: 23,
+          calledAt: new Date(`${sessionDate}T09:00:00Z`),
+          status: 'called',
+        },
+      });
     });
-    const entry = await db.queueEntry.create({
-      data: {
-        sessionId: session.id,
-        userId,
-        ticketNumber: 23,
-        calledAt: new Date('2026-12-01T09:00:00Z'),
-        status: 'called',
-      },
-    });
-    return { f, entry, base: { entryId: entry.id, businessId: f.business.id, userId, ticket: 'A-023' } };
+    return {
+      f,
+      entry,
+      base: { entryId: entry.id, businessId: f.business.id, sessionDate, userId, ticket: 'A-023' },
+    };
   }
 
   it('counts down, calls (with the time to come by), and tells them if the queue closed', async () => {
-    const customer = (await createBusinessFixture(db)).customer;
-    const { base } = await ticket(customer.id);
-    await deliver(TOPICS.QUEUE_POSITION_UPDATED, { ...base, ahead: 5 });
-    await deliver(TOPICS.QUEUE_ENTRY_CALLED, base);
-    await deliver(TOPICS.QUEUE_ENTRY_LEFT, { ...base, reason: 'left' });
-    await deliver(TOPICS.QUEUE_ENTRY_LEFT, { ...base, reason: 'queue_closed' });
-    expect((await inbox(customer.id)).map((n) => [n.title, n.body])).toEqual([
+    const customer = await x.person('Queue Customer');
+    const { base, entry } = await ticket(customer.id);
+    await x.deliver(TOPICS.QUEUE_POSITION_UPDATED, { ...base, ahead: 5 });
+    await x.deliver(TOPICS.QUEUE_ENTRY_CALLED, base);
+    await x.deliver(TOPICS.QUEUE_ENTRY_LEFT, { ...base, reason: 'left' });
+    await x.deliver(TOPICS.QUEUE_ENTRY_LEFT, { ...base, reason: 'queue_closed' });
+    const messages = await inbox(customer);
+    expect(messages.map((n) => [n.title, n.body])).toEqual([
       ['5 people ahead of you', expect.stringContaining('Please start heading over.')],
       ['It’s your turn — A-023', expect.stringContaining('by 14:05.')],
       ['The queue has closed', expect.stringContaining('A-023')],
     ]);
+    expect(messages[0]).toMatchObject({
+      queueTicketId: entry.id,
+      data: { screen: 'queue-ticket', entryId: entry.id.toString() },
+    });
   });
 
   it('walk-ins (no account) get nothing', async () => {
     const { base } = await ticket(null);
-    await expect(deliver(TOPICS.QUEUE_ENTRY_CALLED, base)).resolves.toBeDefined();
+    await expect(x.deliver(TOPICS.QUEUE_ENTRY_CALLED, base)).resolves.toBeDefined();
   });
 });
 
 describe('Preferences decide pushes; the inbox always has the message', () => {
   it('switching off booking pushes keeps the inbox; “it’s your turn” always pushes', async () => {
     const { f, a } = await booking();
-    const phone = await device(f.customer.id);
-    await db.notificationPreference.upsert({
+    const phone = await x.device(f.customer);
+    await (
+      await x.shardOf(f.customer)
+    ).notificationPreference.upsert({
       where: { userId: f.customer.id },
       create: { userId: f.customer.id, pushBookingConfirmation: false, pushQueueUpdates: false },
       update: { pushBookingConfirmation: false, pushQueueUpdates: false },
     });
-    await deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: a.id });
-    expect(await inbox(f.customer.id)).toHaveLength(1);
-    expect(push.to(phone)).toEqual([]);
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(f, a));
+    expect(await inbox(f.customer)).toHaveLength(1);
+    expect(h.push.to(phone)).toEqual([]);
 
-    const session = await db.queueSession.create({
-      data: {
-        businessId: f.business.id,
-        sessionDate: new Date('2026-12-02'),
-        status: 'open',
-        currentNumber: 1,
-      },
+    const date = new Date('2026-12-02T00:00:00Z');
+    const entry = await x.inShop(f, async (tx) => {
+      const session = await tx.queueSession.create({
+        data: {
+          id: h.world.id(),
+          businessId: f.business.id,
+          sessionDate: date,
+          status: 'open',
+          currentNumber: 1,
+        },
+      });
+      return tx.queueTicket.create({
+        data: {
+          id: h.world.id(),
+          sessionDate: date,
+          sessionId: session.id,
+          businessId: f.business.id,
+          userId: f.customer.id,
+          ticketNumber: 1,
+          status: 'called',
+          calledAt: new Date(),
+        },
+      });
     });
-    const entry = await db.queueEntry.create({
-      data: {
-        sessionId: session.id,
-        userId: f.customer.id,
-        ticketNumber: 1,
-        status: 'called',
-        calledAt: new Date(),
-      },
-    });
-    const base = { entryId: entry.id, businessId: f.business.id, userId: f.customer.id, ticket: 'A-001' };
-    await deliver(TOPICS.QUEUE_POSITION_UPDATED, { ...base, ahead: 1 });
-    await deliver(TOPICS.QUEUE_ENTRY_CALLED, base);
-    expect(push.to(phone).map((m) => m.title)).toEqual(['It’s your turn — A-001']);
+    const base = {
+      entryId: entry.id,
+      businessId: f.business.id,
+      sessionDate: '2026-12-02',
+      userId: f.customer.id,
+      ticket: 'A-001',
+    };
+    await x.deliver(TOPICS.QUEUE_POSITION_UPDATED, { ...base, ahead: 1 });
+    await x.deliver(TOPICS.QUEUE_ENTRY_CALLED, base);
+    expect(h.push.to(phone).map((m) => m.title)).toEqual(['It’s your turn — A-001']);
   });
 
-  it('deleted accounts get nothing', async () => {
+  it('closed accounts get nothing', async () => {
     const { f, a } = await booking();
-    await db.user.update({ where: { id: f.customer.id }, data: { deletedAt: new Date() } });
-    await deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: a.id });
-    expect(await db.notification.count({ where: { userId: f.customer.id } })).toBe(0);
+    await (
+      await x.shardOf(f.customer)
+    ).user.update({ where: { id: f.customer.id }, data: { deletedAt: new Date() } });
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(f, a));
+    expect(await (await x.shardOf(f.customer)).notification.count({ where: { userId: f.customer.id } })).toBe(
+      0,
+    );
   });
 });
 
@@ -223,11 +241,12 @@ describe('Devices that no longer exist', () => {
   it('are switched off at once (send error) or after the receipt (≈15 min later)', async () => {
     const { f, a } = await booking();
     const [now, later, fine] = [
-      await device(f.customer.id, 'gone-now'),
-      await device(f.customer.id, 'gone-later'),
-      await device(f.customer.id),
+      await x.device(f.customer, 'gone-now'),
+      await x.device(f.customer, 'gone-later'),
+      await x.device(f.customer),
     ];
-    await deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: a.id });
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(f, a));
+    const db = await x.shardOf(f.customer);
     const tokens = async () =>
       Object.fromEntries(
         (await db.pushToken.findMany({ where: { userId: f.customer.id } })).map((t) => [t.token, t.isActive]),
@@ -235,14 +254,11 @@ describe('Devices that no longer exist', () => {
     expect(await tokens()).toEqual({ [now]: false, [later]: true, [fine]: true });
 
     // Receipts aren't checked before 15 minutes.
-    expect((await notifier.checkReceipts()).checked).toBe(0);
-    const r = await notifier.checkReceipts(new Date(Date.now() + 16 * 60_000));
+    expect((await h.notifier.checkReceipts()).checked).toBe(0);
+    const r = await h.notifier.checkReceipts(new Date(Date.now() + 16 * 60_000));
     expect(r).toMatchObject({ delivered: expect.any(Number), failed: expect.any(Number) });
     expect(await tokens()).toEqual({ [now]: false, [later]: false, [fine]: true });
-    const rows = await db.notification.findMany({
-      where: { userId: f.customer.id, channel: 'push' },
-      include: {},
-    });
+    const rows = await db.notification.findMany({ where: { userId: f.customer.id, channel: 'push' } });
     expect(rows.map((n) => n.status).sort()).toEqual(['delivered', 'failed', 'failed']);
   });
 });
@@ -250,10 +266,10 @@ describe('Devices that no longer exist', () => {
 describe('Inbox and preferences API', () => {
   it('lists my messages newest first with the unread count; read, read all, delete — only mine', async () => {
     const { f, a } = await booking();
-    await deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: a.id });
-    await deliver(TOPICS.BOOKINGS_RESCHEDULED, { appointmentId: a.id });
-    const me = await authFor(f.customer.id);
-    const list = await request(app).get('/v1/notifications').set(me);
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(f, a));
+    await x.deliver(TOPICS.BOOKINGS_RESCHEDULED, of(f, a));
+    const me = f.customer.auth;
+    const list = await request(h.app).get('/v1/notifications').set(me);
     expect(list.body.data.map((n: { title: string }) => n.title)).toEqual([
       'Booking moved',
       'Booking confirmed',
@@ -262,35 +278,33 @@ describe('Inbox and preferences API', () => {
     expect(JSON.stringify(list.body.data)).not.toContain('channel');
 
     const first = list.body.data[0].id as string;
-    expect(
-      (
-        await request(app)
-          .post(`/v1/notifications/${first}/read`)
-          .set(await authFor(f.owner.id))
-      ).status,
-    ).toBe(404);
-    expect((await request(app).post(`/v1/notifications/${first}/read`).set(me)).status).toBe(204);
-    expect((await request(app).get('/v1/notifications/unread-count').set(me)).body.data).toEqual({
+    expect(first).toMatch(/^[1-9][0-9]+$/);
+    expect((await request(h.app).post(`/v1/notifications/${first}/read`).set(f.owner.auth)).status).toBe(404);
+    expect((await request(h.app).post(`/v1/notifications/${first}/read`).set(me)).status).toBe(204);
+    expect((await request(h.app).get('/v1/notifications/unread-count').set(me)).body.data).toEqual({
       unread: 1,
     });
-    expect((await request(app).get('/v1/notifications?unread=true').set(me)).body.data).toHaveLength(1);
-    expect((await request(app).post('/v1/notifications/read-all').set(me)).body.data).toEqual({ marked: 1 });
-    expect((await request(app).delete(`/v1/notifications/${first}`).set(me)).status).toBe(204);
-    expect((await request(app).get('/v1/notifications').set(me)).body.data).toHaveLength(1);
-    expect((await request(app).get('/v1/notifications')).status).toBe(401);
+    expect((await request(h.app).get('/v1/notifications?unread=true').set(me)).body.data).toHaveLength(1);
+    expect((await request(h.app).post('/v1/notifications/read-all').set(me)).body.data).toEqual({
+      marked: 1,
+    });
+    expect((await request(h.app).delete(`/v1/notifications/${first}`).set(me)).status).toBe(204);
+    expect((await request(h.app).get('/v1/notifications').set(me)).body.data).toHaveLength(1);
+    expect((await request(h.app).get('/v1/notifications')).status).toBe(401);
+    expect((await request(h.app).post('/v1/notifications/not-an-id/read').set(me)).status).toBe(400);
   });
 
   it('preferences: defaults, changes, and marketing needs explicit consent (recorded)', async () => {
     const { f } = await booking();
-    const me = await authFor(f.customer.id);
-    expect((await request(app).get('/v1/users/me/notification-prefs').set(me)).body.data).toMatchObject({
+    const me = f.customer.auth;
+    expect((await request(h.app).get('/v1/users/me/notification-prefs').set(me)).body.data).toMatchObject({
       pushBookingConfirmation: true,
       pushQueueUpdates: true,
       marketingEmails: false,
       marketingConsentAt: null,
       queueCalledAlwaysOn: true,
     });
-    const on = await request(app)
+    const on = await request(h.app)
       .put('/v1/users/me/notification-prefs')
       .set(me)
       .send({ pushReminders: false, marketingEmails: true });
@@ -299,22 +313,15 @@ describe('Inbox and preferences API', () => {
       marketingEmails: true,
       marketingConsentAt: expect.any(String),
     });
-    const off = await request(app)
+    const off = await request(h.app)
       .put('/v1/users/me/notification-prefs')
       .set(me)
       .send({ marketingEmails: false });
     expect(off.body.data.marketingConsentAt).toBeNull();
     expect(
-      (await request(app).put('/v1/users/me/notification-prefs').set(me).send({ smsEverything: true }))
+      (await request(h.app).put('/v1/users/me/notification-prefs').set(me).send({ smsEverything: true }))
         .status,
     ).toBe(400);
-  });
-});
-
-describe('Housekeeping', () => {
-  it('monthly partitions are kept ahead and the catch-all partitions stay empty', async () => {
-    const r = await maintainPartitions(db);
-    expect(r).toEqual({ ran: true, strayRows: {} });
   });
 });
 

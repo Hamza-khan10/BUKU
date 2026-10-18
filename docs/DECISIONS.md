@@ -1077,3 +1077,16 @@ queue, and a join that failed half-way gives way after 2 minutes. How each ticke
 the person's reliability ledger (D-115), written after the front desk's change and again from
 queue's own event, so the front desk's label covers appointments and queues alike. Live screens are
 kept by the business's internal ID; viewers still name a business by public ID or slug.
+
+**D-117 · notification-service on database v2 (D3f).** Everything about a person's messages lives
+on their own shard: their inbox and the record of each send, their preferences, their WhatsApp
+connection and the marks that make a timed message go once. A message to several people is
+delivered shard by shard, each recipient's inbox written in the same transaction that records the
+event (or the mark) as handled there, so a redelivery or a second instance adds nothing and a
+failure on one shard never repeats the others. What messages are about is read on the business's
+shard; reminders and review requests read every business shard a page at a time through
+notification's cross-business role, and suggestions start from each person's own shard (their
+visits are in the reliability ledger, their bookings in their own list). A WhatsApp number is a
+global handle, so an incoming message finds its person and a number belongs to one account; a
+closed account lets it go at once. The admin settings are reference data on the directory. Plan
+notices are a business owner's only (customers are free, D-101).

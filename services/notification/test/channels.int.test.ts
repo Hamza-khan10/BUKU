@@ -1,23 +1,21 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { generateConfirmationCode } from '@buku/common';
-import type { Database } from '@buku/database';
+import { normalizePhone } from '@buku/common';
 import { TOPICS } from '@buku/kafka';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createBusinessFixture } from '../../../packages/database/test/fixtures.js';
+import { withBilling } from '../../../packages/database/test/services-world.js';
 import { requestContext } from '../src/http/context.js';
-import { booking, createHarness, helpers, type Harness } from './harness.js';
+import { WHATSAPP_PHONE_CONTEXT } from '../src/notifier.js';
+import { useNotificationHarness, type Person, type Shop, type Visit } from './harness.js';
 
 /**
- * Email, WhatsApp and timed messages, against the real database and Valkey.
+ * Email, WhatsApp and timed messages, on database v2 (D3f) and the real Valkey.
  * Timed jobs run with a fixed clock in 2027 (10:00 UTC = 15:00 in Lahore, not
- * night anywhere we test), so nothing else in the test database is in range.
+ * night anywhere we test), so nothing else in the test world is in range.
  */
 
-let h: Harness;
-let db: Database;
-let x: ReturnType<typeof helpers>;
-let admin: string;
+const { h, x } = useNotificationHarness('notification-channels-int-test');
+let admin: Person;
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const NOW = new Date('2027-01-12T10:00:00Z');
@@ -25,10 +23,7 @@ const later = (ms: number) => new Date(NOW.getTime() + ms);
 const ctx = requestContext({ ip: '127.0.0.1', get: () => undefined } as never);
 
 beforeAll(async () => {
-  h = await createHarness('notification-channels-int-test');
-  db = h.db;
-  x = helpers(h);
-  admin = (await person('Admin', 'super_admin')).id;
+  admin = await x.person('Admin', 'super_admin');
 });
 
 afterAll(async () => {
@@ -43,11 +38,9 @@ afterAll(async () => {
       quietStartHour: 21,
       quietEndHour: 9,
     },
-    admin,
+    admin.id,
     ctx,
   );
-  await h.db.$disconnect();
-  await h.redis.quit();
 });
 
 /** 10:30 in Lahore, `days` from today. */
@@ -55,73 +48,80 @@ const daysAhead = (days: number) => {
   const d = new Date(Date.now() + days * 24 * HOUR);
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 5, 30));
 };
-/** A person (every account needs an email, phone or social identity). */
-const person = (name: string, role: 'user' | 'super_admin' = 'user') =>
-  db.user.create({ data: { name, role, emailHash: randomUUID().replace(/-/g, '').padEnd(64, '0') } });
-const inboxTitles = async (userId: string) => (await x.inbox(userId)).map((n) => n.title);
+/** A business with a customer and an appointment (default: two days ahead, 10:30 Lahore time). */
+async function booking(
+  opts: { status?: 'pending' | 'confirmed'; startAt?: Date; bookedAt?: Date } = {},
+): Promise<{ f: Shop; a: Visit }> {
+  const f = await x.shop();
+  return { f, a: await x.appointment(f, opts) };
+}
+const of = (b: { f: Shop; a: { id: bigint } }) => ({ appointmentId: b.a.id, businessId: b.f.business.id });
+const inboxTitles = async (p: Person) => (await x.inbox(p)).map((n) => n.title);
+const contactOf = async (p: Person) =>
+  (await x.shardOf(p)).whatsappContact.findUnique({ where: { userId: p.id } });
+const hashOf = (digits: string) => h.indexer.digest16(WHATSAPP_PHONE_CONTEXT, normalizePhone(`+${digits}`));
 
 describe('Appointment reminders', () => {
   it('day before: inbox, push and email — exactly once, even when two instances run at the same moment', async () => {
-    const { f, a } = await booking(db, { startAt: later(20 * HOUR), createdAt: later(-3 * 24 * HOUR) });
-    const phone = await x.device(f.customer.id);
-    const address = await x.verifiedEmail(f.customer.id);
+    const { f, a } = await booking({ startAt: later(20 * HOUR), bookedAt: later(-3 * 24 * HOUR) });
+    const phone = await x.device(f.customer);
+    const address = await x.verifiedEmail(f.customer);
 
     await Promise.all([h.scheduler.appointmentReminders(NOW), h.scheduler.appointmentReminders(NOW)]);
     await h.scheduler.appointmentReminders(later(MIN));
 
-    const inbox = await x.inbox(f.customer.id);
+    const inbox = await x.inbox(f.customer);
     expect(inbox).toHaveLength(1);
     expect(inbox[0]).toMatchObject({ type: 'reminder_24h', appointmentId: a.id });
     expect(inbox[0]!.title).toMatch(/^Reminder: Haircut on /);
     expect(h.push.to(phone)).toHaveLength(1);
     const [mail] = h.email.to(address);
-    expect(mail!.text).toContain(a.confirmationCode);
+    expect(mail!.text).toContain(a.code);
     expect(mail!.headers?.['List-Unsubscribe']).toContain('p=emailReminders');
     expect(h.email.to(address)).toHaveLength(1);
 
     // Two hours before: the "soon" reminder (push only: they have the app).
     await h.scheduler.appointmentReminders(later(19 * HOUR));
-    expect(await inboxTitles(f.customer.id)).toEqual([inbox[0]!.title, 'Soon: Haircut at 11:00']);
+    expect(await inboxTitles(f.customer)).toEqual([inbox[0]!.title, 'Soon: Haircut at 11:00']);
     expect(h.email.to(address)).toHaveLength(1);
   });
 
   it('not for cancelled or checked-in visits, not at night, and a request nobody answered nudges the approvers', async () => {
-    const cancelled = await booking(db, { startAt: later(20 * HOUR), createdAt: later(-3 * 24 * HOUR) });
-    await db.appointment.update({
-      where: { id: cancelled.a.id },
-      data: { status: 'cancelled', cancelledAt: NOW, cancelledBy: 'user' },
-    });
-    const arrived = await booking(db, { startAt: later(90 * MIN), createdAt: later(-3 * 24 * HOUR) });
-    await db.appointment.update({ where: { id: arrived.a.id }, data: { checkedInAt: NOW } });
-    const night = await booking(db, { startAt: later(30 * HOUR), createdAt: later(-3 * 24 * HOUR) });
-    const request = await booking(db, {
+    const cancelled = await booking({ startAt: later(20 * HOUR), bookedAt: later(-3 * 24 * HOUR) });
+    await x.update(cancelled.f, cancelled.a, { status: 'cancelled', cancelledAt: NOW, cancelledBy: 'user' });
+    const arrived = await booking({ startAt: later(90 * MIN), bookedAt: later(-3 * 24 * HOUR) });
+    await x.update(arrived.f, arrived.a, { checkedInAt: NOW });
+    const night = await booking({ startAt: later(30 * HOUR), bookedAt: later(-3 * 24 * HOUR) });
+    const asking = await booking({
       status: 'pending',
       startAt: later(20 * HOUR),
-      createdAt: later(-3 * HOUR),
+      bookedAt: later(-3 * HOUR),
     });
-    const manager = await x.member(request.f.business.id, 'manager');
+    // createdAt is when the request came in: as booking-service writes it.
+    await x.update(asking.f, asking.a, { createdAt: later(-3 * HOUR) });
+    for (const b of [cancelled, arrived, night])
+      await x.update(b.f, b.a, { createdAt: later(-3 * 24 * HOUR) });
+    const manager = await x.member(asking.f, 'manager');
 
     await h.scheduler.appointmentReminders(NOW);
     // 03:00 in Lahore, 18 h before `night`: inside the day-before range, but it's night.
     await h.scheduler.appointmentReminders(later(12 * HOUR));
 
-    expect(await x.inbox(cancelled.f.customer.id)).toEqual([]);
-    expect(await x.inbox(arrived.f.customer.id)).toEqual([]);
-    expect(await x.inbox(night.f.customer.id)).toEqual([]);
-    expect(await x.inbox(request.f.customer.id)).toEqual([]);
-    for (const u of [request.f.owner.id, manager.id])
+    expect(await x.inbox(cancelled.f.customer)).toEqual([]);
+    expect(await x.inbox(arrived.f.customer)).toEqual([]);
+    expect(await x.inbox(night.f.customer)).toEqual([]);
+    expect(await x.inbox(asking.f.customer)).toEqual([]);
+    for (const u of [asking.f.owner, manager])
       expect(await inboxTitles(u)).toEqual(['A booking request is waiting']);
   });
 
   it('switched off by the admin → none', async () => {
-    const { f } = await booking(db, {
-      startAt: later(20 * HOUR + 7 * MIN),
-      createdAt: later(-3 * 24 * HOUR),
-    });
-    await h.settings.update({ reminder24h: false }, admin, ctx);
+    const { f, a } = await booking({ startAt: later(20 * HOUR + 7 * MIN) });
+    await x.update(f, a, { createdAt: later(-3 * 24 * HOUR) });
+    await h.settings.update({ reminder24h: false }, admin.id, ctx);
     await h.scheduler.appointmentReminders(NOW);
-    await h.settings.update({ reminder24h: true }, admin, ctx);
-    expect(await x.inbox(f.customer.id)).toEqual([]);
+    await h.settings.update({ reminder24h: true }, admin.id, ctx);
+    expect(await x.inbox(f.customer)).toEqual([]);
   });
 });
 
@@ -133,155 +133,138 @@ describe('"Book again" reminders', () => {
     cancelReasonCode: 'schedule_conflict' as const,
   };
   it('sent when they cancelled with "remind me later"; not if they booked there again, nor long overdue', async () => {
-    const asked = await booking(db, { startAt: later(-30 * 24 * HOUR), createdAt: later(-31 * 24 * HOUR) });
-    await db.appointment.update({
-      where: { id: asked.a.id },
-      data: { ...bookLater, rebookReminderAt: later(-HOUR) },
+    const asked = await booking({ startAt: later(-30 * 24 * HOUR) });
+    await x.update(asked.f, asked.a, { ...bookLater, rebookReminderAt: later(-HOUR) });
+    const alreadyBooked = await booking({ startAt: later(-30 * 24 * HOUR) });
+    await x.update(alreadyBooked.f, alreadyBooked.a, { ...bookLater, rebookReminderAt: later(-HOUR) });
+    await x.appointment(alreadyBooked.f, {
+      status: 'confirmed',
+      startAt: later(3 * 24 * HOUR),
+      staffId: null,
     });
-    const alreadyBooked = await booking(db, {
-      startAt: later(-30 * 24 * HOUR),
-      createdAt: later(-31 * 24 * HOUR),
-    });
-    await db.appointment.update({
-      where: { id: alreadyBooked.a.id },
-      data: { ...bookLater, rebookReminderAt: later(-HOUR) },
-    });
-    await db.appointment.create({
-      data: {
-        businessId: alreadyBooked.f.business.id,
-        serviceId: alreadyBooked.f.service.id,
-        userId: alreadyBooked.f.customer.id,
-        status: 'confirmed',
-        startAt: later(3 * 24 * HOUR),
-        endAt: later(3 * 24 * HOUR + 30 * MIN),
-        blockedUntil: later(3 * 24 * HOUR + 30 * MIN),
-        price: 800,
-        currency: 'PKR',
-        confirmationCode: generateConfirmationCode(),
-      },
-    });
-    const tooOld = await booking(db, { startAt: later(-40 * 24 * HOUR), createdAt: later(-41 * 24 * HOUR) });
-    await db.appointment.update({
-      where: { id: tooOld.a.id },
-      data: { ...bookLater, rebookReminderAt: later(-4 * 24 * HOUR) },
-    });
+    const tooOld = await booking({ startAt: later(-40 * 24 * HOUR) });
+    await x.update(tooOld.f, tooOld.a, { ...bookLater, rebookReminderAt: later(-4 * 24 * HOUR) });
 
     await h.scheduler.rebookReminders(NOW);
     await h.scheduler.rebookReminders(later(5 * MIN));
 
-    const [n] = await x.inbox(asked.f.customer.id);
+    const [n] = await x.inbox(asked.f.customer);
     expect(n).toMatchObject({
       title: 'Time to book Haircut again?',
-      data: { screen: 'book', businessId: asked.f.business.id, serviceId: asked.f.service.id },
+      data: {
+        screen: 'book',
+        businessId: asked.f.business.publicId,
+        serviceId: asked.f.service.id.toString(),
+      },
     });
-    expect(await x.inbox(asked.f.customer.id)).toHaveLength(1);
-    expect(await x.inbox(alreadyBooked.f.customer.id)).toEqual([]);
-    expect(await x.inbox(tooOld.f.customer.id)).toEqual([]);
+    expect(await x.inbox(asked.f.customer)).toHaveLength(1);
+    expect(await x.inbox(alreadyBooked.f.customer)).toEqual([]);
+    expect(await x.inbox(tooOld.f.customer)).toEqual([]);
   });
 });
 
 describe('Plan notices', () => {
   it('trial ending / ended: only while billing is on; no "ended" if they already chose another plan', async () => {
-    const plan = await db.plan.findFirstOrThrow({ where: { audience: 'user', archivedAt: null } });
-    const [ending, ended, moved] = await Promise.all([person('Ending'), person('Ended'), person('Moved on')]);
-    await db.subscription.create({
-      data: {
-        planId: plan.id,
-        userId: ending.id,
-        provider: 'trial',
-        status: 'trialing',
-        currentPeriodStart: later(-28 * 24 * HOUR),
-        currentPeriodEnd: later(2 * 24 * HOUR),
-      },
+    const [ending, ended, moved] = [await x.shop(), await x.shop(), await x.shop()];
+    const plan = await x.inShop(ending, (tx) =>
+      tx.plan.findFirstOrThrow({ where: { audience: 'business', archivedAt: null } }),
+    );
+    const subscribe = (s: Shop, data: Record<string, unknown>) =>
+      x.inShop(s, (tx) =>
+        tx.subscription.create({
+          data: {
+            id: h.world.id(),
+            businessId: s.business.id,
+            planId: plan.id,
+            provider: 'trial',
+            status: 'trialing',
+            ...data,
+          },
+        }),
+      );
+    await subscribe(ending, {
+      currentPeriodStart: later(-28 * 24 * HOUR),
+      currentPeriodEnd: later(2 * 24 * HOUR),
     });
-    for (const u of [ended, moved])
-      await db.subscription.create({
-        data: {
-          planId: plan.id,
-          userId: u.id,
-          provider: 'trial',
-          status: 'expired',
-          currentPeriodStart: later(-31 * 24 * HOUR),
-          currentPeriodEnd: later(-HOUR),
-          updatedAt: later(-HOUR),
-        },
+    for (const s of [ended, moved])
+      await subscribe(s, {
+        status: 'expired',
+        currentPeriodStart: later(-31 * 24 * HOUR),
+        currentPeriodEnd: later(-HOUR),
+        updatedAt: later(-HOUR),
       });
-    await db.subscription.create({
-      data: {
-        planId: plan.id,
-        userId: moved.id,
-        provider: 'manual',
-        status: 'active',
-        currentPeriodStart: NOW,
-      },
+    await subscribe(moved, {
+      provider: 'manual',
+      status: 'active',
+      currentPeriodStart: NOW,
+      currentPeriodEnd: null,
     });
-    const billing = await db.billingSettings.findUniqueOrThrow({ where: { audience: 'user' } });
 
-    try {
-      await db.billingSettings.update({ where: { audience: 'user' }, data: { enabled: false } });
-      await h.scheduler.planNotices(NOW);
-      expect(await x.inbox(ending.id)).toEqual([]);
-
-      await db.billingSettings.update({ where: { audience: 'user' }, data: { enabled: true } });
+    await h.scheduler.planNotices(NOW); // billing off: nothing to say
+    expect(await x.inbox(ending.owner)).toEqual([]);
+    await withBilling(h.world, 'business', async () => {
       await h.scheduler.planNotices(NOW);
       await h.scheduler.planNotices(later(15 * MIN));
-    } finally {
-      await db.billingSettings.update({ where: { audience: 'user' }, data: { enabled: billing.enabled } });
-    }
-    const inbox = await x.inbox(ending.id);
+    });
+    const inbox = await x.inbox(ending.owner);
     expect(inbox.map((n) => n.title)).toEqual(['Your free trial ends soon']);
-    expect(inbox[0]!.body).toContain(`Your ${plan.name} trial ends on Thu 14 Jan`);
-    expect(await inboxTitles(ended.id)).toEqual(['Your free trial has ended']);
-    expect(await x.inbox(moved.id)).toEqual([]);
+    expect(inbox[0]!.body).toContain(
+      `Your ${plan.name} trial for ${ending.business.name} ends on Thu 14 Jan`,
+    );
+    expect(await inboxTitles(ended.owner)).toEqual(['Your free trial has ended']);
+    expect(await x.inbox(moved.owner)).toEqual([]);
   });
 });
 
 describe('Email', () => {
   it('booking confirmations go to a verified address only; team alerts by email only to people without the app', async () => {
-    const { f, a } = await booking(db);
-    const verified = await x.verifiedEmail(f.customer.id);
-    const ownerAddress = await x.verifiedEmail(f.owner.id);
-    await x.deliver(TOPICS.BOOKINGS_CREATED, { appointmentId: a.id, status: 'confirmed' });
-    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: a.id });
+    const b = await booking();
+    const verified = await x.verifiedEmail(b.f.customer);
+    const ownerAddress = await x.verifiedEmail(b.f.owner);
+    await x.deliver(TOPICS.BOOKINGS_CREATED, { ...of(b), status: 'confirmed' });
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(b));
     expect(h.email.to(verified).map((m) => m.subject)).toEqual(['Booking confirmed']);
     expect(h.email.to(ownerAddress).map((m) => m.subject)).toEqual(['New booking']);
     expect(
-      await db.notification.count({ where: { userId: f.customer.id, channel: 'email', status: 'sent' } }),
+      await (
+        await x.shardOf(b.f.customer)
+      ).notification.count({ where: { userId: b.f.customer.id, channel: 'email', status: 'sent' } }),
     ).toBe(1);
 
-    const other = await booking(db);
-    const unverified = await x.verifiedEmail(other.f.customer.id, false);
-    const ownerWithApp = await x.verifiedEmail(other.f.owner.id);
-    await x.device(other.f.owner.id);
-    await x.deliver(TOPICS.BOOKINGS_CREATED, { appointmentId: other.a.id, status: 'confirmed' });
-    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: other.a.id });
+    const other = await booking();
+    const unverified = await x.verifiedEmail(other.f.customer, false);
+    const ownerWithApp = await x.verifiedEmail(other.f.owner);
+    await x.device(other.f.owner);
+    await x.deliver(TOPICS.BOOKINGS_CREATED, { ...of(other), status: 'confirmed' });
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(other));
     expect(h.email.to(unverified)).toEqual([]);
     expect(h.email.to(ownerWithApp)).toEqual([]);
   });
 
   it('unsubscribe link: GET only asks, POST switches off exactly that kind; a forged link does nothing', async () => {
-    const { f, a } = await booking(db);
-    const address = await x.verifiedEmail(f.customer.id);
-    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: a.id });
+    const b = await booking();
+    const address = await x.verifiedEmail(b.f.customer);
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(b));
     const link = new URL(h.email.to(address)[0]!.headers!['List-Unsubscribe']!.slice(1, -1));
+    // The link names the person by their public ID (DB-042).
+    expect(link.searchParams.get('u')).toBe(b.f.customer.publicId);
     const path = `${link.pathname}${link.search}`;
+    const prefs = async () =>
+      (await x.shardOf(b.f.customer)).notificationPreference.findUnique({
+        where: { userId: b.f.customer.id },
+      });
 
     const page = await request(h.app).get(path).expect(200);
     expect(page.text).toContain('Turn off these emails?');
-    expect(await db.notificationPreference.findUnique({ where: { userId: f.customer.id } })).toBeNull();
+    expect(await prefs()).toBeNull();
 
     await request(h.app).post(path).expect(200);
-    const prefs = await db.notificationPreference.findUniqueOrThrow({ where: { userId: f.customer.id } });
-    expect(prefs).toMatchObject({ emailBookingConfirmation: false, emailReminders: true });
+    expect(await prefs()).toMatchObject({ emailBookingConfirmation: false, emailReminders: true });
 
     const forged = path.replace(/s=[0-9a-f]{4}/, 's=0000');
     await request(h.app).post(forged).expect(400);
     await request(h.app).post(path.replace('emailBookingConfirmation', 'emailReminders')).expect(400);
-    expect(
-      await db.notificationPreference.findUniqueOrThrow({ where: { userId: f.customer.id } }),
-    ).toMatchObject({
-      emailReminders: true,
-    });
+    expect(await prefs()).toMatchObject({ emailReminders: true });
   });
 });
 
@@ -331,12 +314,9 @@ describe('WhatsApp', () => {
   const lastReply = (digits: string) => h.wa.to(`+${digits}`).at(-1)?.body ?? '';
 
   /** Connects a fresh number to the person, as the app + WhatsApp would. */
-  async function connect(userId: string) {
+  async function connect(p: Person) {
     const digits = newNumber();
-    const res = await request(h.app)
-      .post('/v1/users/me/whatsapp/link')
-      .set(await x.authFor(userId))
-      .expect(200);
+    const res = await request(h.app).post('/v1/users/me/whatsapp/link').set(p.auth).expect(200);
     expect(res.body.data.link).toBe(
       `https://wa.me/${h.whatsappNumber.slice(1)}?text=${encodeURIComponent(`BUKU ${res.body.data.code}`)}`,
     );
@@ -359,13 +339,10 @@ describe('WhatsApp', () => {
   });
 
   it('connecting: the code proves the number; old/used codes fail; replies to unknown numbers; STOP and START', async () => {
-    const { f, a } = await booking(db);
-    const digits = await connect(f.customer.id);
+    const { f, a } = await booking();
+    const digits = await connect(f.customer);
     expect(lastReply(digits)).toContain('WhatsApp is connected');
-    const status = await request(h.app)
-      .get('/v1/users/me/whatsapp')
-      .set(await x.authFor(f.customer.id))
-      .expect(200);
+    const status = await request(h.app).get('/v1/users/me/whatsapp').set(f.customer.auth).expect(200);
     expect(status.body.data).toMatchObject({
       connected: true,
       stopped: false,
@@ -378,7 +355,7 @@ describe('WhatsApp', () => {
     await post(hi).expect(200);
     expect(h.wa.to(`+${digits}`)).toHaveLength(2);
     expect(lastReply(digits)).toContain(`Haircut at ${f.business.name}`);
-    expect(lastReply(digits)).toContain(a.confirmationCode);
+    expect(lastReply(digits)).toContain(a.code);
 
     const stranger = newNumber();
     await post(inbound(stranger, 'BUKU ZZZZZZ')).expect(200);
@@ -388,33 +365,36 @@ describe('WhatsApp', () => {
 
     await post(inbound(digits, ' stop ')).expect(200);
     expect(lastReply(digits)).toContain('are off');
-    expect(
-      (await db.whatsappContact.findUniqueOrThrow({ where: { userId: f.customer.id } })).optedOutAt,
-    ).not.toBeNull();
+    expect((await contactOf(f.customer))!.optedOutAt).not.toBeNull();
     await post(inbound(digits, 'START')).expect(200);
-    expect(
-      (await db.whatsappContact.findUniqueOrThrow({ where: { userId: f.customer.id } })).optedOutAt,
-    ).toBeNull();
+    expect((await contactOf(f.customer))!.optedOutAt).toBeNull();
 
-    // The number moves to whoever proves it next.
-    const other = await createBusinessFixture(db);
-    const code = (
-      await request(h.app)
-        .post('/v1/users/me/whatsapp/link')
-        .set(await x.authFor(other.customer.id))
-    ).body.data.code as string;
+    // The number moves to whoever proves it next (the handle follows, DB-018).
+    const other = await x.person('Other customer');
+    const code = (await request(h.app).post('/v1/users/me/whatsapp/link').set(other.auth)).body.data
+      .code as string;
     await post(inbound(digits, `BUKU ${code}`)).expect(200);
-    expect(await db.whatsappContact.findUnique({ where: { userId: f.customer.id } })).toBeNull();
-    expect(await db.whatsappContact.findUnique({ where: { userId: other.customer.id } })).not.toBeNull();
+    expect(await contactOf(f.customer)).toBeNull();
+    expect(await contactOf(other)).not.toBeNull();
+    expect(await h.world.handles.find('user.whatsapp', hashOf(digits))).toBe(other.id);
+    await post(inbound(digits, 'hi')).expect(200);
+    expect(lastReply(digits)).toContain('no upcoming visits');
 
-    await request(h.app)
-      .delete('/v1/users/me/whatsapp')
-      .set(await x.authFor(other.customer.id))
-      .expect(204);
-    await request(h.app)
-      .delete('/v1/users/me/whatsapp')
-      .set(await x.authFor(other.customer.id))
-      .expect(404);
+    await request(h.app).delete('/v1/users/me/whatsapp').set(other.auth).expect(204);
+    await request(h.app).delete('/v1/users/me/whatsapp').set(other.auth).expect(404);
+    expect(await h.world.handles.find('user.whatsapp', hashOf(digits))).toBeNull();
+  });
+
+  it('a closed account lets its number go at once', async () => {
+    const someone = await x.person('Leaving');
+    const digits = await connect(someone);
+    expect(await h.world.handles.find('user.whatsapp', hashOf(digits))).toBe(someone.id);
+    const event = await x.deliver(TOPICS.USERS_DELETED, { userId: someone.id });
+    await x.redeliver(event);
+    expect(await contactOf(someone)).toBeNull();
+    expect(await h.world.handles.find('user.whatsapp', hashOf(digits))).toBeNull();
+    await post(inbound(digits, 'hi')).expect(200);
+    expect(lastReply(digits)).toContain('Settings → WhatsApp → Connect');
   });
 
   it('sending: free in the window; paid template only without the app, for allowed types, within budget', async () => {
@@ -425,65 +405,75 @@ describe('WhatsApp', () => {
         whatsappMonthlyBudgetCents: 0,
         whatsappMessageCostCents: 4,
       },
-      admin,
+      admin.id,
       ctx,
     );
     // Window open (they just connected): free, even with the app.
-    const open = await booking(db);
-    await x.device(open.f.customer.id);
-    const openDigits = await connect(open.f.customer.id);
-    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: open.a.id });
+    const open = await booking();
+    await x.device(open.f.customer);
+    const openDigits = await connect(open.f.customer);
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(open));
     const sent = h.wa.to(`+${openDigits}`).at(-1)!;
     expect(sent).toMatchObject({ kind: 'text' });
     expect(sent.body).toContain('*Booking confirmed*');
-    const row = await db.notification.findFirstOrThrow({
+    const openDb = await x.shardOf(open.f.customer);
+    const row = await openDb.notification.findFirstOrThrow({
       where: { userId: open.f.customer.id, channel: 'whatsapp', type: 'booking_confirmed' },
     });
     expect(row).toMatchObject({ whatsappPricing: 'window', status: 'sent', externalId: sent.id });
 
-    // Meta reports it delivered, then read.
+    // Meta reports it delivered, then read (each status names whose message it was).
     const status = (s: string) => ({
       object: 'whatsapp_business_account',
       entry: [
-        { id: 'waba', changes: [{ field: 'messages', value: { statuses: [{ id: sent.id, status: s }] } }] },
+        {
+          id: 'waba',
+          changes: [
+            {
+              field: 'messages',
+              value: { statuses: [{ id: sent.id, status: s, recipient_id: openDigits }] },
+            },
+          ],
+        },
       ],
     });
     await post(status('delivered')).expect(200);
     await post(status('read')).expect(200);
-    expect(await db.notification.findFirstOrThrow({ where: { id: row.id } })).toMatchObject({
+    expect(await openDb.notification.findFirstOrThrow({ where: { id: row.id } })).toMatchObject({
       status: 'read',
     });
 
     // Window closed, no app: budget 0 → nothing; with budget → a template.
-    const closed = await booking(db);
-    const closedDigits = await connect(closed.f.customer.id);
-    await db.whatsappContact.update({
+    const closed = await booking();
+    const closedDigits = await connect(closed.f.customer);
+    await (
+      await x.shardOf(closed.f.customer)
+    ).whatsappContact.update({
       where: { userId: closed.f.customer.id },
       data: { lastInboundAt: new Date(Date.now() - 2 * 24 * HOUR) },
     });
     const before = h.wa.to(`+${closedDigits}`).length;
-    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: closed.a.id });
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of(closed));
     expect(h.wa.to(`+${closedDigits}`)).toHaveLength(before);
 
-    await h.settings.update({ whatsappMonthlyBudgetCents: 1_000_000 }, admin, ctx);
-    const again = await booking(db, { startAt: daysAhead(3) });
-    await db.appointment.update({ where: { id: again.a.id }, data: { userId: closed.f.customer.id } });
-    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: again.a.id });
+    await h.settings.update({ whatsappMonthlyBudgetCents: 1_000_000 }, admin.id, ctx);
+    const elsewhere = await x.shop();
+    const again = await x.appointment(elsewhere, { customer: closed.f.customer, startAt: daysAhead(3) });
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of({ f: elsewhere, a: again }));
     const template = h.wa.to(`+${closedDigits}`).at(-1)!;
     expect(template).toMatchObject({ kind: 'template', template: 'buku_booking_confirmed' });
     expect(template.params).toEqual([
-      again.f.business.name,
+      elsewhere.business.name,
       'Haircut',
       expect.stringMatching(/, 10:30$/),
-      again.a.confirmationCode,
+      again.code,
     ]);
 
     // Same person with the app: push is free, so no paid message.
-    await x.device(closed.f.customer.id);
-    const third = await booking(db, { startAt: daysAhead(4) });
-    await db.appointment.update({ where: { id: third.a.id }, data: { userId: closed.f.customer.id } });
+    await x.device(closed.f.customer);
+    const third = await x.appointment(elsewhere, { customer: closed.f.customer, startAt: daysAhead(4) });
     const count = h.wa.to(`+${closedDigits}`).length;
-    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, { appointmentId: third.a.id });
+    await x.deliver(TOPICS.BOOKINGS_CONFIRMED, of({ f: elsewhere, a: third }));
     expect(h.wa.to(`+${closedDigits}`)).toHaveLength(count);
 
     const usage = await h.settings.whatsappUsage();
@@ -491,7 +481,7 @@ describe('WhatsApp', () => {
     expect(usage.estimatedCents).toBeGreaterThanOrEqual(4);
     await h.settings.update(
       { whatsappEnabled: false, whatsappPaidTypes: [], whatsappMonthlyBudgetCents: 0 },
-      admin,
+      admin.id,
       ctx,
     );
   });
@@ -499,13 +489,10 @@ describe('WhatsApp', () => {
 
 describe('Admin settings', () => {
   it('only platform admins; unknown template types refused; every change audited', async () => {
-    const someone = await person('Someone');
-    await request(h.app)
-      .get('/v1/admin/notifications/settings')
-      .set(await x.authFor(someone.id))
-      .expect(403);
+    const someone = await x.person('Someone');
+    await request(h.app).get('/v1/admin/notifications/settings').set(someone.auth).expect(403);
 
-    const auth = await x.authFor(admin, 'super_admin');
+    const auth = admin.auth;
     await request(h.app)
       .put('/v1/admin/notifications/settings')
       .set(auth)
@@ -522,15 +509,25 @@ describe('Admin settings', () => {
       .send({ quietStartHour: 22, quietEndHour: 8 })
       .expect(200);
     expect(res.body.data).toMatchObject({ quietStartHour: 22, quietEndHour: 8, whatsappEnabled: false });
+    // On the directory (reference data, DB-015); the audit entry on the admin's own shard.
     expect(
-      await db.auditLog.findFirst({
-        where: { userId: admin, action: 'notifications.settings_updated' },
+      await h.world.directory.notificationSettings.findUniqueOrThrow({ where: { id: 1 } }),
+    ).toMatchObject({
+      quietStartHour: 22,
+      updatedById: admin.id,
+    });
+    expect(
+      await (
+        await x.shardOf(admin)
+      ).auditLog.findFirst({
+        where: { userId: admin.id, action: 'notifications.settings_updated' },
         orderBy: { createdAt: 'desc' },
       }),
     ).toMatchObject({
       oldValues: { quietStartHour: 21, quietEndHour: 9 },
       newValues: { quietStartHour: 22, quietEndHour: 8 },
     });
+    await h.settings.update({ quietStartHour: 21, quietEndHour: 9 }, admin.id, ctx);
 
     const templates = await request(h.app)
       .get('/v1/admin/notifications/whatsapp/templates')
@@ -544,51 +541,51 @@ describe('Admin settings', () => {
 
 describe('Reviews', () => {
   it('“how was it?” after a visit — once, not for no-shows or reviewed visits; new review → owner and managers; reply → reviewer', async () => {
-    const visited = await booking(db, { startAt: later(-2 * HOUR), createdAt: later(-3 * 24 * HOUR) });
-    await db.appointment.update({ where: { id: visited.a.id }, data: { status: 'completed' } });
-    const missed = await booking(db, { startAt: later(-2 * HOUR), createdAt: later(-3 * 24 * HOUR) });
-    await db.appointment.update({ where: { id: missed.a.id }, data: { status: 'no_show' } });
-    const reviewed = await booking(db, { startAt: later(-2 * HOUR), createdAt: later(-3 * 24 * HOUR) });
-    await db.appointment.update({ where: { id: reviewed.a.id }, data: { status: 'completed' } });
-    await db.review.create({
-      data: {
-        appointmentId: reviewed.a.id,
-        userId: reviewed.f.customer.id,
-        businessId: reviewed.f.business.id,
-        overallRating: 5,
-      },
-    });
+    const past = { startAt: later(-2 * HOUR), bookedAt: later(-3 * 24 * HOUR) };
+    const visited = await booking(past);
+    await x.update(visited.f, visited.a, { status: 'completed' });
+    const missed = await booking(past);
+    await x.update(missed.f, missed.a, { status: 'no_show' });
+    const reviewed = await booking(past);
+    await x.update(reviewed.f, reviewed.a, { status: 'completed' });
+    const review = (b: { f: Shop; a: Visit }, overallRating: number) =>
+      x.inShop(b.f, (tx) =>
+        tx.review.create({
+          data: {
+            id: h.world.id(),
+            appointmentId: b.a.id,
+            appointmentStartAt: b.a.startAt,
+            userId: b.f.customer.id,
+            businessId: b.f.business.id,
+            overallRating,
+          },
+        }),
+      );
+    await review(reviewed, 5);
 
     await h.scheduler.reviewRequests(NOW);
     await h.scheduler.reviewRequests(later(5 * 60_000));
-    expect(await inboxTitles(visited.f.customer.id)).toEqual(['How was your Haircut?']);
-    expect((await x.inbox(visited.f.customer.id))[0]!.data).toEqual({
+    expect(await inboxTitles(visited.f.customer)).toEqual(['How was your Haircut?']);
+    expect((await x.inbox(visited.f.customer))[0]!.data).toEqual({
       screen: 'review',
-      appointmentId: visited.a.id,
+      appointmentId: visited.a.publicId,
     });
-    expect(await x.inbox(missed.f.customer.id)).toEqual([]);
-    expect(await x.inbox(reviewed.f.customer.id)).toEqual([]);
+    expect(await x.inbox(missed.f.customer)).toEqual([]);
+    expect(await x.inbox(reviewed.f.customer)).toEqual([]);
 
-    const r = await db.review.create({
-      data: {
-        appointmentId: visited.a.id,
-        userId: visited.f.customer.id,
-        businessId: visited.f.business.id,
-        overallRating: 4,
-      },
-    });
-    const manager = await x.member(visited.f.business.id, 'manager');
-    const desk = await x.member(visited.f.business.id, 'front_desk');
+    const r = await review(visited, 4);
+    const manager = await x.member(visited.f, 'manager');
+    const desk = await x.member(visited.f, 'front_desk');
     const data = { reviewId: r.id, appointmentId: visited.a.id, businessId: visited.f.business.id };
     await x.deliver(TOPICS.REVIEWS_CREATED, data);
-    for (const u of [visited.f.owner.id, manager.id]) expect(await inboxTitles(u)).toEqual(['New 4★ review']);
-    expect((await x.inbox(manager.id))[0]!.body).toBe(
+    for (const u of [visited.f.owner, manager]) expect(await inboxTitles(u)).toEqual(['New 4★ review']);
+    expect((await x.inbox(manager))[0]!.body).toBe(
       'Ayesha K. reviewed Haircut. Reply to show customers you listen.',
     );
-    expect(await x.inbox(desk.id)).toEqual([]);
+    expect(await x.inbox(desk)).toEqual([]);
 
     await x.deliver(TOPICS.REVIEWS_RESPONDED, data);
-    expect((await inboxTitles(visited.f.customer.id)).at(-1)).toBe(
+    expect((await inboxTitles(visited.f.customer)).at(-1)).toBe(
       `${visited.f.business.name} replied to your review`,
     );
   });

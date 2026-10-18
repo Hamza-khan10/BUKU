@@ -159,20 +159,29 @@ export class DataPlane {
    * (CROSS_BUSINESS): for sweeps that are meant to see every business. Results in shard order.
    */
   async acrossBusinesses<T>(work: (tx: BusinessTx, shard: ShardInfo) => Promise<T>): Promise<T[]> {
+    const out: T[] = [];
+    for (const { shard, run } of await this.businessShards()) out.push(await run((tx) => work(tx, shard)));
+    return out;
+  }
+
+  /**
+   * Every business shard, each with `run`: one transaction through the cross-business role per call.
+   * For sweeps that read in pages and act between them, so a long sweep never holds a transaction.
+   */
+  async businessShards(): Promise<
+    { shard: ShardInfo; run: <T>(work: (tx: BusinessTx) => Promise<T>) => Promise<T> }[]
+  > {
     if (!CROSS_BUSINESS[this.service]) {
       throw new Error(`${this.service} has no cross-business role (CROSS_BUSINESS in access.ts)`);
     }
-    const out: T[] = [];
-    for (const shard of await this.router.shards('business')) {
-      const client = this.businesses.forShard(shard);
-      out.push(
-        await client.$transaction(async (tx) => {
+    return (await this.router.shards('business')).map((shard) => ({
+      shard,
+      run: <T>(work: (tx: BusinessTx) => Promise<T>) =>
+        this.businesses.forShard(shard).$transaction(async (tx) => {
           await forAllBusinesses(tx, this.service);
-          return work(tx, shard);
+          return work(tx);
         }),
-      );
-    }
-    return out;
+    }));
   }
 
   /**
