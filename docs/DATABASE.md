@@ -1483,3 +1483,33 @@ more.
   role (a harness that writes people, businesses and the customer's side of appointments as the
   other services do), including deliveries across shards, a closed account's WhatsApp number, and
   a service that is no longer offered.
+
+**D3g, as built (2026-10-18).** billing-service runs on v2 (D-118); nothing of it uses v1 any more.
+
+- **The catalog** (plans, prices, the switch per audience, costs, channel fees) is reference data on
+  the directory, edited only by billing-service (new IDs from the generator) and copied to every
+  shard by replication; billing reads plans and settings on the directory, so its own answers
+  never wait for a copy. Plan limits are still enforced on each business's shard
+  (`businessEntitlementsOnShard`).
+- **Money** is kept in minor units of its currency (DB-009: prices, fees and costs), entered and
+  shown as before ("24.99"); `toMinor` and `formatMinor` moved to `@buku/common` for every service.
+- **Subscriptions and plan requests** live on the business's shard. A business pays for one plan
+  at a time: business migration `20261018140000_one_live_subscription` restores v1's rule (one
+  live subscription per business) and checks that a period never ends before it starts. One trial
+  per business and one open request per business were already database rules.
+- **Paddle:** checkout names the business by its public ID in `custom_data`; a webhook is recorded
+  as handled (`processed_events`, also checked by its ID alone) and applied in one transaction on
+  that business's shard. An event whose business can't be found is acknowledged and logged.
+- **Customers are free (D-101):** there are no customer subscriptions in v2. `GET /v1/billing/me`
+  shows the customer plan and their visits (from their own list and queue outcomes); checkout,
+  trials and grants for people are refused.
+- **Admin:** subscription and plan-request lists visit every business shard and merge (newest /
+  oldest first); one named by its ID is found on whichever shard holds it; subscriber counts per
+  plan and price come from every shard. The admin's audit entries go to their own shard; a
+  business's (trial, request, checkout, grant) to its shard.
+- **Sweeper:** ended trials and grants are marked expired on every business shard.
+- **Rights:** billing reads `user_appointments` and `user_visit_outcomes` on user shards (the
+  visits count).
+- **Tests:** billing-service's 31 integration tests (the catalog, switches, trials, requests,
+  grants, costs and economics; Paddle against a fake Paddle) run on the services' v2 world as its
+  own role, including the one-live-subscription rule and a shard whose settings copy is missing.

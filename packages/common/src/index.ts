@@ -17,6 +17,7 @@ export * from './ids.js';
 export * from './categories.js';
 export * from './countries.js';
 export * from './validation.js';
+export * from './money.js';
 export {
   KIND_HINTS,
   normalizeText,

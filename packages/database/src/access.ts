@@ -438,7 +438,12 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
     updates: { user_business_roles: ['business_name', 'version', 'updated_at'] },
     deletes: ['user_business_roles'],
   },
-  billing: { owns: [...CONSUMES], reads: { users: SHARD_PERSON }, inserts: ['audit_logs'] },
+  billing: {
+    owns: [...CONSUMES],
+    // A customer's account page counts their visits (shown only: customers are free, D-101).
+    reads: { users: SHARD_PERSON, user_appointments: '*', user_visit_outcomes: '*' },
+    inserts: ['audit_logs'],
+  },
   search: { owns: [] },
   ads: { owns: [] },
   analytics: { owns: [] },
