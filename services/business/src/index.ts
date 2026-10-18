@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import {
   createBlindIndexer,
   createFieldCipher,
@@ -11,13 +12,13 @@ import {
   runService,
   type ShutdownHook,
 } from '@buku/common';
-import { createDatabaseClient, pingDatabase } from '@buku/database';
+import { DataPlane } from '@buku/database';
 import {
   consumerGroupId,
   createKafka,
   EventProducer,
   kafkaConnectionFromEnv,
-  OutboxRelay,
+  ShardOutboxRelays,
   startConsumer,
 } from '@buku/kafka';
 import { PictureUploads, storageFromEnv } from '@buku/media';
@@ -28,10 +29,14 @@ import { businessEventHandler, CONSUMED_TOPICS } from './events/handlers.js';
 const env = loadConfig(Env);
 
 // ── Dependencies ──
-const db = createDatabaseClient({
-  url: env.DATABASE_URL,
-  maxConnections: env.DATABASE_POOL_SIZE,
-  applicationName: env.SERVICE_NAME,
+// Database v2 (D3): businesses on business shards, owners' lists on user shards, the directory.
+const plane = await DataPlane.start({
+  service: 'business',
+  databaseUrl: env.DATABASE_URL,
+  ...(env.DATABASE_DIRECTORY_URL && { directoryUrl: env.DATABASE_DIRECTORY_URL }),
+  region: env.BUKU_REGION,
+  instance: `${env.SERVICE_NAME}:${hostname()}:${process.pid}`,
+  poolSize: env.DATABASE_SHARD_POOL_SIZE,
 });
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
 const kafka = createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env));
@@ -39,14 +44,16 @@ const producer = new EventProducer(kafka);
 const verifier = await createJwtVerifierFromEnv(env);
 const { storage, links } = storageFromEnv(env);
 await producer.connect();
-// Publishes this service's committed outbox events (businesses.*): each service its own (D-092).
-// One replica at a time (advisory lock per service).
-const relay = new OutboxRelay({ db, producer, source: 'business-service' });
-relay.start();
+// Publishes this service's committed outbox events (businesses.*, from business shards): each
+// service its own (D-092). One replica at a time per shard (advisory lock per service).
+const relays = new ShardOutboxRelays({ plane, producer, source: 'business-service', families: ['business'] });
+await relays.start();
 
 // ── Readiness ──
 const readiness = new Readiness()
-  .add('postgres', () => pingDatabase(db))
+  .add('postgres', async () => {
+    await plane.directory.$queryRaw`SELECT 1`;
+  })
   .add('valkey', () => redis.ping())
   .add('object-storage', () =>
     storage.ping([env.S3_BUCKET_DOCUMENTS, env.S3_BUCKET_MEDIA, env.S3_BUCKET_PRIVATE]),
@@ -56,7 +63,7 @@ const readiness = new Readiness()
   );
 
 const { app, pictures } = buildBusinessApp({
-  db,
+  plane,
   redis,
   verifier,
   revocations: createRevocationStore(redis),
@@ -90,7 +97,7 @@ const consumer = await startConsumer({
 
 // Hooks run in REVERSE order on shutdown.
 const hooks: ShutdownHook[] = [
-  { name: 'postgres', fn: () => db.$disconnect() },
+  { name: 'postgres', fn: () => plane.close() },
   {
     name: 'valkey',
     fn: async () => {
@@ -98,7 +105,7 @@ const hooks: ShutdownHook[] = [
     },
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
-  { name: 'outbox-relay', fn: () => relay.stop() },
+  { name: 'outbox-relay', fn: () => relays.stop() },
   { name: 'kafka-consumer', fn: () => consumer.stop() },
 ];
 

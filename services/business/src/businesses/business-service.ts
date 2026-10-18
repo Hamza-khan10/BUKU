@@ -1,16 +1,18 @@
-import { AppError, ErrorCodes, type BusinessRole } from '@buku/common';
+import { AppError, ErrorCodes, logger, publicId, type Actor, type BusinessRole } from '@buku/common';
 import {
+  businessRoleOfActor,
   isUniqueViolation,
-  Prisma,
-  recordAudit,
-  requireBusinessPermission,
-  type Database,
-  type Transaction,
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  ShardNotFoundError,
+  type BusinessTx,
+  type DataPlane,
 } from '@buku/database';
-import { createEvent, enqueueEvent, TOPICS } from '@buku/kafka';
+import { createEvent, enqueueShardEvent, TOPICS, type Topic } from '@buku/kafka';
 import { auditCtx, type RequestContext } from '../http/context.js';
+import type { CategoryService } from '../categories/category-service.js';
 import { candidateSlugs } from './slug.js';
-import { privateView, publicView } from './views.js';
+import { loadBusiness, privateView, publicView, type LoadedBusiness, type PrivateBusiness } from './views.js';
 
 /** Statuses the public can see. Suspended/rejected businesses disappear (404). */
 const PUBLIC_STATUSES = ['pending', 'verified'] as const;
@@ -31,15 +33,9 @@ const IDENTITY_FIELDS = [
   'lng',
 ] as const;
 
-const include = {
-  category: { select: { id: true, name: true, slug: true } },
-  hours: true,
-  searchStats: { select: { kept90d: true, businessCancels90d: true } },
-} as const;
-
 export interface BusinessProfileInput {
   name: string;
-  categoryId: string;
+  categoryId: bigint;
   description?: string | undefined;
   phone?: string | undefined;
   email?: string | undefined;
@@ -60,238 +56,321 @@ export interface BusinessServiceSettings {
   maxBusinessesPerOwner: number;
 }
 
+/**
+ * Businesses on database v2 (D3c): each on its own business shard, found by its public ID or its
+ * address (global handles, DB-018); its owner's and team's own lists of where they work on their
+ * user shards (DB-014). Every request works inside one business (`inBusiness`, DB-020).
+ */
 export class BusinessService {
   constructor(
-    private readonly db: Database,
+    private readonly plane: DataPlane,
+    private readonly categories: CategoryService,
     private readonly settings: BusinessServiceSettings,
   ) {}
 
+  /**
+   * Register a business. Like an account (D-113), its row is written first and its handles claimed
+   * after — the address (the first free candidate), then the public ID — so a handle always leads
+   * to a business; anything that fails on the way is undone.
+   */
   async create(
-    ownerId: string,
+    owner: Actor,
     input: BusinessProfileInput & { acceptedBusinessTermsVersion: string },
     ctx: RequestContext,
   ) {
-    if (input.acceptedBusinessTermsVersion !== this.settings.businessTermsVersion) {
+    const { plane, settings } = this;
+    if (input.acceptedBusinessTermsVersion !== settings.businessTermsVersion) {
       throw new AppError(
-        `Please accept the Business Terms (version ${this.settings.businessTermsVersion}) to register a business`,
+        `Please accept the Business Terms (version ${settings.businessTermsVersion}) to register a business`,
         ErrorCodes.TERMS_NOT_ACCEPTED,
         422,
-        { details: { termsVersion: this.settings.businessTermsVersion } },
+        { details: { termsVersion: settings.businessTermsVersion } },
       );
     }
-    const owned = await this.db.business.count({ where: { ownerId, deletedAt: null } });
-    if (owned >= this.settings.maxBusinessesPerOwner) {
+    const ownerShard = await plane.user(owner.id);
+    const owned = await ownerShard.userBusinessRole.count({ where: { userId: owner.id, role: 'owner' } });
+    if (owned >= settings.maxBusinessesPerOwner) {
       throw new AppError(
-        `You can register up to ${this.settings.maxBusinessesPerOwner} businesses`,
+        `You can register up to ${settings.maxBusinessesPerOwner} businesses`,
         ErrorCodes.PLAN_LIMIT_REACHED,
         409,
       );
     }
-    await this.assertCategory(input.categoryId);
+    await this.categories.assertUsable(input.categoryId);
 
     const { acceptedBusinessTermsVersion: _terms, ...profile } = input;
-    for (const slug of candidateSlugs(input.name, input.city)) {
-      try {
-        const business = await this.db.$transaction(async (tx) => {
-          const created = await tx.business.create({
-            data: {
-              ...profile,
-              slug,
-              ownerId,
-              status: 'pending',
-              verified: false,
-              businessTermsVersion: this.settings.businessTermsVersion,
-              businessTermsAcceptedAt: new Date(),
-            },
-            include,
-          });
-          await this.emit(
-            tx,
-            TOPICS.BUSINESSES_CREATED,
-            created.id,
-            {
-              businessId: created.id,
-              ownerId,
-              categoryId: created.categoryId,
-              city: created.city,
-              country: created.country,
-              status: created.status,
-            },
-            ctx,
+    const id = plane.id();
+    const pid = publicId();
+    await plane.placeBusiness(id);
+    const claimed: [string, Buffer][] = [];
+    let written = false;
+    let viewed = false;
+    try {
+      // 1. The row, under the first address nobody has, on this shard or any other.
+      let slug: string | null = null;
+      for (const candidate of candidateSlugs(input.name, input.city)) {
+        try {
+          await plane.inBusiness(id, (tx) =>
+            written
+              ? tx.business.update({ where: { id }, data: { slug: candidate } })
+              : tx.business.create({
+                  data: {
+                    ...profile,
+                    id,
+                    publicId: pid,
+                    slug: candidate,
+                    ownerUserId: owner.id,
+                    status: 'pending',
+                    businessTermsVersion: settings.businessTermsVersion,
+                    businessTermsAcceptedAt: new Date(),
+                  },
+                }),
           );
-          await recordAudit(tx, {
-            userId: ownerId,
-            action: 'business.created',
-            resourceType: 'business',
-            resourceId: created.id,
-            ...auditCtx(ctx),
-          });
-          return created;
-        });
-        return privateView(business, 'owner');
-      } catch (err) {
-        if (isUniqueViolation(err)) continue; // slug taken: try the next candidate
-        throw err;
+          written = true;
+        } catch (err) {
+          if (isUniqueViolation(err)) continue; // taken on this shard
+          throw err;
+        }
+        const key = Buffer.from(candidate, 'utf8');
+        if ((await plane.handles.claim('business.slug', key, id)).claimed) {
+          claimed.push(['business.slug', key]);
+          slug = candidate;
+          break;
+        }
       }
+      if (!slug) throw AppError.internal('Could not allocate a unique business URL');
+      const pidKey = Buffer.from(pid, 'ascii');
+      if (!(await plane.handles.claim('business.public_id', pidKey, id)).claimed) {
+        throw AppError.internal('Could not allocate a public ID');
+      }
+      claimed.push(['business.public_id', pidKey]);
+
+      // 2. The owner's own list of their businesses (DB-014).
+      await ownerShard.userBusinessRole.create({
+        data: {
+          userId: owner.id,
+          businessId: id,
+          role: 'owner',
+          status: 'active',
+          businessName: input.name,
+          version: plane.id(),
+        },
+      });
+      viewed = true;
+
+      // 3. Announced and audited, with the business as it now is.
+      const business = await plane.inBusiness(id, async (tx) => {
+        const created = (await loadBusiness(tx, plane.directory, id))!;
+        await this.emit(
+          tx,
+          TOPICS.BUSINESSES_CREATED,
+          id,
+          {
+            businessId: id.toString(),
+            ownerId: owner.id.toString(),
+            categoryId: created.categoryId.toString(),
+            city: created.city,
+            country: created.country,
+            status: created.status,
+          },
+          ctx,
+        );
+        await recordShardAudit(tx, plane.id(), {
+          userId: owner.id,
+          action: 'business.created',
+          resourceType: 'business',
+          resourceId: id,
+          ...auditCtx(ctx),
+        });
+        return created;
+      });
+      return privateView(business, 'owner');
+    } catch (err) {
+      if (viewed)
+        await ownerShard.userBusinessRole.deleteMany({ where: { userId: owner.id, businessId: id } });
+      for (const [kind, key] of claimed) await plane.handles.release(kind, key, id);
+      if (written) await plane.inBusiness(id, (tx) => tx.business.deleteMany({ where: { id } }));
+      throw err;
     }
-    throw AppError.internal('Could not allocate a unique business URL');
   }
 
-  /** Businesses I own or work at, with my role in each. */
-  async listMine(userId: string) {
-    const [owned, memberships] = await Promise.all([
-      this.db.business.findMany({
-        where: { ownerId: userId, deletedAt: null },
-        include,
-        orderBy: { createdAt: 'asc' },
-      }),
-      this.db.businessMember.findMany({
-        where: { userId, status: 'active', business: { deletedAt: null } },
-        include: { business: { include } },
-      }),
-    ]);
-    return [
-      ...owned.map((b) => privateView(b, 'owner')),
-      ...memberships.map((m) => privateView(m.business, m.role)),
-    ];
+  /** Businesses I own or work at, with my role in each (my own list, checked against each business). */
+  async listMine(actor: Actor): Promise<PrivateBusiness[]> {
+    const mine = await (
+      await this.plane.user(actor.id)
+    ).userBusinessRole.findMany({ where: { userId: actor.id, status: 'active' } });
+    const found: { role: BusinessRole; business: LoadedBusiness }[] = [];
+    for (const { businessId } of mine) {
+      const row = await this.plane
+        .inBusiness(businessId, async (tx) => {
+          const role = await businessRoleOfActor(tx, businessId, actor);
+          const business = role && (await loadBusiness(tx, this.plane.directory, businessId));
+          return role && business ? { role, business } : null;
+        })
+        .catch((err: unknown) => {
+          if (err instanceof ShardNotFoundError) return null;
+          throw err;
+        });
+      if (row) found.push(row);
+    }
+    // Owned first, then the rest; oldest first in each.
+    return found
+      .sort(
+        (a, b) =>
+          Number(b.role === 'owner') - Number(a.role === 'owner') ||
+          +a.business.createdAt - +b.business.createdAt,
+      )
+      .map(({ role, business }) => privateView(business, role));
   }
 
-  async getManaged(businessId: string, userId: string) {
-    const role = await requireBusinessPermission(this.db, businessId, userId, 'business.view_private');
-    return privateView(await this.load(businessId), role);
+  async getManaged(businessId: bigint, actor: Actor) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      const role = await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.view_private');
+      return privateView(await this.load(tx, businessId), role);
+    });
   }
 
+  /** The public profile, by the business's public ID or its address. */
   async getPublic(idOrSlug: string) {
-    const isId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(idOrSlug);
-    const business = await this.db.business.findFirst({
-      where: {
-        ...(isId ? { id: idOrSlug } : { slug: idOrSlug }),
-        deletedAt: null,
-        status: { in: [...PUBLIC_STATUSES] },
-      },
-      include,
-    });
+    const businessId =
+      (await this.plane.idOfPublic('business', idOrSlug)) ??
+      (await this.plane.handles.find('business.slug', Buffer.from(idOrSlug, 'utf8')));
+    const business =
+      businessId === null
+        ? null
+        : await this.plane.inBusiness(businessId, async (tx) => {
+            const b = await loadBusiness(tx, this.plane.directory, businessId);
+            return b && (PUBLIC_STATUSES as readonly string[]).includes(b.status) ? b : null;
+          });
     if (!business) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
-    return publicView(business);
+    return { internalId: business.id, ...publicView(business) };
   }
 
-  async update(
-    businessId: string,
-    userId: string,
-    patch: Partial<BusinessProfileInput>,
-    ctx: RequestContext,
-  ) {
-    const role = await requireBusinessPermission(this.db, businessId, userId, 'business.update');
-    const current = await this.load(businessId);
-    this.assertWritable(current.status);
-    if (patch.categoryId) await this.assertCategory(patch.categoryId);
+  async update(businessId: bigint, actor: Actor, patch: Partial<BusinessProfileInput>, ctx: RequestContext) {
+    const { plane } = this;
+    if (patch.categoryId !== undefined) await this.categories.assertUsable(patch.categoryId);
+    const { view, renamed } = await plane.inBusiness(businessId, async (tx) => {
+      const role = await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.update');
+      const current = await this.load(tx, businessId);
+      assertWritable(current.status);
 
-    const changed = (Object.keys(patch) as (keyof BusinessProfileInput)[]).filter((k) => {
-      const now = current[k];
-      const next = patch[k];
-      if (next === undefined) return false;
-      return now instanceof Prisma.Decimal ? now.toNumber() !== next : now !== next;
-    });
-    if (changed.length === 0) return privateView(current, role);
+      const changed = (Object.keys(patch) as (keyof BusinessProfileInput)[]).filter(
+        (k) => patch[k] !== undefined && current[k] !== patch[k],
+      );
+      if (changed.length === 0) return { view: privateView(current, role), renamed: false };
 
-    const identityChanged = changed.some((k) => (IDENTITY_FIELDS as readonly string[]).includes(k));
-    // A verified (or rejected-and-fixed) business whose identity changes goes back to review.
-    const reverify = identityChanged && (current.status === 'verified' || current.status === 'rejected');
-
-    const updated = await this.db.$transaction(async (tx) => {
-      const row = await tx.business.update({
+      const identityChanged = changed.some((k) => (IDENTITY_FIELDS as readonly string[]).includes(k));
+      // A verified (or rejected-and-fixed) business whose identity changes goes back to review.
+      const reverify = identityChanged && (current.status === 'verified' || current.status === 'rejected');
+      await tx.business.update({
         where: { id: businessId },
         data: {
           ...Object.fromEntries(changed.map((k) => [k, patch[k]])),
-          ...(reverify && { status: 'pending', verified: false, verifiedAt: null, rejectionReason: null }),
+          ...(reverify && { status: 'pending', verifiedAt: null, rejectionReason: null }),
         },
-        include,
       });
+      const row = await this.load(tx, businessId);
       await this.emit(
         tx,
         TOPICS.BUSINESSES_UPDATED,
         businessId,
         {
-          businessId,
+          businessId: businessId.toString(),
           changedFields: changed,
           reverificationRequired: reverify,
           status: row.status,
         },
         ctx,
       );
-      await recordAudit(tx, {
-        userId,
+      await recordShardAudit(tx, plane.id(), {
+        userId: actor.id,
         action: 'business.updated',
         resourceType: 'business',
         resourceId: businessId,
         newValues: { changedFields: changed, reverificationRequired: reverify },
         ...auditCtx(ctx),
       });
-      return row;
+      return { view: privateView(row, role), renamed: changed.includes('name') };
     });
-    return privateView(updated, role);
+    if (renamed) await this.renameInLists(businessId, view.name);
+    return view;
   }
 
   /** Replace the whole weekly schedule (days not listed are closed). */
   async setHours(
-    businessId: string,
-    userId: string,
+    businessId: bigint,
+    actor: Actor,
     hours: { dayOfWeek: number; openTime: string; closeTime: string }[],
     ctx: RequestContext,
   ) {
-    const role = await requireBusinessPermission(this.db, businessId, userId, 'business.hours');
-    const current = await this.load(businessId);
-    this.assertWritable(current.status);
-    const updated = await this.db.$transaction(async (tx) => {
+    const { plane } = this;
+    return plane.inBusiness(businessId, async (tx) => {
+      const role = await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.hours');
+      const current = await this.load(tx, businessId);
+      assertWritable(current.status);
       await tx.businessHours.deleteMany({ where: { businessId } });
-      await tx.businessHours.createMany({ data: hours.map((h) => ({ businessId, ...h })) });
+      await tx.businessHours.createMany({ data: hours.map((h) => ({ id: plane.id(), businessId, ...h })) });
       await this.emit(
         tx,
         TOPICS.BUSINESSES_UPDATED,
         businessId,
-        { businessId, changedFields: ['hours'], reverificationRequired: false, status: current.status },
+        {
+          businessId: businessId.toString(),
+          changedFields: ['hours'],
+          reverificationRequired: false,
+          status: current.status,
+        },
         ctx,
       );
-      await recordAudit(tx, {
-        userId,
+      await recordShardAudit(tx, plane.id(), {
+        userId: actor.id,
         action: 'business.hours_updated',
         resourceType: 'business',
         resourceId: businessId,
         ...auditCtx(ctx),
       });
-      return tx.business.findUniqueOrThrow({ where: { id: businessId }, include });
+      return privateView(await this.load(tx, businessId), role);
     });
-    return privateView(updated, role);
   }
 
   async report(
-    businessId: string,
-    reporterId: string,
+    businessId: bigint,
+    reporter: Actor,
     input: {
       reason: 'fake_business' | 'wrong_information' | 'inappropriate_content' | 'scam_or_fraud' | 'other';
       details?: string | undefined;
     },
     ctx: RequestContext,
   ) {
-    const business = await this.db.business.findFirst({
-      where: { id: businessId, deletedAt: null, status: { in: [...PUBLIC_STATUSES] } },
-      select: { ownerId: true },
-    });
-    if (!business) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
-    if (business.ownerId === reporterId) throw AppError.badRequest('You cannot report your own business');
+    const { plane } = this;
     try {
-      const report = await this.db.businessReport.create({
-        data: { businessId, reporterId, reason: input.reason, details: input.details ?? null },
+      return await plane.inBusiness(businessId, async (tx) => {
+        const business = await tx.business.findFirst({
+          where: { id: businessId, deletedAt: null, status: { in: [...PUBLIC_STATUSES] } },
+          select: { ownerUserId: true },
+        });
+        if (!business) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+        if (business.ownerUserId === reporter.id)
+          throw AppError.badRequest('You cannot report your own business');
+        const report = await tx.businessReport.create({
+          data: {
+            id: plane.id(),
+            businessId,
+            reporterId: reporter.id,
+            reason: input.reason,
+            details: input.details ?? null,
+          },
+        });
+        await recordShardAudit(tx, plane.id(), {
+          userId: reporter.id,
+          action: 'business.reported',
+          resourceType: 'business',
+          resourceId: businessId,
+          newValues: { reason: input.reason },
+          ...auditCtx(ctx),
+        });
+        return { id: report.id.toString(), status: report.status };
       });
-      await recordAudit(this.db, {
-        userId: reporterId,
-        action: 'business.reported',
-        resourceType: 'business',
-        resourceId: businessId,
-        newValues: { reason: input.reason },
-        ...auditCtx(ctx),
-      });
-      return { id: report.id, status: report.status };
     } catch (err) {
       if (isUniqueViolation(err))
         throw AppError.conflict('You have already reported this business', ErrorCodes.ALREADY_REPORTED);
@@ -301,44 +380,59 @@ export class BusinessService {
 
   // ── helpers ────────────────────────────────────────────────────────────
 
-  private async load(businessId: string) {
-    const b = await this.db.business.findFirst({ where: { id: businessId, deletedAt: null }, include });
+  private async load(tx: BusinessTx, businessId: bigint): Promise<LoadedBusiness> {
+    const b = await loadBusiness(tx, this.plane.directory, businessId);
     if (!b) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
     return b;
   }
 
-  private async assertCategory(categoryId: string) {
-    const ok = await this.db.category.count({ where: { id: categoryId, isActive: true } });
-    if (!ok)
-      throw AppError.badRequest('Unknown category', [
-        { path: 'categoryId', message: 'unknown or inactive category' },
-      ]);
-  }
-
-  private assertWritable(status: string) {
-    if (status === 'suspended') {
-      throw new AppError('This business is suspended; contact support', ErrorCodes.BUSINESS_SUSPENDED, 403);
+  /**
+   * The new name in the owner's and team's own lists, on their shards. After the change itself:
+   * a list that misses it shows the old name until the next change, nothing worse.
+   */
+  private async renameInLists(businessId: bigint, name: string): Promise<void> {
+    const { plane } = this;
+    const people = await plane.inBusiness(businessId, async (tx) => {
+      const b = await tx.business.findUniqueOrThrow({
+        where: { id: businessId },
+        select: { ownerUserId: true },
+      });
+      const members = await tx.businessMember.findMany({ where: { businessId }, select: { userId: true } });
+      return [b.ownerUserId, ...members.map((m) => m.userId)];
+    });
+    for (const userId of new Set(people)) {
+      try {
+        await (
+          await plane.user(userId)
+        ).userBusinessRole.updateMany({
+          where: { userId, businessId },
+          data: { businessName: name, version: plane.id() },
+        });
+      } catch (err) {
+        logger.warn({ err, businessId: businessId.toString() }, 'could not rename a business in a list');
+      }
     }
   }
 
-  private async emit(
-    tx: Transaction,
-    type: (typeof TOPICS)[keyof typeof TOPICS],
-    businessId: string,
-    data: object,
-    ctx: RequestContext,
-  ) {
-    await enqueueEvent(
+  private async emit(tx: BusinessTx, type: Topic, businessId: bigint, data: object, ctx: RequestContext) {
+    await enqueueShardEvent(
       tx,
+      this.plane.id(),
       createEvent({
         type,
         source: 'business-service',
-        subject: businessId,
+        subject: businessId.toString(),
         data,
         ...(ctx.requestId && { correlationId: ctx.requestId }),
       }),
       'business',
     );
+  }
+}
+
+export function assertWritable(status: string) {
+  if (status === 'suspended') {
+    throw new AppError('This business is suspended; contact support', ErrorCodes.BUSINESS_SUSPENDED, 403);
   }
 }
 

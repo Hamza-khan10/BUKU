@@ -1,39 +1,84 @@
-import type { Business, BusinessHours, Category } from '@buku/database';
+import type { BusinessShard, BusinessTx, DirectoryClient } from '@buku/database';
 import { businessReliability, type BusinessRole } from '@buku/common';
 
 /**
  * What the outside world sees vs what the business team sees. Views are
  * built field by field (never by spreading the DB row), so a new column can
- * never leak to the public by accident.
+ * never leak to the public by accident. IDs are public ones (DB-042).
  */
 
-type WithRelations = Business & {
-  category: Pick<Category, 'id' | 'name' | 'slug'>;
-  hours: BusinessHours[];
+/** A kind of business, from the reference data (DB-015). */
+export interface CategoryRef {
+  id: bigint;
+  name: string;
+  slug: string;
+  parentId: bigint | null;
+}
+
+export type LoadedBusiness = BusinessShard.Business & {
+  hours: BusinessShard.BusinessHours[];
   /** Ranking figures (search-service, every 10 minutes); absent for a brand-new business. */
-  searchStats?: { kept90d: number; businessCancels90d: number } | null;
+  searchStats: { kept90d: number; businessCancels90d: number } | null;
+  category: CategoryRef | null;
 };
 
-export function publicView(b: WithRelations) {
+const include = {
+  hours: true,
+  searchStats: { select: { kept90d: true, businessCancels90d: true } },
+} as const;
+
+const CATEGORY = { id: true, name: true, slug: true, parentId: true } as const;
+
+/**
+ * A kind of business: the shard's copy of the reference data, or the directory's own row when the
+ * copy hasn't caught up yet (a kind added a second ago).
+ */
+export async function categoryOf(
+  tx: BusinessTx,
+  directory: DirectoryClient,
+  id: bigint,
+): Promise<CategoryRef | null> {
+  return (
+    (await tx.category.findUnique({ where: { id }, select: CATEGORY })) ??
+    (await directory.category.findUnique({ where: { id }, select: CATEGORY }))
+  );
+}
+
+/** A business that isn't deleted, with what its views show; inside its own transaction. */
+export async function loadBusiness(
+  tx: BusinessTx,
+  directory: DirectoryClient,
+  businessId: bigint,
+): Promise<LoadedBusiness | null> {
+  const b = await tx.business.findFirst({ where: { id: businessId, deletedAt: null }, include });
+  return b && { ...b, category: await categoryOf(tx, directory, b.categoryId) };
+}
+
+export function publicView(b: LoadedBusiness) {
   return {
-    id: b.id,
+    id: b.publicId,
     slug: b.slug,
     name: b.name,
     description: b.description,
-    category: { id: b.category.id, name: b.category.name, slug: b.category.slug },
+    category: b.category && {
+      id: b.category.id.toString(),
+      name: b.category.name,
+      slug: b.category.slug,
+    },
     contact: { phone: b.phone, email: b.email, website: b.website },
     address: { line: b.address, city: b.city, state: b.state, country: b.country, postalCode: b.postalCode },
-    location: b.lat !== null && b.lng !== null ? { lat: b.lat.toNumber(), lng: b.lng.toNumber() } : null,
+    location: b.lat !== null && b.lng !== null ? { lat: b.lat, lng: b.lng } : null,
     timezone: b.timezone,
     currency: b.currency,
     // D-032: unverified businesses can take bookings but must be clearly labelled.
-    verification: b.verified
-      ? {
-          status: 'verified' as const,
-          label: 'Verified business',
-          verifiedAt: b.verifiedAt?.toISOString() ?? null,
-        }
-      : { status: 'not_verified' as const, label: 'Not verified by BUKU', verifiedAt: null },
+    verification:
+      b.status === 'verified'
+        ? {
+            status: 'verified' as const,
+            label: 'Verified business',
+            verifiedAt: b.verifiedAt?.toISOString() ?? null,
+          }
+        : { status: 'not_verified' as const, label: 'Not verified by BUKU', verifiedAt: null },
     rating: { average: b.avgRating.toNumber(), count: b.reviewCount },
     /** Bookings kept vs cancelled by the business, last 90 days (D-035); null until 10 bookings. */
     reliability: b.searchStats
@@ -49,7 +94,7 @@ export function publicView(b: WithRelations) {
   };
 }
 
-export function privateView(b: WithRelations, myRole: BusinessRole) {
+export function privateView(b: LoadedBusiness, myRole: BusinessRole) {
   return {
     ...publicView(b),
     myRole,
@@ -62,3 +107,4 @@ export function privateView(b: WithRelations, myRole: BusinessRole) {
 }
 
 export type PublicBusiness = ReturnType<typeof publicView>;
+export type PrivateBusiness = ReturnType<typeof privateView>;

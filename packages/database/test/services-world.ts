@@ -9,6 +9,7 @@
  * rebuild as they go.
  */
 import type { ServiceName } from '../src/access.js';
+import type { DataPlane } from '../src/data-plane.js';
 import { directoryAccessStatements } from '../src/access-sql.js';
 import { applyShardAccess, applyStatements } from '../src/apply-access.js';
 import { createDirectoryClient } from '../src/directory.js';
@@ -39,7 +40,57 @@ export const servicesWorld = {
     urlAs({ user: `buku_svc_${service}`, password: passwords[service] }, database),
   /** buku_app, the tools' and tests' role: what fixtures are written as. */
   appUrl: (database = 'buku_test') => urlAs(testEnv.app, database),
+  /** The schema owner, for fixtures no service may write (reference data BUKU curates). */
+  ownerUrl: (database = SERVICES_DIRECTORY) => urlAs(testEnv.migrator, database),
 };
+
+/**
+ * Billing switched on for businesses while `fn` runs: the directory's settings, changed as
+ * billing-service (which owns them), and followed on every business shard by replication (DB-015).
+ */
+export async function withBusinessBilling<T>(world: DataPlane, fn: () => Promise<T>): Promise<T> {
+  const billing = createDirectoryClient({
+    url: servicesWorld.urlFor('billing', SERVICES_DIRECTORY),
+    applicationName: 'services-test',
+  });
+  const set = async (enabled: boolean) => {
+    await billing.billingSettings.update({ where: { audience: 'business' }, data: { enabled } });
+    const deadline = Date.now() + 15_000;
+    for (const shard of await world.router.shards('business')) {
+      const copy = world.businesses.forShard(shard);
+      // Reference copies have no row-level security: any connection reads them.
+      while (
+        (await copy.billingSettings.findUnique({ where: { audience: 'business' } }))?.enabled !== enabled
+      ) {
+        if (Date.now() > deadline) throw new Error(`billing settings didn't reach ${shard.databaseName}`);
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+  };
+  try {
+    await set(true);
+    return await fn();
+  } finally {
+    await set(false).finally(() => billing.$disconnect());
+  }
+}
+
+/** A plan granted by an admin, on the business's shard. */
+export async function givePlan(world: DataPlane, businessId: bigint, code: string): Promise<void> {
+  await world.inBusiness(businessId, async (tx) => {
+    const plan = await tx.plan.findUniqueOrThrow({ where: { code } });
+    await tx.subscription.create({
+      data: {
+        id: world.id(),
+        businessId,
+        planId: plan.id,
+        provider: 'manual',
+        status: 'active',
+        grantNote: 'test',
+      },
+    });
+  });
+}
 
 /** Drop last run's world and build a fresh one. */
 export async function buildServicesWorld(): Promise<void> {

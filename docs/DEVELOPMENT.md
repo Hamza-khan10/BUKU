@@ -70,7 +70,9 @@ Services on v2 (auth so far, D3) test against a world of their own: the director
 integration tests' global setup with every service's rights applied as in production
 (`packages/database/test/services-world.ts`). A service's tests start a `DataPlane` as the
 service's own role (`servicesWorld.urlFor('auth')`), and a second one as `buku_app` for fixtures
-and checks. After pulling, run `pnpm db:prepare` once so that directory exists.
+and checks. The same file offers `withBusinessBilling`, `givePlan`, and `servicesWorld.ownerUrl()`
+for reference data BUKU curates (kinds of business). After pulling, run `pnpm db:prepare` once so
+that directory exists.
 
 ### Change reference data (kinds of business, plans, currencies…)
 

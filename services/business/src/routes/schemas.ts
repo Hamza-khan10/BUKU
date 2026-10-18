@@ -7,6 +7,8 @@ import {
   zPhone,
   zSafeText,
   zTimeOfDay,
+  zId,
+  zPublicId,
   zTimezone,
   zUuid,
 } from '@buku/common';
@@ -27,7 +29,8 @@ export const zWebsite = z.url({ protocol: /^https$/, message: 'must be an https:
 
 const profileFields = {
   name: zSafeText({ kind: 'title', min: 2, max: 200 }),
-  categoryId: zUuid,
+  /** A kind of business (reference data, DB-015): its decimal ID. */
+  categoryId: zId,
   description: zSafeText({ kind: 'text', max: 2000 }).optional(),
   phone: zPhone.optional(),
   email: zEmail.optional(),
@@ -55,14 +58,17 @@ export const UpdateBusinessBody = zBody(
   },
 ).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');
 
-export const IdParams = z.object({ id: zUuid });
-/** Public profile lookup: a UUID or a slug. */
+/** A business, by its public ID (DB-042). */
+export const IdParams = z.object({ id: zPublicId });
+/** A row an admin acts on by itself (a document, a report): its decimal ID. */
+export const RowIdParams = z.object({ id: zId });
+/** Public profile lookup: a public ID or a slug. */
 export const IdOrSlugParams = z.object({
   idOrSlug: z
     .string()
     .min(1)
     .max(200)
-    .regex(/^[a-z0-9-]+$/, 'invalid business id or slug'),
+    .regex(/^[A-Za-z0-9-]+$/, 'invalid business id or slug'),
 });
 
 const HoursInterval = z.strictObject({
@@ -172,11 +178,12 @@ export const StaffPhotoUploadBody = zBody({
   consentConfirmed: z.literal(true, 'confirm that the employee agreed to have their photo shown'),
 });
 
-export const DocumentParams = z.object({ id: zUuid, documentId: zUuid });
-export const PhotoParams = z.object({ id: zUuid, photoId: zUuid });
-export const UploadParams = z.object({ id: zUuid, uploadId: zUuid });
-export const StaffParams = z.object({ id: zUuid, staffId: zUuid });
-export const StaffUploadParams = z.object({ id: zUuid, staffId: zUuid, uploadId: zUuid });
+// A business by public ID; its own rows by their decimal IDs; an upload by its one-time ID.
+export const DocumentParams = z.object({ id: zPublicId, documentId: zId });
+export const PhotoParams = z.object({ id: zPublicId, photoId: zId });
+export const UploadParams = z.object({ id: zPublicId, uploadId: zUuid });
+export const StaffParams = z.object({ id: zPublicId, staffId: zId });
+export const StaffUploadParams = z.object({ id: zPublicId, staffId: zId, uploadId: zUuid });
 
 // ── Admin ──────────────────────────────────────────────────────────────────
 
@@ -195,6 +202,6 @@ export const ExportBody = zBody({
 
 /** A kind of business an owner adds (D-098): under one of BUKU's groups, a clean, plain name. */
 export const CategorySuggestionBody = zBody({
-  parentId: zUuid,
+  parentId: zId,
   name: zCategoryName,
 });

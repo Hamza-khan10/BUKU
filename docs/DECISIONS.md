@@ -1046,3 +1046,13 @@ employee is still on a temporary password, because their account and the busines
 different shards. Exporting or erasing an account reaches every business through auth's
 cross-business role, by new indexes on the person's appointments and queue tickets. Tokens from v1
 are refused; other services follow in D3c onwards.
+
+**D-114 · business-service on database v2 (D3c).** A business lives on its business shard and is
+found by its public ID or its address through global handles, registered row first and handles
+after, like an account (D-113). Where a person works is kept on their own shard: business-service
+writes the owner's entry when they register a business and keeps its name when it changes, while
+auth-service keeps the team's (D3b); the list is only a pointer, every role is checked on the
+business's shard. Kinds of business stay reference data: owners' suggestions are written on the
+directory and reach every shard by replication, usable at once. Admin tools work on one business
+in its own transaction; the review queue, the reports and the lawful export visit every business
+shard through the service's cross-business role, which is fine for low-traffic admin work.
