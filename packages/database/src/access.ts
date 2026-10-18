@@ -369,6 +369,7 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
       // Only what erasing them needs: a DELETE reads the columns it filters on.
       notification_marks: ['user_id'],
       user_time_reservations: ['user_id'],
+      user_visit_outcomes: ['user_id'],
     },
     // A new account starts with the default notification settings.
     inserts: ['audit_logs', 'notification_preferences'],
@@ -382,11 +383,13 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
       'user_appointments',
       'user_time_reservations',
       'user_active_tickets',
+      'user_visit_outcomes',
     ],
   },
   booking: {
-    // Claims the person's time before writing the appointment (DB-014), and keeps their list.
-    owns: ['user_time_reservations', 'user_appointments', ...PUBLISHES, ...CONSUMES],
+    // Claims the person's time before writing the appointment (DB-014), keeps their list, and
+    // records how each visit ended for their reliability (D-078, D3d).
+    owns: ['user_time_reservations', 'user_appointments', 'user_visit_outcomes', ...PUBLISHES, ...CONSUMES],
     reads: { users: SHARD_PERSON },
     inserts: ['audit_logs'],
   },
@@ -460,8 +463,9 @@ export const BUSINESS_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
       subscriptions: '*',
     },
     inserts: ['audit_logs'],
-    // Deleting an account: the words people wrote are removed, the records stay (D-043).
-    updates: { reviews: ['comment'], appointments: ['notes'], queue_tickets: ['notes'] },
+    // Deleting an account: the words people wrote and the name they booked under are removed,
+    // the records stay (D-043).
+    updates: { reviews: ['comment'], appointments: ['notes', 'customer_name'], queue_tickets: ['notes'] },
   },
   booking: {
     owns: [

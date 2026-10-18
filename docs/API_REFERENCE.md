@@ -444,7 +444,10 @@ requests that have gone through the legal process (docs/DECISIONS.md D-033).
 
 ## Booking service — menu, staff and schedules (2.3 part 1)
 
-All under `/v1/businesses/:id/…`. Public pages accept the business's id **or slug**.
+All under `/v1/businesses/:id/…`, where `:id` is the business's **public ID** (12 characters);
+public pages also accept its **slug**. Services, categories, staff, time off, closures, shifts and
+reviews are named by **decimal IDs** under the business; a staff profile's linked account
+(`userId`) by the person's public ID (DATABASE.md DB-042).
 
 | Method & path                                                       | Auth | Who                                  | Purpose                                                                 |
 | ------------------------------------------------------------------- | ---- | ------------------------------------ | ----------------------------------------------------------------------- |
@@ -545,8 +548,14 @@ horizon, every `slotStepMinutes`. Daylight-saving changes are handled. Never cac
 
 ```json
 POST /v1/appointments
-{ "businessId": "…", "serviceId": "…", "staffId": "…", "startAt": "2026-10-04T05:00:00.000Z", "notes": "Please use a round brush" }
+{ "businessId": "Xk3pQ9aB2mZt", "serviceId": "104862745937051649", "staffId": "104862745937051650", "startAt": "2026-10-04T05:00:00.000Z", "notes": "Please use a round brush" }
 ```
+
+`businessId` is the business's public ID; `serviceId` and `staffId` are decimal IDs. An
+appointment is named by its **public ID** everywhere (`/v1/appointments/:id`,
+`/v1/businesses/:id/appointments/:appointmentId`); `rescheduledFromId` is the public ID of the
+appointment it replaced. The business's list shows the customer by their public ID and the name
+they booked under.
 
 `startAt` must be one of the offered times. Leave out `staffId` for "anyone": the person with
 the fewest bookings that day. Automatic businesses confirm at once; manual ones leave it

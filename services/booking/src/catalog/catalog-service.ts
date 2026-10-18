@@ -1,258 +1,271 @@
-import { AppError } from '@buku/common';
-import { assertBusinessLimit } from '@buku/billing';
+import { AppError, type Actor } from '@buku/common';
+import { assertBusinessLimitOnShard } from '@buku/billing';
 import {
   isUniqueViolation,
-  type Prisma,
-  recordAudit,
-  requireBusinessPermission,
-  type Database,
-  type Transaction,
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  type BusinessShard,
+  type BusinessTx,
+  type DataPlane,
 } from '@buku/database';
 import { assertNotSuspended, findBookableBusiness } from '../businesses.js';
 import { auditCtx, type RequestContext } from '../http/context.js';
-import type { SettingsService } from '../settings/settings-service.js';
+import { exponentOf, formatMinor, toMinor } from '../money.js';
+import { effectiveSettings } from '../settings/settings-service.js';
 
 /**
  * The service menu: categories ("Haircuts", "Colour") and the services in
  * them, with duration, price and who performs each. Managed by owners and
  * managers (`services.manage`). Prices are in the business's currency and
- * paid at the venue for the MVP.
+ * paid at the venue for the MVP, kept in minor units (DB-009).
  *
  * Services are never hard-deleted: past appointments point at them. Removing
- * one archives it (no longer bookable or listed publicly).
+ * one archives it (no longer bookable or listed publicly). On database v2 a category is a
+ * service group of the business; IDs are decimal, under the business (DB-042).
  */
 
 export interface ServiceInput {
   name: string;
   description?: string | null | undefined;
-  categoryId?: string | null | undefined;
+  categoryId?: bigint | null | undefined;
   durationMinutes: number;
   bufferMinutes?: number | undefined;
   price: number;
   sortOrder?: number | undefined;
   /** Staff who perform this service (replaces the current list). */
-  staffIds?: string[] | undefined;
+  staffIds?: bigint[] | undefined;
 }
 
 const serviceInclude = { staff: { select: { staffId: true } } } as const;
 
-type ServiceRow = Prisma.ServiceGetPayload<{ include: typeof serviceInclude }>;
+type ServiceRow = BusinessShard.Service & { staff: { staffId: bigint }[] };
+type GroupRow = { id: bigint; name: string; sortOrder: number };
 
 export class CatalogService {
-  constructor(
-    private readonly db: Database,
-    private readonly settings: SettingsService,
-  ) {}
+  constructor(private readonly plane: DataPlane) {}
 
   // ── Public ───────────────────────────────────────────────────────────────
 
   /** The menu customers see: active services by category, plus the business's booking terms. */
   async publicMenu(idOrSlug: string) {
-    const business = await findBookableBusiness(this.db, idOrSlug);
-    const [categories, services, settings] = await Promise.all([
-      this.db.serviceCategory.findMany({
+    const business = await findBookableBusiness(this.plane, idOrSlug);
+    return this.plane.inBusiness(business.id, async (tx) => {
+      const groups = await tx.serviceGroup.findMany({
         where: { businessId: business.id },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      }),
-      this.db.service.findMany({
+      });
+      const services = await tx.service.findMany({
         where: { businessId: business.id, isActive: true },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
         include: { staff: { where: { staff: { isActive: true } }, select: { staffId: true } } },
-      }),
-      this.settings.effective(business.id),
-    ]);
-    return {
-      businessId: business.id,
-      currency: business.currency,
-      categories: groupByCategory(categories, services.map(publicServiceView)),
-      booking: {
-        confirmationMode: settings.confirmationMode,
-        bookingHorizonDays: settings.bookingHorizonDays,
-        cancellationWindowHours: settings.cancellationWindowHours,
-        minNoticeMinutes: settings.minNoticeMinutes,
-      },
-    };
+      });
+      const settings = await effectiveSettings(tx, business.id);
+      const exponent = await exponentOf(tx, business.currency);
+      return {
+        businessId: business.publicId,
+        currency: business.currency,
+        categories: groupByCategory(
+          groups,
+          services.map((s) => publicServiceView(s, exponent)),
+        ),
+        booking: {
+          confirmationMode: settings.confirmationMode,
+          bookingHorizonDays: settings.bookingHorizonDays,
+          cancellationWindowHours: settings.cancellationWindowHours,
+          minNoticeMinutes: settings.minNoticeMinutes,
+        },
+      };
+    });
   }
 
   // ── Management ───────────────────────────────────────────────────────────
 
   /** Everything, archived services included. */
-  async manageMenu(businessId: string, actorId: string) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'business.view_private');
-    const [categories, services] = await Promise.all([
-      this.db.serviceCategory.findMany({
+  async manageMenu(businessId: bigint, actor: Actor) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.view_private');
+      const groups = await tx.serviceGroup.findMany({
         where: { businessId },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-      }),
-      this.db.service.findMany({
+      });
+      const services = await tx.service.findMany({
         where: { businessId },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
         include: serviceInclude,
-      }),
-    ]);
-    return { categories: groupByCategory(categories, services.map(manageServiceView)) };
+      });
+      const exponent = await this.exponent(tx, businessId);
+      return {
+        categories: groupByCategory(
+          groups,
+          services.map((s) => manageServiceView(s, exponent)),
+        ),
+      };
+    });
   }
 
   async createCategory(
-    businessId: string,
-    actorId: string,
+    businessId: bigint,
+    actor: Actor,
     input: { name: string; sortOrder?: number | undefined },
     ctx: RequestContext,
   ) {
-    await this.authorize(businessId, actorId);
     try {
-      const category = await this.db.serviceCategory.create({
-        data: { businessId, name: input.name, sortOrder: input.sortOrder ?? 0 },
+      return await this.plane.inBusiness(businessId, async (tx) => {
+        await authorize(tx, businessId, actor);
+        const group = await tx.serviceGroup.create({
+          data: { id: this.plane.id(), businessId, name: input.name, sortOrder: input.sortOrder ?? 0 },
+        });
+        await this.audit(tx, actor.id, 'booking.category_created', group.id, ctx);
+        return categoryView(group);
       });
-      await this.audit(this.db, actorId, 'booking.category_created', category.id, ctx);
-      return categoryView(category);
     } catch (err) {
       throw duplicateName(err);
     }
   }
 
   async updateCategory(
-    businessId: string,
-    categoryId: string,
-    actorId: string,
+    businessId: bigint,
+    categoryId: bigint,
+    actor: Actor,
     input: { name?: string | undefined; sortOrder?: number | undefined },
     ctx: RequestContext,
   ) {
-    await this.authorize(businessId, actorId);
-    await this.findCategory(businessId, categoryId);
     try {
-      const category = await this.db.serviceCategory.update({
-        where: { id: categoryId },
-        data: {
-          ...(input.name !== undefined && { name: input.name }),
-          ...(input.sortOrder !== undefined && { sortOrder: input.sortOrder }),
-        },
+      return await this.plane.inBusiness(businessId, async (tx) => {
+        await authorize(tx, businessId, actor);
+        await findCategory(tx, businessId, categoryId);
+        const group = await tx.serviceGroup.update({
+          where: { id: categoryId },
+          data: {
+            ...(input.name !== undefined && { name: input.name }),
+            ...(input.sortOrder !== undefined && { sortOrder: input.sortOrder }),
+          },
+        });
+        await this.audit(tx, actor.id, 'booking.category_updated', categoryId, ctx);
+        return categoryView(group);
       });
-      await this.audit(this.db, actorId, 'booking.category_updated', categoryId, ctx);
-      return categoryView(category);
     } catch (err) {
       throw duplicateName(err);
     }
   }
 
   /** Its services stay, uncategorized. */
-  async deleteCategory(businessId: string, categoryId: string, actorId: string, ctx: RequestContext) {
-    await this.authorize(businessId, actorId);
-    await this.findCategory(businessId, categoryId);
-    await this.db.$transaction(async (tx) => {
-      await tx.service.updateMany({ where: { businessId, categoryId }, data: { categoryId: null } });
-      await tx.serviceCategory.delete({ where: { id: categoryId } });
-      await this.audit(tx, actorId, 'booking.category_deleted', categoryId, ctx);
+  async deleteCategory(businessId: bigint, categoryId: bigint, actor: Actor, ctx: RequestContext) {
+    await this.plane.inBusiness(businessId, async (tx) => {
+      await authorize(tx, businessId, actor);
+      await findCategory(tx, businessId, categoryId);
+      await tx.service.updateMany({ where: { businessId, groupId: categoryId }, data: { groupId: null } });
+      await tx.serviceGroup.delete({ where: { id: categoryId } });
+      await this.audit(tx, actor.id, 'booking.category_deleted', categoryId, ctx);
     });
   }
 
-  async createService(businessId: string, actorId: string, input: ServiceInput, ctx: RequestContext) {
-    await this.authorize(businessId, actorId);
-    if (input.categoryId) await this.findCategory(businessId, input.categoryId);
-    const business = await this.db.business.findUniqueOrThrow({
-      where: { id: businessId },
-      select: { currency: true },
-    });
-    const service = await this.db.$transaction(async (tx) => {
-      await assertBusinessLimit(tx, businessId, 'services', () =>
+  async createService(businessId: bigint, actor: Actor, input: ServiceInput, ctx: RequestContext) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await authorize(tx, businessId, actor);
+      if (input.categoryId) await findCategory(tx, businessId, input.categoryId);
+      const { currency } = await tx.business.findUniqueOrThrow({
+        where: { id: businessId },
+        select: { currency: true },
+      });
+      const exponent = await exponentOf(tx, currency);
+      await assertBusinessLimitOnShard(tx, businessId, 'services', () =>
         tx.service.count({ where: { businessId, isActive: true } }),
       );
-      const created = await tx.service.create({
+      const id = this.plane.id();
+      await tx.service.create({
         data: {
+          id,
           businessId,
           name: input.name,
           description: input.description ?? null,
-          categoryId: input.categoryId ?? null,
+          groupId: input.categoryId ?? null,
           durationMinutes: input.durationMinutes,
           bufferMinutes: input.bufferMinutes ?? 0,
-          price: input.price,
+          priceMinor: toMinor(input.price, exponent),
           // Always the business's currency: one business, one price list currency.
-          currency: business.currency,
+          currency,
           sortOrder: input.sortOrder ?? 0,
         },
       });
-      if (input.staffIds) await this.setStaff(tx, businessId, created.id, input.staffIds);
-      await this.audit(tx, actorId, 'booking.service_created', created.id, ctx);
-      return tx.service.findUniqueOrThrow({ where: { id: created.id }, include: serviceInclude });
+      if (input.staffIds) await setStaff(tx, businessId, id, input.staffIds);
+      await this.audit(tx, actor.id, 'booking.service_created', id, ctx);
+      const service = await tx.service.findUniqueOrThrow({ where: { id }, include: serviceInclude });
+      return manageServiceView(service, exponent);
     });
-    return manageServiceView(service);
   }
 
   async updateService(
-    businessId: string,
-    serviceId: string,
-    actorId: string,
+    businessId: bigint,
+    serviceId: bigint,
+    actor: Actor,
     patch: Partial<ServiceInput> & { isActive?: boolean | undefined },
     ctx: RequestContext,
   ) {
-    await this.authorize(businessId, actorId);
-    const current = await this.findService(businessId, serviceId);
-    if (patch.categoryId) await this.findCategory(businessId, patch.categoryId);
-    const { staffIds, ...fields } = patch;
-    const data = Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined));
-    const service = await this.db.$transaction(async (tx) => {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await authorize(tx, businessId, actor);
+      const current = await findService(tx, businessId, serviceId);
+      if (patch.categoryId) await findCategory(tx, businessId, patch.categoryId);
+      const exponent = await exponentOf(tx, current.currency);
+      const { staffIds, categoryId, price, ...fields } = patch;
+      const data = {
+        ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)),
+        ...(categoryId !== undefined && { groupId: categoryId }),
+        ...(price !== undefined && { priceMinor: toMinor(price, exponent) }),
+      };
       // Bringing an archived service back counts against the plan like a new one.
       if (patch.isActive === true && !current.isActive) {
-        await assertBusinessLimit(tx, businessId, 'services', () =>
+        await assertBusinessLimitOnShard(tx, businessId, 'services', () =>
           tx.service.count({ where: { businessId, isActive: true } }),
         );
       }
       await tx.service.update({ where: { id: serviceId }, data });
-      if (staffIds) await this.setStaff(tx, businessId, serviceId, staffIds);
-      await this.audit(tx, actorId, 'booking.service_updated', serviceId, ctx, {
-        fields: [...Object.keys(data), ...(staffIds ? ['staffIds'] : [])],
+      if (staffIds) await setStaff(tx, businessId, serviceId, staffIds);
+      await this.audit(tx, actor.id, 'booking.service_updated', serviceId, ctx, {
+        fields: [
+          ...Object.keys(fields).filter((k) => fields[k as keyof typeof fields] !== undefined),
+          ...(categoryId !== undefined ? ['categoryId'] : []),
+          ...(price !== undefined ? ['price'] : []),
+          ...(staffIds ? ['staffIds'] : []),
+        ],
       });
-      return tx.service.findUniqueOrThrow({ where: { id: serviceId }, include: serviceInclude });
+      const service = await tx.service.findUniqueOrThrow({
+        where: { id: serviceId },
+        include: serviceInclude,
+      });
+      return manageServiceView(service, exponent);
     });
-    return manageServiceView(service);
   }
 
   /** Archive: no longer bookable or listed; past appointments keep pointing at it. */
-  async archiveService(businessId: string, serviceId: string, actorId: string, ctx: RequestContext) {
-    await this.authorize(businessId, actorId);
-    await this.findService(businessId, serviceId);
-    await this.db.service.update({ where: { id: serviceId }, data: { isActive: false } });
-    await this.audit(this.db, actorId, 'booking.service_archived', serviceId, ctx);
+  async archiveService(businessId: bigint, serviceId: bigint, actor: Actor, ctx: RequestContext) {
+    await this.plane.inBusiness(businessId, async (tx) => {
+      await authorize(tx, businessId, actor);
+      await findService(tx, businessId, serviceId);
+      await tx.service.update({ where: { id: serviceId }, data: { isActive: false } });
+      await this.audit(tx, actor.id, 'booking.service_archived', serviceId, ctx);
+    });
   }
 
   // ── internals ────────────────────────────────────────────────────────────
 
-  /** Replace who performs a service. Every staff id must belong to this business. */
-  private async setStaff(tx: Transaction, businessId: string, serviceId: string, staffIds: string[]) {
-    const unique = [...new Set(staffIds)];
-    const found = await tx.staff.count({ where: { businessId, id: { in: unique } } });
-    if (found !== unique.length) throw AppError.notFound('Staff member');
-    await tx.staffService.deleteMany({ where: { serviceId } });
-    if (unique.length)
-      await tx.staffService.createMany({ data: unique.map((staffId) => ({ staffId, serviceId })) });
-  }
-
-  private async authorize(businessId: string, actorId: string) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'services.manage');
-    await assertNotSuspended(this.db, businessId);
-  }
-
-  private async findCategory(businessId: string, categoryId: string) {
-    const category = await this.db.serviceCategory.findFirst({ where: { id: categoryId, businessId } });
-    if (!category) throw AppError.notFound('Category');
-    return category;
-  }
-
-  private async findService(businessId: string, serviceId: string) {
-    const service = await this.db.service.findFirst({ where: { id: serviceId, businessId } });
-    if (!service) throw AppError.notFound('Service');
-    return service;
+  private async exponent(tx: BusinessTx, businessId: bigint) {
+    const { currency } = await tx.business.findUniqueOrThrow({
+      where: { id: businessId },
+      select: { currency: true },
+    });
+    return exponentOf(tx, currency);
   }
 
   private audit(
-    db: Database | Transaction,
-    userId: string,
+    tx: BusinessTx,
+    userId: bigint,
     action: string,
-    resourceId: string,
+    resourceId: bigint,
     ctx: RequestContext,
     newValues?: { fields: string[] },
   ) {
-    return recordAudit(db, {
+    return recordShardAudit(tx, this.plane.id(), {
       userId,
       action,
       resourceType: action.includes('category') ? 'service_category' : 'service',
@@ -263,33 +276,57 @@ export class CatalogService {
   }
 }
 
+/** Replace who performs a service. Every staff id must belong to this business. */
+async function setStaff(tx: BusinessTx, businessId: bigint, serviceId: bigint, staffIds: bigint[]) {
+  const unique = [...new Set(staffIds)];
+  const found = await tx.staff.count({ where: { businessId, id: { in: unique } } });
+  if (found !== unique.length) throw AppError.notFound('Staff member');
+  await tx.staffService.deleteMany({ where: { serviceId } });
+  if (unique.length)
+    await tx.staffService.createMany({ data: unique.map((staffId) => ({ staffId, serviceId, businessId })) });
+}
+
+async function authorize(tx: BusinessTx, businessId: bigint, actor: Actor) {
+  await requireBusinessPermissionOnShard(tx, businessId, actor, 'services.manage');
+  await assertNotSuspended(tx, businessId);
+}
+
+async function findCategory(tx: BusinessTx, businessId: bigint, categoryId: bigint) {
+  const group = await tx.serviceGroup.findFirst({ where: { id: categoryId, businessId } });
+  if (!group) throw AppError.notFound('Category');
+  return group;
+}
+
+async function findService(tx: BusinessTx, businessId: bigint, serviceId: bigint) {
+  const service = await tx.service.findFirst({ where: { id: serviceId, businessId } });
+  if (!service) throw AppError.notFound('Service');
+  return service;
+}
+
 function duplicateName(err: unknown): unknown {
   return isUniqueViolation(err) ? AppError.conflict('A category with this name already exists') : err;
 }
 
-function categoryView(c: { id: string; name: string; sortOrder: number }) {
-  return { id: c.id, name: c.name, sortOrder: c.sortOrder };
+function categoryView(c: GroupRow) {
+  return { id: c.id.toString(), name: c.name, sortOrder: c.sortOrder };
 }
 
-/** Money as a string ("800.00"): never through floating point. */
-const money = (d: Prisma.Decimal) => d.toFixed(2);
-
-function publicServiceView(s: ServiceRow) {
+function publicServiceView(s: ServiceRow, exponent: number) {
   return {
-    id: s.id,
-    categoryId: s.categoryId,
+    id: s.id.toString(),
+    categoryId: s.groupId?.toString() ?? null,
     name: s.name,
     description: s.description,
     durationMinutes: s.durationMinutes,
-    price: money(s.price),
+    price: formatMinor(s.priceMinor, exponent),
     currency: s.currency,
-    staffIds: s.staff.map((x) => x.staffId),
+    staffIds: s.staff.map((x) => x.staffId.toString()),
   };
 }
 
-function manageServiceView(s: ServiceRow) {
+function manageServiceView(s: ServiceRow, exponent: number) {
   return {
-    ...publicServiceView(s),
+    ...publicServiceView(s, exponent),
     bufferMinutes: s.bufferMinutes,
     sortOrder: s.sortOrder,
     isActive: s.isActive,
@@ -297,16 +334,16 @@ function manageServiceView(s: ServiceRow) {
 }
 
 /** Categories in order, each with its services; uncategorized services last (`id: null`). */
-function groupByCategory<T extends { categoryId: string | null }>(
-  categories: { id: string; name: string; sortOrder: number }[],
-  services: T[],
-) {
-  const groups = categories.map((c) => ({
+function groupByCategory<T extends { categoryId: string | null }>(groups: GroupRow[], services: T[]) {
+  const categorized = groups.map((c) => ({
     ...categoryView(c),
-    services: services.filter((s) => s.categoryId === c.id),
+    services: services.filter((s) => s.categoryId === c.id.toString()),
   }));
   const other = services.filter((s) => s.categoryId === null);
   return other.length
-    ? [...groups, { id: null, name: 'Other services', sortOrder: Number.MAX_SAFE_INTEGER, services: other }]
-    : groups;
+    ? [
+        ...categorized,
+        { id: null, name: 'Other services', sortOrder: Number.MAX_SAFE_INTEGER, services: other },
+      ]
+    : categorized;
 }

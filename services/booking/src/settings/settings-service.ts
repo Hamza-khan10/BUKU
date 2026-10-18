@@ -1,5 +1,11 @@
-import { assertBusinessFeature } from '@buku/billing';
-import { recordAudit, requireBusinessPermission, type Database } from '@buku/database';
+import { assertFeature, businessEntitlementsOnShard } from '@buku/billing';
+import type { Actor } from '@buku/common';
+import {
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  type BusinessTx,
+  type DataPlane,
+} from '@buku/database';
 import { auditCtx, type RequestContext } from '../http/context.js';
 import { assertNotSuspended } from '../businesses.js';
 
@@ -30,57 +36,64 @@ export const DEFAULT_BOOKING_SETTINGS: BookingSettingsView = {
   approvalBelowShowUpPercent: null,
 };
 
-export class SettingsService {
-  constructor(private readonly db: Database) {}
+/** Settings in effect (stored or default), read in the business's own transaction. */
+export async function effectiveSettings(tx: BusinessTx, businessId: bigint): Promise<BookingSettingsView> {
+  const row = await tx.bookingSettings.findUnique({ where: { businessId } });
+  if (!row) return { ...DEFAULT_BOOKING_SETTINGS };
+  return {
+    confirmationMode: row.confirmationMode as BookingSettingsView['confirmationMode'],
+    bookingHorizonDays: row.bookingHorizonDays,
+    maxFutureBookingsPerCustomer: row.maxFutureBookingsPerCustomer,
+    cancellationWindowHours: row.cancellationWindowHours,
+    minNoticeMinutes: row.minNoticeMinutes,
+    slotStepMinutes: row.slotStepMinutes,
+    noShowGraceMinutes: row.noShowGraceMinutes,
+    approvalBelowShowUpPercent: row.approvalBelowShowUpPercent,
+  };
+}
 
-  /** Settings in effect (stored or default). */
-  async effective(businessId: string): Promise<BookingSettingsView> {
-    const row = await this.db.bookingSettings.findUnique({ where: { businessId } });
-    if (!row) return { ...DEFAULT_BOOKING_SETTINGS };
-    return {
-      confirmationMode: row.confirmationMode,
-      bookingHorizonDays: row.bookingHorizonDays,
-      maxFutureBookingsPerCustomer: row.maxFutureBookingsPerCustomer,
-      cancellationWindowHours: row.cancellationWindowHours,
-      minNoticeMinutes: row.minNoticeMinutes,
-      slotStepMinutes: row.slotStepMinutes,
-      noShowGraceMinutes: row.noShowGraceMinutes,
-      approvalBelowShowUpPercent: row.approvalBelowShowUpPercent,
-    };
+export class SettingsService {
+  constructor(private readonly plane: DataPlane) {}
+
+  /** Settings in effect, in a transaction of their own. */
+  effective(businessId: bigint): Promise<BookingSettingsView> {
+    return this.plane.inBusiness(businessId, (tx) => effectiveSettings(tx, businessId));
   }
 
-  async get(businessId: string, actorId: string): Promise<BookingSettingsView> {
-    await requireBusinessPermission(this.db, businessId, actorId, 'business.view_private');
-    return this.effective(businessId);
+  async get(businessId: bigint, actor: Actor): Promise<BookingSettingsView> {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.view_private');
+      return effectiveSettings(tx, businessId);
+    });
   }
 
   async update(
-    businessId: string,
-    actorId: string,
+    businessId: bigint,
+    actor: Actor,
     changes: Partial<BookingSettingsView>,
     ctx: RequestContext,
   ): Promise<BookingSettingsView> {
-    await requireBusinessPermission(this.db, businessId, actorId, 'booking.settings');
-    await assertNotSuspended(this.db, businessId);
-    // Holding bookings for approval (all, or from unreliable customers) is a plan feature.
-    if (changes.confirmationMode === 'manual' || (changes.approvalBelowShowUpPercent ?? null) !== null)
-      await assertBusinessFeature(this.db, businessId, 'manual_approval');
     const data = Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined));
-    await this.db.$transaction(async (tx) => {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'booking.settings');
+      await assertNotSuspended(tx, businessId);
+      // Holding bookings for approval (all, or from unreliable customers) is a plan feature.
+      if (changes.confirmationMode === 'manual' || (changes.approvalBelowShowUpPercent ?? null) !== null)
+        assertFeature(await businessEntitlementsOnShard(tx, businessId), 'manual_approval');
       await tx.bookingSettings.upsert({
         where: { businessId },
         create: { businessId, ...data },
         update: data,
       });
-      await recordAudit(tx, {
-        userId: actorId,
+      await recordShardAudit(tx, this.plane.id(), {
+        userId: actor.id,
         action: 'booking.settings_updated',
         resourceType: 'business',
         resourceId: businessId,
         newValues: data,
         ...auditCtx(ctx),
       });
+      return effectiveSettings(tx, businessId);
     });
-    return this.effective(businessId);
   }
 }

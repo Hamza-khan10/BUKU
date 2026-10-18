@@ -4,7 +4,8 @@ import { useBookingHarness, type Person, type Salon } from './harness.js';
 
 /**
  * Customer reliability (encourage, don't punish) and the business's
- * cancellation report, against the real database.
+ * cancellation report, against database v2: the label from the customer's own shard (D3d), the
+ * report from the business's.
  */
 
 const h = useBookingHarness();
@@ -20,7 +21,9 @@ async function past(
   extra: { reason?: 'schedule_conflict' | 'illness' | 'too_expensive'; rebookLater?: boolean } = {},
 ) {
   const a = await h.appointment(s, customer, -daysAgo * DAY + 7 * HOUR);
-  const startAt = (await h.db.appointment.findUniqueOrThrow({ where: { id: a.id } })).startAt;
+  const startAt = (
+    await h.inSalon(s, (tx) => tx.appointment.findFirstOrThrow({ where: { id: a.internalId } }))
+  ).startAt;
   const cancelled = (by: 'user' | 'business', code: string, late = false) => ({
     status: 'cancelled' as const,
     cancelledAt: new Date(startAt.getTime() - (late ? 1 : 48) * 3_600_000),
@@ -43,7 +46,8 @@ async function past(
               : outcome === 'business_cancel'
                 ? cancelled('business', 'business_unavailable')
                 : cancelled('business', 'declined');
-  await h.db.appointment.update({ where: { id: a.id }, data });
+  // As booking-service records it: on the business's shard, then the customer's own (D3d).
+  await h.update(s, a, data);
   return a;
 }
 
@@ -65,17 +69,17 @@ describe('Customer reliability', () => {
     await past(s, c, 5, 'checked_in');
     await past(s, c, 4, 'no_show');
     await past(s, c, 3, 'late_cancel');
-    // Served from a queue counts as a visit.
-    const session = await h.db.queueSession.create({
-      data: { businessId: s.b.id, sessionDate: new Date(Date.now() - 2 * 86_400_000), status: 'closed' },
-    });
-    await h.db.queueEntry.create({
+    // Served from a queue counts as a visit (recorded on the customer's shard, as queue-service will).
+    await (
+      await h.shardOf(c)
+    ).userVisitOutcome.create({
       data: {
-        sessionId: session.id,
         userId: c.id,
-        ticketNumber: 1,
-        status: 'completed',
-        joinedAt: new Date(Date.now() - 2 * 86_400_000),
+        refId: h.world.id(),
+        businessId: s.b.id,
+        happenedAt: new Date(Date.now() - 2 * 86_400_000),
+        kind: 'visit',
+        source: 'queue',
       },
     });
     // Over a year ago: forgotten.
@@ -102,7 +106,9 @@ describe('Customer reliability', () => {
     const a = await h.appointment(s, regular, 2 * DAY);
     await h.appointment(s, newbie, 2 * DAY, { staffIndex: 1 });
 
-    const date = (await h.db.appointment.findUniqueOrThrow({ where: { id: a.id } })).startAt;
+    const date = (
+      await h.inSalon(s, (tx) => tx.appointment.findFirstOrThrow({ where: { id: a.internalId } }))
+    ).startAt;
     const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi' }).format(date);
     const list = await request(h.app).get(`${s.base}/appointments?date=${day}`).set(s.owner.auth).expect(200);
     const labels = Object.fromEntries(
@@ -111,8 +117,8 @@ describe('Customer reliability', () => {
         i.customer.reliability,
       ]),
     );
-    expect(labels[regular.id]).toEqual({ label: 'Shows up 100%', showsUpPercent: 100 });
-    expect(labels[newbie.id]).toEqual({ label: 'New customer', showsUpPercent: null });
+    expect(labels[regular.publicId]).toEqual({ label: 'Shows up 100%', showsUpPercent: 100 });
+    expect(labels[newbie.publicId]).toEqual({ label: 'New customer', showsUpPercent: null });
     expect(JSON.stringify(list.body)).not.toMatch(/noShows|lateCancellations/);
 
     const one = await request(h.app).get(`${s.base}/appointments/${a.id}`).set(s.owner.auth).expect(200);
@@ -133,14 +139,14 @@ describe('Customer reliability', () => {
     );
     const slots = (
       await request(h.app).get(
-        `/v1/businesses/${s.b.id}/availability?serviceId=${s.service.id}&date=${tomorrow}`,
+        `/v1/businesses/${s.b.publicId}/availability?serviceId=${s.service.id}&date=${tomorrow}`,
       )
     ).body.data.days[0].slots as { startAt: string }[];
     const book = (p: Person, i: number) =>
       request(h.app)
         .post('/v1/appointments')
         .set(p.auth)
-        .send({ businessId: s.b.id, serviceId: s.service.id, startAt: slots[i]!.startAt })
+        .send({ businessId: s.b.publicId, serviceId: s.service.id.toString(), startAt: slots[i]!.startAt })
         .expect(201);
     expect((await book(flaky, 0)).body.data.status).toBe('pending');
     expect((await book(fresh, 2)).body.data.status).toBe('confirmed');

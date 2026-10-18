@@ -414,8 +414,9 @@ async function main(): Promise<void> {
     const live = status === 'pending' || status === 'confirmed';
     const userDb = await users.forId(customer.id);
     if (live) {
+      // The claim's ID is its appointment's (D3d): a lapsed one is settled from the appointment.
       await userDb.userTimeReservation.create({
-        data: { id: ids.next(), userId: customer.id, businessId: biz.id, appointmentId: id, startAt, endAt },
+        data: { id, userId: customer.id, businessId: biz.id, appointmentId: id, startAt, endAt },
       });
     }
     await (
@@ -437,6 +438,8 @@ async function main(): Promise<void> {
           publicId: pid,
           code,
           status,
+          // The name the customer booked under: what the business's list shows and searches (D3d).
+          customerName: customer.name,
           paymentStatus: status === 'completed' ? 'paid' : 'unpaid',
           ...(status === 'cancelled' && {
             cancelledAt: new Date(startAt.getTime() - 86_400_000),
@@ -488,6 +491,19 @@ async function main(): Promise<void> {
         serviceName: service.name,
       },
     });
+    // How the visit ended, for the customer's reliability, on their own shard (D-078, D3d).
+    if (status === 'completed' || status === 'no_show') {
+      await userDb.userVisitOutcome.create({
+        data: {
+          userId: customer.id,
+          refId: id,
+          businessId: biz.id,
+          happenedAt: startAt,
+          kind: status === 'completed' ? 'visit' : 'no_show',
+          source: 'appointment',
+        },
+      });
+    }
     const booked = {
       id,
       startAt,

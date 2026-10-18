@@ -4,7 +4,7 @@ import { maskContacts, reviewerName } from '../src/reviews/review-service.js';
 import { useBookingHarness, type Person, type Salon } from './harness.js';
 
 /**
- * Reviews against the real database: who may review what and when, what the
+ * Reviews against database v2 (each business's own shard, D3d): who may review what and when, what the
  * public sees, the business's reply and reports, admin moderation, and the
  * rating the database keeps in step.
  */
@@ -21,15 +21,21 @@ async function visit(
   how: 'completed' | 'checked_in' = 'completed',
 ) {
   const a = await h.appointment(s, customer, -minutesAgo);
-  await h.db.appointment.update({
-    where: { id: a.id },
-    data:
-      how === 'completed'
-        ? { status: 'completed' }
-        : { checkedInAt: new Date(Date.now() - minutesAgo * 60_000) },
-  });
+  await h.update(
+    s,
+    a,
+    how === 'completed'
+      ? { status: 'completed' }
+      : { checkedInAt: new Date(Date.now() - minutesAgo * 60_000) },
+  );
   return a;
 }
+
+/** The rating the database keeps on the business's row. */
+const rating = (s: Salon) =>
+  h.inSalon(s, (tx) =>
+    tx.business.findUniqueOrThrow({ where: { id: s.b.id }, select: { avgRating: true, reviewCount: true } }),
+  );
 
 const review = (customer: Person, appointmentId: string, body: Record<string, unknown>) =>
   request(h.app).post(`/v1/appointments/${appointmentId}/review`).set(customer.auth).send(body);
@@ -66,7 +72,7 @@ describe('Writing a review', () => {
     const r1 = await review(ayesha, upcoming.id, { overall: 5 }).expect(422);
     expect(r1.body.error.code).toBe('REVIEW_NOT_ALLOWED');
     const noShow = await h.appointment(s, ayesha, -5 * HOUR);
-    await h.db.appointment.update({ where: { id: noShow.id }, data: { status: 'no_show' } });
+    await h.update(s, noShow, { status: 'no_show' });
     await review(ayesha, noShow.id, { overall: 1 }).expect(422);
     const old = await visit(s, ayesha, 31 * DAY);
     await review(ayesha, old.id, { overall: 3 }).expect(422);
@@ -83,11 +89,25 @@ describe('Writing a review', () => {
     const other = await h.salon();
     const c = await h.person();
     const a = await visit(s, c, HOUR);
-    await expect(
-      h.db.review.create({
-        data: { appointmentId: a.id, userId: c.id, businessId: other.b.id, overallRating: 5 },
-      }),
-    ).rejects.toThrow(/does not match its appointment/);
+    const startAt = (
+      await h.inSalon(s, (tx) => tx.appointment.findFirstOrThrow({ where: { id: a.internalId } }))
+    ).startAt;
+    const attach = (businessId: bigint, userId: bigint) =>
+      h.world.inBusiness(businessId, (tx) =>
+        tx.review.create({
+          data: {
+            id: h.world.id(),
+            appointmentId: a.internalId,
+            appointmentStartAt: startAt,
+            userId,
+            businessId,
+            overallRating: 5,
+          },
+        }),
+      );
+    // Not at another business, and not by someone else.
+    await expect(attach(other.b.id, c.id)).rejects.toThrow(/does not match its appointment/);
+    await expect(attach(s.b.id, (await h.person()).id)).rejects.toThrow(/does not match its appointment/);
   });
 
   it('can be changed for 7 days and deleted any time; the business rating follows', async () => {
@@ -95,7 +115,7 @@ describe('Writing a review', () => {
     const c = await h.person();
     const a = await visit(s, c, HOUR);
     await review(c, a.id, { overall: 2 }).expect(201);
-    expect((await h.db.business.findUniqueOrThrow({ where: { id: s.b.id } })).avgRating.toNumber()).toBe(2);
+    expect((await rating(s)).avgRating.toNumber()).toBe(2);
 
     const edited = await request(h.app)
       .patch(`/v1/appointments/${a.id}/review`)
@@ -103,12 +123,14 @@ describe('Writing a review', () => {
       .send({ overall: 4, comment: 'Better than I first said' })
       .expect(200);
     expect(edited.body.data).toMatchObject({ rating: { overall: 4 }, edited: true });
-    expect((await h.db.business.findUniqueOrThrow({ where: { id: s.b.id } })).avgRating.toNumber()).toBe(4);
+    expect((await rating(s)).avgRating.toNumber()).toBe(4);
 
-    await h.db.review.updateMany({
-      where: { appointmentId: a.id },
-      data: { createdAt: new Date(Date.now() - 8 * DAY * 60_000) },
-    });
+    await h.inSalon(s, (tx) =>
+      tx.review.updateMany({
+        where: { appointmentId: a.internalId },
+        data: { createdAt: new Date(Date.now() - 8 * DAY * 60_000) },
+      }),
+    );
     const locked = await request(h.app)
       .patch(`/v1/appointments/${a.id}/review`)
       .set(c.auth)
@@ -117,9 +139,7 @@ describe('Writing a review', () => {
     expect(locked.body.error.code).toBe('REVIEW_LOCKED');
 
     await request(h.app).delete(`/v1/appointments/${a.id}/review`).set(c.auth).expect(204);
-    expect(await h.db.business.findUniqueOrThrow({ where: { id: s.b.id } })).toMatchObject({
-      reviewCount: 0,
-    });
+    expect(await rating(s)).toMatchObject({ reviewCount: 0 });
 
     const mine = await request(h.app).get('/v1/appointments/reviews').set(c.auth).expect(200);
     expect(mine.body.data).toEqual([]);
@@ -152,9 +172,11 @@ describe('Reading reviews', () => {
       visitedIn: expect.stringMatching(/^\d{4}-\d{2}$/),
     });
 
-    const best = await request(h.app).get(`/v1/businesses/${s.b.id}/reviews?sort=highest&withComment=true`);
+    const best = await request(h.app).get(
+      `/v1/businesses/${s.b.publicId}/reviews?sort=highest&withComment=true`,
+    );
     expect(best.body.data.map((r: { comment: string }) => r.comment)).toEqual(['Excellent', 'Waited long']);
-    const fours = await request(h.app).get(`/v1/businesses/${s.b.id}/reviews?rating=4`);
+    const fours = await request(h.app).get(`/v1/businesses/${s.b.publicId}/reviews?rating=4`);
     expect(fours.body.meta.total).toBe(1);
   });
 });
@@ -177,13 +199,13 @@ describe('The business: reply and report', () => {
     expect(res.body.data.response.text).toBe('Sorry about the wait — call [contact removed]');
     await reply(manager).send({ text: 'Thanks for coming back.' }).expect(200);
 
-    const events = await h.db.outboxEvent.findMany({
-      where: { aggregateId: id, topic: 'reviews.responded' },
-    });
+    const events = await h.inSalon(s, (tx) =>
+      tx.outboxEvent.findMany({ where: { aggregateId: BigInt(id), topic: 'reviews.responded' } }),
+    );
     expect(events).toHaveLength(1); // the reviewer is told once, not on every edit
 
     await request(h.app).delete(`${s.base}/reviews/${id}/response`).set(manager.auth).expect(204);
-    const pub = await request(h.app).get(`/v1/businesses/${s.b.id}/reviews`);
+    const pub = await request(h.app).get(`/v1/businesses/${s.b.publicId}/reviews`);
     expect(pub.body.data[0].response).toBeNull();
   });
 
@@ -221,16 +243,16 @@ describe('The business: reply and report', () => {
       .set(admin.auth)
       .send({ action: 'hide', reason: 'Not a real visit' })
       .expect(204);
-    expect(await h.db.business.findUniqueOrThrow({ where: { id: s.b.id } })).toMatchObject({
-      reviewCount: 1,
-    });
-    expect((await h.db.business.findUniqueOrThrow({ where: { id: s.b.id } })).avgRating.toNumber()).toBe(5);
-    const pub = await request(h.app).get(`/v1/businesses/${s.b.id}/reviews`);
+    expect(await rating(s)).toMatchObject({ reviewCount: 1 });
+    expect((await rating(s)).avgRating.toNumber()).toBe(5);
+    const pub = await request(h.app).get(`/v1/businesses/${s.b.publicId}/reviews`);
     expect(pub.body.data.map((r: { id: string }) => r.id)).not.toContain(fake);
     expect(
-      await h.db.auditLog.count({
-        where: { resourceId: fake, action: { in: ['review.reported', 'review.hidden'] } },
-      }),
+      await h.inSalon(s, (tx) =>
+        tx.auditLog.count({
+          where: { resourceId: BigInt(fake), action: { in: ['review.reported', 'review.hidden'] } },
+        }),
+      ),
     ).toBe(2);
 
     await request(h.app)
@@ -238,9 +260,7 @@ describe('The business: reply and report', () => {
       .set(admin.auth)
       .send({ action: 'restore' })
       .expect(204);
-    expect(await h.db.business.findUniqueOrThrow({ where: { id: s.b.id } })).toMatchObject({
-      reviewCount: 2,
-    });
+    expect(await rating(s)).toMatchObject({ reviewCount: 2 });
   });
 });
 

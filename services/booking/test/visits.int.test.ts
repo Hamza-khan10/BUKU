@@ -81,7 +81,9 @@ describe('Customers checking in', () => {
     const desk = await s.member('front_desk');
     const res = await post(`${s.base}/check-in`, desk.auth, { code: request_.code });
     expect(res.body.data.status).toBe('confirmed');
-    const history = await h.db.appointmentStatusHistory.findMany({ where: { appointmentId: request_.id } });
+    const history = await h.inSalon(s, (tx) =>
+      tx.appointmentEvent.findMany({ where: { appointmentId: request_.internalId } }),
+    );
     expect(history.map((x) => [x.fromStatus, x.toStatus, x.reason])).toEqual([
       ['pending', 'confirmed', 'approved on arrival'],
     ]);
@@ -93,10 +95,16 @@ describe('Completing visits and no-shows', () => {
     const s = await h.salon();
     const future = await h.appointment(s, await h.person(), 60);
     expect((await post(`${s.base}/appointments/${future.id}/complete`, s.owner.auth)).status).toBe(409);
-    const now = await h.appointment(s, await h.person(), -5);
+    const customer = await h.person();
+    const now = await h.appointment(s, customer, -5);
     const done = await post(`${s.base}/appointments/${now.id}/complete`, s.owner.auth);
     expect(done.body.data.status).toBe('completed');
-    const events = await h.db.outboxEvent.findMany({ where: { aggregateId: now.id } });
+    // And it counts as a visit for the customer, on their own shard (D-078, D3d).
+    const mine = await h.shardOf(customer);
+    expect(await mine.userVisitOutcome.count({ where: { refId: now.internalId, kind: 'visit' } })).toBe(1);
+    const events = await h.inSalon(s, (tx) =>
+      tx.outboxEvent.findMany({ where: { aggregateId: now.internalId } }),
+    );
     expect(events.map((e) => e.topic)).toEqual(['bookings.completed']);
   });
 
@@ -113,7 +121,9 @@ describe('Completing visits and no-shows', () => {
     const noShow = await post(`${s.base}/appointments/${late.id}/no-show`, s.owner.auth);
     expect(noShow.body.data.status).toBe('no_show');
     expect(
-      (await h.db.outboxEvent.findMany({ where: { aggregateId: late.id } })).map((e) => e.topic),
+      (await h.inSalon(s, (tx) => tx.outboxEvent.findMany({ where: { aggregateId: late.internalId } }))).map(
+        (e) => e.topic,
+      ),
     ).toEqual(['bookings.no_show']);
 
     const arrived = await h.appointment(s, await h.person(), -20, { minutes: 60, staffIndex: 2 });
@@ -149,7 +159,7 @@ describe('Employee shifts', () => {
     expect(results.map((r) => r.status).sort()).toEqual([201, 409, 409]);
     const present = await request(h.app).get(`${s.base}/attendance/present`).set(desk.auth);
     expect(present.body.data).toEqual([
-      { staffId: s.staff[0]!.id, displayName: 'Stylist 1', since: expect.any(String) },
+      { staffId: s.staff[0]!.id.toString(), displayName: 'Stylist 1', since: expect.any(String) },
     ]);
   });
 
@@ -178,9 +188,11 @@ describe('Employee shifts', () => {
       .set(s.owner.auth)
       .send({ checkInAt: start, checkOutAt: end, note: 'Forgot to clock out' });
     expect(fixed.body.data).toMatchObject({ open: false, minutes: 120, note: 'Forgot to clock out' });
-    const audit = await h.db.auditLog.findFirstOrThrow({
-      where: { action: 'booking.attendance_corrected', resourceId: shift.id },
-    });
+    const audit = await h.inSalon(s, (tx) =>
+      tx.auditLog.findFirstOrThrow({
+        where: { action: 'booking.attendance_corrected', resourceId: BigInt(shift.id) },
+      }),
+    );
     expect(audit.oldValues).toMatchObject({ checkOutAt: null });
 
     const backwards = await request(h.app)

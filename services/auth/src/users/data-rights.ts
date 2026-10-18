@@ -245,6 +245,7 @@ export class DataRightsService {
             await tx.userTimeReservation.deleteMany(mine);
             await tx.userActiveTicket.deleteMany(mine);
             await tx.userBusinessRole.deleteMany(mine);
+            await tx.userVisitOutcome.deleteMany(mine);
             await tx.user.update({
               where: { id },
               data: {
@@ -348,18 +349,18 @@ export class DataRightsService {
 }
 
 /**
- * Ratings stay (they are part of a business's aggregate); the words people wrote don't. Only those
- * columns are written (auth-service may change nothing else there, D2d), so plain SQL: Prisma
- * would also stamp `updated_at`.
+ * Ratings stay (they are part of a business's aggregate); the words people wrote and the name
+ * they booked under don't. Only those columns are written (auth-service may change nothing else
+ * there, D2d), so plain SQL: Prisma would also stamp `updated_at`.
  */
 async function eraseAtBusinesses(tx: BusinessTx, userId: bigint): Promise<void> {
   await tx.$executeRaw`UPDATE reviews SET comment = NULL WHERE user_id = ${userId} AND comment IS NOT NULL`;
   await tx.$executeRaw`UPDATE queue_tickets SET notes = NULL WHERE user_id = ${userId} AND notes IS NOT NULL`;
   await tx.$executeRaw`
-    UPDATE appointments a SET notes = NULL
+    UPDATE appointments a SET notes = NULL, customer_name = NULL
     FROM appointment_index i
     WHERE i.user_id = ${userId} AND a.id = i.appointment_id AND a.start_at = i.start_at
-      AND a.notes IS NOT NULL`;
+      AND (a.notes IS NOT NULL OR a.customer_name IS NOT NULL)`;
 }
 
 // Arbitrary constant, distinct from the outbox relay's.
