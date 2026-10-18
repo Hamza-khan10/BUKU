@@ -422,6 +422,9 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
       favourites: '*',
       user_appointments: '*',
       user_business_roles: '*',
+      // Suggestions and "what's coming up" (D-075, D3f): where people go, and their place in line.
+      user_visit_outcomes: '*',
+      user_active_tickets: '*',
     },
     inserts: ['audit_logs'],
     updates: { push_tokens: ['is_active', 'last_seen_at'] },

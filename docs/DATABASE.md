@@ -1449,3 +1449,37 @@ starts from its own seed (D2e).
   replicas) run on the services' v2 world as its own role, through a shared harness; new ones
   cover a finished ticket staying readable, a stale claim giving way, a ticket still being served
   in a closed queue, and outcomes recorded once.
+
+**D3f, as built (2026-10-18).** notification-service runs on v2 (D-117); nothing of it uses v1 any
+more.
+
+- **On each person's shard:** their inbox and every send's record (`notifications`), preferences,
+  their WhatsApp connection, and the marks of timed messages (`notification_marks`, one per person
+  and key). A delivery writes each recipient's inbox row in the same transaction that records it
+  as handled on their shard — the event (`processed_events`) or the mark — then sends push, email
+  and WhatsApp after that commit; a message to people on several shards goes shard by shard.
+- **What messages are about** is read on the business's shard: the appointment (with the name the
+  customer booked under), the team, reviews, queue tickets. Links name appointments and businesses
+  by public ID (DB-042); the email unsubscribe link names the person by public ID.
+- **Timed messages:** reminders, "book again", review requests and plan notices read every business
+  shard a page at a time (`DataPlane.businessShards`: one transaction per page, through the
+  cross-business role). A request's nudge is marked for each approver.
+- **Suggestions** start from each user shard: regulars from the reliability ledger
+  (`user_visit_outcomes`), activity from the person's own list (an appointment's ID says when it was
+  booked, DB-002) and their place in line; only the businesses named are asked about.
+- **WhatsApp:** the `user.whatsapp` handle (the number's blind index) says whose number it is: an
+  incoming message finds its person, a number belongs to one account (proving it elsewhere moves
+  it), disconnecting releases it, and a closed account lets it go at once (`users.deleted`).
+  Meta's delivery statuses find the person by their `recipient_id`.
+- **Admin settings** are reference data on the directory (`reference.notification_settings`,
+  replicated to every shard); the audit entry goes to the admin's own shard.
+- **Plan notices** are for business plans only (subscriptions live on business shards; customers
+  are free, D-101); billing being on is read on the directory.
+- **Housekeeping:** v2's partitions and retention are pg_partman's on every shard; v1's partition
+  and retention jobs stopped with this move (v1 leaves in D3j).
+- **Rights:** notification reads `user_visit_outcomes` and `user_active_tickets`; Kafka: it reads
+  `users.deleted`.
+- **Tests:** notification-service's 36 integration tests run on the services' v2 world as its own
+  role (a harness that writes people, businesses and the customer's side of appointments as the
+  other services do), including deliveries across shards, a closed account's WhatsApp number, and
+  a service that is no longer offered.

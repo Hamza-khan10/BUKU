@@ -7,7 +7,7 @@ import {
   type Readiness,
   type RevocationStore,
 } from '@buku/common';
-import type { Database } from '@buku/database';
+import type { DataPlane } from '@buku/database';
 import type { EventHandler } from '@buku/kafka';
 import type { Express } from 'express';
 import type { Redis } from 'ioredis';
@@ -26,7 +26,8 @@ import { WhatsAppService } from './whatsapp/whatsapp-service.js';
 
 /** All dependencies injected: index.ts builds real ones, tests build test ones. */
 export interface NotificationAppDeps {
-  db: Database;
+  /** Database v2 (D3): the directory, the shards, IDs — signed in as notification-service's own role. */
+  plane: DataPlane;
   redis: Redis;
   verifier: JwtVerifier;
   revocations: RevocationStore;
@@ -53,11 +54,13 @@ export function buildNotificationApp(deps: NotificationAppDeps): {
   scheduler: Scheduler;
   suggestions: Suggestions;
   settings: NotificationSettings;
+  whatsapp: WhatsAppService;
   handler: EventHandler;
 } {
-  const settings = new NotificationSettings(deps.db);
+  const { plane } = deps;
+  const settings = new NotificationSettings(plane);
   const notifier = new Notifier({
-    db: deps.db,
+    plane,
     push: deps.push,
     email: deps.email,
     whatsapp: deps.whatsapp,
@@ -67,7 +70,7 @@ export function buildNotificationApp(deps: NotificationAppDeps): {
     whatsappLanguage: deps.whatsappConfig.templateLanguage,
   });
   const whatsapp = new WhatsAppService({
-    db: deps.db,
+    plane,
     redis: deps.redis,
     sender: deps.whatsapp,
     cipher: deps.cipher,
@@ -80,7 +83,8 @@ export function buildNotificationApp(deps: NotificationAppDeps): {
     keepRawBody: true,
     routes: (app) =>
       registerRoutes(app, {
-        inbox: new InboxService(deps.db),
+        plane,
+        inbox: new InboxService(plane),
         settings,
         whatsapp,
         indexer: deps.indexer,
@@ -90,13 +94,14 @@ export function buildNotificationApp(deps: NotificationAppDeps): {
         whatsappWebhook: deps.whatsappConfig.webhook,
       }),
   });
-  const scheduler = new Scheduler({ db: deps.db, redis: deps.redis, notifier, settings });
+  const scheduler = new Scheduler({ plane, redis: deps.redis, notifier, settings });
   return {
     app,
     notifier,
     settings,
+    whatsapp,
     scheduler,
-    suggestions: new Suggestions({ db: deps.db, settings, scheduler, openings: deps.openings }),
-    handler: notificationHandler({ db: deps.db, notifier }),
+    suggestions: new Suggestions({ plane, settings, scheduler, openings: deps.openings }),
+    handler: notificationHandler({ plane, notifier, whatsapp }),
   };
 }

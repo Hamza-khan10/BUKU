@@ -1,4 +1,12 @@
-import { baseServiceEnv, databaseEnv, envBool, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
+import {
+  baseServiceEnv,
+  databaseEnv,
+  databaseV2Env,
+  envBool,
+  jwtVerifyEnv,
+  kafkaEnv,
+  redisEnv,
+} from '@buku/common';
 import { z } from 'zod';
 
 /** Docker Compose passes an unset `${X:-}` as "": treat blank as not set. */
@@ -13,7 +21,9 @@ export const Env = baseServiceEnv
   .extend({
     ...jwtVerifyEnv.shape,
     ...kafkaEnv.shape,
+    // DATABASE_URL: notification-service's own role, and the default server of the directory (D3).
     ...databaseEnv.shape,
+    ...databaseV2Env.shape,
     ...redisEnv.shape,
     SMTP_HOST: z.string().min(1),
     SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),

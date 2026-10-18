@@ -925,6 +925,10 @@ GET /v1/notifications
 `data.screen` tells the app where to go: `appointment`, `business-appointment` (team),
 `queue-ticket`. The same title, text and `data` arrive as a push.
 
+**IDs (DATABASE.md DB-042):** a message's `id` (and `:id`) is a decimal ID. Links in `data` name an
+appointment and a business by their public IDs; a service, an employee, a review and a queue
+ticket (`entryId`) by decimal IDs. The email unsubscribe link's `u` is the person's public ID.
+
 **What is sent, to whom**
 
 | Event                     | Customer                                                | Business                                                           |
@@ -944,18 +948,18 @@ Businesses see customers as "Ayesha K." (first name and initial).
 
 **Timed messages**
 
-| When                                                      | To                              | Message                                   |
-| --------------------------------------------------------- | ------------------------------- | ----------------------------------------- |
-| 24 h before (booked 30 h+ ahead; not at night)            | customer                        | "Reminder: Haircut tomorrow" + code       |
-| 2 h before (booked 2½ h+ ahead; not at night)             | customer                        | "Soon: Haircut at 10:30"                  |
-| Request unanswered for 2 h, or visit under 24 h away      | owner, managers, front desk     | "A booking request is waiting"            |
-| Cancelled with "remind me later", when that time comes    | customer (unless booked again)  | "Time to book Haircut again?"             |
-| Trial ends in 3 days / ended                              | the account (or business owner) | "Your free trial ends soon" / "has ended" |
-| Gifted plan ends in 7 days; cancelled plan ends in 3 days | the account (or business owner) | "Your Professional plan ends soon"        |
-| Payment failed                                            | the account (or business owner) | "Payment didn't go through"               |
+| When                                                      | To                             | Message                                   |
+| --------------------------------------------------------- | ------------------------------ | ----------------------------------------- |
+| 24 h before (booked 30 h+ ahead; not at night)            | customer                       | "Reminder: Haircut tomorrow" + code       |
+| 2 h before (booked 2½ h+ ahead; not at night)             | customer                       | "Soon: Haircut at 10:30"                  |
+| Request unanswered for 2 h, or visit under 24 h away      | owner, managers, front desk    | "A booking request is waiting"            |
+| Cancelled with "remind me later", when that time comes    | customer (unless booked again) | "Time to book Haircut again?"             |
+| Trial ends in 3 days / ended                              | the business owner             | "Your free trial ends soon" / "has ended" |
+| Gifted plan ends in 7 days; cancelled plan ends in 3 days | the business owner             | "Your Professional plan ends soon"        |
+| Payment failed                                            | the business owner             | "Payment didn't go through"               |
 
-Plan notices are only sent while billing is on for that audience, and not if the account already
-moved to another plan. `data.screen` adds `book` (`businessId`, `serviceId`), `billing` and
+Plan notices are about a business's plan (to its owner), only while billing is on for businesses,
+and not if the business already moved to another plan (customers are free, D-101). `data.screen` adds `book` (`businessId`, `serviceId`), `billing` and
 `business-billing`.
 
 **Suggestions** (opt-in; every 30 minutes, never at night; D-075)
@@ -991,6 +995,8 @@ verified address; every email (except plan notices) has a one-click unsubscribe 
 (15 minutes; a new code replaces the old). The app opens `link`; the person taps send. That
 message proves the number and connects it. Afterwards, any message they send gets their upcoming
 visits back; `STOP` / `START` switch WhatsApp messages off / on. 503 until WhatsApp is set up.
+A number belongs to one account at a time (proving it on another account moves it); closing the
+account lets it go at once. Delivery statuses from Meta are matched by their `recipient_id`.
 
 **Preferences** (`PUT …/notification-prefs`, any subset): `pushBookingConfirmation`,
 `pushReminders`, `pushQueueUpdates`, `pushBusinessAlerts`, `whatsappUpdates`, `smsReminders`,
