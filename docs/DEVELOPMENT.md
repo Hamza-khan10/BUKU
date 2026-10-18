@@ -312,21 +312,56 @@ yet (the Google routes answer the same, never an error page).
 ### Set up Paddle (online payments, sandbox)
 
 Billing works without Paddle (checkout answers "online payments aren't set up"). To try real
-checkouts:
+checkouts against Paddle's sandbox (test cards, no real money) — tested end to end in D3g.1:
 
-1. Create a free account at **sandbox-vendors.paddle.com** (sandbox = test cards, no real money).
-2. _Developer tools → Authentication_: create an **API key** and copy the **client-side token**.
-3. _Developer tools → Notifications_: add a destination for `subscription.*` events pointing at
-   `https://<public address>/v1/billing/webhooks/paddle`, and copy its **secret key**. Locally,
-   expose the gateway with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8000`).
-4. Put the three values in `.env` (`PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`;
-   all three or none) and restart billing: `docker compose -f docker-compose.dev.yml up -d billing-service`.
-5. As a super admin, link each web price: `POST /v1/admin/billing/prices/:id/sync-paddle` (creates
-   the product and price in Paddle). Repeat after every price change.
-6. Switch billing on: `PUT /v1/admin/billing/settings/user { "enabled": true }` (and `business`).
-7. Pay with Paddle's test card `4242 4242 4242 4242`, any future date, any CVC.
+1. **Account:** a free account at **sandbox-vendors.paddle.com**. Skip its "create your catalog"
+   step: BUKU creates its own products and prices (step 6), linked to its records.
+2. **API key** (_Developer tools → Authentication → API keys → New_): tick **Write** on exactly
+   five permissions — **Customer portal sessions, Prices, Products, Subscriptions, Transactions** —
+   and nothing else (no customers, addresses or payment methods: a leaked key can't read people's
+   details). Set an expiry (90 days) and mark it rotatable. Paddle shows it once.
+3. **Client-side token** (_same page → Client-side tokens_): public by design (the browser uses it).
+4. **`.env`** (never in the repo or a chat): `PADDLE_API_KEY=pdl_sdbx_apikey_…`,
+   `PADDLE_CLIENT_TOKEN=test_…`, `PADDLE_TAX_CATEGORY=saas` (BUKU sells hosted software; use
+   `standard` if Paddle hasn't allowed SaaS on the account). The three keys go in together or not
+   at all: billing-service refuses to start with only some of them.
+5. **Notifications** need a public HTTPS address. Never tunnel the gateway itself — that would put
+   the whole development stack on the internet, including the development sign-in, which needs no
+   password. Run the relay, which forwards only `POST /v1/billing/webhooks/paddle`, and point the
+   tunnel at it:
+
+   ```bash
+   pnpm exec tsx scripts/paddle-webhook-relay.ts                          # 127.0.0.1:8099
+   cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8099         # prints https://….trycloudflare.com
+   ```
+
+   Use an official `cloudflared` release, checked against its published SHA-256. Then in
+   _Developer tools → Notifications → New destination_: URL `https://<tunnel>/v1/billing/webhooks/paddle`,
+   usage "platform and simulation", events **all `subscription.*`** (nothing else). Copy its
+   **secret key** (`pdl_ntfset_…`, not the destination's `ntfset_…` ID) into
+   `PADDLE_WEBHOOK_SECRET`, and restart billing:
+   `docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate billing-service`.
+   A quick tunnel's address changes each time it starts: update the destination when it does.
+
+6. **Link the prices** (as a super admin): `POST /v1/admin/billing/prices/:id/sync-paddle` for each
+   business plan's web price (creates the product with the tax category, and the price). Repeat
+   after every price change.
+7. **Checkout domain:** _Checkout → Website approval_: add the website's domain
+   (`https://thebuku.vercel.app`); then _Checkout settings → Default payment link_:
+   `https://thebuku.vercel.app/checkout` (Paddle refuses `localhost`). Until the website has that
+   page (D3i), open a payment on the local test page instead —
+   `pnpm exec tsx scripts/paddle-sandbox-checkout.ts`, then
+   `http://localhost:8098/checkout?_ptxn=<transactionId from the checkout response>`.
+8. **Switch billing on for businesses** while testing: `PUT /v1/admin/billing/settings/business
+{ "enabled": true }` (customers are free and can't be charged, D-101). Pay with the test card
+   `4242 4242 4242 4242`, any future expiry, CVC `100`. Then try cancel, undo, a plan change and
+   the card portal (`/v1/businesses/:id/billing/subscription/…`).
+9. **Afterwards:** stop the tunnel, the relay and the test page, and switch business billing off
+   again (otherwise every demo shop is held to the Starter plan's limits).
 
 Never put the API key or webhook secret in the web or mobile app — only the client-side token.
+For going live: a live Paddle account, BUKU's own domain approved (Paddle may not accept a
+`vercel.app` address for live payments), the website's checkout page (D3i) and live keys.
 
 ### Set up WhatsApp (Meta WhatsApp Cloud API)
 
@@ -341,9 +376,10 @@ written to the log in development (`WHATSAPP_PROVIDER=log`).
    `whatsapp_business_messaging` and `whatsapp_business_management`, and generate a **permanent
    token** (never the 24-hour test token).
 4. _App settings → Basic_: copy the **App secret**. Choose a long random **verify token**.
-5. _WhatsApp → Configuration → Webhook_: URL `https://<public address>/v1/webhooks/whatsapp`
-   (locally: `cloudflared tunnel --url http://localhost:8000`), the verify token, and subscribe to
-   **messages**.
+5. _WhatsApp → Configuration → Webhook_: URL `https://<public address>/v1/webhooks/whatsapp`, the
+   verify token, and subscribe to **messages**. Locally, don't tunnel the whole gateway (it would
+   expose the development sign-in); a relay that forwards only the WhatsApp webhook, like Paddle's
+   (step 5 above), is still to be written.
 6. In `.env`: `WHATSAPP_PROVIDER=meta`, `WHATSAPP_BUSINESS_NUMBER=+…`, `WHATSAPP_PHONE_NUMBER_ID`,
    `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`; then
    `docker compose -f docker-compose.dev.yml up -d notification-service`.

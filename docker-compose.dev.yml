@@ -834,6 +834,8 @@ services:
       PADDLE_API_KEY: ${PADDLE_API_KEY:-}
       PADDLE_CLIENT_TOKEN: ${PADDLE_CLIENT_TOKEN:-}
       PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
+      # Paddle's tax category for BUKU's plans: `saas` once Paddle allows it on the account (D3g.1).
+      PADDLE_TAX_CATEGORY: ${PADDLE_TAX_CATEGORY:-standard}
     volumes:
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
