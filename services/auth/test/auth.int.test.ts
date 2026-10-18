@@ -866,7 +866,11 @@ describe('My data: export and deletion', () => {
       .set(bearer(first.body.data.accessToken))
       .send({ phone: '+923001112233', whatsappOptIn: true });
     const b = await aBusiness();
-    const appt = await anAppointment(b, userId, -7, { status: 'completed', notes: 'my private note' });
+    const appt = await anAppointment(b, userId, -7, {
+      status: 'completed',
+      notes: 'my private note',
+      customerName: 'Test User',
+    });
     const today = new Date(new Date().toISOString().slice(0, 10));
     const queueSession = world.id();
     await world.inBusiness(b.id, async (tx) => {
@@ -925,7 +929,10 @@ describe('My data: export and deletion', () => {
         overallRating: 5,
         comment: null,
       });
-      expect((await tx.appointment.findFirstOrThrow({ where: { id: appt.id } })).notes).toBeNull();
+      expect(await tx.appointment.findFirstOrThrow({ where: { id: appt.id } })).toMatchObject({
+        notes: null,
+        customerName: null,
+      });
       expect((await tx.queueTicket.findFirstOrThrow({ where: { userId } })).notes).toBeNull();
     });
     expect(await rights.purgeDue()).toBe(0); // idempotent

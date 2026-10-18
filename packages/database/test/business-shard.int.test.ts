@@ -463,21 +463,43 @@ describe('the rest of a business’s day', () => {
 
   it('a business’s rating and count follow its visible reviews; its place follows lat/lng', async () => {
     const b = await aBusiness('rated');
-    const review = (rating: number) =>
-      asBusiness(b.id, (tx) =>
+    let hour = 9;
+    const review = async (rating: number) => {
+      const visit = await book(b, day(12, hour++), { status: 'completed' });
+      return asBusiness(b.id, (tx) =>
         tx.review.create({
           data: {
             id: ids.next(),
-            appointmentId: ids.next(),
-            appointmentStartAt: day(12, 9),
+            appointmentId: visit.id,
+            appointmentStartAt: visit.startAt,
             businessId: b.id,
-            userId: 1n,
+            userId: visit.userId,
             overallRating: rating,
           },
         }),
       );
+    };
     await review(5);
     const two = await review(2);
+    // A review is of a real visit: its appointment, here, by the same customer (D3d).
+    const visit = await book(b, day(12, hour++), { status: 'completed' });
+    const wrong = (data: Record<string, unknown>) =>
+      asBusiness(b.id, (tx) =>
+        tx.review.create({
+          data: {
+            id: ids.next(),
+            appointmentId: visit.id,
+            appointmentStartAt: visit.startAt,
+            businessId: b.id,
+            userId: visit.userId,
+            overallRating: 1,
+            ...data,
+          },
+        }),
+      );
+    await expect(wrong({ appointmentId: ids.next() })).rejects.toThrow(/does not match its appointment/);
+    await expect(wrong({ userId: visit.userId + 1n })).rejects.toThrow(/does not match its appointment/);
+    await expect(wrong({ appointmentStartAt: day(13, 9) })).rejects.toThrow(/does not match its appointment/);
     let biz = await asBusiness(b.id, (tx) => tx.business.findUniqueOrThrow({ where: { id: b.id } }));
     expect([biz.reviewCount, biz.avgRating.toString()]).toEqual([2, '3.5']);
     await asBusiness(b.id, (tx) =>

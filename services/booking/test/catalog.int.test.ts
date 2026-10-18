@@ -1,139 +1,35 @@
-import { generateKeyPairSync, randomBytes, randomInt, randomUUID } from 'node:crypto';
-import {
-  createJwtSigner,
-  createJwtVerifier,
-  createLogger,
-  createRedisClient,
-  createRevocationStore,
-  Readiness,
-  type JwtSigner,
-} from '@buku/common';
-import { createDatabaseClient, type Database } from '@buku/database';
+import { randomUUID } from 'node:crypto';
 import { createEvent, TOPICS } from '@buku/kafka';
-import { createS3Storage, MediaLinks } from '@buku/media';
-import type { Express } from 'express';
-import type { Redis } from 'ioredis';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { testEnv } from '../../../packages/database/test/int-env.js';
-import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
-import { buildBookingApp } from '../src/app.js';
+import { describe, expect, it } from 'vitest';
+import { givePlan, withBilling } from '../../../packages/database/test/services-world.js';
 import { bookingEventHandler } from '../src/events/handlers.js';
 import { todayIn } from '../src/schedules/schedule-service.js';
-import type { AppointmentService } from '../src/appointments/appointment-service.js';
-import type { StaffService } from '../src/staff/staff-service.js';
+import { useBookingHarness, type Person } from './harness.js';
 
 /**
- * booking-service part 1: the menu, staff profiles, schedules and booking
- * settings — against the real test database.
+ * booking-service part 1: the menu, staff profiles, schedules and booking settings — against
+ * database v2 (D3d): each business's own shard, booking-service signed in as its own role.
  */
 
-let app: Express;
-let staffService: StaffService;
-let appointmentService: AppointmentService;
-let db: Database;
-let redis: Redis;
-let signer: JwtSigner;
-
-const newIp = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
-const hex64 = () => randomBytes(32).toString('hex');
-
-type Person = Awaited<ReturnType<typeof person>>;
-
-async function person() {
-  const user = await db.user.create({ data: { name: `U ${randomUUID().slice(0, 6)}`, emailHash: hex64() } });
-  const { token } = await signer.sign({ sub: user.id, role: 'user', sid: randomUUID() });
-  return { id: user.id, auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() } };
-}
-
-/** An owner with a business, plus team members in each role (each linked to a staff profile if asked). */
-async function business(status: 'pending' | 'verified' | 'suspended' = 'pending') {
-  const owner = await person();
-  const suffix = randomUUID().slice(-12);
-  const category = await db.category.create({ data: { name: `Cat ${suffix}`, slug: `cat-${suffix}` } });
-  const b = await db.business.create({
-    data: {
-      ownerId: owner.id,
-      categoryId: category.id,
-      name: `Salon ${suffix}`,
-      slug: `salon-${suffix}`,
-      city: 'Lahore',
-      country: 'PK',
-      timezone: 'Asia/Karachi',
-      currency: 'PKR',
-      status,
-    },
-  });
-  const member = async (role: 'manager' | 'front_desk' | 'staff') => {
-    const p = await person();
-    await db.businessMember.create({ data: { businessId: b.id, userId: p.id, role } });
-    return p;
-  };
-  return { owner, b, member, base: `/v1/businesses/${b.id}` };
-}
-
-beforeAll(async () => {
-  db = createDatabaseClient({ url: testEnv.appUrl, applicationName: 'booking-int-test', maxConnections: 5 });
-  redis = createRedisClient({ url: testEnv.redisUrl, connectionName: 'booking-int-test' });
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const jwt = { issuer: 'https://auth.test', audience: 'buku-api' };
-  signer = await createJwtSigner({
-    ...jwt,
-    keyId: 'k1',
-    privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
-  });
-  const verifier = await createJwtVerifier({
-    ...jwt,
-    keys: [{ keyId: 'k1', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }],
-  });
-  const storage = createS3Storage({
-    endpoint: testEnv.s3.endpoint,
-    publicEndpoint: testEnv.s3.endpoint,
-    region: 'us-east-1',
-    accessKeyId: testEnv.s3.accessKeyId,
-    secretAccessKey: testEnv.s3.secretAccessKey,
-    forcePathStyle: true,
-  });
-  ({
-    app,
-    staff: staffService,
-    appointments: appointmentService,
-  } = buildBookingApp({
-    db,
-    redis,
-    verifier,
-    revocations: createRevocationStore(redis),
-    mediaLinks: new MediaLinks(storage, {
-      mediaBucket: testEnv.s3.mediaBucket,
-      privateBucket: testEnv.s3.privateBucket,
-    }),
-    http: {
-      service: 'booking-test',
-      logger: createLogger({ service: 'booking-test', level: 'silent' }),
-      readiness: new Readiness(),
-      trustProxyHops: 1,
-    },
-  }));
-});
-
-afterAll(async () => {
-  await db.$disconnect();
-  await redis.quit();
-});
+const h = useBookingHarness();
+const person = () => h.person();
+/** An owner with a business, plus team members in each role. */
+const business = (status: 'pending' | 'verified' | 'suspended' = 'pending') => h.business(status);
 
 const post = (path: string, who: Person, body: unknown) =>
-  request(app)
+  request(h.app)
     .post(path)
     .set(who.auth)
     .send(body as object);
 const put = (path: string, who: Person, body: unknown) =>
-  request(app)
+  request(h.app)
     .put(path)
     .set(who.auth)
     .send(body as object);
-const del = (path: string, who: Person) => request(app).delete(path).set(who.auth);
+const del = (path: string, who: Person) => request(h.app).delete(path).set(who.auth);
 const get = (path: string, who?: Person) =>
-  who ? request(app).get(path).set(who.auth) : request(app).get(path);
+  who ? request(h.app).get(path).set(who.auth) : request(h.app).get(path);
 
 const haircut = (overrides: Record<string, unknown> = {}) => ({
   name: 'Haircut',
@@ -199,7 +95,7 @@ describe('Service menu', () => {
       expect((await post(`${base}/services`, who, haircut())).status).toBe(403);
     }
     expect((await post(`${base}/services`, await person(), haircut())).status).toBe(404);
-    expect((await request(app).post(`${base}/services`).send(haircut())).status).toBe(401);
+    expect((await request(h.app).post(`${base}/services`).send(haircut())).status).toBe(401);
     expect((await get(`${base}/services/manage`, owner)).status).toBe(200);
   });
 
@@ -233,8 +129,10 @@ describe('Service menu', () => {
     ).toBe(404);
 
     expect((await del(`${a.base}/service-categories/${cat.body.data.id}`, a.owner)).status).toBe(204);
-    const row = await db.service.findUniqueOrThrow({ where: { id: svc.body.data.id } });
-    expect([row.categoryId, row.isActive]).toEqual([null, true]);
+    const row = await h.world.inBusiness(a.b.id, (tx) =>
+      tx.service.findUniqueOrThrow({ where: { id: BigInt(svc.body.data.id) } }),
+    );
+    expect([row.groupId, row.isActive]).toEqual([null, true]);
   });
 
   it('a suspended business cannot change its menu', async () => {
@@ -253,11 +151,16 @@ describe('Staff profiles', () => {
       displayName: 'Ali Raza',
       bio: 'Fades & beards',
       specializations: ['Fades'],
-      userId: ali.id,
+      userId: ali.publicId,
       serviceIds: [cut.body.data.id],
     });
+
     expect(res.status).toBe(201);
-    expect(res.body.data).toMatchObject({ userId: ali.id, isActive: true, serviceIds: [cut.body.data.id] });
+    expect(res.body.data).toMatchObject({
+      userId: ali.publicId,
+      isActive: true,
+      serviceIds: [cut.body.data.id],
+    });
 
     const list = await get(`/v1/businesses/${b.slug}/staff`);
     expect(list.body.data).toEqual([
@@ -278,21 +181,25 @@ describe('Staff profiles', () => {
   it('a brand-new employee (still on their temporary password) can get a profile right away', async () => {
     const { owner, member, base } = await business();
     const ali = await member('staff');
-    await db.user.update({ where: { id: ali.id }, data: { mustChangePassword: true } });
-    expect((await post(`${base}/staff`, owner, { displayName: 'Ali', userId: ali.id })).status).toBe(201);
+    await (await h.shardOf(ali)).user.update({ where: { id: ali.id }, data: { mustChangePassword: true } });
+    expect((await post(`${base}/staff`, owner, { displayName: 'Ali', userId: ali.publicId })).status).toBe(
+      201,
+    );
   });
 
   it('only team accounts can be linked, once each; services must be this business’s', async () => {
     const { owner, member, base } = await business();
     const other = await business();
     expect(
-      (await post(`${base}/staff`, owner, { displayName: 'X', userId: (await person()).id })).status,
+      (await post(`${base}/staff`, owner, { displayName: 'X', userId: (await person()).publicId })).status,
     ).toBe(400);
     const sana = await member('front_desk');
-    expect((await post(`${base}/staff`, owner, { displayName: 'Sana', userId: sana.id })).status).toBe(201);
-    expect((await post(`${base}/staff`, owner, { displayName: 'Sana again', userId: sana.id })).status).toBe(
-      409,
+    expect((await post(`${base}/staff`, owner, { displayName: 'Sana', userId: sana.publicId })).status).toBe(
+      201,
     );
+    expect(
+      (await post(`${base}/staff`, owner, { displayName: 'Sana again', userId: sana.publicId })).status,
+    ).toBe(409);
     const theirs = await post(`${other.base}/services`, other.owner, haircut());
     expect(
       (await post(`${base}/staff`, owner, { displayName: 'Y', serviceIds: [theirs.body.data.id] })).status,
@@ -310,18 +217,25 @@ describe('Staff profiles', () => {
   it('when someone leaves the team, their profile is no longer bookable (event), once or twice', async () => {
     const { owner, b, member, base } = await business();
     const ali = await member('staff');
-    const s = await post(`${base}/staff`, owner, { displayName: 'Ali', userId: ali.id });
-    const handle = bookingEventHandler({ staff: staffService, appointments: appointmentService });
+    const s = await post(`${base}/staff`, owner, { displayName: 'Ali', userId: ali.publicId });
+    const handle = bookingEventHandler({
+      staff: h.booking.staff,
+      appointments: h.booking.appointments,
+      persons: h.booking.persons,
+    });
     const event = createEvent({
       type: TOPICS.BUSINESSES_MEMBER_REMOVED,
       source: 'auth-service',
-      subject: b.id,
-      data: { businessId: b.id, userId: ali.id, memberId: randomUUID() },
+      subject: b.id.toString(),
+      // Events carry internal IDs (DB-042).
+      data: { businessId: b.id.toString(), userId: ali.id.toString(), memberId: h.world.id().toString() },
     });
     const ctx = { topic: event.type, partition: 0, offset: '0', key: null, attempt: 1 };
     await handle(event, ctx);
     await handle(event, ctx);
-    const row = await db.staff.findUniqueOrThrow({ where: { id: s.body.data.id } });
+    const row = await h.world.inBusiness(b.id, (tx) =>
+      tx.staff.findUniqueOrThrow({ where: { id: BigInt(s.body.data.id) } }),
+    );
     expect([row.isActive, row.userId]).toEqual([false, null]);
   });
 });
@@ -330,7 +244,7 @@ describe('Working hours, time off and closures', () => {
   async function teamWithEmployee() {
     const t = await business();
     const ali = await t.member('staff');
-    const aliProfile = await post(`${t.base}/staff`, t.owner, { displayName: 'Ali', userId: ali.id });
+    const aliProfile = await post(`${t.base}/staff`, t.owner, { displayName: 'Ali', userId: ali.publicId });
     const other = await post(`${t.base}/staff`, t.owner, { displayName: 'Bilal' });
     return { ...t, ali, aliId: aliProfile.body.data.id as string, otherId: other.body.data.id as string };
   }
@@ -462,15 +376,18 @@ describe('Working hours, time off and closures', () => {
     const a = await teamWithEmployee();
     const other = await business();
     await expect(
-      db.availabilityRule.create({
-        data: {
-          businessId: other.b.id,
-          staffId: a.aliId,
-          dayOfWeek: 1,
-          startTime: '09:00',
-          endTime: '10:00',
-        },
-      }),
+      h.world.inBusiness(other.b.id, (tx) =>
+        tx.availabilityRule.create({
+          data: {
+            id: h.world.id(),
+            businessId: other.b.id,
+            staffId: BigInt(a.aliId),
+            dayOfWeek: 1,
+            startTime: '09:00',
+            endTime: '10:00',
+          },
+        }),
+      ),
     ).rejects.toThrow();
   });
 });
@@ -520,7 +437,7 @@ describe('Booking settings', () => {
 
 describe('Plans: business limits (billing on)', () => {
   it('Starter: 10 services; archiving frees a place; bringing one back counts again', async () => {
-    await withBilling(db, 'business', async () => {
+    await withBilling(h.world, 'business', async () => {
       const { owner, b, base } = await business();
       const ids: string[] = [];
       for (let i = 0; i < 10; i++)
@@ -533,22 +450,22 @@ describe('Plans: business limits (billing on)', () => {
       ]);
       await del(`${base}/services/${ids[0]}`, owner);
       expect((await post(`${base}/services`, owner, haircut({ name: 'Replacement' }))).status).toBe(201);
-      const back = await request(app)
+      const back = await request(h.app)
         .patch(`${base}/services/${ids[0]}`)
         .set(owner.auth)
         .send({ isActive: true });
       expect(back.status).toBe(409);
 
-      await givePlan(db, { businessId: b.id }, 'business_essential');
+      await givePlan(h.world, b.id, 'business_essential');
       expect(
-        (await request(app).patch(`${base}/services/${ids[0]}`).set(owner.auth).send({ isActive: true }))
+        (await request(h.app).patch(`${base}/services/${ids[0]}`).set(owner.auth).send({ isActive: true }))
           .status,
       ).toBe(200);
     });
   });
 
   it('Starter: 2 bookable staff; manual approval is a paid feature', async () => {
-    await withBilling(db, 'business', async () => {
+    await withBilling(h.world, 'business', async () => {
       const { owner, b, base } = await business();
       await post(`${base}/staff`, owner, { displayName: 'One' });
       await post(`${base}/staff`, owner, { displayName: 'Two' });
@@ -570,7 +487,7 @@ describe('Plans: business limits (billing on)', () => {
         (await put(`${base}/booking-settings`, owner, { approvalBelowShowUpPercent: null })).status,
       ).toBe(200);
 
-      await givePlan(db, { businessId: b.id }, 'business_essential');
+      await givePlan(h.world, b.id, 'business_essential');
       expect((await put(`${base}/booking-settings`, owner, { confirmationMode: 'manual' })).status).toBe(200);
       expect((await post(`${base}/staff`, owner, { displayName: 'Three' })).status).toBe(201);
     });

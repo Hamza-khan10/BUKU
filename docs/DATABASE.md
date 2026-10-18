@@ -1377,3 +1377,43 @@ starts from its own seed (D2e).
 - **Tests:** business-service's 61 integration tests run on the services' v2 world as its own
   role; the world now also offers `withBusinessBilling`, `givePlan` and the directory's owner (for
   BUKU's own kinds of business).
+
+**D3d, as built (2026-10-18).** booking-service runs on v2 (D-115); nothing of it uses v1 any more.
+
+- **Booking, the customer's time first (DB-014, D-036):** a booking claims the customer's time on
+  their own shard (`user_time_reservations`, an exclusion constraint: one appointment at a time
+  anywhere, held for 2 minutes), then writes the appointment on the business's shard, whose index
+  refuses a double-booked employee or resource and a duplicate code (DB-024). The claim's ID is
+  the appointment's, so a failed booking gives its claim back at once and one left behind by a
+  crash is settled by the sweeper from the business's shard (booked if the appointment exists,
+  given back if not). Rescheduling replaces the old claim with the new one in one step (the two
+  times may overlap) and puts it back if the move fails.
+- **The customer's side (`PersonSync`):** their claim, their list of appointments
+  (`user_appointments`, replaced only by a newer version) and how each visit ended are brought in
+  step with the appointment as it is on the business's shard. That runs after every change, for
+  every `bookings.*` event (booking-service reads its own events back: the repair if a step after
+  the business's commit is lost), and from the sweeper. Running it again changes nothing.
+- **Reliability (D-078):** a person's outcomes are kept on their own shard
+  (`user_visit_outcomes`: a visit, a no-show or a late cancellation per appointment or queue
+  ticket, kept 13 months), so a business's list needs one small query per user shard. Queue
+  tickets add theirs in D3e.
+- **The name a customer booked under** is kept on the appointment (`customer_name`): the
+  business's list shows it and searches it without asking every user shard; erasing the account
+  blanks it (auth-service may write that column, D3b).
+- **Money** is in minor units (DB-009) and shown with as many decimals as the currency has (from
+  the replicated currencies); prices are entered as before ("800", "799.99").
+- **"My appointments" and "my reviews"** read the person's own list, then only the business
+  shards holding those businesses (`DataPlane.atBusinesses`); people's public IDs, names and
+  reliability are read by shard (`usersByShard`). Admin tools (reported reviews) visit every
+  business shard.
+- **A review must match its appointment** (business, customer and time), checked by a trigger
+  against the appointment index — v1's guarantee, kept.
+- **Rules of v2's tables** the service now follows: a part-day time off is stored as `modified`
+  (whole days are `holiday`), and settling a review's report clears when it was flagged.
+- **Rights:** booking-service owns `user_visit_outcomes`; auth-service may erase it and blank
+  `appointments.customer_name`. Kafka: booking-service reads its own `bookings.*` (the access test
+  now counts a topic named outside a service's handlers as one it publishes).
+- **Tests:** booking-service's 66 integration tests run on the services' v2 world as its own role
+  (a shared harness: people on user shards with their public-ID handles, a salon on the business
+  shard, appointments written directly with the customer's side synced), including the claim
+  sweeper and the event repair.

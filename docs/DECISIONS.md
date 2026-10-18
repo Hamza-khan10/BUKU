@@ -1056,3 +1056,14 @@ business's shard. Kinds of business stay reference data: owners' suggestions are
 directory and reach every shard by replication, usable at once. Admin tools work on one business
 in its own transaction; the review queue, the reports and the lawful export visit every business
 shard through the service's cross-business role, which is fine for low-traffic admin work.
+
+**D-115 · booking-service on database v2 (D3d).** A booking claims the customer's time on their own
+shard first and only then writes the appointment on the business's shard, so one appointment at a
+time across every business stays a database guarantee, and the claim carries the appointment's ID
+so nothing a crash leaves behind is ever lost or stuck. Everything the customer sees of their
+appointments — the claim, their list, how each visit ended — is kept by one idempotent step that
+reads the appointment as it is, run after each change, for each of booking's own events and by a
+sweeper, so a missed step repairs itself. Reliability moves to a small ledger on each person's
+shard, since their history spans every business shard. The business keeps the name a customer
+booked under, so its list can be searched by name without asking every user shard; erasure blanks
+it.

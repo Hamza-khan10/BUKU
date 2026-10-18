@@ -175,6 +175,55 @@ export class DataPlane {
     return out;
   }
 
+  /**
+   * Visit only the business shards holding these businesses, once each, through the
+   * cross-business role, with the IDs found on that shard: one person's things at a few businesses
+   * (their receipts, their reviews) without visiting every shard. Unknown businesses are skipped.
+   */
+  async atBusinesses<T>(
+    businessIds: readonly bigint[],
+    work: (tx: BusinessTx, ids: bigint[]) => Promise<T>,
+  ): Promise<T[]> {
+    if (!CROSS_BUSINESS[this.service]) {
+      throw new Error(`${this.service} has no cross-business role (CROSS_BUSINESS in access.ts)`);
+    }
+    const byShard = new Map<string, { shard: ShardInfo; ids: bigint[] }>();
+    for (const id of new Set(businessIds)) {
+      const shard = await this.router.locate('business', id).catch((err: unknown) => {
+        if (err instanceof ShardNotFoundError) return null;
+        throw err;
+      });
+      if (!shard) continue;
+      const key = `${shard.clusterId}/${shard.databaseName}`;
+      const entry = byShard.get(key) ?? { shard, ids: [] };
+      entry.ids.push(id);
+      byShard.set(key, entry);
+    }
+    const out: T[] = [];
+    for (const { shard, ids } of byShard.values()) {
+      out.push(
+        await this.businesses.forShard(shard).$transaction(async (tx) => {
+          await forAllBusinesses(tx, this.service);
+          return work(tx, ids);
+        }),
+      );
+    }
+    return out;
+  }
+
+  /** People grouped by the user shard holding them (one query per shard); unknown IDs are left out. */
+  async usersByShard(userIds: readonly bigint[]): Promise<[UserShardClient, bigint[]][]> {
+    const byShard = new Map<UserShardClient, bigint[]>();
+    for (const id of new Set(userIds)) {
+      const db = await this.users.forId(id).catch((err: unknown) => {
+        if (err instanceof ShardNotFoundError) return null;
+        throw err;
+      });
+      if (db) byShard.set(db, [...(byShard.get(db) ?? []), id]);
+    }
+    return [...byShard];
+  }
+
   /** Visit every user shard (no row-level security there): for sweeps across people. */
   async acrossUsers<T>(work: (db: UserShardClient, shard: ShardInfo) => Promise<T>): Promise<T[]> {
     const out: T[] = [];

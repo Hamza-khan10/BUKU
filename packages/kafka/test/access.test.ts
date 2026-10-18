@@ -38,8 +38,13 @@ function used(service: string) {
     ? /CONSUMED_TOPICS: Topic\[\] = \[([\s\S]*?)\]/.exec(read(handlers))?.[1]
     : undefined;
   const consumes = new Set(topicsIn(list ?? ''));
-  const named = new Set(topicsIn(sourceOf(`services/${service}/src`)));
-  return { consumes, publishes: new Set([...named].filter((t) => !consumes.has(t))) };
+  // What it publishes: every topic it names outside its handlers (a service may read its own events
+  // back, booking-service does to keep each customer's side, D3d), and any other its handlers name.
+  const all = sourceOf(`services/${service}/src`);
+  const inHandlers = existsSync(join(root, handlers)) ? read(handlers) : '';
+  const outside = new Set(topicsIn(all.replace(inHandlers, '')));
+  const handlerOnly = topicsIn(inHandlers).filter((t) => !consumes.has(t));
+  return { consumes, publishes: new Set([...outside, ...handlerOnly]) };
 }
 
 const kafkaServices = readdirSync(join(root, 'services')).filter((s) =>

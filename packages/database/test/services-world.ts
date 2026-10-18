@@ -45,23 +45,25 @@ export const servicesWorld = {
 };
 
 /**
- * Billing switched on for businesses while `fn` runs: the directory's settings, changed as
+ * Billing switched on for an audience while `fn` runs: the directory's settings, changed as
  * billing-service (which owns them), and followed on every business shard by replication (DB-015).
  */
-export async function withBusinessBilling<T>(world: DataPlane, fn: () => Promise<T>): Promise<T> {
+export async function withBilling<T>(
+  world: DataPlane,
+  audience: 'business' | 'user',
+  fn: () => Promise<T>,
+): Promise<T> {
   const billing = createDirectoryClient({
     url: servicesWorld.urlFor('billing', SERVICES_DIRECTORY),
     applicationName: 'services-test',
   });
   const set = async (enabled: boolean) => {
-    await billing.billingSettings.update({ where: { audience: 'business' }, data: { enabled } });
+    await billing.billingSettings.update({ where: { audience }, data: { enabled } });
     const deadline = Date.now() + 15_000;
     for (const shard of await world.router.shards('business')) {
       const copy = world.businesses.forShard(shard);
       // Reference copies have no row-level security: any connection reads them.
-      while (
-        (await copy.billingSettings.findUnique({ where: { audience: 'business' } }))?.enabled !== enabled
-      ) {
+      while ((await copy.billingSettings.findUnique({ where: { audience } }))?.enabled !== enabled) {
         if (Date.now() > deadline) throw new Error(`billing settings didn't reach ${shard.databaseName}`);
         await new Promise((r) => setTimeout(r, 100));
       }
@@ -74,6 +76,10 @@ export async function withBusinessBilling<T>(world: DataPlane, fn: () => Promise
     await set(false).finally(() => billing.$disconnect());
   }
 }
+
+/** Billing switched on for businesses while `fn` runs. */
+export const withBusinessBilling = <T>(world: DataPlane, fn: () => Promise<T>) =>
+  withBilling(world, 'business', fn);
 
 /** A plan granted by an admin, on the business's shard. */
 export async function givePlan(world: DataPlane, businessId: bigint, code: string): Promise<void> {

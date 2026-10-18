@@ -575,6 +575,8 @@ model Appointment {
   /// The business's own; never shown to the customer.
   internalNotes     String?   @map("internal_notes") @db.VarChar(2000)
   cancelReason      String?   @map("cancel_reason") @db.VarChar(1000)
+  /// The name the customer booked under (blanked when their account is erased).
+  customerName      String?   @map("customer_name") @db.VarChar(200)
 
   business Business  @relation(fields: [businessId], references: [id], onDelete: Restrict)
   service  Service   @relation(fields: [serviceId, businessId], references: [id, businessId], onDelete: Restrict)

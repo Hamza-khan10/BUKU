@@ -1,7 +1,9 @@
 import {
+  AppError,
   authenticate,
+  ErrorCodes,
   rateLimit,
-  requireAuth,
+  requireActor,
   requireRole,
   sendCreated,
   sendNoContent,
@@ -11,6 +13,7 @@ import {
   type RevocationStore,
 } from '@buku/common';
 import { Router, type Express, type Response } from 'express';
+import type { DataPlane } from '@buku/database';
 import type { Redis } from 'ioredis';
 import type { AppointmentService } from '../appointments/appointment-service.js';
 import type { AvailabilityService } from '../availability/availability-service.js';
@@ -76,7 +79,7 @@ export interface RouteDeps {
   settings: SettingsService;
   reviews: ReviewService;
   report: CancellationReport;
-  db: Parameters<typeof myReliability>[0];
+  plane: DataPlane;
   verifier: JwtVerifier;
   revocations: RevocationStore;
   redis: Redis;
@@ -94,6 +97,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     redis: deps.redis,
   });
   const r = Router();
+  /** The business in the URL, by its public ID (DB-042): unknown is "not found". */
+  const businessOf = async (publicId: string) => {
+    const id = await deps.plane.idOfPublic('business', publicId);
+    if (id === null) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+    return id;
+  };
 
   // ── Public: the menu and the team ────────────────────────────────────────
   r.get(
@@ -131,9 +140,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.reviews.respond(
-          params.id,
+          await businessOf(params.id),
           params.reviewId,
-          requireAuth(req).userId,
+          requireActor(req),
           body.text,
           requestContext(req),
         ),
@@ -146,9 +155,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: ReviewParams }, async ({ params }, req, res) => {
       await deps.reviews.removeResponse(
-        params.id,
+        await businessOf(params.id),
         params.reviewId,
-        requireAuth(req).userId,
+        requireActor(req),
         requestContext(req),
       );
       sendNoContent(res);
@@ -160,9 +169,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: ReviewParams, body: ReportReviewBody }, async ({ params, body }, req, res) => {
       await deps.reviews.report(
-        params.id,
+        await businessOf(params.id),
         params.reviewId,
-        requireAuth(req).userId,
+        requireActor(req),
         body,
         requestContext(req),
       );
@@ -175,7 +184,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/insights/cancellations',
     auth,
     validated({ params: IdParams, query: ReportQuery }, async ({ params, query }, req, res) => {
-      sendSuccess(res, await deps.report.build(params.id, requireAuth(req).userId, query));
+      sendSuccess(res, await deps.report.build(await businessOf(params.id), requireActor(req), query));
     }),
   );
 
@@ -200,14 +209,14 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/services/manage',
     auth,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.catalog.manageMenu(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.catalog.manageMenu(await businessOf(params.id), requireActor(req)));
     }),
   );
   r.get(
     '/:id/staff/manage',
     auth,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.staff.manageList(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.staff.manageList(await businessOf(params.id), requireActor(req)));
     }),
   );
 
@@ -219,7 +228,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: CategoryBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.catalog.createCategory(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.catalog.createCategory(
+          await businessOf(params.id),
+          requireActor(req),
+          body,
+          requestContext(req),
+        ),
       );
     }),
   );
@@ -231,9 +245,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.catalog.updateCategory(
-          params.id,
+          await businessOf(params.id),
           params.categoryId,
-          requireAuth(req).userId,
+          requireActor(req),
           body,
           requestContext(req),
         ),
@@ -246,9 +260,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: CategoryParams }, async ({ params }, req, res) => {
       await deps.catalog.deleteCategory(
-        params.id,
+        await businessOf(params.id),
         params.categoryId,
-        requireAuth(req).userId,
+        requireActor(req),
         requestContext(req),
       );
       sendNoContent(res);
@@ -261,7 +275,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: ServiceBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.catalog.createService(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.catalog.createService(
+          await businessOf(params.id),
+          requireActor(req),
+          body,
+          requestContext(req),
+        ),
       );
     }),
   );
@@ -273,9 +292,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.catalog.updateService(
-          params.id,
+          await businessOf(params.id),
           params.serviceId,
-          requireAuth(req).userId,
+          requireActor(req),
           body,
           requestContext(req),
         ),
@@ -288,9 +307,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: ServiceParams }, async ({ params }, req, res) => {
       await deps.catalog.archiveService(
-        params.id,
+        await businessOf(params.id),
         params.serviceId,
-        requireAuth(req).userId,
+        requireActor(req),
         requestContext(req),
       );
       sendNoContent(res);
@@ -305,7 +324,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: StaffBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.staff.create(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.staff.create(await businessOf(params.id), requireActor(req), body, requestContext(req)),
       );
     }),
   );
@@ -317,9 +336,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.staff.update(
-          params.id,
+          await businessOf(params.id),
           params.staffId,
-          requireAuth(req).userId,
+          requireActor(req),
           body,
           requestContext(req),
         ),
@@ -331,7 +350,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ params: StaffParams }, async ({ params }, req, res) => {
-      await deps.staff.deactivate(params.id, params.staffId, requireAuth(req).userId, requestContext(req));
+      await deps.staff.deactivate(
+        await businessOf(params.id),
+        params.staffId,
+        requireActor(req),
+        requestContext(req),
+      );
       sendNoContent(res);
     }),
   );
@@ -341,7 +365,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/staff/:staffId/hours',
     auth,
     validated({ params: StaffParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.schedules.getHours(params.id, params.staffId, requireAuth(req).userId));
+      sendSuccess(
+        res,
+        await deps.schedules.getHours(await businessOf(params.id), params.staffId, requireActor(req)),
+      );
     }),
   );
   r.put(
@@ -352,9 +379,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.schedules.setHours(
-          params.id,
+          await businessOf(params.id),
           params.staffId,
-          requireAuth(req).userId,
+          requireActor(req),
           body.days,
           requestContext(req),
         ),
@@ -365,7 +392,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/staff/:staffId/time-off',
     auth,
     validated({ params: StaffParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.schedules.listTimeOff(params.id, params.staffId, requireAuth(req).userId));
+      sendSuccess(
+        res,
+        await deps.schedules.listTimeOff(await businessOf(params.id), params.staffId, requireActor(req)),
+      );
     }),
   );
   r.post(
@@ -376,9 +406,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendCreated(
         res,
         await deps.schedules.addTimeOff(
-          params.id,
+          await businessOf(params.id),
           params.staffId,
-          requireAuth(req).userId,
+          requireActor(req),
           body,
           requestContext(req),
         ),
@@ -391,10 +421,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: TimeOffParams }, async ({ params }, req, res) => {
       await deps.schedules.removeTimeOff(
-        params.id,
+        await businessOf(params.id),
         params.staffId,
         params.entryId,
-        requireAuth(req).userId,
+        requireActor(req),
         requestContext(req),
       );
       sendNoContent(res);
@@ -406,7 +436,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/closures',
     auth,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.schedules.listClosures(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.schedules.listClosures(await businessOf(params.id), requireActor(req)));
     }),
   );
   r.post(
@@ -416,7 +446,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: ClosureBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.schedules.addClosure(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.schedules.addClosure(
+          await businessOf(params.id),
+          requireActor(req),
+          body,
+          requestContext(req),
+        ),
       );
     }),
   );
@@ -426,9 +461,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: ClosureParams }, async ({ params }, req, res) => {
       await deps.schedules.removeClosure(
-        params.id,
+        await businessOf(params.id),
         params.closureId,
-        requireAuth(req).userId,
+        requireActor(req),
         requestContext(req),
       );
       sendNoContent(res);
@@ -440,7 +475,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/booking-settings',
     auth,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.settings.get(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.settings.get(await businessOf(params.id), requireActor(req)));
     }),
   );
   r.put(
@@ -450,7 +485,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: BookingSettingsBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.settings.update(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.settings.update(await businessOf(params.id), requireActor(req), body, requestContext(req)),
       );
     }),
   );
@@ -460,7 +495,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/appointments',
     auth,
     validated({ params: IdParams, query: BusinessAppointmentsQuery }, async ({ params, query }, req, res) => {
-      sendSuccess(res, await deps.appointments.businessList(params.id, requireAuth(req).userId, query));
+      sendSuccess(
+        res,
+        await deps.appointments.businessList(await businessOf(params.id), requireActor(req), query),
+      );
     }),
   );
   r.get(
@@ -469,7 +507,11 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: BusinessAppointmentParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await deps.appointments.businessAppointment(params.id, params.appointmentId, requireAuth(req).userId),
+        await deps.appointments.businessAppointment(
+          await businessOf(params.id),
+          params.appointmentId,
+          requireActor(req),
+        ),
       );
     }),
   );
@@ -481,9 +523,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.appointments.confirm(
-          params.id,
+          await businessOf(params.id),
           params.appointmentId,
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -499,9 +541,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
         sendSuccess(
           res,
           await deps.appointments.decline(
-            params.id,
+            await businessOf(params.id),
             params.appointmentId,
-            requireAuth(req).userId,
+            requireActor(req),
             body.reason,
             requestContext(req),
           ),
@@ -519,9 +561,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
         sendSuccess(
           res,
           await deps.appointments.cancelByBusiness(
-            params.id,
+            await businessOf(params.id),
             params.appointmentId,
-            requireAuth(req).userId,
+            requireActor(req),
             body.reason,
             requestContext(req),
           ),
@@ -539,9 +581,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.appointments.checkIn(
-          params.id,
+          await businessOf(params.id),
           { code: body.code },
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -558,12 +600,17 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       writeLimit,
       validated({ params: BusinessAppointmentParams }, async ({ params }, req, res) => {
         const ctx = requestContext(req);
-        const actor = requireAuth(req).userId;
+        const actor = requireActor(req);
         sendSuccess(
           res,
           method === 'checkIn'
-            ? await deps.appointments.checkIn(params.id, { appointmentId: params.appointmentId }, actor, ctx)
-            : await deps.appointments[method](params.id, params.appointmentId, actor, ctx),
+            ? await deps.appointments.checkIn(
+                await businessOf(params.id),
+                { publicId: params.appointmentId },
+                actor,
+                ctx,
+              )
+            : await deps.appointments[method](await businessOf(params.id), params.appointmentId, actor, ctx),
         );
       }),
     );
@@ -577,7 +624,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: StaffParams, body: ClockInBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.attendance.clockIn(params.id, params.staffId, requireAuth(req).userId, body.note),
+        await deps.attendance.clockIn(
+          await businessOf(params.id),
+          params.staffId,
+          requireActor(req),
+          body.note,
+        ),
       );
     }),
   );
@@ -586,21 +638,24 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ params: StaffParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.attendance.clockOut(params.id, params.staffId, requireAuth(req).userId));
+      sendSuccess(
+        res,
+        await deps.attendance.clockOut(await businessOf(params.id), params.staffId, requireActor(req)),
+      );
     }),
   );
   r.get(
     '/:id/attendance',
     auth,
     validated({ params: IdParams, query: AttendanceQuery }, async ({ params, query }, req, res) => {
-      sendSuccess(res, await deps.attendance.list(params.id, requireAuth(req).userId, query));
+      sendSuccess(res, await deps.attendance.list(await businessOf(params.id), requireActor(req), query));
     }),
   );
   r.get(
     '/:id/attendance/present',
     auth,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.attendance.present(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.attendance.present(await businessOf(params.id), requireActor(req)));
     }),
   );
   r.patch(
@@ -611,9 +666,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.attendance.correct(
-          params.id,
+          await businessOf(params.id),
           params.shiftId,
-          requireAuth(req).userId,
+          requireActor(req),
           body,
           requestContext(req),
         ),
@@ -637,15 +692,14 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/',
     bookLimit,
     validated({ body: BookBody }, async ({ body }, req, res) => {
-      const { userId, role } = requireAuth(req);
-      sendCreated(res, await deps.appointments.book(userId, role, body, requestContext(req)));
+      sendCreated(res, await deps.appointments.book(requireActor(req), body, requestContext(req)));
     }),
   );
   mine.get(
     '/',
     validated({ query: MyAppointmentsQuery }, async ({ query }, req, res) => {
       const { items, meta } = await deps.appointments.myAppointments(
-        requireAuth(req).userId,
+        requireActor(req).id,
         query.scope,
         query.page,
         query.limit,
@@ -655,7 +709,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   );
   // How reliable I am, as businesses see it — and what it's made of (D-078).
   mine.get('/reliability', async (req, res) => {
-    sendSuccess(res, await myReliability(deps.db, requireAuth(req).userId));
+    sendSuccess(res, await myReliability(deps.plane, requireActor(req).id));
   });
   // My reviews (before /:id so "reviews" isn't read as an id).
   mine.get(
@@ -663,7 +717,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated(
       { query: MyAppointmentsQuery.pick({ page: true, limit: true }) },
       async ({ query }, req, res) => {
-        const { items, meta } = await deps.reviews.mine(requireAuth(req).userId, query.page, query.limit);
+        const { items, meta } = await deps.reviews.mine(requireActor(req).id, query.page, query.limit);
         sendSuccess(res, items, 200, meta);
       },
     ),
@@ -678,34 +732,28 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/review',
     reviewLimit,
     validated({ params: AppointmentParams, body: ReviewBody }, async ({ params, body }, req, res) => {
-      sendCreated(
-        res,
-        await deps.reviews.create(requireAuth(req).userId, params.id, body, requestContext(req)),
-      );
+      sendCreated(res, await deps.reviews.create(requireActor(req).id, params.id, body, requestContext(req)));
     }),
   );
   mine.patch(
     '/:id/review',
     reviewLimit,
     validated({ params: AppointmentParams, body: ReviewBody }, async ({ params, body }, req, res) => {
-      sendSuccess(
-        res,
-        await deps.reviews.update(requireAuth(req).userId, params.id, body, requestContext(req)),
-      );
+      sendSuccess(res, await deps.reviews.update(requireActor(req).id, params.id, body, requestContext(req)));
     }),
   );
   mine.delete(
     '/:id/review',
     writeLimit,
     validated({ params: AppointmentParams }, async ({ params }, req, res) => {
-      await deps.reviews.remove(requireAuth(req).userId, params.id, requestContext(req));
+      await deps.reviews.remove(requireActor(req).id, params.id, requestContext(req));
       sendNoContent(res);
     }),
   );
   mine.get(
     '/:id',
     validated({ params: AppointmentParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.appointments.myAppointment(requireAuth(req).userId, params.id));
+      sendSuccess(res, await deps.appointments.myAppointment(requireActor(req).id, params.id));
     }),
   );
   mine.post(
@@ -714,7 +762,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: AppointmentParams, body: CancelBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.appointments.cancelMine(requireAuth(req).userId, params.id, body, requestContext(req)),
+        await deps.appointments.cancelMine(requireActor(req).id, params.id, body, requestContext(req)),
       );
     }),
   );
@@ -724,7 +772,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: AppointmentParams, body: RescheduleBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.appointments.rescheduleMine(requireAuth(req).userId, params.id, body, requestContext(req)),
+        await deps.appointments.rescheduleMine(requireActor(req).id, params.id, body, requestContext(req)),
       );
     }),
   );
@@ -746,7 +794,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   admin.post(
     '/:reviewId/decision',
     validated({ params: AdminReviewParams, body: ModerateReviewBody }, async ({ params, body }, req, res) => {
-      await deps.reviews.moderate(params.reviewId, requireAuth(req).userId, body, requestContext(req));
+      await deps.reviews.moderate(params.reviewId, requireActor(req).id, body, requestContext(req));
       sendNoContent(res);
     }),
   );

@@ -90,6 +90,7 @@ model User {
   timeReservations  UserTimeReservation[]
   activeTicket      UserActiveTicket?
   businessRoles     UserBusinessRole[]
+  visitOutcomes     UserVisitOutcome[]
 
   @@unique([managedByBusinessId, username])
   @@map("users")
@@ -361,6 +362,28 @@ model UserBusinessRole {
 
   @@id([userId, businessId])
   @@map("user_business_roles")
+}
+
+/// How reliably a person shows up (D-035, D-078): one row per appointment or queue ticket that
+/// ended in a visit, a no-show or a late cancellation, at any business. Kept 13 months.
+model UserVisitOutcome {
+  userId     BigInt   @map("user_id")
+  /// The appointment or queue ticket (on a business shard).
+  refId      BigInt   @map("ref_id")
+  businessId BigInt   @map("business_id")
+  /// The visit's time; for a late cancellation, when it was cancelled.
+  happenedAt DateTime @map("happened_at") @db.Timestamptz(6)
+  /// visit | no_show | late_cancel
+  kind       String   @db.VarChar(12)
+  /// appointment | queue
+  source     String   @db.VarChar(12)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, refId])
+  @@index([userId, happenedAt])
+  @@index([happenedAt], type: Brin, map: "user_visit_outcomes_happened_at_brin")
+  @@map("user_visit_outcomes")
 }
 
 // ═════════════════════════════ ON EVERY SHARD ═════════════════════════════

@@ -1,172 +1,40 @@
-import { generateKeyPairSync, randomBytes, randomInt, randomUUID } from 'node:crypto';
-import {
-  createJwtSigner,
-  createJwtVerifier,
-  createLogger,
-  createRedisClient,
-  createRevocationStore,
-  Readiness,
-  type JwtSigner,
-  type Role,
-} from '@buku/common';
-import { createDatabaseClient, type Database } from '@buku/database';
-import { createS3Storage, MediaLinks } from '@buku/media';
-import type { Express } from 'express';
-import type { Redis } from 'ioredis';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { testEnv } from '../../../packages/database/test/int-env.js';
-import { withBilling } from '../../../packages/billing/test/helpers.js';
+import { describe, expect, it } from 'vitest';
 import { createEvent, TOPICS } from '@buku/kafka';
-import { buildBookingApp } from '../src/app.js';
-import type { AppointmentService } from '../src/appointments/appointment-service.js';
-import { bookingEventHandler } from '../src/events/handlers.js';
+import { withBilling } from '../../../packages/database/test/services-world.js';
 import { addDays, toInstant, wallClock } from '../src/availability/time.js';
+import { bookingEventHandler } from '../src/events/handlers.js';
+import { TZ, useBookingHarness, type Person, type Salon } from './harness.js';
 
 /**
- * Availability and booking against the real database: the database's
- * no-overlap rules are part of what is being tested.
+ * Availability and booking against database v2 (D3d): the databases' own rules are part of what
+ * is being tested — the customer's time claimed on their shard (one appointment at a time
+ * anywhere), an employee never double-booked on the business's shard.
  */
 
-const TZ = 'Asia/Karachi';
-let app: Express;
-let appointmentService: AppointmentService;
-let db: Database;
-let redis: Redis;
-let signer: JwtSigner;
-
-const newIp = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
-const hex64 = () => randomBytes(32).toString('hex');
-type Person = Awaited<ReturnType<typeof person>>;
-
-async function person(role: Role = 'user', name = `Customer ${randomUUID().slice(0, 6)}`) {
-  const user = await db.user.create({ data: { name, emailHash: hex64(), role } });
-  const { token } = await signer.sign({ sub: user.id, role, sid: randomUUID(), mfa: role === 'super_admin' });
-  return { id: user.id, name, auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() } };
-}
+const h = useBookingHarness();
+const person = (...args: Parameters<typeof h.person>) => h.person(...args);
+const salon = (...args: Parameters<typeof h.salon>) => h.salon(...args);
 
 /** A day two days from now (comfortably beyond the default 60-minute notice). */
 const DAY = () => addDays(wallClock(new Date(), TZ).date, 2);
 const at = (date: string, time: string) => toInstant(date, time, TZ)!.toISOString();
 
-/**
- * A salon open every day 09:00–17:00 with `staffCount` people who all do a
- * 30-minute haircut (+ `buffer` minutes clean-up).
- */
-async function salon(
-  opts: { staffCount?: number; buffer?: number; settings?: Record<string, unknown> } = {},
-) {
-  const owner = await person();
-  const suffix = randomUUID().slice(-12);
-  const category = await db.category.create({ data: { name: `Cat ${suffix}`, slug: `cat-${suffix}` } });
-  const b = await db.business.create({
-    data: {
-      ownerId: owner.id,
-      categoryId: category.id,
-      name: `Salon ${suffix}`,
-      slug: `salon-${suffix}`,
-      city: 'Lahore',
-      country: 'PK',
-      timezone: TZ,
-      currency: 'PKR',
-    },
-  });
-  const service = await db.service.create({
-    data: {
-      businessId: b.id,
-      name: 'Haircut',
-      durationMinutes: 30,
-      bufferMinutes: opts.buffer ?? 0,
-      price: 800,
-      currency: 'PKR',
-    },
-  });
-  const staff = [];
-  for (let i = 0; i < (opts.staffCount ?? 1); i++) {
-    const s = await db.staff.create({ data: { businessId: b.id, displayName: `Stylist ${i + 1}` } });
-    await db.staffService.create({ data: { staffId: s.id, serviceId: service.id } });
-    await db.availabilityRule.createMany({
-      data: [0, 1, 2, 3, 4, 5, 6].map((d) => ({
-        businessId: b.id,
-        staffId: s.id,
-        dayOfWeek: d,
-        startTime: '09:00',
-        endTime: '17:00',
-      })),
-    });
-    staff.push(s);
-  }
-  if (opts.settings) await db.bookingSettings.create({ data: { businessId: b.id, ...opts.settings } });
-  const member = async (role: 'manager' | 'front_desk' | 'staff') => {
-    const p = await person();
-    await db.businessMember.create({ data: { businessId: b.id, userId: p.id, role } });
-    return p;
-  };
-  return { owner, b, service, staff, member, base: `/v1/businesses/${b.id}` };
-}
-
-type Salon = Awaited<ReturnType<typeof salon>>;
-
 const book = (who: Person, s: Salon, startAt: string, extra: Record<string, unknown> = {}) =>
-  request(app)
+  request(h.app)
     .post('/v1/appointments')
     .set(who.auth)
-    .send({ businessId: s.b.id, serviceId: s.service.id, startAt, ...extra });
+    .send({ businessId: s.b.publicId, serviceId: s.service.id.toString(), startAt, ...extra });
 
-beforeAll(async () => {
-  db = createDatabaseClient({
-    url: testEnv.appUrl,
-    applicationName: 'booking-appt-test',
-    maxConnections: 10,
-  });
-  redis = createRedisClient({ url: testEnv.redisUrl, connectionName: 'booking-appt-test' });
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const jwt = { issuer: 'https://auth.test', audience: 'buku-api' };
-  signer = await createJwtSigner({
-    ...jwt,
-    keyId: 'k1',
-    privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
-  });
-  const verifier = await createJwtVerifier({
-    ...jwt,
-    keys: [{ keyId: 'k1', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }],
-  });
-  const storage = createS3Storage({
-    endpoint: testEnv.s3.endpoint,
-    publicEndpoint: testEnv.s3.endpoint,
-    region: 'us-east-1',
-    accessKeyId: testEnv.s3.accessKeyId,
-    secretAccessKey: testEnv.s3.secretAccessKey,
-    forcePathStyle: true,
-  });
-  ({ app, appointments: appointmentService } = buildBookingApp({
-    db,
-    redis,
-    verifier,
-    revocations: createRevocationStore(redis),
-    mediaLinks: new MediaLinks(storage, {
-      mediaBucket: testEnv.s3.mediaBucket,
-      privateBucket: testEnv.s3.privateBucket,
-    }),
-    http: {
-      service: 'booking-test',
-      logger: createLogger({ service: 'booking-test', level: 'silent' }),
-      readiness: new Readiness(),
-      trustProxyHops: 1,
-    },
-  }));
-});
-
-afterAll(async () => {
-  await db.$disconnect();
-  await redis.quit();
-});
+/** An appointment's row on the business's shard, by its public ID. */
+const row = (s: Salon, publicId: string) =>
+  h.inSalon(s, (tx) => tx.appointment.findFirstOrThrow({ where: { publicId } }));
 
 describe('Availability', () => {
   it('lists free start times in the business’s timezone, for one or several days', async () => {
     const s = await salon({ staffCount: 2 });
-    const res = await request(app).get(`/v1/businesses/${s.b.slug}/availability`).query({
-      serviceId: s.service.id,
+    const res = await request(h.app).get(`/v1/businesses/${s.b.slug}/availability`).query({
+      serviceId: s.service.id.toString(),
       date: DAY(),
       days: 2,
     });
@@ -179,7 +47,7 @@ describe('Availability', () => {
       startAt: at(DAY(), '09:00'),
       endAt: at(DAY(), '09:30'),
       time: '09:00',
-      staffIds: s.staff.map((x) => x.id).sort(),
+      staffIds: s.staff.map((x) => x.id.toString()).sort(),
     });
     expect(slots.at(-1).time).toBe('16:30');
   });
@@ -188,9 +56,9 @@ describe('Availability', () => {
     const s = await salon({ buffer: 15 });
     expect((await book(await person(), s, at(DAY(), '10:00'))).status).toBe(201);
     const slots = (
-      await request(app)
-        .get(`/v1/businesses/${s.b.id}/availability`)
-        .query({ serviceId: s.service.id, date: DAY() })
+      await request(h.app)
+        .get(`/v1/businesses/${s.b.publicId}/availability`)
+        .query({ serviceId: s.service.id.toString(), date: DAY() })
     ).body.data.days[0].slots.map((x: { time: string }) => x.time);
     // 10:00–10:30 + 15 min clean-up: nothing may start from 09:30 (it would run into 10:00) to 10:30.
     expect(slots).toContain('09:15');
@@ -202,11 +70,13 @@ describe('Availability', () => {
   it('unknown or archived services are not found; past dates have no times', async () => {
     const s = await salon();
     const q = (serviceId: string, date: string) =>
-      request(app).get(`/v1/businesses/${s.b.id}/availability`).query({ serviceId, date });
-    expect((await q(randomUUID(), DAY())).status).toBe(404);
-    expect((await q(s.service.id, addDays(DAY(), -10))).body.data.days[0].slots).toEqual([]);
-    await db.service.update({ where: { id: s.service.id }, data: { isActive: false } });
-    expect((await q(s.service.id, DAY())).status).toBe(404);
+      request(h.app).get(`/v1/businesses/${s.b.publicId}/availability`).query({ serviceId, date });
+    expect((await q('999999999', DAY())).status).toBe(404);
+    expect((await q('not-an-id', DAY())).status).toBe(400);
+    const service = s.service.id.toString();
+    expect((await q(service, addDays(DAY(), -10))).body.data.days[0].slots).toEqual([]);
+    await h.inSalon(s, (tx) => tx.service.update({ where: { id: s.service.id }, data: { isActive: false } }));
+    expect((await q(service, DAY())).status).toBe(404);
   });
 });
 
@@ -221,7 +91,7 @@ describe('Booking', () => {
     expect(r).toMatchObject({
       qr: r.code,
       status: 'confirmed',
-      staff: { id: s.staff[0]!.id, displayName: 'Stylist 1' },
+      staff: { id: s.staff[0]!.id.toString(), displayName: 'Stylist 1' },
       service: { name: 'Haircut', durationMinutes: 30 },
       local: { date: DAY(), startTime: '11:00', endTime: '11:30', timezone: TZ },
       price: '800.00',
@@ -230,16 +100,38 @@ describe('Booking', () => {
       notes: 'Short on the sides',
       policy: { canCancel: true, canReschedule: true },
     });
-    const history = await db.appointmentStatusHistory.findMany({ where: { appointmentId: r.id } });
-    expect(history.map((h) => [h.fromStatus, h.toStatus, h.actorType])).toEqual([
+    const id = await h.appointmentId(s, r.id);
+    const history = await h.inSalon(s, (tx) =>
+      tx.appointmentEvent.findMany({ where: { appointmentId: id } }),
+    );
+    expect(history.map((e) => [e.fromStatus, e.toStatus, e.actorType])).toEqual([
       [null, 'confirmed', 'user'],
     ]);
-    const events = await db.outboxEvent.findMany({
-      where: { aggregateId: r.id },
-      orderBy: { createdAt: 'asc' },
-    });
+    const events = await h.inSalon(s, (tx) =>
+      tx.outboxEvent.findMany({ where: { aggregateId: id }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }),
+    );
     expect(events.map((e) => e.topic)).toEqual(['bookings.created', 'bookings.confirmed']);
-    expect(JSON.stringify(events)).not.toContain(me.name); // events carry ids, not names
+    // events carry ids, not names
+    expect(JSON.stringify(events, (_, v: unknown) => (typeof v === 'bigint' ? `${v}` : v))).not.toContain(
+      me.name,
+    );
+    // The customer's side, on their own shard: their time held as booked, the visit in their list.
+    const mine = await h.shardOf(me);
+    expect(await mine.userTimeReservation.findUniqueOrThrow({ where: { id } })).toMatchObject({
+      appointmentId: id,
+      expiresAt: null,
+      businessId: s.b.id,
+    });
+    expect(
+      await mine.userAppointment.findUniqueOrThrow({
+        where: { userId_appointmentId: { userId: me.id, appointmentId: id } },
+      }),
+    ).toMatchObject({
+      appointmentPublicId: r.id,
+      status: 'confirmed',
+      businessName: s.b.name,
+      serviceName: 'Haircut',
+    });
   });
 
   it('manual mode: pending until the business confirms; front desk may, staff may not', async () => {
@@ -249,16 +141,16 @@ describe('Booking', () => {
     const path = `${s.base}/appointments/${res.body.data.id}`;
     expect(
       (
-        await request(app)
+        await request(h.app)
           .post(`${path}/confirm`)
           .set((await s.member('staff')).auth)
       ).status,
     ).toBe(403);
-    const ok = await request(app)
+    const ok = await request(h.app)
       .post(`${path}/confirm`)
       .set((await s.member('front_desk')).auth);
     expect(ok.body.data.status).toBe('confirmed');
-    expect((await request(app).post(`${path}/confirm`).set(s.owner.auth)).body.error.code).toBe(
+    expect((await request(h.app).post(`${path}/confirm`).set(s.owner.auth)).body.error.code).toBe(
       'INVALID_TRANSITION',
     );
   });
@@ -267,7 +159,7 @@ describe('Booking', () => {
     const s = await salon({ settings: { confirmationMode: 'manual' } });
     const me = await person();
     const res = await book(me, s, at(DAY(), '12:30'));
-    const declined = await request(app)
+    const declined = await request(h.app)
       .post(`${s.base}/appointments/${res.body.data.id}/decline`)
       .set(s.owner.auth)
       .send({ reason: 'Fully booked that day' });
@@ -275,7 +167,7 @@ describe('Booking', () => {
       status: 'cancelled',
       cancellation: { reasonCode: 'declined', cancelledBy: 'business' },
     });
-    const receipt = await request(app).get(`/v1/appointments/${res.body.data.id}`).set(me.auth);
+    const receipt = await request(h.app).get(`/v1/appointments/${res.body.data.id}`).set(me.auth);
     expect(receipt.body.data.cancellation).toMatchObject({
       reasonCode: 'declined',
       reason: 'Fully booked that day',
@@ -292,7 +184,7 @@ describe('Booking', () => {
     const third = await book(await person(), s, at(DAY(), '09:00'));
     expect([third.status, third.body.error.code]).toEqual([409, 'SLOT_UNAVAILABLE']);
     // Chosen person, already busy at 09:00:
-    const chosen = await book(await person(), s, at(DAY(), '09:00'), { staffId: s.staff[0]!.id });
+    const chosen = await book(await person(), s, at(DAY(), '09:00'), { staffId: s.staff[0]!.id.toString() });
     expect(chosen.status).toBe(409);
   });
 
@@ -367,7 +259,7 @@ describe('Booking', () => {
     const employee = await person('staff');
     const res = await book(employee, s, at(DAY(), '10:00'));
     expect([res.status, res.body.error.code]).toEqual([403, 'BOOKING_NOT_ALLOWED']);
-    expect((await request(app).post('/v1/appointments').send({})).status).toBe(401);
+    expect((await request(h.app).post('/v1/appointments').send({})).status).toBe(401);
     expect((await book(await person(), s, at(DAY(), '10:00'), { price: 1 })).status).toBe(400);
     expect((await book(await person(), s, 'tomorrow at ten')).status).toBe(400);
   });
@@ -380,22 +272,22 @@ describe('My appointments (receipts)', () => {
     const res = await book(me, s, at(DAY(), '14:00'));
     expect(
       (
-        await request(app)
+        await request(h.app)
           .get(`/v1/appointments/${res.body.data.id}`)
           .set((await person()).auth)
       ).status,
     ).toBe(404);
-    const upcoming = await request(app).get('/v1/appointments').set(me.auth);
+    const upcoming = await request(h.app).get('/v1/appointments').set(me.auth);
     expect(upcoming.body.data.map((a: { id: string }) => a.id)).toEqual([res.body.data.id]);
     expect(upcoming.body.meta).toMatchObject({ total: 1 });
-    expect((await request(app).get('/v1/appointments?scope=past').set(me.auth)).body.data).toEqual([]);
+    expect((await request(h.app).get('/v1/appointments?scope=past').set(me.auth)).body.data).toEqual([]);
   });
 
   it('cancelling: reason, "book later" reminder, late flag inside the window; the time is free again', async () => {
     const s = await salon({ settings: { cancellationWindowHours: 168 } }); // a week: DAY() is inside it
     const me = await person();
     const res = await book(me, s, at(DAY(), '10:00'));
-    const cancel = await request(app)
+    const cancel = await request(h.app)
       .post(`/v1/appointments/${res.body.data.id}/cancel`)
       .set(me.auth)
       .send({ reasonCode: 'schedule_conflict', note: 'Exam moved', bookLater: true });
@@ -404,12 +296,20 @@ describe('My appointments (receipts)', () => {
       cancellation: { cancelledBy: 'user', reasonCode: 'schedule_conflict', reason: 'Exam moved' },
       policy: { canCancel: false },
     });
-    const row = await db.appointment.findUniqueOrThrow({ where: { id: res.body.data.id } });
-    expect(row.lateCancellation).toBe(true);
-    expect(row.rebookReminderAt!.getTime()).toBeGreaterThan(Date.now() + 2 * 86_400_000);
+    const cancelled = await row(s, res.body.data.id as string);
+    expect(cancelled.lateCancellation).toBe(true);
+    expect(cancelled.rebookReminderAt!.getTime()).toBeGreaterThan(Date.now() + 2 * 86_400_000);
+    // The customer's time is theirs again, and the late cancellation counts (D-078).
+    const mine = await h.shardOf(me);
+    expect(await mine.userTimeReservation.count({ where: { appointmentId: cancelled.id } })).toBe(0);
+    expect(
+      await mine.userVisitOutcome.findUniqueOrThrow({
+        where: { userId_refId: { userId: me.id, refId: cancelled.id } },
+      }),
+    ).toMatchObject({ kind: 'late_cancel', source: 'appointment' });
     expect(
       (
-        await request(app)
+        await request(h.app)
           .post(`/v1/appointments/${res.body.data.id}/cancel`)
           .set(me.auth)
           .send({ reasonCode: 'other' })
@@ -425,24 +325,30 @@ describe('My appointments (receipts)', () => {
     const first = (await book(me, s, at(DAY(), '10:00'))).body.data.id as string;
     const second = (await book(me, s, at(DAY(), '12:00'))).body.data.id as string;
     const arrived = (await book(me, s, at(DAY(), '14:00'))).body.data.id as string;
-    await db.appointment.update({ where: { id: arrived }, data: { checkedInAt: new Date() } });
+    await h.inSalon(s, (tx) =>
+      tx.appointment.updateMany({ where: { publicId: arrived }, data: { checkedInAt: new Date() } }),
+    );
     const someoneElse = (await book(await person(), s, at(DAY(), '16:00'))).body.data.id as string;
 
-    const handle = bookingEventHandler({ staff: {} as never, appointments: appointmentService });
+    const handle = bookingEventHandler({
+      staff: {} as never,
+      appointments: h.booking.appointments,
+      persons: h.booking.persons,
+    });
     const event = createEvent({
       type: TOPICS.USERS_DELETED,
       source: 'auth-service',
-      subject: me.id,
-      data: { userId: me.id, purgeAfter: new Date(Date.now() + 30 * 86_400_000).toISOString() },
+      subject: me.id.toString(),
+      data: { userId: me.id.toString(), purgeAfter: new Date(Date.now() + 30 * 86_400_000).toISOString() },
     });
     const ctx = { topic: event.type, partition: 0, offset: '0', key: null, attempt: 1 };
     await handle(event, ctx);
     await handle(event, ctx); // delivered twice: nothing more happens
 
-    const rows = await db.appointment.findMany({
-      where: { id: { in: [first, second, arrived, someoneElse] } },
-    });
-    const byId = new Map(rows.map((r) => [r.id, r]));
+    const rows = await h.inSalon(s, (tx) =>
+      tx.appointment.findMany({ where: { publicId: { in: [first, second, arrived, someoneElse] } } }),
+    );
+    const byId = new Map(rows.map((r) => [r.publicId, r]));
     for (const id of [first, second]) {
       expect(byId.get(id)).toMatchObject({
         status: 'cancelled',
@@ -454,9 +360,14 @@ describe('My appointments (receipts)', () => {
     expect(byId.get(arrived)!.status).toBe('confirmed');
     expect(byId.get(someoneElse)!.status).toBe('confirmed');
     // The business is told, once per visit.
-    const told = await db.outboxEvent.findMany({
-      where: { aggregateId: { in: [first, second] }, topic: 'bookings.cancelled' },
-    });
+    const told = await h.inSalon(s, (tx) =>
+      tx.outboxEvent.findMany({
+        where: {
+          aggregateId: { in: [byId.get(first)!.id, byId.get(second)!.id] },
+          topic: 'bookings.cancelled',
+        },
+      }),
+    );
     expect(told).toHaveLength(2);
     // The times are free for others again.
     expect((await book(await person(), s, at(DAY(), '10:00'))).status).toBe(201);
@@ -466,19 +377,19 @@ describe('My appointments (receipts)', () => {
     const s = await salon({ settings: { cancellationWindowHours: 0 } });
     const me = await person();
     const res = await book(me, s, at(DAY(), '10:00'));
-    await request(app)
+    await request(h.app)
       .post(`/v1/appointments/${res.body.data.id}/cancel`)
       .set(me.auth)
       .send({ reasonCode: 'not_needed' });
-    const row = await db.appointment.findUniqueOrThrow({ where: { id: res.body.data.id } });
-    expect([row.lateCancellation, row.rebookReminderAt]).toEqual([false, null]);
+    const cancelled = await row(s, res.body.data.id as string);
+    expect([cancelled.lateCancellation, cancelled.rebookReminderAt]).toEqual([false, null]);
   });
 
   it('rescheduling moves the booking (same person when free), even to an overlapping time', async () => {
     const s = await salon({ staffCount: 2 });
     const me = await person();
     const first = await book(me, s, at(DAY(), '10:00'));
-    const moved = await request(app)
+    const moved = await request(h.app)
       .post(`/v1/appointments/${first.body.data.id}/reschedule`)
       .set(me.auth)
       .send({ startAt: at(DAY(), '10:15') });
@@ -488,9 +399,18 @@ describe('My appointments (receipts)', () => {
       staff: { id: first.body.data.staff.id },
       rescheduledFromId: first.body.data.id,
     });
-    const old = await db.appointment.findUniqueOrThrow({ where: { id: first.body.data.id } });
+    const old = await row(s, first.body.data.id as string);
     expect(old.status).toBe('rescheduled');
-    expect(old.confirmationCode).not.toBe(moved.body.data.code);
+    expect(old.code).not.toBe(moved.body.data.code);
+    // On the customer's shard: only the new time is held; the list knows both.
+    const mine = await h.shardOf(me);
+    const held = await mine.userTimeReservation.findMany({ where: { userId: me.id } });
+    expect(held.map((c) => c.startAt.toISOString())).toEqual([at(DAY(), '10:15')]);
+    expect(
+      (await mine.userAppointment.findMany({ where: { userId: me.id }, orderBy: { startAt: 'asc' } })).map(
+        (a) => a.status,
+      ),
+    ).toEqual(['rescheduled', 'confirmed']);
   });
 
   it('rescheduling is refused inside the cancellation window', async () => {
@@ -498,7 +418,7 @@ describe('My appointments (receipts)', () => {
     const me = await person();
     const res = await book(me, s, at(DAY(), '10:00'));
     expect(res.body.data.policy.canReschedule).toBe(false);
-    const moved = await request(app)
+    const moved = await request(h.app)
       .post(`/v1/appointments/${res.body.data.id}/reschedule`)
       .set(me.auth)
       .send({ startAt: at(DAY(), '11:00') });
@@ -513,27 +433,30 @@ describe('The business’s list (serve customers with or without a phone)', () =
     const res = await book(ayesha, s, at(DAY(), '16:00'));
     const code: string = res.body.data.code;
 
-    const day = await request(app).get(`${s.base}/appointments`).query({ date: DAY() }).set(s.owner.auth);
+    const day = await request(h.app).get(`${s.base}/appointments`).query({ date: DAY() }).set(s.owner.auth);
     expect(day.body.data.items.map((a: { code: string }) => a.code)).toEqual([code]);
     const item = day.body.data.items[0];
     expect(item.customer).toEqual({
-      id: ayesha.id,
+      id: ayesha.publicId,
       name: 'Ayesha Khan',
       reliability: { label: 'New customer', showsUpPercent: null },
     });
     expect(JSON.stringify(item)).not.toMatch(/email|phone|avatar/i);
 
-    const byCode = await request(app)
+    const byCode = await request(h.app)
       .get(`${s.base}/appointments`)
       .query({ q: code.toLowerCase() })
       .set(s.owner.auth);
     expect(byCode.body.data.items.map((a: { id: string }) => a.id)).toEqual([res.body.data.id]);
-    const byName = await request(app).get(`${s.base}/appointments`).query({ q: 'ayesha' }).set(s.owner.auth);
+    const byName = await request(h.app)
+      .get(`${s.base}/appointments`)
+      .query({ q: 'ayesha' })
+      .set(s.owner.auth);
     expect(byName.body.data.items).toHaveLength(1);
     // Another business can't find it.
     const other = await salon();
     expect(
-      (await request(app).get(`${other.base}/appointments`).query({ q: code }).set(other.owner.auth)).body
+      (await request(h.app).get(`${other.base}/appointments`).query({ q: code }).set(other.owner.auth)).body
         .data.items,
     ).toEqual([]);
   });
@@ -541,26 +464,28 @@ describe('The business’s list (serve customers with or without a phone)', () =
   it('staff see only their own appointments; outsiders get 404; cancelling needs a reason', async () => {
     const s = await salon({ staffCount: 2 });
     const stylist = await s.member('staff');
-    await db.staff.update({ where: { id: s.staff[0]!.id }, data: { userId: stylist.id } });
-    const mine = await book(await person(), s, at(DAY(), '09:00'), { staffId: s.staff[0]!.id });
-    const theirs = await book(await person(), s, at(DAY(), '09:00'), { staffId: s.staff[1]!.id });
+    await h.inSalon(s, (tx) =>
+      tx.staff.update({ where: { id: s.staff[0]!.id }, data: { userId: stylist.id } }),
+    );
+    const mine = await book(await person(), s, at(DAY(), '09:00'), { staffId: s.staff[0]!.id.toString() });
+    const theirs = await book(await person(), s, at(DAY(), '09:00'), { staffId: s.staff[1]!.id.toString() });
 
-    const list = await request(app).get(`${s.base}/appointments`).query({ date: DAY() }).set(stylist.auth);
+    const list = await request(h.app).get(`${s.base}/appointments`).query({ date: DAY() }).set(stylist.auth);
     expect(list.body.data.items.map((a: { id: string }) => a.id)).toEqual([mine.body.data.id]);
     expect(
-      (await request(app).get(`${s.base}/appointments/${theirs.body.data.id}`).set(stylist.auth)).status,
+      (await request(h.app).get(`${s.base}/appointments/${theirs.body.data.id}`).set(stylist.auth)).status,
     ).toBe(404);
     expect(
       (
-        await request(app)
+        await request(h.app)
           .get(`${s.base}/appointments`)
           .set((await person()).auth)
       ).status,
     ).toBe(404);
 
     const path = `${s.base}/appointments/${theirs.body.data.id}/cancel`;
-    expect((await request(app).post(path).set(s.owner.auth).send({})).status).toBe(400);
-    const cancelled = await request(app).post(path).set(s.owner.auth).send({ reason: 'Stylist is ill' });
+    expect((await request(h.app).post(path).set(s.owner.auth).send({})).status).toBe(400);
+    const cancelled = await request(h.app).post(path).set(s.owner.auth).send({ reason: 'Stylist is ill' });
     expect(cancelled.body.data.cancellation).toMatchObject({
       cancelledBy: 'business',
       reasonCode: 'business_unavailable',
@@ -571,7 +496,7 @@ describe('The business’s list (serve customers with or without a phone)', () =
 
 describe('Customers book for free (D-101)', () => {
   it('no BUKU limit on bookings, at one business or many, even if charging customers were switched on', async () => {
-    await withBilling(db, 'user', async () => {
+    await withBilling(h.world, 'user', async () => {
       const [a, b] = [await salon({ staffCount: 2 }), await salon({ staffCount: 2 })];
       const me = await person();
       for (const [s, time] of [
@@ -585,5 +510,78 @@ describe('Customers book for free (D-101)', () => {
       // The next day too: only each business's own cap on upcoming bookings applies (3 here).
       expect((await book(me, a, at(addDays(DAY(), 1), '09:00'))).status).toBe(201);
     });
+  });
+});
+
+describe('The customer’s side, kept on their own shard (D3d, DB-014)', () => {
+  it('a claim left by a booking that never happened is given back; one whose booking did is kept', async () => {
+    const s = await salon();
+    const me = await person();
+    const mine = await h.shardOf(me);
+    // A booking that crashed after claiming the customer's time: no appointment behind it.
+    const orphan = h.world.id();
+    const startAt = new Date(at(DAY(), '10:00'));
+    await mine.userTimeReservation.create({
+      data: {
+        id: orphan,
+        userId: me.id,
+        businessId: s.b.id,
+        startAt,
+        endAt: new Date(startAt.getTime() + 30 * 60_000),
+        expiresAt: new Date(Date.now() - 1000),
+      },
+    });
+    // And one whose appointment exists, though the step that marks the claim booked was lost.
+    const booked = await book(me, s, at(DAY(), '12:00'));
+    const id = await h.appointmentId(s, booked.body.data.id as string);
+    await mine.userTimeReservation.update({
+      where: { id },
+      data: { appointmentId: null, expiresAt: new Date(Date.now() - 1000) },
+    });
+    // The time the orphan held is blocked until the sweeper comes by.
+    expect((await book(me, s, at(DAY(), '10:00'))).body.error.code).toBe('APPOINTMENT_OVERLAP');
+
+    await h.booking.sweeper.sweep();
+    expect(await mine.userTimeReservation.count({ where: { id: orphan } })).toBe(0);
+    expect(await mine.userTimeReservation.findUniqueOrThrow({ where: { id } })).toMatchObject({
+      appointmentId: id,
+      expiresAt: null,
+    });
+    expect((await book(me, s, at(DAY(), '10:00'))).status).toBe(201);
+  });
+
+  it('booking-service’s own events bring a customer’s list back up to date, however often they come', async () => {
+    const s = await salon();
+    const me = await person();
+    const res = await book(me, s, at(DAY(), '14:00'));
+    const id = await h.appointmentId(s, res.body.data.id as string);
+    await request(h.app)
+      .post(`${s.base}/appointments/${res.body.data.id}/cancel`)
+      .set(s.owner.auth)
+      .send({ reason: 'Closed for a family event' });
+    // As if the customer's shard had missed every step after the business's commit:
+    const mine = await h.shardOf(me);
+    await mine.userAppointment.deleteMany({ where: { userId: me.id } });
+    const handle = bookingEventHandler({
+      staff: {} as never,
+      appointments: {} as never,
+      persons: h.booking.persons,
+    });
+    const event = createEvent({
+      type: TOPICS.BOOKINGS_CANCELLED,
+      source: 'booking-service',
+      subject: id.toString(),
+      data: { appointmentId: id.toString(), businessId: s.b.id.toString(), userId: me.id.toString() },
+    });
+    const ctx = { topic: event.type, partition: 0, offset: '0', key: null, attempt: 1 };
+    await handle(event, ctx);
+    await handle(event, ctx);
+    expect(await mine.userAppointment.findMany({ where: { userId: me.id } })).toEqual([
+      expect.objectContaining({ appointmentId: id, status: 'cancelled' }),
+    ]);
+    expect(await mine.userTimeReservation.count({ where: { userId: me.id } })).toBe(0);
+    // And "my appointments" reads it.
+    const past = await request(h.app).get('/v1/appointments?scope=past').set(me.auth);
+    expect(past.body.data.map((a: { id: string }) => a.id)).toEqual([res.body.data.id]);
   });
 });
