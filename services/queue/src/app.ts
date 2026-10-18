@@ -5,7 +5,7 @@ import {
   type Readiness,
   type RevocationStore,
 } from '@buku/common';
-import type { Database } from '@buku/database';
+import type { DataPlane } from '@buku/database';
 import type { Express } from 'express';
 import type { Redis } from 'ioredis';
 import { LiveHub } from './live/live-hub.js';
@@ -15,7 +15,8 @@ import { QueueSettingsService } from './settings.js';
 
 /** All dependencies injected: index.ts builds real ones, tests build test ones. */
 export interface QueueAppDeps {
-  db: Database;
+  /** Database v2 (D3): the directory, the shards, IDs — signed in as queue-service's own role. */
+  plane: DataPlane;
   redis: Redis;
   verifier: JwtVerifier;
   revocations: RevocationStore;
@@ -26,15 +27,16 @@ export interface QueueAppDeps {
 }
 
 export function buildQueueApp(deps: QueueAppDeps): { app: Express; queue: QueueService; live: LiveHub } {
-  const settings = new QueueSettingsService(deps.db);
-  // The queue tells the hub about changes; the hub asks the queue for the state.
+  const settings = new QueueSettingsService(deps.plane);
+  // The queue tells the hub about changes; the hub asks the queue for the state. Streams are kept
+  // by the business's internal ID (never shown: viewers name a business by public ID or slug).
   const live: LiveHub = new LiveHub({
     subscriber: deps.subscriber,
     publisher: deps.redis,
-    state: (businessId) => queue.publicState(businessId),
+    state: (businessId) => queue.publicStateOf(BigInt(businessId)),
     ...deps.live,
   });
-  const queue = new QueueService(deps.db, settings, (businessId) => live.notify(businessId));
+  const queue = new QueueService(deps.plane, (businessId) => live.notify(businessId.toString()));
   const app = createHttpApp({
     ...deps.http,
     routes: (app) =>
@@ -42,6 +44,7 @@ export function buildQueueApp(deps: QueueAppDeps): { app: Express; queue: QueueS
         queue,
         settings,
         live,
+        plane: deps.plane,
         verifier: deps.verifier,
         revocations: deps.revocations,
         redis: deps.redis,

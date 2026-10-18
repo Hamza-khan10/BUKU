@@ -1,4 +1,4 @@
-import { AppError, ErrorCodes, PUBLIC_ID_PATTERN } from '@buku/common';
+import { AppError, ErrorCodes } from '@buku/common';
 import type { BusinessTx, DataPlane } from '@buku/database';
 
 /** Businesses customers can book: not deleted, not rejected or suspended (D-032: unverified is fine). */
@@ -14,12 +14,7 @@ export interface BookableBusiness {
 }
 
 /** The internal ID of a business named by its public ID or its address (global handles, DB-018). */
-export async function businessIdOf(plane: DataPlane, idOrSlug: string): Promise<bigint | null> {
-  return (
-    (PUBLIC_ID_PATTERN.test(idOrSlug) ? await plane.idOfPublic('business', idOrSlug) : null) ??
-    (await plane.handles.find('business.slug', Buffer.from(idOrSlug, 'utf8')))
-  );
-}
+export const businessIdOf = (plane: DataPlane, idOrSlug: string) => plane.businessIdOf(idOrSlug);
 
 /** A business as the public sees it, by its public ID or the slug in its link. */
 export async function findBookableBusiness(plane: DataPlane, idOrSlug: string): Promise<BookableBusiness> {

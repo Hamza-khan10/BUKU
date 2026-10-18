@@ -394,10 +394,11 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
     inserts: ['audit_logs'],
   },
   queue: {
-    // One queue at a time, across every business (DB-014).
+    // One queue at a time, across every business (DB-014); how each ticket ended goes into the
+    // person's reliability, which the front desk sees as a label (D-078, D3e).
     owns: ['user_active_tickets', ...PUBLISHES, ...CONSUMES],
-    reads: { users: SHARD_PERSON },
-    inserts: ['audit_logs'],
+    reads: { users: SHARD_PERSON, user_visit_outcomes: '*' },
+    inserts: ['audit_logs', 'user_visit_outcomes'],
   },
   notification: {
     owns: [

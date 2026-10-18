@@ -273,6 +273,14 @@ export class DataPlane {
     return id;
   }
 
+  /** A business named by its public ID or by its address (the slug in its link); null for none. */
+  async businessIdOf(idOrSlug: string): Promise<bigint | null> {
+    return (
+      (await this.idOfPublic('business', idOrSlug)) ??
+      (await this.handles.find('business.slug', Buffer.from(idOrSlug, 'utf8')))
+    );
+  }
+
   /** A business's public ID, read on its shard; null for a business that doesn't exist. */
   async businessPublicId(businessId: bigint): Promise<string | null> {
     const known = this.businessPublicIds.get(businessId);

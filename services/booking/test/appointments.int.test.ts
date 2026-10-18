@@ -198,6 +198,34 @@ describe('Booking', () => {
     ).toBe(true);
   });
 
+  it('two people, the same employee, the very same instant: one booking, one clear “taken”, nothing left behind', async () => {
+    // Asked by the owner (2026-10-18). Run several times: the order is the database's, every time.
+    for (let run = 0; run < 5; run++) {
+      const s = await salon();
+      const [ali, sara] = [await person(), await person()];
+      const startAt = at(DAY(), '11:00');
+      // Both requests are built first, then sent together.
+      const results = await Promise.all(
+        [ali, sara].map((p) => book(p, s, startAt, { staffId: s.staff[0]!.id.toString() })),
+      );
+      expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+      const lost = results.findIndex((r) => r.status === 409);
+      expect(results[lost]!.body.error.code).toBe('SLOT_UNAVAILABLE');
+      // Exactly one live appointment for that employee then, on the business's shard...
+      const live = await h.inSalon(s, (tx) =>
+        tx.appointmentIndex.count({
+          where: { staffId: s.staff[0]!.id, live: true, startAt: new Date(startAt) },
+        }),
+      );
+      expect(live).toBe(1);
+      // ...and the one who lost holds no time on their own shard: they can book again at once.
+      const loser = [ali, sara][lost]!;
+      expect(await (await h.shardOf(loser)).userTimeReservation.count({ where: { userId: loser.id } })).toBe(
+        0,
+      );
+    }
+  });
+
   it('a busy hour: many people booking at once get a booking or a clear “taken”, never a server error', async () => {
     const s = await salon({ staffCount: 3 });
     const people = await Promise.all(Array.from({ length: 24 }, () => person()));
