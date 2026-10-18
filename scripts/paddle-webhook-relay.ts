@@ -70,7 +70,7 @@ const server = createServer((req, res) => {
     })
       .then(async (upstream) => {
         const body = Buffer.from(await upstream.arrayBuffer());
-        log(`forwarded ${size} bytes → ${upstream.status}`);
+        log(`forwarded → ${upstream.status}`);
         res.writeHead(upstream.status, {
           'content-type': upstream.headers.get('content-type') ?? 'text/plain',
         });
