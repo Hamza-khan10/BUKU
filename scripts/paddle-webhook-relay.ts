@@ -24,11 +24,18 @@ if (!['127.0.0.1', 'localhost', '[::1]'].includes(gateway.hostname)) {
 }
 
 const log = (line: string) => console.log(`${new Date().toISOString()} ${line}`);
+/**
+ * What a stranger sent, made safe to log: with the tunnel open anyone can reach the relay, so
+ * line breaks and other control characters (which could fake log lines) are replaced, and it's cut short.
+ */
+// eslint-disable-next-line no-control-regex -- the point is to find control characters
+const CONTROL = /[\u0000-\u001f\u007f-\u009f]/g;
+const shown = (value: string | undefined) => (value ?? '').slice(0, 120).replace(CONTROL, '?');
 
 const server = createServer((req, res) => {
   const path = (req.url ?? '').split('?')[0];
   if (req.method !== 'POST' || path !== PATH) {
-    log(`refused ${req.method} ${path}`);
+    log(`refused ${shown(req.method)} ${shown(path)}`);
     res.writeHead(404).end();
     return;
   }
