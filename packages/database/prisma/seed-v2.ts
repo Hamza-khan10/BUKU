@@ -562,7 +562,8 @@ async function main(): Promise<void> {
     const entries = int(8, 20);
     const served = isToday ? Math.floor(entries / 2) : entries - 2;
     const sessionId = ids.next();
-    const active: { userId: bigint; ticketId: bigint; createdAt: Date }[] = [];
+    const active: { userId: bigint; ticketId: bigint; sessionDate: Date }[] = [];
+    const outcomes: { userId: bigint; refId: bigint; happenedAt: Date; kind: string }[] = [];
     await (
       await shops.forId(biz.id)
     ).$transaction(async (tx) => {
@@ -591,7 +592,7 @@ async function main(): Promise<void> {
         if (used.has(userId) || rand() < 0.2) userId = null; // walk-ins
         if (userId) used.add(userId);
         const id = ids.next();
-        if (userId && status === 'waiting') active.push({ userId, ticketId: id, createdAt: sessionDate });
+        if (userId && status === 'waiting') active.push({ userId, ticketId: id, sessionDate });
         return {
           id,
           sessionDate,
@@ -611,7 +612,27 @@ async function main(): Promise<void> {
         };
       });
       await tx.queueTicket.createMany({ data: tickets });
+      outcomes.push(
+        ...tickets.flatMap((t) =>
+          t.userId && (t.status === 'completed' || t.status === 'no_show')
+            ? [
+                {
+                  userId: t.userId,
+                  refId: t.id,
+                  happenedAt: t.joinedAt,
+                  kind: t.status === 'completed' ? 'visit' : 'no_show',
+                },
+              ]
+            : [],
+        ),
+      );
     });
+    // How each ticket ended, for the person's reliability, on their own shard (D-078, D3e).
+    for (const o of outcomes) {
+      await (
+        await users.forId(o.userId)
+      ).userVisitOutcome.create({ data: { ...o, businessId: biz.id, source: 'queue' } });
+    }
     // One queue at a time per person (DB-014): today's waiting customers, on their shards.
     for (const a of active) {
       await (
@@ -620,7 +641,7 @@ async function main(): Promise<void> {
         data: {
           userId: a.userId,
           ticketId: a.ticketId,
-          ticketCreatedAt: a.createdAt,
+          ticketSessionDate: a.sessionDate,
           businessId: biz.id,
           sessionId,
         },

@@ -1,13 +1,16 @@
 import {
+  AppError,
   authenticate,
+  ErrorCodes,
   rateLimit,
-  requireAuth,
+  requireActor,
   sendCreated,
   sendSuccess,
   validated,
   type JwtVerifier,
   type RevocationStore,
 } from '@buku/common';
+import type { DataPlane } from '@buku/database';
 import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
 import { requestContext } from '../http/context.js';
@@ -29,6 +32,7 @@ export interface RouteDeps {
   queue: QueueService;
   settings: QueueSettingsService;
   live: LiveHub;
+  plane: DataPlane;
   verifier: JwtVerifier;
   revocations: RevocationStore;
   redis: Redis;
@@ -48,6 +52,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     durationSeconds: 3600,
     redis: deps.redis,
   });
+
+  /** The business in the URL, by its public ID (DB-042): unknown is "not found". */
+  const businessOf = async (publicId: string) => {
+    const id = await deps.plane.idOfPublic('business', publicId);
+    if (id === null) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+    return id;
+  };
 
   // ── Customers ────────────────────────────────────────────────────────────
   const q = Router();
@@ -72,7 +83,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     streamLimit,
     validated({ params: IdOrSlugParams }, async ({ params }, req, res) => {
       const businessId = await deps.queue.businessIdOf(params.idOrSlug);
-      await deps.live.watch(businessId, res, req.ip ?? 'unknown');
+      await deps.live.watch(businessId.toString(), res, req.ip ?? 'unknown');
     }),
   );
   q.post(
@@ -80,18 +91,17 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     joinLimit,
     validated({ body: JoinBody }, async ({ body }, req, res) => {
-      const { userId, role } = requireAuth(req);
-      sendCreated(res, await deps.queue.join(userId, role, body, requestContext(req)));
+      sendCreated(res, await deps.queue.join(requireActor(req), body, requestContext(req)));
     }),
   );
   q.get('/my-ticket', auth, async (req, res) => {
-    sendSuccess(res, await deps.queue.myTicket(requireAuth(req).userId));
+    sendSuccess(res, await deps.queue.myTicket(requireActor(req).id));
   });
   q.get(
     '/tickets/:id',
     auth,
     validated({ params: TicketParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.queue.ticket(requireAuth(req).userId, params.id));
+      sendSuccess(res, await deps.queue.ticket(requireActor(req).id, params.id));
     }),
   );
   q.post(
@@ -99,7 +109,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ params: TicketParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.queue.leave(requireAuth(req).userId, params.id, requestContext(req)));
+      sendSuccess(res, await deps.queue.leave(requireActor(req).id, params.id, requestContext(req)));
     }),
   );
   app.use('/v1/queue', q);
@@ -110,35 +120,41 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   b.get(
     '/',
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.queue.board(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.queue.board(await businessOf(params.id), requireActor(req)));
     }),
   );
   b.post(
     '/open',
     writeLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.queue.open(params.id, requireAuth(req).userId, requestContext(req)));
+      sendSuccess(
+        res,
+        await deps.queue.open(await businessOf(params.id), requireActor(req), requestContext(req)),
+      );
     }),
   );
   b.post(
     '/pause',
     writeLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.queue.pause(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.queue.pause(await businessOf(params.id), requireActor(req)));
     }),
   );
   b.post(
     '/resume',
     writeLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.queue.resume(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.queue.resume(await businessOf(params.id), requireActor(req)));
     }),
   );
   b.post(
     '/close',
     writeLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.queue.close(params.id, requireAuth(req).userId, requestContext(req)));
+      sendSuccess(
+        res,
+        await deps.queue.close(await businessOf(params.id), requireActor(req), requestContext(req)),
+      );
     }),
   );
   b.post(
@@ -147,7 +163,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: WalkInBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.queue.walkIn(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.queue.walkIn(await businessOf(params.id), requireActor(req), body, requestContext(req)),
       );
     }),
   );
@@ -155,7 +171,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/call-next',
     writeLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.queue.callNext(params.id, requireAuth(req).userId, requestContext(req)));
+      sendSuccess(
+        res,
+        await deps.queue.callNext(await businessOf(params.id), requireActor(req), requestContext(req)),
+      );
     }),
   );
   for (const [action, method] of [
@@ -170,7 +189,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       validated({ params: EntryParams }, async ({ params }, req, res) => {
         sendSuccess(
           res,
-          await deps.queue[method](params.id, params.entryId, requireAuth(req).userId, requestContext(req)),
+          await deps.queue[method](
+            await businessOf(params.id),
+            params.entryId,
+            requireActor(req),
+            requestContext(req),
+          ),
         );
       }),
     );
@@ -181,14 +205,19 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: EntryParams, body: PriorityBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.queue.setPriority(params.id, params.entryId, requireAuth(req).userId, body.priority),
+        await deps.queue.setPriority(
+          await businessOf(params.id),
+          params.entryId,
+          requireActor(req),
+          body.priority,
+        ),
       );
     }),
   );
   b.get(
     '/settings',
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.settings.get(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.settings.get(await businessOf(params.id), requireActor(req)));
     }),
   );
   b.put(
@@ -197,7 +226,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: QueueSettingsBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.settings.update(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.settings.update(await businessOf(params.id), requireActor(req), body, requestContext(req)),
       );
     }),
   );

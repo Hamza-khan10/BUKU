@@ -1,4 +1,4 @@
-import { baseServiceEnv, databaseEnv, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
+import { baseServiceEnv, databaseEnv, databaseV2Env, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
 import { type z } from 'zod';
 
 /**
@@ -8,7 +8,9 @@ import { type z } from 'zod';
 export const Env = baseServiceEnv.extend({
   ...jwtVerifyEnv.shape,
   ...kafkaEnv.shape,
+  // DATABASE_URL: queue-service's own role, and the default server of the directory (D3).
   ...databaseEnv.shape,
+  ...databaseV2Env.shape,
   ...redisEnv.shape,
 });
 

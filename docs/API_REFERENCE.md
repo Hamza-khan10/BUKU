@@ -645,6 +645,10 @@ Attendance doesn't change bookable times; those come from working hours.
 | `PUT …/queue/entries/:entryId/priority` `{ priority }`                     | ✔    | owner, manager, front desk  | Move a waiting ticket into or out of the priority lane                                 |
 | `GET`/`PUT …/queue/settings`                                               | ✔    | owner, manager (read: team) | Distance, size, grace, ticket letters, starting estimate                               |
 
+**IDs (DATABASE.md DB-042):** a business is `:id` and `businessId` = its **public ID** (12
+characters; public pages also take its slug); a ticket (`:id`, `:entryId`) is a decimal ID. The
+ticket's `business.id` and the public state's `businessId` are public IDs too.
+
 ### The ticket (D-057)
 
 ```json
@@ -671,8 +675,13 @@ people ahead among the staff clocked in and uses the day's real average service 
 **Joining:** only within `remoteJoinRadiusMeters` of the business (default 5 km, measured by
 PostGIS from the phone's position): `422 QUEUE_TOO_FAR` with `details.distanceMeters`; a business
 without a location takes sign-ups at the counter only. One live ticket per customer anywhere:
-`409 QUEUE_ALREADY_JOINED`. `409 QUEUE_CLOSED` / `QUEUE_PAUSED` / `QUEUE_FULL`. Employee
+`409 QUEUE_ALREADY_JOINED` — until that ticket is served, left or marked a no-show, or its queue
+closes or is from an earlier day. `409 QUEUE_CLOSED` / `QUEUE_PAUSED` / `QUEUE_FULL`. Employee
 accounts can't join.
+
+**My ticket:** `GET /v1/queue/my-ticket` is the live one (or `null`); `GET /v1/queue/tickets/:id`
+also shows the person's latest ticket after it ends (served, left…) until they join another —
+older tickets are `404`.
 
 **Alerts:** `queue.position.updated` events (ids, ticket and `ahead`, never names) when a customer
 reaches 10 ahead, 5 ahead, then every step — delivered as push notifications in 2.6.

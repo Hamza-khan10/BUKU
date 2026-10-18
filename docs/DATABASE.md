@@ -715,7 +715,7 @@ erDiagram
   user_active_tickets {
     bigint user_id PK
     bigint ticket_id
-    timestamptz ticket_created_at
+    date ticket_session_date
     bigint business_id
     bigint session_id
   }
@@ -1396,7 +1396,7 @@ starts from its own seed (D2e).
 - **Reliability (D-078):** a person's outcomes are kept on their own shard
   (`user_visit_outcomes`: a visit, a no-show or a late cancellation per appointment or queue
   ticket, kept 13 months), so a business's list needs one small query per user shard. Queue
-  tickets add theirs in D3e.
+  tickets add theirs from D3e.
 - **The name a customer booked under** is kept on the appointment (`customer_name`): the
   business's list shows it and searches it without asking every user shard; erasing the account
   blanks it (auth-service may write that column, D3b).
@@ -1417,3 +1417,35 @@ starts from its own seed (D2e).
   (a shared harness: people on user shards with their public-ID handles, a salon on the business
   shard, appointments written directly with the customer's side synced), including the claim
   sweeper and the event repair.
+
+**D3e, as built (2026-10-18).** queue-service runs on v2 (D-116); nothing of it uses v1 any more.
+
+- **Sessions and tickets** are on the business's shard; tickets are found by their ID and their
+  session's date (the partition key, DB-024), and every change to a session runs with its row
+  locked (ticket numbers and "who's next" are never handed out twice).
+- **One queue at a time, anywhere (DB-014):** a join first claims the person's row on their own
+  shard (`user_active_tickets`, one per person; its ticket ID is the new ticket's), then writes
+  the ticket. The row is their current or latest ticket: a new join replaces it only once that
+  ticket no longer holds a place (served, left, a no-show, its queue closed, or from an earlier
+  day) — or never appeared within 2 minutes. A failed join gives its claim back unless the ticket
+  was written after all. The row's `ticket_created_at` became `ticket_session_date` (DATE).
+- **Reliability (D-078):** a served ticket counts as a visit and a no-show as a no-show in the
+  person's `user_visit_outcomes`, written after the front desk's change and again from
+  queue-service's own `queue.entry.completed` / `queue.entry.no_show` events (the repair). The
+  show-up counts and labels moved into `@buku/database` (`showUpCountsOf`, `showUpLabelsOf`), used
+  by booking and queue alike; walk-ins record nothing.
+- **The front desk's board** shows customers' names read from their shards (by shard,
+  `usersByShard`) or the walk-in's name, with the reliability label; staff on shift come from
+  `staff_open_shifts`; the plan feature is read on the business's shard.
+- **Distances** are PostGIS on the business's shard (`extensions.ST_Distance` against the
+  business's `location`).
+- **Live screens** are kept by the business's internal ID on the Valkey channel; viewers name a
+  business by public ID or slug (`DataPlane.businessIdOf`, now shared with booking).
+- **Events** (`queue.*`) go to the business shard's outbox with internal IDs and the session's
+  date.
+- **Rights:** queue-service reads `user_visit_outcomes` and adds to it; Kafka: it reads its own
+  completed and no-show events.
+- **Tests:** queue-service's 24 integration tests (the queue and the live screens over two
+  replicas) run on the services' v2 world as its own role, through a shared harness; new ones
+  cover a finished ticket staying readable, a stale claim giving way, a ticket still being served
+  in a closed queue, and outcomes recorded once.

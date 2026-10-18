@@ -331,15 +331,16 @@ model UserTimeReservation {
   @@map("user_time_reservations")
 }
 
-/// The one queue a person is waiting in (one at a time, across every business).
+/// A person's current or latest queue ticket: one queue at a time, across every business. A new
+/// join replaces it once that ticket is no longer live (D3e).
 model UserActiveTicket {
-  userId          BigInt   @id @map("user_id")
-  ticketId        BigInt   @map("ticket_id")
-  /// The ticket's partition key on the business shard, to find it directly.
-  ticketCreatedAt DateTime @map("ticket_created_at") @db.Timestamptz(6)
-  businessId      BigInt   @map("business_id")
-  sessionId       BigInt   @map("session_id")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  userId            BigInt   @id @map("user_id")
+  ticketId          BigInt   @map("ticket_id")
+  /// The ticket's session date: its partition key on the business shard, to find it directly.
+  ticketSessionDate DateTime @map("ticket_session_date") @db.Date
+  businessId        BigInt   @map("business_id")
+  sessionId         BigInt   @map("session_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

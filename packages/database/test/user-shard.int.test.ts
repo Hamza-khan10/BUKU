@@ -284,7 +284,7 @@ describe('a person’s rows keep their shape', () => {
 
   it('one queue at a time per person', async () => {
     const u = await shard1.user.create({ data: person() });
-    const ticket = { userId: u.id, ticketCreatedAt: new Date(), businessId: 9n, sessionId: 1n };
+    const ticket = { userId: u.id, ticketSessionDate: new Date(), businessId: 9n, sessionId: 1n };
     await shard1.userActiveTicket.create({ data: { ...ticket, ticketId: 1n } });
     await expect(shard1.userActiveTicket.create({ data: { ...ticket, ticketId: 2n } })).rejects.toThrow();
   });

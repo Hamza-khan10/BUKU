@@ -1067,3 +1067,13 @@ sweeper, so a missed step repairs itself. Reliability moves to a small ledger on
 shard, since their history spans every business shard. The business keeps the name a customer
 booked under, so its list can be searched by name without asking every user shard; erasure blanks
 it.
+
+**D-116 · queue-service on database v2 (D3e).** Sessions and tickets live on the business's shard;
+"one queue at a time, anywhere" is kept on the person's own shard as their current or latest
+ticket, claimed there before the business's shard writes it. The row isn't deleted when a ticket
+ends: a new join replaces it once its ticket no longer holds a place — served, left, a no-show, its
+queue closed, or from an earlier day — so a forgotten ticket can never keep someone out of every
+queue, and a join that failed half-way gives way after 2 minutes. How each ticket ended goes into
+the person's reliability ledger (D-115), written after the front desk's change and again from
+queue's own event, so the front desk's label covers appointments and queues alike. Live screens are
+kept by the business's internal ID; viewers still name a business by public ID or slug.
