@@ -249,9 +249,13 @@ the sales tax/VAT). Checkout created server-side with the BUKU account bound to 
 webhooks verified, processed once and applied in order; cancel at period end and undo; switch
 plan (prorated); card and invoices in Paddle's portal; admins end a paid plan at once; prices
 synced to Paddle in one call. A paid plan replaces a running trial or grant.
-**To go live:** connect a Paddle sandbox account (docs/DEVELOPMENT.md → "Set up Paddle"), sync
-the web prices, then switch billing on per audience. Google Play and App Store purchases come with
-the mobile app (Phase 4).
+**Sandbox connected (D3g.1, 2026-10-18):** the owner's Paddle sandbox account is set up and a real
+sandbox payment went through end to end on database v2 — checkout, payment with the test card,
+Paddle's signed notifications through a webhook-only relay, the shop on Essential, then cancel,
+undo, a switch to Professional and the card portal (docs/DEVELOPMENT.md → "Set up Paddle").
+**To go live:** a live Paddle account, BUKU's own domain approved, the website's checkout page
+(D3i), live keys, then switch billing on for businesses. Google Play and App Store purchases come
+with the mobile app (Phase 4).
 
 ### 2.6 Notification service — ✅ done (events, channels, reminders, WhatsApp, suggestions)
 

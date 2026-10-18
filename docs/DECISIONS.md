@@ -1102,3 +1102,12 @@ one transaction on the paying business's shard, found from the public ID we put 
 Money is kept in minor units. Customers are free (D-101), so there are no customer subscriptions:
 their account page shows their visits, and checkout, trials and grants for people are refused.
 Admin lists visit every business shard; the admin's audit entries go to their own shard.
+
+**D-119 · Paddle's sandbox, connected safely (D3g.1).** The API key has write access to exactly
+what BUKU calls — products, prices, transactions, subscriptions and customer-portal sessions —
+and nothing that reads people's details; it expires and can be rotated. BUKU's plans are taxed as
+SaaS. Paddle's notifications reach a laptop through a tunnel pointed at a relay that forwards only
+the webhook path, never at the gateway, so the development stack (and its password-free sign-in)
+is never on the internet; the tunnel runs only while testing. The payment-link domain is the
+website's (Paddle refuses `localhost`), and until the website has its checkout page (D3i) a local
+test page opens the same payment. Business billing stays off in development unless a test needs it.
