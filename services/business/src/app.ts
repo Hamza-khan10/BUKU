@@ -7,7 +7,7 @@ import {
   type Readiness,
   type RevocationStore,
 } from '@buku/common';
-import type { Database } from '@buku/database';
+import type { DataPlane } from '@buku/database';
 import type { Express } from 'express';
 import type { Redis } from 'ioredis';
 import { AdminService } from './businesses/admin-service.js';
@@ -21,7 +21,8 @@ import { registerRoutes } from './routes/index.js';
 
 /** All dependencies injected: index.ts builds real ones, tests build test ones. */
 export interface BusinessAppDeps {
-  db: Database;
+  /** Database v2 (D3): the directory, the shards, IDs — signed in as business-service's own role. */
+  plane: DataPlane;
   redis: Redis;
   verifier: JwtVerifier;
   revocations: RevocationStore;
@@ -41,12 +42,13 @@ export interface BusinessApp {
 }
 
 export function buildBusinessApp(deps: BusinessAppDeps): BusinessApp {
-  const businesses = new BusinessService(deps.db, deps.settings);
-  const categories = new CategoryService(deps.db);
-  const legal = new LegalService(deps.db, deps.cipher, deps.indexer);
-  const documents = new DocumentService(deps.db, deps.storage, deps.settings);
-  const pictures = new PictureService(deps.db, deps.storage, deps.pictureUploads, deps.mediaLinks);
-  const admin = new AdminService(deps.db, legal);
+  const { plane } = deps;
+  const categories = new CategoryService(plane);
+  const businesses = new BusinessService(plane, categories, deps.settings);
+  const legal = new LegalService(plane, deps.cipher, deps.indexer);
+  const documents = new DocumentService(plane, deps.storage, deps.settings);
+  const pictures = new PictureService(plane, deps.storage, deps.pictureUploads, deps.mediaLinks);
+  const admin = new AdminService(plane, legal);
   const app = createHttpApp({
     ...deps.http,
     routes: (app) =>
@@ -57,7 +59,7 @@ export function buildBusinessApp(deps: BusinessAppDeps): BusinessApp {
         documents,
         pictures,
         admin,
-        db: deps.db,
+        plane,
         verifier: deps.verifier,
         revocations: deps.revocations,
         redis: deps.redis,

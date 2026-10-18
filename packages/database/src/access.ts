@@ -424,8 +424,12 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
   },
   business: {
     owns: ['favourites', ...PUBLISHES, ...CONSUMES],
-    reads: { users: SHARD_PERSON },
-    inserts: ['audit_logs'],
+    // An owner's own view of their businesses (DB-014, D3c): written when they register one, its
+    // name kept when it changes; members' rows are auth-service's (D3b).
+    reads: { users: SHARD_PERSON, user_business_roles: '*' },
+    inserts: ['audit_logs', 'user_business_roles'],
+    updates: { user_business_roles: ['business_name', 'version', 'updated_at'] },
+    deletes: ['user_business_roles'],
   },
   billing: { owns: [...CONSUMES], reads: { users: SHARD_PERSON }, inserts: ['audit_logs'] },
   search: { owns: [] },

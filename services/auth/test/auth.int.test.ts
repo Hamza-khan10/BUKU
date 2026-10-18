@@ -15,21 +15,19 @@ import {
   type FieldCipher,
   type JwtSigner,
 } from '@buku/common';
-import {
-  businessRoleOnShard,
-  createDirectoryClient,
-  DataPlane,
-  employeeLoginKey,
-  type DirectoryClient,
-  type UserShardClient,
-} from '@buku/database';
+import { businessRoleOnShard, DataPlane, employeeLoginKey, type UserShardClient } from '@buku/database';
 import type { Express } from 'express';
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type CryptoKey } from 'jose';
 import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
-import { SERVICES_DIRECTORY, servicesWorld } from '../../../packages/database/test/services-world.js';
+import {
+  givePlan,
+  SERVICES_DIRECTORY,
+  servicesWorld,
+  withBusinessBilling,
+} from '../../../packages/database/test/services-world.js';
 import { buildAuthApp } from '../src/app.js';
 import type { DataRightsService } from '../src/users/data-rights.js';
 import { createOidcVerifierWithKeys } from '../src/identity/oidc.js';
@@ -55,8 +53,6 @@ let rights: DataRightsService;
 let plane: DataPlane;
 /** Fixtures and checks, as buku_app. */
 let world: DataPlane;
-/** The directory as billing-service, which owns the billing settings there. */
-let billing: DirectoryClient;
 let redis: Redis;
 let signer: JwtSigner;
 let googleKey: CryptoKey;
@@ -131,10 +127,6 @@ beforeAll(async () => {
     directoryUrl: servicesWorld.appUrl(SERVICES_DIRECTORY),
     env: servicesWorld.env,
     instance: `auth-int-fixtures:${process.pid}`,
-  });
-  billing = createDirectoryClient({
-    url: servicesWorld.urlFor('billing', SERVICES_DIRECTORY),
-    applicationName: 'auth-int-test',
   });
   redis = createRedisClient({ url: testEnv.redisUrl, connectionName: 'auth-int-test' });
 
@@ -219,7 +211,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await plane?.close();
   await world?.close();
-  await billing?.$disconnect();
   await redis?.quit();
 });
 
@@ -297,48 +288,6 @@ async function anAppointment(b: Business, userId: bigint, days: number, extra: R
   };
   await world.inBusiness(b.id, (tx) => tx.appointment.create({ data: row }));
   return row;
-}
-
-/** Billing switched on for businesses while `fn` runs (the directory's settings, replicated). */
-async function withBusinessBilling<T>(fn: () => Promise<T>): Promise<T> {
-  const set = async (enabled: boolean) => {
-    await billing.billingSettings.update({ where: { audience: 'business' }, data: { enabled } });
-    // The business shard's copy follows by replication (DB-015).
-    const probe = await aBusiness();
-    await expect
-      .poll(
-        () =>
-          world.inBusiness(probe.id, async (tx) => {
-            const settings = await tx.billingSettings.findUnique({ where: { audience: 'business' } });
-            return settings?.enabled;
-          }),
-        { timeout: 15_000, interval: 100 },
-      )
-      .toBe(enabled);
-  };
-  await set(true);
-  try {
-    return await fn();
-  } finally {
-    await set(false);
-  }
-}
-
-/** A plan granted by an admin, on the business's shard. */
-async function givePlan(businessId: bigint, code: string) {
-  await world.inBusiness(businessId, async (tx) => {
-    const plan = await tx.plan.findUniqueOrThrow({ where: { code } });
-    await tx.subscription.create({
-      data: {
-        id: world.id(),
-        businessId,
-        planId: plan.id,
-        provider: 'manual',
-        status: 'active',
-        grantNote: 'test',
-      },
-    });
-  });
 }
 
 describe('Sign in with Google', () => {
@@ -1330,7 +1279,7 @@ describe('Business team: employee accounts', () => {
   });
 
   it('team logins follow the plan: Starter 1; turned-off accounts free a place; Enterprise unlimited', async () => {
-    await withBusinessBilling(async () => {
+    await withBusinessBilling(world, async () => {
       const o = await owner();
       const add = (username: string) =>
         addMember(o.accessToken, o.business.publicId, { name: 'Emp', username, role: 'staff' });
@@ -1353,7 +1302,7 @@ describe('Business team: employee accounts', () => {
         (await request(app).patch(path).set(bearer(o.accessToken)).send({ status: 'active' })).status,
       ).toBe(409);
 
-      await givePlan(o.business.id, 'business_enterprise');
+      await givePlan(world, o.business.id, 'business_enterprise');
       expect(
         (await request(app).patch(path).set(bearer(o.accessToken)).send({ status: 'active' })).status,
       ).toBe(200);

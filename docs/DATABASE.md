@@ -1341,3 +1341,39 @@ starts from its own seed (D2e).
   business shard and its reference copy, every service's rights applied as in production, rebuilt
   by the integration tests' global setup. auth's 60 integration tests run there as auth's own
   role; fixtures go through a second data plane as `buku_app`.
+
+**D3c, as built (2026-10-18).** business-service runs on v2 (D-114); nothing of it uses v1 any more.
+
+- **A business** lives on its business shard; it is found by its public ID or its address (the
+  `business.public_id` and `business.slug` handles). Registering one writes the row first, then
+  claims the first free address (a candidate already used on the same shard or claimed on another
+  is skipped) and the public ID, then the owner's own list, then announces it; any failure undoes
+  what was done (D-113's rule: a handle always leads to a business).
+- **The owner's own list** of their businesses (`user_business_roles`, role `owner`, DB-014) is
+  written by business-service on the owner's shard; members' rows stay auth-service's (D3b). A
+  rename updates the name in the owner's and team's lists. "My businesses" reads that list and
+  checks each role on the business's own shard, so a stale list can't grant anything.
+- **Kinds of business** are reference data: owners' suggestions are written on the directory
+  (D-098, new IDs from the generator) and reach every business shard by replication; a business
+  may use one at once (the directory is checked, and a view falls back to it until the copy has
+  it). The suggestion's audit entry goes to the suggester's own shard (the directory keeps none).
+- **Permissions** come from `requireBusinessPermissionOnShard` and `businessRoleOfActor`
+  (`@buku/database`): the role on the business's shard, none while the token says the person is on
+  a temporary password. `requireActor` (`@buku/common`) turns a token into internal IDs for every
+  service.
+- **Admin tools** work on one business inside its transaction (row-level security is by
+  business, not by person). The review queue, the reports list and the lawful export visit every
+  business shard through business-service's cross-business role and merge the pages (oldest
+  first); a document or report is found by its ID on whichever shard holds it. The export's audit
+  entry goes to the admin's own shard.
+- **Pictures and documents** are stored under the business's public ID; plan limits and features
+  are read on the business's shard (`businessEntitlementsOnShard`, `assertFeature`).
+- **Events** (`businesses.*`) are written to the business shard's outbox with internal IDs; the
+  `businesses.member_removed` consumer reads them as decimal IDs.
+- **Favourites** have no API yet (the table is business-service's, on user shards); members were
+  moved in D3b.
+- **Rights:** business-service reads and adds to `user_business_roles` (the name, version and
+  time it may change; removing its own row undoes a failed registration).
+- **Tests:** business-service's 61 integration tests run on the services' v2 world as its own
+  role; the world now also offers `withBusinessBilling`, `givePlan` and the directory's owner (for
+  BUKU's own kinds of business).

@@ -1,4 +1,4 @@
-import { baseServiceEnv, databaseEnv, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
+import { baseServiceEnv, databaseEnv, databaseV2Env, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
 import { s3Env } from '@buku/media';
 import { z } from 'zod';
 
@@ -9,7 +9,9 @@ import { z } from 'zod';
 export const Env = baseServiceEnv.extend({
   ...jwtVerifyEnv.shape,
   ...kafkaEnv.shape,
+  // DATABASE_URL: business-service's own role, and the default server of the directory (D3).
   ...databaseEnv.shape,
+  ...databaseV2Env.shape,
   ...redisEnv.shape,
   ...s3Env.shape,
   /** Version of the Business Terms an owner must accept to register a business. */

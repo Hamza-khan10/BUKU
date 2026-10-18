@@ -9,14 +9,14 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 > green. Nothing in a later phase is allowed to work around a broken brick in an
 > earlier one — we fix the brick.
 
-| Phase | Scope                                                                                          | Status                                 |
-| ----- | ---------------------------------------------------------------------------------------------- | -------------------------------------- |
-| 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34    |
-| 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                         |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ⏸ Paused for the database rebuild      |
-| 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | 🚧 In progress (D1, D2 done; D3: a, b) |
-| 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                |
-| 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                |
+| Phase | Scope                                                                                          | Status                                |
+| ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------- |
+| 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34   |
+| 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                        |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ⏸ Paused for the database rebuild     |
+| 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | 🚧 In progress (D1, D2 done; D3: a–c) |
+| 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                               |
+| 5     | Production: deployment, observability, backups, load + security testing                        | Planned                               |
 
 ---
 

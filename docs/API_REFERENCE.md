@@ -237,6 +237,12 @@ Roles inside a business: **owner** (whoever registered it) and members with **ma
 `packages/common/src/authz.ts`. Someone with no role in a business gets `404` for its private
 endpoints (we don't confirm what they can't manage); a role without the permission gets `403`.
 
+**IDs (DATABASE.md DB-042):** a business is `:id` = its **public ID** (12 characters) or, on the
+public profile, its slug; anything else is `400`. A business's own rows (documents `:docId`,
+photos `:photoId`, employees `:staffId`) and a kind of business (`categoryId`, `parentId`) are
+**decimal IDs** as strings. An admin acts on a document or a report by its decimal ID. Responses
+use the same forms; a member of the team who is still on a temporary password gets `404` (D-034).
+
 | Method & path                                                                                       | Auth | Who                                        | Purpose                                                               |
 | --------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------ | --------------------------------------------------------------------- |
 | `POST /v1/businesses`                                                                               | ✔    | anyone signed in (5/hour, max 5 per owner) | Register a business → `201`, status `pending`, **not verified**       |

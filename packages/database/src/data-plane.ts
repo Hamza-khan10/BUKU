@@ -315,6 +315,19 @@ export async function businessRoleOnShard(
 }
 
 /**
+ * The signed-in person's role in the business: none while their account is still on a
+ * business-issued temporary password (`mustChangePassword`, from their token, D-034).
+ */
+export async function businessRoleOfActor(
+  tx: BusinessTx,
+  businessId: bigint,
+  actor: { id: bigint; mustChangePassword: boolean },
+): Promise<BusinessRole | null> {
+  const role = await businessRoleOnShard(tx, businessId, actor.id);
+  return role !== 'owner' && actor.mustChangePassword ? null : role;
+}
+
+/**
  * Throw unless the person may do `permission` in the business (database v2's
  * requireBusinessPermission), read in the caller's transaction for that business:
  *  • no role at all          → 404 (don't confirm what they can't manage)
@@ -328,8 +341,7 @@ export async function requireBusinessPermissionOnShard(
   actor: { id: bigint; mustChangePassword: boolean },
   permission: BusinessPermission,
 ): Promise<BusinessRole> {
-  const found = await businessRoleOnShard(tx, businessId, actor.id);
-  const role = found !== 'owner' && actor.mustChangePassword ? null : found;
+  const role = await businessRoleOfActor(tx, businessId, actor);
   if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
   if (!can(role, permission)) throw AppError.forbidden();
   return role;

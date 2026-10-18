@@ -1,11 +1,16 @@
-import { assertBusinessFeature, assertBusinessLimit, assertWithinLimit, entitlementsOf } from '@buku/billing';
-import { AppError, can, ErrorCodes, uuidv7 } from '@buku/common';
 import {
-  businessRoleOf,
-  recordAudit,
-  requireBusinessPermission,
-  type Database,
-  type Transaction,
+  assertBusinessLimitOnShard,
+  assertFeature,
+  assertWithinLimit,
+  businessEntitlementsOnShard,
+} from '@buku/billing';
+import { AppError, can, ErrorCodes, type Actor } from '@buku/common';
+import {
+  businessRoleOfActor,
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  type BusinessTx,
+  type DataPlane,
 } from '@buku/database';
 import {
   PUBLIC_PICTURE_CACHE,
@@ -27,8 +32,9 @@ import { auditCtx, type RequestContext } from '../http/context.js';
  *    when they leave the team (event `businesses.member_removed`).
  *
  * All pictures go through `PictureUploads`: originals stay private and are
- * deleted; only the cleaned copy (no GPS or other metadata) is published.
- * Owner or manager (`business.media`) manage them.
+ * deleted; only the cleaned copy (no GPS or other metadata) is published, under the business's
+ * public ID (DB-042). Owner or manager (`business.media`) manage them. Plan limits are read on the
+ * business's shard (D3).
  */
 
 /** Platform safety cap; the business's plan decides the real number. */
@@ -36,7 +42,7 @@ const PLATFORM_MAX_PHOTOS = 100;
 
 export class PictureService {
   constructor(
-    private readonly db: Database,
+    private readonly plane: DataPlane,
     private readonly storage: ObjectStorage,
     private readonly uploads: PictureUploads,
     private readonly links: MediaLinks,
@@ -45,28 +51,33 @@ export class PictureService {
   // ── Gallery photos ───────────────────────────────────────────────────────
 
   async requestPhotoUpload(
-    businessId: string,
-    userId: string,
+    businessId: bigint,
+    actor: Actor,
     input: { contentType: PhotoType; sizeBytes: number; altText?: string | undefined },
   ) {
-    await this.authorize(businessId, userId);
-    await this.assertPhotoRoom(businessId);
-    return this.uploads.request('business_photo', businessId, input, { altText: input.altText ?? null });
+    await this.plane.inBusiness(businessId, async (tx) => {
+      await authorize(tx, businessId, actor);
+      await assertPhotoRoom(tx, businessId);
+    });
+    return this.uploads.request('business_photo', businessId.toString(), input, {
+      altText: input.altText ?? null,
+    });
   }
 
-  async completePhotoUpload(businessId: string, uploadId: string, userId: string, ctx: RequestContext) {
-    await this.authorize(businessId, userId);
+  async completePhotoUpload(businessId: bigint, uploadId: string, actor: Actor, ctx: RequestContext) {
+    const { plane } = this;
+    const { publicId } = await plane.inBusiness(businessId, (tx) => authorize(tx, businessId, actor));
     const { meta, image } = await this.uploads.complete<{ altText: string | null }>(
       'business_photo',
-      businessId,
+      businessId.toString(),
       uploadId,
       'photo',
     );
-    await this.assertPhotoRoom(businessId);
-    const id = uuidv7();
-    await this.publish(`businesses/${businessId}/photos/${id}.webp`, image, async (storageKey) => {
-      await this.db.$transaction(async (tx) => {
-        await assertBusinessLimit(tx, businessId, 'photos', () =>
+    await plane.inBusiness(businessId, (tx) => assertPhotoRoom(tx, businessId));
+    const id = plane.id();
+    await this.publish(`businesses/${publicId}/photos/${id}.webp`, image, (storageKey) =>
+      plane.inBusiness(businessId, async (tx) => {
+        await assertBusinessLimitOnShard(tx, businessId, 'photos', () =>
           tx.businessPhoto.count({ where: { businessId } }),
         );
         const last = await tx.businessPhoto.aggregate({ where: { businessId }, _max: { sortOrder: true } });
@@ -84,33 +95,36 @@ export class PictureService {
             uploadedAt: new Date(),
           },
         });
-        await this.audit(tx, userId, 'business.photo_uploaded', 'business_photo', id, ctx);
+        await this.audit(tx, actor.id, 'business.photo_uploaded', 'business_photo', id, ctx);
+      }),
+    );
+    return this.listPhotos(businessId);
+  }
+
+  async setPrimaryPhoto(businessId: bigint, photoId: bigint, actor: Actor) {
+    await this.plane.inBusiness(businessId, async (tx) => {
+      await authorize(tx, businessId, actor);
+      const photo = await tx.businessPhoto.findFirst({ where: { id: photoId, businessId } });
+      if (!photo) throw AppError.notFound('Photo');
+      await tx.businessPhoto.updateMany({
+        where: { businessId, isPrimary: true },
+        data: { isPrimary: false },
       });
+      await tx.businessPhoto.update({ where: { id: photoId }, data: { isPrimary: true } });
     });
     return this.listPhotos(businessId);
   }
 
-  async setPrimaryPhoto(businessId: string, photoId: string, userId: string) {
-    await this.authorize(businessId, userId);
-    const photo = await this.db.businessPhoto.findFirst({ where: { id: photoId, businessId } });
-    if (!photo) throw AppError.notFound('Photo');
-    await this.db.$transaction([
-      this.db.businessPhoto.updateMany({
-        where: { businessId, isPrimary: true },
-        data: { isPrimary: false },
-      }),
-      this.db.businessPhoto.update({ where: { id: photoId }, data: { isPrimary: true } }),
-    ]);
-    return this.listPhotos(businessId);
-  }
-
-  async deletePhoto(businessId: string, photoId: string, userId: string, ctx: RequestContext) {
-    await this.authorize(businessId, userId);
-    const photo = await this.db.businessPhoto.findFirst({ where: { id: photoId, businessId } });
+  async deletePhoto(businessId: bigint, photoId: bigint, actor: Actor, ctx: RequestContext) {
+    const { plane } = this;
+    const photo = await plane.inBusiness(businessId, async (tx) => {
+      await authorize(tx, businessId, actor);
+      return tx.businessPhoto.findFirst({ where: { id: photoId, businessId } });
+    });
     if (!photo) throw AppError.notFound('Photo');
     await this.storage.delete(this.links.mediaBucket, photo.storageKey);
-    await this.db.$transaction(async (tx) => {
-      await tx.businessPhoto.delete({ where: { id: photo.id } });
+    await plane.inBusiness(businessId, async (tx) => {
+      await tx.businessPhoto.deleteMany({ where: { id: photo.id } });
       if (photo.isPrimary) {
         const next = await tx.businessPhoto.findFirst({
           where: { businessId },
@@ -118,20 +132,22 @@ export class PictureService {
         });
         if (next) await tx.businessPhoto.update({ where: { id: next.id }, data: { isPrimary: true } });
       }
-      await this.audit(tx, userId, 'business.photo_deleted', 'business_photo', photo.id, ctx);
+      await this.audit(tx, actor.id, 'business.photo_deleted', 'business_photo', photo.id, ctx);
     });
     return this.listPhotos(businessId);
   }
 
   /** Public gallery, cover first. */
-  async listPhotos(businessId: string) {
-    const photos = await this.db.businessPhoto.findMany({
-      where: { businessId, uploadedAt: { not: null } },
-      orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
-    });
+  async listPhotos(businessId: bigint) {
+    const photos = await this.plane.inBusiness(businessId, (tx) =>
+      tx.businessPhoto.findMany({
+        where: { businessId, uploadedAt: { not: null } },
+        orderBy: [{ isPrimary: 'desc' }, { sortOrder: 'asc' }],
+      }),
+    );
     return Promise.all(
       photos.map(async (p) => ({
-        id: p.id,
+        id: p.id.toString(),
         url: await this.links.publicUrl(p.storageKey),
         altText: p.altText,
         isPrimary: p.isPrimary,
@@ -142,43 +158,37 @@ export class PictureService {
   // ── Logo ─────────────────────────────────────────────────────────────────
 
   async requestLogoUpload(
-    businessId: string,
-    userId: string,
+    businessId: bigint,
+    actor: Actor,
     input: { contentType: PhotoType; sizeBytes: number },
   ) {
-    await this.authorize(businessId, userId);
-    return this.uploads.request('business_logo', businessId, input, {});
+    await this.plane.inBusiness(businessId, (tx) => authorize(tx, businessId, actor));
+    return this.uploads.request('business_logo', businessId.toString(), input, {});
   }
 
-  async completeLogoUpload(businessId: string, uploadId: string, userId: string, ctx: RequestContext) {
-    await this.authorize(businessId, userId);
-    const { image } = await this.uploads.complete('business_logo', businessId, uploadId, 'logo');
-    const previous = await this.db.business.findUniqueOrThrow({
-      where: { id: businessId },
-      select: { logoStorageKey: true },
-    });
-    const key = `businesses/${businessId}/logo/${uuidv7()}.webp`;
-    await this.publish(key, image, async (storageKey) => {
-      await this.db.$transaction(async (tx) => {
+  async completeLogoUpload(businessId: bigint, uploadId: string, actor: Actor, ctx: RequestContext) {
+    const { plane } = this;
+    const previous = await plane.inBusiness(businessId, (tx) => authorize(tx, businessId, actor));
+    const { image } = await this.uploads.complete('business_logo', businessId.toString(), uploadId, 'logo');
+    const key = `businesses/${previous.publicId}/logo/${plane.id()}.webp`;
+    await this.publish(key, image, (storageKey) =>
+      plane.inBusiness(businessId, async (tx) => {
         await tx.business.update({ where: { id: businessId }, data: { logoStorageKey: storageKey } });
-        await this.audit(tx, userId, 'business.logo_uploaded', 'business', businessId, ctx);
-      });
-    });
+        await this.audit(tx, actor.id, 'business.logo_uploaded', 'business', businessId, ctx);
+      }),
+    );
     if (previous.logoStorageKey) await this.storage.delete(this.links.mediaBucket, previous.logoStorageKey);
     return { logoUrl: await this.links.publicUrl(key) };
   }
 
-  async deleteLogo(businessId: string, userId: string, ctx: RequestContext): Promise<void> {
-    await this.authorize(businessId, userId);
-    const business = await this.db.business.findUniqueOrThrow({
-      where: { id: businessId },
-      select: { logoStorageKey: true },
-    });
+  async deleteLogo(businessId: bigint, actor: Actor, ctx: RequestContext): Promise<void> {
+    const { plane } = this;
+    const business = await plane.inBusiness(businessId, (tx) => authorize(tx, businessId, actor));
     if (!business.logoStorageKey) return;
     await this.storage.delete(this.links.mediaBucket, business.logoStorageKey);
-    await this.db.$transaction(async (tx) => {
+    await plane.inBusiness(businessId, async (tx) => {
       await tx.business.update({ where: { id: businessId }, data: { logoStorageKey: null } });
-      await this.audit(tx, userId, 'business.logo_deleted', 'business', businessId, ctx);
+      await this.audit(tx, actor.id, 'business.logo_deleted', 'business', businessId, ctx);
     });
   }
 
@@ -189,96 +199,108 @@ export class PictureService {
   // ── Employee photos ──────────────────────────────────────────────────────
 
   async requestStaffPhotoUpload(
-    businessId: string,
-    staffId: string,
-    userId: string,
+    businessId: bigint,
+    staffId: bigint,
+    actor: Actor,
     input: { contentType: PhotoType; sizeBytes: number; consentConfirmed: true },
   ) {
-    await this.authorize(businessId, userId);
-    await this.findStaff(businessId, staffId);
-    await assertBusinessFeature(this.db, businessId, 'staff_photos');
-    return this.uploads.request('staff_photo', businessId, input, {
-      staffId,
-      consentConfirmedById: userId,
+    await this.plane.inBusiness(businessId, async (tx) => {
+      await authorize(tx, businessId, actor);
+      await findStaff(tx, businessId, staffId);
+      assertFeature(await businessEntitlementsOnShard(tx, businessId), 'staff_photos');
+    });
+    return this.uploads.request('staff_photo', businessId.toString(), input, {
+      staffId: staffId.toString(),
+      consentConfirmedById: actor.id.toString(),
       consentConfirmedAt: new Date().toISOString(),
     });
   }
 
   async completeStaffPhotoUpload(
-    businessId: string,
-    staffId: string,
+    businessId: bigint,
+    staffId: bigint,
     uploadId: string,
-    userId: string,
+    actor: Actor,
     ctx: RequestContext,
   ) {
-    await this.authorize(businessId, userId);
+    const { plane } = this;
+    const { publicId } = await plane.inBusiness(businessId, (tx) => authorize(tx, businessId, actor));
     const { meta, image } = await this.uploads.complete<{
       staffId: string;
       consentConfirmedById: string;
       consentConfirmedAt: string;
-    }>('staff_photo', businessId, uploadId, 'portrait');
+    }>('staff_photo', businessId.toString(), uploadId, 'portrait');
     // The upload was requested for exactly this employee.
-    if (meta.staffId !== staffId) throw AppError.notFound('Upload', ErrorCodes.UPLOAD_NOT_FOUND);
-    await this.findStaff(businessId, staffId);
+    if (meta.staffId !== staffId.toString()) throw AppError.notFound('Upload', ErrorCodes.UPLOAD_NOT_FOUND);
 
-    const previous = await this.db.staffPhoto.findUnique({
-      where: { staffId_businessId: { staffId, businessId } },
+    const previous = await plane.inBusiness(businessId, async (tx) => {
+      await findStaff(tx, businessId, staffId);
+      return tx.staffPhoto.findUnique({ where: { staffId_businessId: { staffId, businessId } } });
     });
-    const key = `businesses/${businessId}/staff/${staffId}/${uuidv7()}.webp`;
-    await this.publish(key, image, async (storageKey) => {
-      const data = {
-        storageKey,
-        sizeBytes: image.data.length,
-        consentConfirmedById: meta.consentConfirmedById,
-        consentConfirmedAt: new Date(meta.consentConfirmedAt),
-      };
-      await this.db.$transaction(async (tx) => {
+    const key = `businesses/${publicId}/staff/${staffId}/${plane.id()}.webp`;
+    await this.publish(key, image, (storageKey) =>
+      plane.inBusiness(businessId, async (tx) => {
+        const data = {
+          storageKey,
+          sizeBytes: image.data.length,
+          consentConfirmedById: BigInt(meta.consentConfirmedById),
+          consentConfirmedAt: new Date(meta.consentConfirmedAt),
+        };
         await tx.staffPhoto.upsert({
           where: { staffId_businessId: { staffId, businessId } },
-          create: { businessId, staffId, ...data },
+          create: { id: plane.id(), businessId, staffId, ...data },
           update: data,
         });
-        await this.audit(tx, userId, 'business.staff_photo_uploaded', 'staff', staffId, ctx, {
+        await this.audit(tx, actor.id, 'business.staff_photo_uploaded', 'staff', staffId, ctx, {
           consentConfirmed: true,
         });
-      });
-    });
+      }),
+    );
     if (previous) await this.storage.delete(this.links.mediaBucket, previous.storageKey);
-    return { staffId, photoUrl: await this.links.publicUrl(key) };
+    return { staffId: staffId.toString(), photoUrl: await this.links.publicUrl(key) };
   }
 
   /** Owner/manager, or the employee themself — their face, their choice. */
-  async deleteStaffPhoto(businessId: string, staffId: string, userId: string, ctx: RequestContext) {
-    const role = await businessRoleOf(this.db, businessId, userId);
-    if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
-    const staff = await this.findStaff(businessId, staffId);
-    if (!can(role, 'business.media') && staff.userId !== userId) throw AppError.forbidden();
-    const removed = await this.removeStaffPhoto(businessId, staffId);
-    if (removed) {
-      await this.audit(this.db, userId, 'business.staff_photo_deleted', 'staff', staffId, ctx, {
-        bySelf: staff.userId === userId,
-      });
+  async deleteStaffPhoto(businessId: bigint, staffId: bigint, actor: Actor, ctx: RequestContext) {
+    const { plane } = this;
+    const staff = await plane.inBusiness(businessId, async (tx) => {
+      const role = await businessRoleOfActor(tx, businessId, actor);
+      if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+      const staff = await findStaff(tx, businessId, staffId);
+      if (!can(role, 'business.media') && staff.userId !== actor.id) throw AppError.forbidden();
+      return staff;
+    });
+    if (await this.removeStaffPhoto(businessId, staffId)) {
+      await plane.inBusiness(businessId, (tx) =>
+        this.audit(tx, actor.id, 'business.staff_photo_deleted', 'staff', staffId, ctx, {
+          bySelf: staff.userId === actor.id,
+        }),
+      );
     }
   }
 
   /** The employee left the team: their photo goes too. Idempotent. */
-  async removePhotosOfMember(businessId: string, userId: string): Promise<number> {
-    const staff = await this.db.staff.findMany({ where: { businessId, userId }, select: { id: true } });
+  async removePhotosOfMember(businessId: bigint, userId: bigint): Promise<number> {
+    const staff = await this.plane.inBusiness(businessId, (tx) =>
+      tx.staff.findMany({ where: { businessId, userId }, select: { id: true } }),
+    );
     let removed = 0;
     for (const s of staff) if (await this.removeStaffPhoto(businessId, s.id)) removed++;
     return removed;
   }
 
   /** "Meet the team" on the public profile: active employees, with a photo if the business added one. */
-  async team(businessId: string) {
-    const staff = await this.db.staff.findMany({
-      where: { businessId, isActive: true },
-      orderBy: { displayName: 'asc' },
-      select: { id: true, displayName: true, photo: { select: { storageKey: true } } },
-    });
+  async team(businessId: bigint) {
+    const staff = await this.plane.inBusiness(businessId, (tx) =>
+      tx.staff.findMany({
+        where: { businessId, isActive: true },
+        orderBy: { displayName: 'asc' },
+        select: { id: true, displayName: true, photo: { select: { storageKey: true } } },
+      }),
+    );
     return Promise.all(
       staff.map(async (s) => ({
-        id: s.id,
+        id: s.id.toString(),
         displayName: s.displayName,
         photoUrl: s.photo ? await this.links.publicUrl(s.photo.storageKey) : null,
       })),
@@ -287,14 +309,14 @@ export class PictureService {
 
   // ── internals ────────────────────────────────────────────────────────────
 
-  private async removeStaffPhoto(businessId: string, staffId: string): Promise<boolean> {
-    const photo = await this.db.staffPhoto.findUnique({
-      where: { staffId_businessId: { staffId, businessId } },
-    });
+  private async removeStaffPhoto(businessId: bigint, staffId: bigint): Promise<boolean> {
+    const photo = await this.plane.inBusiness(businessId, (tx) =>
+      tx.staffPhoto.findUnique({ where: { staffId_businessId: { staffId, businessId } } }),
+    );
     if (!photo) return false;
     // File first: if the row delete then fails, a retry finds the row and tries again.
     await this.storage.delete(this.links.mediaBucket, photo.storageKey);
-    await this.db.staffPhoto.deleteMany({ where: { id: photo.id } });
+    await this.plane.inBusiness(businessId, (tx) => tx.staffPhoto.deleteMany({ where: { id: photo.id } }));
     return true;
   }
 
@@ -309,48 +331,16 @@ export class PictureService {
     }
   }
 
-  private async findStaff(businessId: string, staffId: string) {
-    const staff = await this.db.staff.findFirst({
-      where: { id: staffId, businessId },
-      select: { id: true, userId: true },
-    });
-    if (!staff) throw AppError.notFound('Staff member');
-    return staff;
-  }
-
-  /** Early check before an upload starts (the locked check runs when the photo is saved). */
-  private async assertPhotoRoom(businessId: string) {
-    const count = await this.db.businessPhoto.count({ where: { businessId } });
-    if (count >= PLATFORM_MAX_PHOTOS) {
-      throw new AppError(
-        `A business can have at most ${PLATFORM_MAX_PHOTOS} photos`,
-        ErrorCodes.LIMIT_REACHED,
-        409,
-      );
-    }
-    const e = await entitlementsOf(this.db, { businessId });
-    assertWithinLimit(e, 'photos', count);
-  }
-
-  /** `business.media` in a business that is not suspended. */
-  private async authorize(businessId: string, userId: string) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.media');
-    const b = await this.db.business.findFirst({ where: { id: businessId }, select: { status: true } });
-    if (b?.status === 'suspended') {
-      throw new AppError('This business is suspended; contact support', ErrorCodes.BUSINESS_SUSPENDED, 403);
-    }
-  }
-
   private audit(
-    db: Database | Transaction,
-    userId: string,
+    tx: BusinessTx,
+    userId: bigint,
     action: string,
     resourceType: string,
-    resourceId: string,
+    resourceId: bigint,
     ctx: RequestContext,
     newValues?: Record<string, string | boolean>,
   ) {
-    return recordAudit(db, {
+    return recordShardAudit(tx, this.plane.id(), {
       userId,
       action,
       resourceType,
@@ -359,4 +349,39 @@ export class PictureService {
       ...auditCtx(ctx),
     });
   }
+}
+
+/** `business.media` in a business that is not suspended; the business's own fields for the caller. */
+async function authorize(tx: BusinessTx, businessId: bigint, actor: Actor) {
+  await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.media');
+  const b = await tx.business.findFirstOrThrow({
+    where: { id: businessId },
+    select: { status: true, publicId: true, logoStorageKey: true },
+  });
+  if (b.status === 'suspended') {
+    throw new AppError('This business is suspended; contact support', ErrorCodes.BUSINESS_SUSPENDED, 403);
+  }
+  return b;
+}
+
+async function findStaff(tx: BusinessTx, businessId: bigint, staffId: bigint) {
+  const staff = await tx.staff.findFirst({
+    where: { id: staffId, businessId },
+    select: { id: true, userId: true },
+  });
+  if (!staff) throw AppError.notFound('Staff member');
+  return staff;
+}
+
+/** Early check before an upload starts (the locked check runs when the photo is saved). */
+async function assertPhotoRoom(tx: BusinessTx, businessId: bigint) {
+  const count = await tx.businessPhoto.count({ where: { businessId } });
+  if (count >= PLATFORM_MAX_PHOTOS) {
+    throw new AppError(
+      `A business can have at most ${PLATFORM_MAX_PHOTOS} photos`,
+      ErrorCodes.LIMIT_REACHED,
+      409,
+    );
+  }
+  assertWithinLimit(await businessEntitlementsOnShard(tx, businessId), 'photos', count);
 }

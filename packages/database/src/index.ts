@@ -21,6 +21,7 @@ export {
   type ShardInfo,
 } from './directory.js';
 export {
+  businessRoleOfActor,
   businessRoleOnShard,
   DataPlane,
   employeeLoginKey,
