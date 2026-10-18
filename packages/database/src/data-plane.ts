@@ -1,7 +1,16 @@
+import {
+  AppError,
+  can,
+  ErrorCodes,
+  PUBLIC_ID_PATTERN,
+  type BusinessPermission,
+  type BusinessRole,
+} from '@buku/common';
 import { CROSS_BUSINESS, type ServiceName } from './access.js';
 import {
   createDirectoryClient,
   LeasedIdGenerator,
+  ShardNotFoundError,
   ShardRouter,
   type DirectoryClient,
   type ShardInfo,
@@ -55,12 +64,19 @@ export function sameServer(url: string, database: string): string {
   return u.toString();
 }
 
+/** Most public IDs remembered per process: past it, the cache starts over. */
+const PUBLIC_ID_CACHE = 100_000;
+
 function credentialsOf(url: string): Credentials {
   const u = new URL(url);
   return { user: decodeURIComponent(u.username), password: decodeURIComponent(u.password) };
 }
 
 export class DataPlane {
+  /** `entity:publicId` → internal ID, and business ID → public ID: neither ever changes. */
+  private readonly internalIds = new Map<string, bigint>();
+  private readonly businessPublicIds = new Map<bigint, string>();
+
   private constructor(
     readonly service: ServiceName,
     readonly directory: DirectoryClient,
@@ -193,12 +209,57 @@ export class DataPlane {
     },
   };
 
+  /**
+   * The internal ID behind a public one (DB-042): APIs receive public IDs, the data plane routes by
+   * internal ones, and the global handles hold the link. Null when nobody has it (unknown IDs aren't
+   * remembered: the person or business may be created a moment later).
+   */
+  async idOfPublic(entity: 'user' | 'business', publicId: string): Promise<bigint | null> {
+    if (!PUBLIC_ID_PATTERN.test(publicId)) return null;
+    const key = `${entity}:${publicId}`;
+    const known = this.internalIds.get(key);
+    if (known !== undefined) return known;
+    const id = await this.handles.find(`${entity}.public_id`, Buffer.from(publicId, 'ascii'));
+    if (id !== null) remember(this.internalIds, key, id);
+    return id;
+  }
+
+  /** A business's public ID, read on its shard; null for a business that doesn't exist. */
+  async businessPublicId(businessId: bigint): Promise<string | null> {
+    const known = this.businessPublicIds.get(businessId);
+    if (known !== undefined) return known;
+    const row = await this.inBusiness(businessId, (tx) =>
+      tx.business.findFirst({ where: { id: businessId }, select: { publicId: true } }),
+    ).catch((err: unknown) => {
+      if (err instanceof ShardNotFoundError) return null;
+      throw err;
+    });
+    if (row) remember(this.businessPublicIds, businessId, row.publicId);
+    return row?.publicId ?? null;
+  }
+
   async close(): Promise<void> {
     this.router.stop();
     await this.ids.stop().catch(() => undefined);
     await Promise.all([this.users.close(), this.businesses.close(), this.catalog?.$disconnect()]);
     await this.directory.$disconnect();
   }
+}
+
+/**
+ * The key of an employee account's sign-in handle (`user.employee_login`, D-034): the business's ID
+ * as 8 bytes, then the username. Usernames are unique within a business, across every shard.
+ */
+export function employeeLoginKey(businessId: bigint, username: string): Buffer {
+  const key = Buffer.alloc(8 + Buffer.byteLength(username, 'utf8'));
+  key.writeBigInt64BE(businessId, 0);
+  key.write(username, 8, 'utf8');
+  return key;
+}
+
+function remember<K, V>(cache: Map<K, V>, key: K, value: V): void {
+  if (cache.size >= PUBLIC_ID_CACHE) cache.clear();
+  cache.set(key, value);
 }
 
 /** An audit entry on a shard (append-only, DB-022), as v1's recordAudit but with a v2 ID. */
@@ -251,4 +312,25 @@ export async function businessRoleOnShard(
   if (business.ownerUserId === userId) return 'owner';
   const role = business.members[0]?.role;
   return role === 'manager' || role === 'front_desk' || role === 'staff' ? role : null;
+}
+
+/**
+ * Throw unless the person may do `permission` in the business (database v2's
+ * requireBusinessPermission), read in the caller's transaction for that business:
+ *  • no role at all          → 404 (don't confirm what they can't manage)
+ *  • role without permission → 403
+ * An account still on a business-issued temporary password (`mustChangePassword`, from its token)
+ * has no role yet: whoever saw that password must not act for the business (D-034).
+ */
+export async function requireBusinessPermissionOnShard(
+  tx: BusinessTx,
+  businessId: bigint,
+  actor: { id: bigint; mustChangePassword: boolean },
+  permission: BusinessPermission,
+): Promise<BusinessRole> {
+  const found = await businessRoleOnShard(tx, businessId, actor.id);
+  const role = found !== 'owner' && actor.mustChangePassword ? null : found;
+  if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+  if (!can(role, permission)) throw AppError.forbidden();
+  return role;
 }

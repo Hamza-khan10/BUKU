@@ -9,7 +9,7 @@
  * On the host (`pnpm db:prepare`) the URL is assembled from the repo-root .env instead.
  *
  * - The directory database (the shard registry, DB-013), the catalog (search and discovery,
- *   DB-041), and their test twins.
+ *   DB-041), their test twins, and the directory of the services' integration tests.
  * - `buku_replicator` (BUKU_REPLICATOR_PASSWORD): copies reference data from the directory to
  *   every business shard and the catalog (logical replication, DB-015). It can replicate and
  *   read the published tables, nothing else.
@@ -50,7 +50,14 @@ if (!replicatorPassword || !/^[A-Za-z0-9_-]{16,128}$/.test(replicatorPassword)) 
 }
 
 /** Databases that must exist, besides the main one created with the server. */
-const DATABASES = ['buku_directory', 'buku_directory_test', 'buku_catalog', 'buku_catalog_test'] as const;
+const DATABASES = [
+  'buku_directory',
+  'buku_directory_test',
+  'buku_catalog',
+  'buku_catalog_test',
+  // The services' integration tests have a v2 world of their own (test/services-world.ts).
+  'buku_directory_services_test',
+] as const;
 /** Every database that gets the monitoring and audit extensions. */
 const MONITORED = ['template1', 'buku', 'buku_test', ...DATABASES] as const;
 
@@ -89,7 +96,7 @@ try {
   await admin.$executeRawUnsafe(
     `ALTER ROLE buku_replicator WITH LOGIN REPLICATION NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS CONNECTION LIMIT 100 PASSWORD '${replicatorPassword}'`,
   );
-  for (const directory of ['buku_directory', 'buku_directory_test'])
+  for (const directory of ['buku_directory', 'buku_directory_test', 'buku_directory_services_test'])
     await admin.$executeRawUnsafe(`GRANT CONNECT ON DATABASE "${directory}" TO buku_replicator`);
 } finally {
   await admin.$disconnect();

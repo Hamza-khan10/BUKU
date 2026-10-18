@@ -3,22 +3,32 @@ import {
   ErrorCodes,
   generateSecureToken,
   hashToken,
-  uuidv7,
+  idFromString,
   type JwtSigner,
   type RevocationReason,
   type RevocationStore,
   type Role,
   recordSecurityEvent,
 } from '@buku/common';
-import { recordAudit, type Database, type Transaction } from '@buku/database';
+import {
+  recordShardAudit,
+  ShardNotFoundError,
+  type DataPlane,
+  type UserShardClient,
+  type UserTx,
+} from '@buku/database';
+import { auditCtx } from '../audit.js';
 import type { RequestContext } from '../http/context.js';
 
 /**
- * Sessions = refresh-token FAMILIES.
+ * Sessions = refresh-token FAMILIES, on the person's own user shard (database v2, D3).
  *
  * Signing in creates a family (one per device) and returns:
  *   • an access token  — RS256 JWT, 15 min, carries `sid` = family id
- *   • a refresh token  — 256 random bits; only SHA-256(token) is stored
+ *   • a refresh token  — `<user ID>.<256 random bits>`; only SHA-256(token) is stored
+ *
+ * The user ID in front routes the token to the shard holding the person (it is no secret: access
+ * tokens carry it too), and the hash covers the whole token, so changing that ID finds nothing.
  *
  * Each refresh ROTATES the refresh token: the presented one is marked
  * `rotated` and a new one is issued in the same family, with its expiry slid
@@ -51,66 +61,90 @@ export interface SessionPolicy {
   reuseGraceMs: number;
 }
 
+/** Who a session is for: what the access token says about them. */
+export interface SessionUser {
+  id: bigint;
+  role: Role;
+  /** A business-issued temporary password not changed yet (the token's `pwc`, D-034). */
+  mustChangePassword?: boolean;
+}
+
 export interface SessionServiceDeps {
-  db: Database;
+  plane: DataPlane;
   signer: JwtSigner;
   revocations: RevocationStore;
   policy: SessionPolicy;
 }
 
 interface RefreshRow {
-  id: string;
-  user_id: string;
-  family_id: string;
+  id: bigint;
   expires_at: Date;
+  family_id: bigint;
   revoked_at: Date | null;
   revoked_reason: string | null;
   mfa: boolean;
 }
 
+const REFRESH_TOKEN = /^([1-9][0-9]{0,18})\.[A-Za-z0-9_-]{43}$/;
+
+/** The person a refresh token belongs to (its first part), or null for anything malformed. */
+function ownerOf(token: string): bigint | null {
+  const match = REFRESH_TOKEN.exec(token);
+  return match ? idFromString(match[1]!) : null;
+}
+
+const hashOf = (token: string) => Buffer.from(hashToken(token), 'hex');
+
 export class SessionService {
   constructor(private readonly deps: SessionServiceDeps) {}
 
   /**
-   * Start a new session (sign-in). Pass `tx` to create it atomically with a new user;
-   * `mfa` when the person passed a second factor (D-081) — the session keeps it.
+   * Start a new session (sign-in). Pass `tx` (on the person's shard) to create it atomically with
+   * a new account; `mfa` when the person passed a second factor (D-081) — the session keeps it.
    */
   async start(
-    user: { id: string; role: Role },
+    user: SessionUser,
     device: DeviceInfo,
     ctx: RequestContext,
-    tx?: Transaction,
+    tx?: UserTx,
     opts: { mfa?: boolean } = {},
   ): Promise<SessionTokens> {
-    const familyId = uuidv7();
+    // The family is named after its first token.
+    const familyId = this.deps.plane.id();
     const mfa = opts.mfa === true;
-    const refresh = await this.insertRefreshToken(tx ?? this.deps.db, user, familyId, device, ctx, mfa);
+    const insert = (t: UserTx) => this.insertRefreshToken(t, user, familyId, familyId, device, ctx, mfa);
+    const refresh = tx ? await insert(tx) : await (await this.shardOf(user.id)).$transaction(insert);
     return this.tokens(user, familyId, refresh, mfa);
   }
 
   /** The current session passed a second factor just now (step-up): mark it and issue a new access token. */
   async markMfa(
-    user: { id: string; role: Role },
-    familyId: string,
+    user: SessionUser,
+    familyId: bigint,
   ): Promise<{ accessToken: string; accessTokenExpiresAt: string }> {
-    const { count } = await this.deps.db.refreshToken.updateMany({
+    const db = await this.shardOf(user.id);
+    const { count } = await db.refreshToken.updateMany({
       where: { familyId, userId: user.id, revokedAt: null },
       data: { mfa: true },
     });
     if (count === 0)
       throw new AppError('Your session has ended, please sign in again', ErrorCodes.SESSION_REVOKED, 401);
-    const access = await this.deps.signer.sign({ sub: user.id, role: user.role, sid: familyId, mfa: true });
+    const access = await this.deps.signer.sign(this.claims(user, familyId, true));
     return { accessToken: access.token, accessTokenExpiresAt: access.expiresAt.toISOString() };
   }
 
   /** Exchange a refresh token for a new pair (rotation). */
   async refresh(presented: string, ctx: RequestContext): Promise<SessionTokens> {
-    const tokenHash = hashToken(presented);
-    const outcome = await this.deps.db.$transaction(async (tx) => {
+    const userId = ownerOf(presented);
+    const db = userId === null ? null : await this.shardOf(userId).catch(notFoundToNull);
+    if (userId === null || !db) throw new AppError('Invalid refresh token', ErrorCodes.TOKEN_INVALID, 401);
+    const tokenHash = hashOf(presented);
+
+    const outcome = await db.$transaction(async (tx) => {
       // FOR UPDATE serialises concurrent refreshes of the same token.
       const [row] = await tx.$queryRaw<RefreshRow[]>`
-        SELECT id, user_id, family_id, expires_at, revoked_at, revoked_reason, mfa
-        FROM refresh_tokens WHERE token_hash = ${tokenHash} FOR UPDATE`;
+        SELECT id, expires_at, family_id, revoked_at, revoked_reason, mfa
+        FROM refresh_tokens WHERE token_hash = ${tokenHash} AND user_id = ${userId} FOR UPDATE`;
       if (!row) return { kind: 'invalid' as const };
 
       if (row.revoked_at) {
@@ -119,10 +153,10 @@ export class SessionService {
           Date.now() - row.revoked_at.getTime() < this.deps.policy.reuseGraceMs;
         if (rotatedRecently) return { kind: 'race' as const };
         if (row.revoked_reason === 'rotated') {
-          await this.revokeFamily(tx, row.family_id, 'reuse_detected');
+          await this.revokeFamily(tx, userId, row.family_id, 'reuse_detected');
           recordSecurityEvent('refresh_token_reuse');
-          await recordAudit(tx, {
-            userId: row.user_id,
+          await recordShardAudit(tx, this.deps.plane.id(), {
+            userId,
             action: 'auth.refresh_token_reuse_detected',
             resourceType: 'session',
             resourceId: row.family_id,
@@ -138,23 +172,32 @@ export class SessionService {
       }
       if (row.expires_at.getTime() <= Date.now()) return { kind: 'expired' as const };
 
-      // Soft-deleted users are filtered out by the database client extension.
       const user = await tx.user.findUnique({
-        where: { id: row.user_id },
-        select: { id: true, role: true, status: true },
+        where: { id: userId },
+        select: { id: true, role: true, status: true, deletedAt: true, mustChangePassword: true },
       });
-      if (!user || user.status !== 'active') {
-        await this.revokeFamily(tx, row.family_id, user ? 'account_suspended' : 'account_deleted');
-        return {
-          kind: 'revoked' as const,
-          reason: user ? 'account_suspended' : 'account_deleted',
-          familyId: row.family_id,
-        };
+      if (!user || user.deletedAt || user.status !== 'active') {
+        const reason = !user || user.deletedAt ? 'account_deleted' : 'account_suspended';
+        await this.revokeFamily(tx, userId, row.family_id, reason);
+        return { kind: 'revoked' as const, reason, familyId: row.family_id };
       }
 
-      const next = await this.insertRefreshToken(tx, user, row.family_id, undefined, ctx, row.mfa);
-      await tx.refreshToken.update({
-        where: { id: row.id },
+      const sessionUser = {
+        id: user.id,
+        role: user.role as Role,
+        mustChangePassword: user.mustChangePassword,
+      };
+      const next = await this.insertRefreshToken(
+        tx,
+        sessionUser,
+        this.deps.plane.id(),
+        row.family_id,
+        undefined,
+        ctx,
+        row.mfa,
+      );
+      await tx.refreshToken.updateMany({
+        where: { id: row.id, expiresAt: row.expires_at },
         data: {
           revokedAt: new Date(),
           revokedReason: 'rotated',
@@ -162,7 +205,7 @@ export class SessionService {
           lastUsedAt: new Date(),
         },
       });
-      return { kind: 'ok' as const, user, familyId: row.family_id, next, mfa: row.mfa };
+      return { kind: 'ok' as const, user: sessionUser, familyId: row.family_id, next, mfa: row.mfa };
     });
 
     switch (outcome.kind) {
@@ -183,7 +226,10 @@ export class SessionService {
         });
       case 'revoked':
         // Also kill any access token still alive for that session.
-        await this.deps.revocations.revokeSession(outcome.familyId, outcome.reason as RevocationReason);
+        await this.deps.revocations.revokeSession(
+          outcome.familyId.toString(),
+          outcome.reason as RevocationReason,
+        );
         throw new AppError('Your session has ended, please sign in again', ErrorCodes.SESSION_REVOKED, 401, {
           details: { reason: outcome.reason },
         });
@@ -194,25 +240,29 @@ export class SessionService {
 
   /** Log out one session (by refresh token). Idempotent, and never reveals whether the token existed. */
   async logoutByRefreshToken(presented: string, ctx: RequestContext): Promise<void> {
-    const row = await this.deps.db.refreshToken.findUnique({
-      where: { tokenHash: hashToken(presented) },
-      select: { userId: true, familyId: true },
+    const userId = ownerOf(presented);
+    const db = userId === null ? null : await this.shardOf(userId).catch(notFoundToNull);
+    if (userId === null || !db) return;
+    const row = await db.refreshToken.findFirst({
+      where: { tokenHash: hashOf(presented), userId },
+      select: { familyId: true },
     });
     if (!row) return;
-    await this.endSession(row.userId, row.familyId, 'logged_out', ctx);
+    await this.endSession(userId, row.familyId, 'logged_out', ctx);
   }
 
   /** End one of the caller's own sessions. Returns false if it isn't theirs. */
   async endSession(
-    userId: string,
-    familyId: string,
+    userId: bigint,
+    familyId: bigint,
     reason: RevocationReason,
     ctx: RequestContext,
   ): Promise<boolean> {
-    const count = await this.deps.db.$transaction(async (tx) => {
-      const revoked = await this.revokeFamily(tx, familyId, reason, userId);
+    const db = await this.shardOf(userId);
+    const count = await db.$transaction(async (tx) => {
+      const revoked = await this.revokeFamily(tx, userId, familyId, reason);
       if (revoked > 0) {
-        await recordAudit(tx, {
+        await recordShardAudit(tx, this.deps.plane.id(), {
           userId,
           action: `auth.session_ended`,
           resourceType: 'session',
@@ -223,27 +273,28 @@ export class SessionService {
       }
       return revoked;
     });
-    const owned = count > 0 || (await this.deps.db.refreshToken.count({ where: { familyId, userId } })) > 0;
-    if (owned) await this.deps.revocations.revokeSession(familyId, reason);
+    const owned = count > 0 || (await db.refreshToken.count({ where: { familyId, userId } })) > 0;
+    if (owned) await this.deps.revocations.revokeSession(familyId.toString(), reason);
     return owned;
   }
 
   /**
    * End EVERY session of a user on every device: "log out everywhere",
    * password change, suspension, deletion. Access tokens die immediately too.
+   * `tx`, when given, is a transaction on the person's shard.
    */
   async endAllSessions(
-    userId: string,
+    userId: bigint,
     reason: RevocationReason,
     ctx: RequestContext,
-    tx?: Transaction,
+    tx?: UserTx,
   ): Promise<void> {
-    const run = async (t: Transaction) => {
+    const run = async (t: UserTx) => {
       await t.refreshToken.updateMany({
         where: { userId, revokedAt: null },
         data: { revokedAt: new Date(), revokedReason: reason },
       });
-      await recordAudit(t, {
+      await recordShardAudit(t, this.deps.plane.id(), {
         userId,
         action: 'auth.all_sessions_ended',
         resourceType: 'user',
@@ -253,13 +304,15 @@ export class SessionService {
       });
     };
     if (tx) await run(tx);
-    else await this.deps.db.$transaction(run);
-    await this.deps.revocations.revokeAllForUser(userId, reason);
+    else await (await this.shardOf(userId)).$transaction(run);
+    await this.deps.revocations.revokeAllForUser(userId.toString(), reason);
   }
 
   /** When the user actually signed in on this session (not the last refresh). */
-  async signedInAt(userId: string, familyId: string): Promise<Date | null> {
-    const first = await this.deps.db.refreshToken.findFirst({
+  async signedInAt(userId: bigint, familyId: bigint): Promise<Date | null> {
+    const first = await (
+      await this.shardOf(userId)
+    ).refreshToken.findFirst({
       where: { familyId, userId },
       orderBy: { createdAt: 'asc' },
       select: { createdAt: true },
@@ -268,21 +321,22 @@ export class SessionService {
   }
 
   /** Active sessions (devices) of a user, newest activity first. */
-  async list(userId: string) {
-    const rows = await this.deps.db.refreshToken.findMany({
+  async list(userId: bigint) {
+    const db = await this.shardOf(userId);
+    const rows = await db.refreshToken.findMany({
       where: { userId, revokedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
       select: { familyId: true, deviceInfo: true, ipAddress: true, userAgent: true, createdAt: true },
     });
     // The first-ever token of each family carries the sign-in time.
-    const firstSeen = await this.deps.db.refreshToken.groupBy({
+    const firstSeen = await db.refreshToken.groupBy({
       by: ['familyId'],
-      where: { familyId: { in: rows.map((r) => r.familyId) } },
+      where: { userId, familyId: { in: rows.map((r) => r.familyId) } },
       _min: { createdAt: true },
     });
     const started = new Map(firstSeen.map((f) => [f.familyId, f._min.createdAt]));
     return rows.map((r) => ({
-      id: r.familyId,
+      id: r.familyId.toString(),
       device: r.deviceInfo as DeviceInfo | null,
       ipAddress: maskIp(r.ipAddress),
       userAgent: r.userAgent,
@@ -293,28 +347,34 @@ export class SessionService {
 
   // ── internals ──────────────────────────────────────────────────────────
 
+  private shardOf(userId: bigint): Promise<UserShardClient> {
+    return this.deps.plane.user(userId);
+  }
+
   private async insertRefreshToken(
-    db: Database | Transaction,
-    user: { id: string; role: Role },
-    familyId: string,
+    tx: UserTx,
+    user: SessionUser,
+    id: bigint,
+    familyId: bigint,
     device: DeviceInfo | undefined,
     ctx: RequestContext,
     mfa: boolean,
   ) {
-    const token = generateSecureToken();
+    const token = `${user.id}.${generateSecureToken()}`;
     const expiresAt = new Date(Date.now() + this.deps.policy.idleTimeoutMs(user.role));
     const previous = device
       ? undefined
-      : await db.refreshToken.findFirst({
-          where: { familyId },
+      : await tx.refreshToken.findFirst({
+          where: { familyId, userId: user.id },
           orderBy: { createdAt: 'desc' },
           select: { deviceInfo: true },
         });
-    const row = await db.refreshToken.create({
+    const row = await tx.refreshToken.create({
       data: {
+        id,
         userId: user.id,
         familyId,
-        tokenHash: hashToken(token),
+        tokenHash: hashOf(token),
         deviceInfo: (device ?? previous?.deviceInfo ?? {}) as object,
         ipAddress: ctx.ip,
         userAgent: ctx.userAgent,
@@ -326,38 +386,45 @@ export class SessionService {
     return { id: row.id, token, expiresAt: row.expiresAt };
   }
 
-  private async revokeFamily(
-    tx: Transaction,
-    familyId: string,
-    reason: string,
-    userId?: string,
-  ): Promise<number> {
+  private async revokeFamily(tx: UserTx, userId: bigint, familyId: bigint, reason: string): Promise<number> {
     const { count } = await tx.refreshToken.updateMany({
-      where: { familyId, revokedAt: null, ...(userId && { userId }) },
+      where: { familyId, userId, revokedAt: null },
       data: { revokedAt: new Date(), revokedReason: reason },
     });
     return count;
   }
 
+  private claims(user: SessionUser, familyId: bigint, mfa: boolean) {
+    return {
+      sub: user.id.toString(),
+      role: user.role,
+      sid: familyId.toString(),
+      mfa,
+      pwc: user.mustChangePassword === true,
+    };
+  }
+
   private async tokens(
-    user: { id: string; role: Role },
-    familyId: string,
+    user: SessionUser,
+    familyId: bigint,
     refresh: { token: string; expiresAt: Date },
     mfa: boolean,
   ): Promise<SessionTokens> {
-    const access = await this.deps.signer.sign({ sub: user.id, role: user.role, sid: familyId, mfa });
+    const access = await this.deps.signer.sign(this.claims(user, familyId, mfa));
     return {
       accessToken: access.token,
       accessTokenExpiresAt: access.expiresAt.toISOString(),
       refreshToken: refresh.token,
       refreshTokenExpiresAt: refresh.expiresAt.toISOString(),
-      sessionId: familyId,
+      sessionId: familyId.toString(),
     };
   }
 }
 
-export function auditCtx(ctx: RequestContext) {
-  return { ipAddress: ctx.ip, userAgent: ctx.userAgent, requestId: ctx.requestId };
+/** A token naming a person no shard holds is simply not a valid token. */
+function notFoundToNull(err: unknown): null {
+  if (err instanceof ShardNotFoundError) return null;
+  throw err;
 }
 
 /** Show users roughly where a session is, without storing/echoing full IPs to clients. */

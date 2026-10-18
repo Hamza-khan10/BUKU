@@ -8,12 +8,15 @@
  * The last run's shard databases (buku_test_*) and reference copies go first,
  * subscriptions and replication slots before anything else: a slot left behind
  * would keep the server's WAL forever.
+ *
+ * Last, the services' own v2 world (services-world.ts), which their tests use.
  */
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { createDatabaseClient } from '../src/index.js';
 import { dropDatabase, dropReferenceCopy } from '../src/provision.js';
 import { testEnv } from './int-env.js';
+import { buildServicesWorld } from './services-world.js';
 
 const packageDir = resolve(import.meta.dirname, '..');
 const prisma = (args: string[], env: Record<string, string>) =>
@@ -94,4 +97,6 @@ export default async function setup(): Promise<void> {
   prisma(['migrate', 'deploy', '--config', 'prisma.catalog.config.ts'], {
     DATABASE_CATALOG_MIGRATION_URL: testEnv.catalogMigratorUrl,
   });
+
+  await buildServicesWorld();
 }

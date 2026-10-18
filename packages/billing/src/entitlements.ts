@@ -1,5 +1,5 @@
 import { AppError, ErrorCodes, logger } from '@buku/common';
-import type { Database, Transaction } from '@buku/database';
+import type { BusinessTx, Database, Transaction } from '@buku/database';
 import {
   FEATURE_KEYS,
   featureKeysOf,
@@ -177,7 +177,11 @@ function labelOf(audience: Audience, key: string): string {
  * two parallel requests can't both see "one left" and both create. Released
  * when the transaction ends.
  */
-export async function lockForLimit(tx: Transaction, scope: string, id: string): Promise<void> {
+export async function lockForLimit(
+  tx: { $executeRaw(query: TemplateStringsArray, ...values: unknown[]): Promise<number> },
+  scope: string,
+  id: string,
+): Promise<void> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`limit:${scope}:${id}`}, 0))`;
 }
 
@@ -200,4 +204,73 @@ export async function assertBusinessFeature(
   key: BusinessFeature,
 ): Promise<void> {
   assertFeature(await entitlementsOf(db, { businessId }), key);
+}
+
+// ── Database v2 (D3) ───────────────────────────────────────────────────────
+
+/**
+ * A business's entitlements on database v2: the same rules as `entitlementsOf`, read on the
+ * business's own shard — its subscriptions, and the plans and billing settings replicated there
+ * from the directory (DB-015). Call it in the business's transaction (`DataPlane.inBusiness`).
+ * A plan not copied yet (replication catching up) counts as unlimited, never as a refusal.
+ */
+export async function businessEntitlementsOnShard(
+  tx: BusinessTx,
+  businessId: bigint,
+  now = new Date(),
+): Promise<Entitlements> {
+  const audience: Audience = 'business';
+  const settings = await tx.billingSettings.findUnique({ where: { audience } });
+  if (!settings) {
+    logger.warn({ audience }, 'billing settings missing on the shard: treating everyone as unlimited');
+    return unlimited(audience);
+  }
+  const planOf = async (id: bigint) => {
+    const plan = await tx.plan.findUnique({ where: { id } });
+    if (!plan) logger.warn({ planId: id.toString() }, 'plan missing on the shard: treating it as unlimited');
+    return plan && { ...plan, id: plan.id.toString() };
+  };
+
+  if (!settings.enabled) {
+    const plan = await planOf(settings.planWhenDisabledId);
+    return plan ? fromPlan(audience, plan, 'billing_off', false, null) : unlimited(audience);
+  }
+
+  const sub = await tx.subscription.findFirst({
+    where: {
+      businessId,
+      status: { in: [...ENTITLED] },
+      OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: now } }],
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  const subscribed = sub && (await planOf(sub.planId));
+  if (sub && subscribed?.audience === audience) {
+    return fromPlan(audience, subscribed, sub.provider === 'trial' ? 'trial' : 'subscription', true, {
+      id: sub.id.toString(),
+      status: sub.status,
+      provider: sub.provider,
+      channel: sub.channel,
+      currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
+      cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
+    });
+  }
+  const plan = await planOf(settings.defaultPlanId);
+  return plan ? fromPlan(audience, plan, 'default', true, null) : unlimited(audience);
+}
+
+/**
+ * `assertBusinessLimit` on database v2, inside the creating transaction on the business's shard:
+ * locked per business and limit there (a business never changes shard, so the lock is the only one).
+ */
+export async function assertBusinessLimitOnShard(
+  tx: BusinessTx,
+  businessId: bigint,
+  key: BusinessLimit,
+  count: () => Promise<number>,
+): Promise<void> {
+  await lockForLimit(tx, key, businessId.toString());
+  const e = await businessEntitlementsOnShard(tx, businessId);
+  if (e.limits[key] === null || e.limits[key] === undefined) return;
+  assertWithinLimit(e, key, await count());
 }

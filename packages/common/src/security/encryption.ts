@@ -75,7 +75,7 @@ export interface FieldCipher {
   /** Decrypt; throws DecryptionError if tampered, wrong context, or unknown key. */
   decrypt(ciphertext: string, context: string): string;
   /** The same, as bytes (database v2 `bytea` columns). */
-  encryptBytes(plaintext: string, context: string): Buffer;
+  encryptBytes(plaintext: string, context: string): Buffer<ArrayBuffer>;
   decryptBytes(ciphertext: Uint8Array, context: string): string;
   /** True if this value was written with a non-active key and should be re-encrypted. */
   needsReEncryption(ciphertext: string | Uint8Array): boolean;

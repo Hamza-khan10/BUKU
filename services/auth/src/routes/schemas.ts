@@ -1,4 +1,14 @@
-import { MEMBER_ROLES, zBody, zEmail, zPassword, zPhone, zSafeText, zTimezone } from '@buku/common';
+import {
+  MEMBER_ROLES,
+  zBody,
+  zEmail,
+  zId,
+  zPassword,
+  zPhone,
+  zPublicId,
+  zSafeText,
+  zTimezone,
+} from '@buku/common';
 import { MAX_PHOTO_BYTES, PHOTO_TYPES } from '@buku/media';
 import { z } from 'zod';
 
@@ -36,7 +46,8 @@ export const RefreshTokenBody = zBody({
   refreshToken: z.string().min(20).max(200),
 });
 
-export const SessionIdParams = z.object({ id: z.uuid() });
+/** A session's ID (its first refresh token's, DB-002). */
+export const SessionIdParams = z.object({ id: zId });
 
 export const UpdateMeBody = zBody({
   name: zSafeText({ kind: 'personName', min: 1, max: 200 }).optional(),
@@ -85,8 +96,9 @@ export const ChangePasswordBody = zBody({
   newPassword: zPassword,
 });
 
-export const BusinessParams = z.object({ businessId: z.uuid() });
-export const MemberParams = z.object({ businessId: z.uuid(), memberId: z.uuid() });
+/** A business by its public ID; its members by their own IDs under it (DB-042). */
+export const BusinessParams = z.object({ businessId: zPublicId });
+export const MemberParams = z.object({ businessId: zPublicId, memberId: zId });
 
 export const CreateMemberBody = zBody({
   name: zSafeText({ kind: 'personName', min: 1, max: 100 }),

@@ -11,7 +11,7 @@ import {
   type RevocationStore,
   type Role,
 } from '@buku/common';
-import type { Database } from '@buku/database';
+import type { DataPlane } from '@buku/database';
 import type { MediaLinks, ObjectStorage, PictureUploads } from '@buku/media';
 import type { Express } from 'express';
 import type { Redis } from 'ioredis';
@@ -31,7 +31,8 @@ import type { BreachedPasswords } from './members/breached-passwords.js';
  * fake Google key set) and call the same function.
  */
 export interface AuthAppDeps {
-  db: Database;
+  /** Database v2 (D3): the directory, the shards, IDs — signed in as auth-service's own role. */
+  plane: DataPlane;
   redis: Redis;
   signer: JwtSigner;
   verifier: JwtVerifier;
@@ -61,8 +62,9 @@ export interface AuthAppDeps {
 
 export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRightsService } {
   const { settings } = deps;
+  const { plane } = deps;
   const sessions = new SessionService({
-    db: deps.db,
+    plane,
     signer: deps.signer,
     revocations: deps.revocations,
     policy: {
@@ -73,10 +75,10 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
       reuseGraceMs: settings.refreshReuseGraceSeconds * 1000,
     },
   });
-  const mfa = new MfaService({ db: deps.db, redis: deps.redis, cipher: deps.cipher, sessions });
+  const mfa = new MfaService({ plane, redis: deps.redis, cipher: deps.cipher, sessions });
   const users = new UserService({
     mfa,
-    db: deps.db,
+    plane,
     cipher: deps.cipher,
     indexer: deps.indexer,
     sessions,
@@ -85,8 +87,9 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
     deletionGraceDays: settings.deletionGraceDays,
   });
   const rights = new DataRightsService({
-    db: deps.db,
+    plane,
     cipher: deps.cipher,
+    indexer: deps.indexer,
     users,
     sessions,
     storage: deps.storage,
@@ -95,14 +98,14 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
   });
 
   const avatars = new AvatarService({
-    db: deps.db,
+    plane,
     storage: deps.storage,
     uploads: deps.pictureUploads,
     links: deps.mediaLinks,
     users,
   });
   const passwords = new PasswordAuthService({
-    db: deps.db,
+    plane,
     users,
     sessions,
     mfa,
@@ -110,8 +113,9 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
     settings: { maxAttempts: settings.memberLoginMaxAttempts, lockoutMinutes: settings.memberLockoutMinutes },
   });
   const members = new MemberService({
-    db: deps.db,
+    plane,
     sessions,
+    indexer: deps.indexer,
     settings: { maxMembersPerBusiness: settings.maxMembersPerBusiness },
   });
 
@@ -130,7 +134,8 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
         redis: deps.redis,
         identity: deps.identity,
         devLoginEnabled: settings.devLoginEnabled,
-        accessReview: new AccessReview({ db: deps.db, cipher: deps.cipher }),
+        accessReview: new AccessReview({ plane, cipher: deps.cipher }),
+        businessIdOf: (publicId: string) => plane.idOfPublic('business', publicId),
         mfa,
       }),
   });

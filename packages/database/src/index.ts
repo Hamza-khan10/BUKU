@@ -23,7 +23,9 @@ export {
 export {
   businessRoleOnShard,
   DataPlane,
+  employeeLoginKey,
   recordShardAudit,
+  requireBusinessPermissionOnShard,
   sameServer,
   type BusinessTx,
   type DataPlaneOptions,

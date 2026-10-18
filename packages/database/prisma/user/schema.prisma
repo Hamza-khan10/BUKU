@@ -351,9 +351,9 @@ model UserBusinessRole {
   businessId   BigInt   @map("business_id")
   version      BigInt
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  /// owner | manager | staff
+  /// owner | manager | front_desk | staff
   role         String   @db.VarChar(20)
-  /// invited | active | removed
+  /// active | disabled
   status       String   @db.VarChar(20)
   businessName String   @map("business_name") @db.VarChar(200)
 

@@ -1,5 +1,5 @@
 import { AppError, ErrorCodes, uuidv7 } from '@buku/common';
-import { recordAudit, type Database } from '@buku/database';
+import { recordShardAudit, type DataPlane } from '@buku/database';
 import {
   PRIVATE_PICTURE_CACHE,
   type MediaLinks,
@@ -7,8 +7,8 @@ import {
   type PhotoType,
   type PictureUploads,
 } from '@buku/media';
+import { auditCtx } from '../audit.js';
 import type { RequestContext } from '../http/context.js';
-import { auditCtx } from '../sessions/session-service.js';
 import type { MeView, UserService } from './user-service.js';
 
 /**
@@ -21,7 +21,7 @@ import type { MeView, UserService } from './user-service.js';
 export class AvatarService {
   constructor(
     private readonly deps: {
-      db: Database;
+      plane: DataPlane;
       storage: ObjectStorage;
       uploads: PictureUploads;
       links: MediaLinks;
@@ -29,14 +29,18 @@ export class AvatarService {
     },
   ) {}
 
-  requestUpload(userId: string, file: { contentType: PhotoType; sizeBytes: number }) {
-    return this.deps.uploads.request('avatar', userId, file, {});
+  requestUpload(userId: bigint, file: { contentType: PhotoType; sizeBytes: number }) {
+    return this.deps.uploads.request('avatar', userId.toString(), file, {});
   }
 
-  async completeUpload(userId: string, uploadId: string, ctx: RequestContext): Promise<MeView> {
-    const { db, storage, links } = this.deps;
-    const { image } = await this.deps.uploads.complete('avatar', userId, uploadId, 'avatar');
-    const previous = await db.user.findUnique({ where: { id: userId }, select: { avatarStorageKey: true } });
+  async completeUpload(userId: bigint, uploadId: string, ctx: RequestContext): Promise<MeView> {
+    const { plane, storage, links } = this.deps;
+    const { image } = await this.deps.uploads.complete('avatar', userId.toString(), uploadId, 'avatar');
+    const db = await plane.user(userId);
+    const previous = await db.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { avatarStorageKey: true },
+    });
     if (!previous) throw AppError.notFound('User', ErrorCodes.USER_NOT_FOUND);
 
     const key = `users/${userId}/avatar/${uuidv7()}.webp`;
@@ -44,7 +48,7 @@ export class AvatarService {
     try {
       const user = await db.$transaction(async (tx) => {
         const user = await tx.user.update({ where: { id: userId }, data: { avatarStorageKey: key } });
-        await recordAudit(tx, {
+        await recordShardAudit(tx, plane.id(), {
           userId,
           action: 'user.avatar_uploaded',
           resourceType: 'user',
@@ -62,9 +66,13 @@ export class AvatarService {
   }
 
   /** Remove my picture — the uploaded one and the one from the sign-in provider. */
-  async remove(userId: string, ctx: RequestContext): Promise<MeView> {
-    const { db, storage, links } = this.deps;
-    const current = await db.user.findUnique({ where: { id: userId }, select: { avatarStorageKey: true } });
+  async remove(userId: bigint, ctx: RequestContext): Promise<MeView> {
+    const { plane, storage, links } = this.deps;
+    const db = await plane.user(userId);
+    const current = await db.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { avatarStorageKey: true },
+    });
     if (!current) throw AppError.notFound('User', ErrorCodes.USER_NOT_FOUND);
     if (current.avatarStorageKey) await storage.delete(links.privateBucket, current.avatarStorageKey);
     const user = await db.$transaction(async (tx) => {
@@ -72,7 +80,7 @@ export class AvatarService {
         where: { id: userId },
         data: { avatarStorageKey: null, avatarUrl: null },
       });
-      await recordAudit(tx, {
+      await recordShardAudit(tx, plane.id(), {
         userId,
         action: 'user.avatar_removed',
         resourceType: 'user',

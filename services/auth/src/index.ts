@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import {
   createBlindIndexer,
   createFieldCipher,
@@ -12,8 +13,8 @@ import {
   runService,
   type ShutdownHook,
 } from '@buku/common';
-import { createDatabaseClient, pingDatabase } from '@buku/database';
-import { createKafka, EventProducer, kafkaConnectionFromEnv, OutboxRelay } from '@buku/kafka';
+import { DataPlane } from '@buku/database';
+import { createKafka, EventProducer, kafkaConnectionFromEnv, ShardOutboxRelays } from '@buku/kafka';
 import { PictureUploads, storageFromEnv } from '@buku/media';
 import { buildAuthApp } from './app.js';
 import { AccountPurger } from './users/data-rights.js';
@@ -24,10 +25,14 @@ import { noBreachCheck, PwnedPasswords } from './members/breached-passwords.js';
 const env = loadConfig(Env);
 
 // ── Dependencies ──
-const db = createDatabaseClient({
-  url: env.DATABASE_URL,
-  maxConnections: env.DATABASE_POOL_SIZE,
-  applicationName: env.SERVICE_NAME,
+// Database v2 (D3): people on user shards, teams on business shards, found through the directory.
+const plane = await DataPlane.start({
+  service: 'auth',
+  databaseUrl: env.DATABASE_URL,
+  ...(env.DATABASE_DIRECTORY_URL && { directoryUrl: env.DATABASE_DIRECTORY_URL }),
+  region: env.BUKU_REGION,
+  instance: `${env.SERVICE_NAME}:${hostname()}:${process.pid}`,
+  poolSize: env.DATABASE_SHARD_POOL_SIZE,
 });
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
 const producer = new EventProducer(createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env)));
@@ -44,21 +49,26 @@ const signer = await createJwtSigner({
 // Fail fast on bad key material: sign a probe token and verify it with the
 // PUBLIC key every other service uses. A mismatched pair is caught here, at
 // boot, instead of as "every login returns 401" in production.
-await verifier.verify(
-  (await signer.sign({ sub: '00000000-0000-4000-8000-000000000000', role: 'user' })).token,
-);
+await verifier.verify((await signer.sign({ sub: '1', role: 'user' })).token);
 
 if (env.AUTH_DEV_LOGIN_ENABLED) logger.warn('DEV LOGIN IS ENABLED — development only');
 
 await producer.connect();
-// Publishes this service's committed outbox events (users.*, businesses.member_removed): each
-// service its own (D-092).
-const relay = new OutboxRelay({ db, producer, source: 'auth-service' });
-relay.start();
+// Publishes this service's committed outbox events (users.* from user shards,
+// businesses.member_removed from business shards): each service its own (D-092).
+const relays = new ShardOutboxRelays({
+  plane,
+  producer,
+  source: 'auth-service',
+  families: ['user', 'business'],
+});
+await relays.start();
 
 // ── Readiness ──
 const readiness = new Readiness()
-  .add('postgres', () => pingDatabase(db))
+  .add('postgres', async () => {
+    await plane.directory.$queryRaw`SELECT 1`;
+  })
   .add('valkey', () => redis.ping())
   .add('object-storage', () => storage.ping([env.S3_BUCKET_PRIVATE]))
   .add('kafka', () =>
@@ -66,7 +76,7 @@ const readiness = new Readiness()
   );
 
 const { app, rights } = buildAuthApp({
-  db,
+  plane,
   redis,
   signer,
   verifier,
@@ -110,7 +120,7 @@ purger.start();
 
 // Hooks run in REVERSE order on shutdown: stop the relay, flush Kafka, close stores.
 const hooks: ShutdownHook[] = [
-  { name: 'postgres', fn: () => db.$disconnect() },
+  { name: 'postgres', fn: () => plane.close() },
   {
     name: 'valkey',
     fn: async () => {
@@ -118,7 +128,7 @@ const hooks: ShutdownHook[] = [
     },
   },
   { name: 'kafka-producer', fn: () => producer.disconnect() },
-  { name: 'outbox-relay', fn: () => relay.stop() },
+  { name: 'outbox-relay', fn: () => relays.stop() },
   { name: 'account-purger', fn: () => purger.stop() },
 ];
 

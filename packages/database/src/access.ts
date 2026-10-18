@@ -366,6 +366,9 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
       whatsapp_contacts: '*',
       user_appointments: '*',
       user_active_tickets: '*',
+      // Only what erasing them needs: a DELETE reads the columns it filters on.
+      notification_marks: ['user_id'],
+      user_time_reservations: ['user_id'],
     },
     // A new account starts with the default notification settings.
     inserts: ['audit_logs', 'notification_preferences'],
@@ -438,10 +441,12 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
 export const BUSINESS_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
   auth: {
     owns: ['business_members', ...PUBLISHES, ...CONSUMES],
-    // "Download my data" and erasing an account touch what the person did at businesses.
+    // "Download my data" and erasing an account touch what the person did at businesses (their
+    // appointments found through the index, D3b); team logins follow the business's plan.
     reads: {
       ...REFERENCE_READS,
       businesses: '*',
+      appointment_index: '*',
       appointments: '*',
       queue_tickets: '*',
       queue_sessions: '*',
@@ -647,7 +652,7 @@ export const DIRECTORY_REFERENCE_ACCESS: Readonly<Partial<Record<ServiceName, Ac
  * a job that says so sees every business, for that one transaction.
  */
 export const CROSS_BUSINESS: Readonly<Partial<Record<ServiceName, string>>> = {
-  auth: 'erasing an account touches every business the person used',
+  auth: 'exporting or erasing an account touches every business the person used',
   booking: 'sweeping appointments nobody confirmed or attended, across businesses',
   queue: 'closing yesterday’s queues everywhere',
   notification: 'reminders and suggestions for every business’s appointments',

@@ -1034,3 +1034,15 @@ CodeQL there; when all of them are on v2 and the whole stack's tests pass, one p
 it to `main`. `main` and the website keep working on v1 until then. There is no production data,
 so v2 starts from its own seed. APIs show public IDs for people, businesses and appointments and
 row IDs only inside a business (DATABASE.md DB-042).
+
+**D-113 · auth-service is the first service on database v2 (D3b).** Accounts, sessions and
+two-step sign-in live on each person's user shard; teams on the business's shard; the global
+handles keep an email, a Google account, a username in a business or a device to one person on
+every shard. Three choices made it work without a lookup table per request: a refresh token starts
+with the person's ID, so it goes straight to their shard (the stored hash covers the whole token,
+so changing the ID finds nothing); an account's row is written before its handles are claimed, so a
+handle always leads to an account and a race undoes itself; and the sign-in token says when an
+employee is still on a temporary password, because their account and the business are on
+different shards. Exporting or erasing an account reaches every business through auth's
+cross-business role, by new indexes on the person's appointments and queue tickets. Tokens from v1
+are refused; other services follow in D3c onwards.

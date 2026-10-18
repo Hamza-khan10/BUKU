@@ -86,7 +86,7 @@ with `details.termsVersion` (show the consent screen, then retry). Response `201
 ```json
 {
   "user": {
-    "id": "…",
+    "id": "Xk3pQ9aB2mZt",
     "name": "Ayesha Khan",
     "email": "ayesha@gmail.com",
     "phone": null,
@@ -122,7 +122,8 @@ before booking.
 ```
 
 Refresh returns the same token fields as sign-in (without `user`). Store the NEW refresh token
-immediately — the one you sent is now used up. Logout always answers `204`.
+immediately — the one you sent is now used up. Logout always answers `204`. Treat both tokens as
+opaque strings (a refresh token is at most 200 characters); `sessionId` is a decimal ID.
 
 ### `PATCH /v1/auth/me`
 
@@ -185,7 +186,8 @@ POST /v1/auth/business-login
 { "business": "fade-masters-lahore", "username": "ali", "password": "<the temporary or own password>" }
 ```
 
-The response is the same as any sign-in. `user.account` tells the app what kind of account it is:
+The response is the same as any sign-in. `user.account` tells the app what kind of account it is
+(`businessId` is the business's public ID):
 
 ```json
 { "type": "employee", "businessId": "…", "username": "ali", "mustChangePassword": true }
@@ -208,10 +210,13 @@ The response is the same as any sign-in. `user.account` tells the app what kind 
 - Access turned off by the business → `403 ACCOUNT_SUSPENDED` (only shown after a correct password).
 - Employee accounts can't register a business or delete themselves; the business removes them.
 
-### A business's team — `/v1/businesses/:id/members`
+### A business's team — `/v1/businesses/:publicId/members`
 
 Served by auth-service. Requires `members.manage` (owner, manager). Managers create and manage
-**front desk and staff only**; nobody changes their own access here.
+**front desk and staff only**; nobody changes their own access here. The business is named by its
+public ID (12 characters); a member's `id` is a decimal ID under the business, and its `userId` is
+the person's public ID (DATABASE.md DB-042). An account still on a temporary password has no
+business access (`404`) until it chooses its own.
 
 | Method & path                            | Purpose                                                                                                      |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |

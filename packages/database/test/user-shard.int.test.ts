@@ -240,6 +240,11 @@ describe('a person’s rows keep their shape', () => {
       }),
     });
     expect(ok.username).toBe('ali.khan');
+    // A closed employee account gives its username back, and keeps its business.
+    const closed = await shard1.user.create({
+      data: person({ managedByBusinessId: 5n, deletedAt: new Date() }),
+    });
+    expect(closed.username).toBeNull();
   });
 
   it('one appointment at a time per person, across every business; back to back is fine', async () => {
