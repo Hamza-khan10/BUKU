@@ -1,23 +1,29 @@
-import { countVisits, entitlementsOf, type Account, type Audience, type Entitlements } from '@buku/billing';
-import { AppError, ErrorCodes } from '@buku/common';
+import {
+  businessEntitlementsOnShard,
+  customerEntitlements,
+  type Audience,
+  type Entitlements,
+} from '@buku/billing';
+import { AppError, ErrorCodes, type Actor } from '@buku/common';
 import {
   constraintNameOf,
   isUniqueViolation,
-  recordAudit,
-  requireBusinessPermission,
-  type Database,
-  type Transaction,
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  type BusinessTx,
+  type DataPlane,
 } from '@buku/database';
 import { auditCtx, type RequestContext } from './http/context.js';
+import { LIVE } from './shared.js';
 
 /**
  * Accounts and their plans:
  *
- *  • what a customer or a business is on, and how much of it they use;
- *  • the FREE TRIAL — a month (by default) of a paid plan that each customer
- *    and each business can start ONCE, whenever they choose. Admins switch
- *    trials off per audience; then the Free plan is simply the normal plan;
- *  • GRANTS — any plan given to any account free of charge (partners, a large
+ *  • what a business is on, and how much of it they use; customers use BUKU for free (D-101);
+ *  • the FREE TRIAL — a month (by default) of a paid plan that each business
+ *    can start ONCE, whenever it chooses. Admins switch trials off; then the
+ *    Starter plan is simply the normal plan;
+ *  • GRANTS — any plan given to any business free of charge (partners, a large
  *    organisation on Enterprise to win them as a customer, support gestures),
  *    optionally until a date; a grant can replace the current grant or trial;
  *  • PLAN REQUESTS — a business asks for a plan (e.g. Enterprise), an admin
@@ -25,10 +31,14 @@ import { auditCtx, type RequestContext } from './http/context.js';
  *
  * Trials and grants with an end date stop counting once it passes
  * (entitlements check the date); `expireEnded` also marks them `expired` so
- * the account can be given a new plan.
+ * the business can be given a new plan.
+ *
+ * Database v2 (D3g): subscriptions and plan requests live on the business's shard, one live
+ * subscription at a time (a database rule); plans and settings are read on the directory, where
+ * billing-service keeps them. Admin lists visit every business shard; a subscription or request
+ * named by its ID is found on whichever shard holds it.
  */
 
-const LIVE = ['active', 'trialing', 'past_due', 'paused'] as const;
 /** Sources we manage ourselves; store subscriptions are changed in the store. */
 const OURS = ['manual', 'trial'];
 
@@ -40,138 +50,217 @@ const TRIAL_REFUSALS: Record<string, string> = {
   has_subscription: 'You already have a plan',
 };
 
+export interface GrantInput {
+  planCode: string;
+  /** Customers are free (D-101): a grant to a person is refused. */
+  userId?: string | undefined;
+  /** The business, by its public ID. */
+  businessId?: string | undefined;
+  until?: string | undefined;
+  note: string;
+  /** End the business's current grant or trial and put this plan in its place. */
+  replace?: boolean | undefined;
+}
+
 export class AccountService {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly plane: DataPlane) {}
 
   // ── Customers and businesses ─────────────────────────────────────────────
 
-  async mine(userId: string) {
-    const account = { userId };
-    const [e, visits, trial] = await Promise.all([
-      entitlementsOf(this.db, account),
-      countVisits(this.db, userId),
-      this.trialOffer('user', account),
-    ]);
-    return { ...summary(e, { visits }), trial };
-  }
-
-  async business(businessId: string, actorId: string) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'business.view_private');
-    const account = { businessId };
-    const [e, team, staff, services, photos, trial, request] = await Promise.all([
-      entitlementsOf(this.db, account),
-      this.db.businessMember.count({ where: { businessId, status: 'active' } }),
-      this.db.staff.count({ where: { businessId, isActive: true } }),
-      this.db.service.count({ where: { businessId, isActive: true } }),
-      this.db.businessPhoto.count({ where: { businessId } }),
-      this.trialOffer('business', account),
-      this.db.planRequest.findFirst({ where: { businessId, status: 'pending' }, include: { plan: true } }),
-    ]);
+  /** A customer's account: free (D-101), with their visits shown (never limited). */
+  async mine(userId: bigint) {
+    const e = await customerEntitlements(this.plane.directory);
+    const settings = await this.plane.directory.billingSettings.findUnique({
+      where: { audience: 'user' },
+      include: { trialPlan: true },
+    });
     return {
-      ...summary(e, { team_accounts: team, staff_profiles: staff, services, photos }),
-      trial,
-      pendingPlanRequest: request ? requestView(request) : null,
+      ...summary(e, { visits: await this.visitsOf(userId) }),
+      trial: {
+        available: false,
+        reason: 'billing_off',
+        days: settings?.trialDays ?? null,
+        plan: settings?.trialPlan ? { code: settings.trialPlan.code, name: settings.trialPlan.name } : null,
+        endsAt: null,
+      },
     };
   }
 
-  async startMyTrial(userId: string, ctx: RequestContext) {
-    await this.startTrial('user', { userId }, userId, ctx);
-    return this.mine(userId);
+  /** Customers have nothing to try: everything is included (D-101). */
+  startMyTrial(): Promise<never> {
+    return Promise.reject(refusal('billing_off'));
   }
 
-  async startBusinessTrial(businessId: string, actorId: string, ctx: RequestContext) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'billing.manage');
-    await this.startTrial('business', { businessId }, actorId, ctx);
-    return this.business(businessId, actorId);
+  async business(businessId: bigint, actor: Actor) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.view_private');
+      return this.businessSummary(tx, businessId);
+    });
+  }
+
+  async startBusinessTrial(businessId: bigint, actor: Actor, ctx: RequestContext) {
+    const settings = await this.plane.directory.billingSettings.findUniqueOrThrow({
+      where: { audience: 'business' },
+    });
+    try {
+      await this.plane.inBusiness(businessId, async (tx) => {
+        await requireBusinessPermissionOnShard(tx, businessId, actor, 'billing.manage');
+        const offer = await this.trialOffer(tx, businessId);
+        if (!offer.available) throw refusal(offer.reason!);
+        await expireEnded(tx, businessId);
+        const now = new Date();
+        const sub = await tx.subscription.create({
+          data: {
+            id: this.plane.id(),
+            businessId,
+            planId: settings.trialPlanId!,
+            provider: 'trial',
+            status: 'trialing',
+            currentPeriodStart: now,
+            currentPeriodEnd: new Date(now.getTime() + settings.trialDays * 86_400_000),
+          },
+        });
+        await recordShardAudit(tx, this.plane.id(), {
+          userId: actor.id,
+          action: 'billing.trial_started',
+          resourceType: 'subscription',
+          resourceId: sub.id,
+          newValues: { audience: 'business', days: settings.trialDays },
+          ...auditCtx(ctx),
+        });
+      });
+    } catch (err) {
+      // Two taps at once: the database lets exactly one trial through.
+      if (isUniqueViolation(err)) throw AppError.conflict('The free trial can only be used once');
+      throw err;
+    }
+    return this.business(businessId, actor);
   }
 
   // ── Plan requests (businesses) ───────────────────────────────────────────
 
   async requestPlan(
-    businessId: string,
-    actorId: string,
+    businessId: bigint,
+    actor: Actor,
     input: { planCode: string; message: string },
     ctx: RequestContext,
   ) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'billing.manage');
-    const plan = await this.db.plan.findUnique({ where: { code: input.planCode } });
-    if (!plan || plan.audience !== 'business' || plan.archivedAt || !plan.isPublic)
-      throw AppError.notFound('Plan');
+    const plan = await this.plane.directory.plan.findUnique({ where: { code: input.planCode } });
     try {
-      const request = await this.db.$transaction(async (tx) => {
+      return await this.plane.inBusiness(businessId, async (tx) => {
+        await requireBusinessPermissionOnShard(tx, businessId, actor, 'billing.manage');
+        if (!plan || plan.audience !== 'business' || plan.archivedAt || !plan.isPublic)
+          throw AppError.notFound('Plan');
         const request = await tx.planRequest.create({
-          data: { businessId, planId: plan.id, requestedById: actorId, message: input.message },
-          include: { plan: true },
+          data: {
+            id: this.plane.id(),
+            businessId,
+            planId: plan.id,
+            requestedById: actor.id,
+            message: input.message,
+          },
         });
-        await audit(tx, actorId, 'billing.plan_requested', 'plan_request', request.id, ctx, {
-          businessId,
-          plan: plan.code,
+        await recordShardAudit(tx, this.plane.id(), {
+          userId: actor.id,
+          action: 'billing.plan_requested',
+          resourceType: 'plan_request',
+          resourceId: request.id,
+          newValues: { plan: plan.code },
+          ...auditCtx(ctx),
         });
-        return request;
+        return (await this.requestViews(tx, [request]))[0]!;
       });
-      return requestView(request);
     } catch (err) {
       if (isUniqueViolation(err)) throw AppError.conflict('This business already has an open plan request');
       throw err;
     }
   }
 
-  async businessRequests(businessId: string, actorId: string) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'business.view_private');
-    const rows = await this.db.planRequest.findMany({
-      where: { businessId },
-      include: { plan: true },
-      orderBy: { createdAt: 'desc' },
-      take: 50,
+  async businessRequests(businessId: bigint, actor: Actor) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.view_private');
+      const rows = await tx.planRequest.findMany({
+        where: { businessId },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+      return this.requestViews(tx, rows);
     });
-    return rows.map(requestView);
   }
 
-  async withdrawRequest(businessId: string, requestId: string, actorId: string, ctx: RequestContext) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'billing.manage');
-    const { count } = await this.db.planRequest.updateMany({
-      where: { id: requestId, businessId, status: 'pending' },
-      data: { status: 'withdrawn' },
+  async withdrawRequest(businessId: bigint, requestId: bigint, actor: Actor, ctx: RequestContext) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'billing.manage');
+      const { count } = await tx.planRequest.updateMany({
+        where: { id: requestId, businessId, status: 'pending' },
+        data: { status: 'withdrawn' },
+      });
+      if (count === 0) throw AppError.notFound('Open plan request');
+      await recordShardAudit(tx, this.plane.id(), {
+        userId: actor.id,
+        action: 'billing.plan_request_withdrawn',
+        resourceType: 'plan_request',
+        resourceId: requestId,
+        ...auditCtx(ctx),
+      });
+      return this.requestView(tx, requestId);
     });
-    if (count === 0) throw AppError.notFound('Open plan request');
-    await audit(this.db, actorId, 'billing.plan_request_withdrawn', 'plan_request', requestId, ctx, {});
-    return this.request(requestId);
   }
 
   // ── Admin ────────────────────────────────────────────────────────────────
 
+  /** Plan requests on every business shard, oldest first (the admins' queue). */
   async listRequests(status: 'pending' | 'approved' | 'declined' | 'withdrawn' | undefined) {
-    const rows = await this.db.planRequest.findMany({
-      where: status ? { status } : {},
-      include: {
-        plan: true,
-        business: { select: { id: true, name: true, slug: true, city: true, country: true } },
-      },
-      orderBy: { createdAt: 'asc' },
-      take: 200,
+    const perShard = await this.plane.acrossBusinesses(async (tx) => {
+      const rows = await tx.planRequest.findMany({
+        where: status ? { status } : {},
+        include: {
+          business: { select: { publicId: true, name: true, slug: true, city: true, country: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: 200,
+      });
+      const views = await this.requestViews(tx, rows);
+      return rows.map((r, i) => ({
+        at: r.createdAt.getTime(),
+        view: {
+          ...views[i]!,
+          business: {
+            id: r.business.publicId,
+            name: r.business.name,
+            slug: r.business.slug,
+            city: r.business.city,
+            country: r.business.country,
+          },
+        },
+      }));
     });
-    return rows.map((r) => ({ ...requestView(r), business: r.business }));
+    return perShard
+      .flat()
+      .sort((a, b) => a.at - b.at)
+      .slice(0, 200)
+      .map((r) => r.view);
   }
 
   /** Approve: the business gets the plan as a grant (replacing a grant or trial it may have). */
   async approveRequest(
-    requestId: string,
-    adminId: string,
+    requestId: bigint,
+    adminId: bigint,
     input: { until?: string | undefined; note?: string | undefined; planCode?: string | undefined },
     ctx: RequestContext,
   ) {
-    const request = await this.db.planRequest.findFirst({
-      where: { id: requestId, status: 'pending' },
-      include: { plan: true },
-    });
-    if (!request) throw AppError.notFound('Open plan request');
-    const planCode = input.planCode ?? request.plan.code;
-    await this.db.$transaction(async (tx) => {
+    const businessId = await this.businessOfRequest(requestId);
+    return this.plane.inBusiness(businessId, async (tx) => {
+      const request = await tx.planRequest.findFirst({ where: { id: requestId, status: 'pending' } });
+      if (!request) throw AppError.notFound('Open plan request');
+      const requested = await this.plane.directory.plan.findUnique({ where: { id: request.planId } });
+      const planCode = input.planCode ?? requested?.code;
+      if (!planCode) throw AppError.notFound('Plan');
       const grant = await this.createGrant(
         tx,
         {
           planCode,
-          businessId: request.businessId,
+          businessId,
           until: input.until,
           note: input.note ?? `Approved plan request ${request.id}`,
           replace: true,
@@ -190,105 +279,149 @@ export class AccountService {
         },
       });
       if (count === 0) throw AppError.conflict('The request was changed meanwhile');
-      await audit(tx, adminId, 'billing.plan_request_approved', 'plan_request', requestId, ctx, {
-        plan: planCode,
-        until: input.until ?? null,
+      await recordShardAudit(tx, this.plane.id(), {
+        userId: adminId,
+        action: 'billing.plan_request_approved',
+        resourceType: 'plan_request',
+        resourceId: requestId,
+        newValues: { plan: planCode, until: input.until ?? null },
+        ...auditCtx(ctx),
       });
+      return this.requestView(tx, requestId);
     });
-    return this.request(requestId);
   }
 
-  async declineRequest(requestId: string, adminId: string, note: string, ctx: RequestContext) {
-    const { count } = await this.db.planRequest.updateMany({
-      where: { id: requestId, status: 'pending' },
-      data: { status: 'declined', decidedById: adminId, decidedAt: new Date(), decisionNote: note },
+  async declineRequest(requestId: bigint, adminId: bigint, note: string, ctx: RequestContext) {
+    const businessId = await this.businessOfRequest(requestId);
+    return this.plane.inBusiness(businessId, async (tx) => {
+      const { count } = await tx.planRequest.updateMany({
+        where: { id: requestId, status: 'pending' },
+        data: { status: 'declined', decidedById: adminId, decidedAt: new Date(), decisionNote: note },
+      });
+      if (count === 0) throw AppError.notFound('Open plan request');
+      await recordShardAudit(tx, this.plane.id(), {
+        userId: adminId,
+        action: 'billing.plan_request_declined',
+        resourceType: 'plan_request',
+        resourceId: requestId,
+        newValues: { note },
+        ...auditCtx(ctx),
+      });
+      return this.requestView(tx, requestId);
     });
-    if (count === 0) throw AppError.notFound('Open plan request');
-    await audit(this.db, adminId, 'billing.plan_request_declined', 'plan_request', requestId, ctx, { note });
-    return this.request(requestId);
   }
 
-  /** Give any plan to any account, free of charge, optionally until a date. */
-  async grant(input: GrantInput, adminId: string, ctx: RequestContext) {
-    const sub = await this.db.$transaction((tx) => this.createGrant(tx, input, adminId, ctx));
-    return subscriptionView(await this.load(sub.id));
+  /** Give any plan to any business, free of charge, optionally until a date. */
+  async grant(input: GrantInput, adminId: bigint, ctx: RequestContext) {
+    if (input.userId) throw AppError.conflict('Customers use BUKU for free; there is no plan to give them');
+    const businessId = await this.plane.idOfPublic('business', input.businessId!);
+    if (businessId === null) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+    const id = await this.plane.inBusiness(businessId, async (tx) => {
+      const sub = await this.createGrant(tx, { ...input, businessId }, adminId, ctx);
+      return sub.id;
+    });
+    return this.subscriptionView(id);
   }
 
   /** Who bills a subscription: manual, trial, paddle… (null if unknown). */
-  async providerOf(subscriptionId: string): Promise<string | null> {
-    const sub = await this.db.subscription.findUnique({
-      where: { id: subscriptionId },
-      select: { provider: true },
-    });
-    return sub?.provider ?? null;
+  async providerOf(subscriptionId: bigint): Promise<string | null> {
+    const found = await this.findSubscription(subscriptionId);
+    return found?.provider ?? null;
   }
 
   /** End a grant or trial now. Store subscriptions are cancelled in the store. */
-  async end(subscriptionId: string, adminId: string, reason: string, ctx: RequestContext) {
-    const sub = await this.db.subscription.findUnique({ where: { id: subscriptionId } });
-    if (!sub) throw AppError.notFound('Subscription');
-    if (!OURS.includes(sub.provider)) {
-      throw AppError.conflict(
-        `This subscription is billed by ${sub.provider}; cancel it there so the customer stops being charged`,
-      );
-    }
-    if (LIVE.includes(sub.status as (typeof LIVE)[number])) {
-      await this.db.$transaction(async (tx) => {
-        await tx.subscription.update({
-          where: { id: sub.id },
-          data: { status: 'cancelled', cancelledAt: new Date() },
-        });
-        await audit(tx, adminId, 'billing.subscription_ended', 'subscription', sub.id, ctx, { reason });
+  async end(subscriptionId: bigint, adminId: bigint, reason: string, ctx: RequestContext) {
+    const found = await this.findSubscription(subscriptionId);
+    if (!found) throw AppError.notFound('Subscription');
+    await this.plane.inBusiness(found.businessId, async (tx) => {
+      const sub = await tx.subscription.findUniqueOrThrow({ where: { id: subscriptionId } });
+      if (!OURS.includes(sub.provider)) {
+        throw AppError.conflict(
+          `This subscription is billed by ${sub.provider}; cancel it there so the customer stops being charged`,
+        );
+      }
+      if (!(LIVE as readonly string[]).includes(sub.status)) return;
+      await tx.subscription.update({
+        where: { id: sub.id },
+        data: { status: 'cancelled', cancelledAt: new Date() },
       });
-    }
-    return subscriptionView(await this.load(sub.id));
+      await recordShardAudit(tx, this.plane.id(), {
+        userId: adminId,
+        action: 'billing.subscription_ended',
+        resourceType: 'subscription',
+        resourceId: sub.id,
+        newValues: { reason },
+        ...auditCtx(ctx),
+      });
+    });
+    return this.subscriptionView(subscriptionId);
   }
 
+  /** Subscriptions on every business shard, newest first. */
   async list(query: {
     planCode?: string | undefined;
     status?: string | undefined;
     page: number;
     limit: number;
   }) {
+    const plan = query.planCode
+      ? await this.plane.directory.plan.findUnique({ where: { code: query.planCode } })
+      : null;
+    if (query.planCode && !plan) {
+      return { items: [], meta: { page: query.page, limit: query.limit, total: 0, totalPages: 0 } };
+    }
     const where = {
-      ...(query.planCode && { plan: { code: query.planCode } }),
-      ...(query.status && { status: query.status as (typeof LIVE)[number] }),
+      ...(plan && { planId: plan.id }),
+      ...(query.status && { status: query.status }),
     };
-    const [rows, total] = await Promise.all([
-      this.db.subscription.findMany({
+    const perShard = await this.plane.acrossBusinesses(async (tx) => ({
+      total: await tx.subscription.count({ where }),
+      rows: await tx.subscription.findMany({
         where,
-        include: { plan: true },
-        orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
+        include: { business: { select: { publicId: true } } },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: query.page * query.limit,
       }),
-      this.db.subscription.count({ where }),
-    ]);
+    }));
+    const rows = perShard
+      .flatMap((s) => s.rows)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice((query.page - 1) * query.limit, query.page * query.limit);
+    const total = perShard.reduce((n, s) => n + s.total, 0);
+    const plans = await this.planNames(rows.map((r) => r.planId));
     return {
-      items: rows.map(subscriptionView),
+      items: rows.map((r) => subscriptionView(r, r.business.publicId, plans)),
       meta: { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) },
     };
   }
 
-  /** Mark trials and grants whose end date passed as `expired` (also run periodically). */
-  async expireEnded(db: Database | Transaction = this.db, account?: Account): Promise<number> {
-    const { count } = await db.subscription.updateMany({
-      where: {
-        provider: { in: OURS },
-        status: { in: [...LIVE] },
-        currentPeriodEnd: { lte: new Date() },
-        ...(account && ownerOf(account)),
-      },
-      data: { status: 'expired' },
-    });
-    return count;
+  /** Mark trials and grants whose end date passed as `expired`, on every business shard. */
+  async expireEnded(): Promise<number> {
+    const counts = await this.plane.acrossBusinesses((tx) => expireEnded(tx));
+    return counts.reduce((n, c) => n + c, 0);
   }
 
   // ── internals ────────────────────────────────────────────────────────────
 
-  /** Can this account start a free trial now, and of what? */
-  private async trialOffer(audience: Audience, account: Account) {
-    const settings = await this.db.billingSettings.findUnique({
+  private async businessSummary(tx: BusinessTx, businessId: bigint) {
+    const e = await businessEntitlementsOnShard(tx, businessId);
+    const team = await tx.businessMember.count({ where: { businessId, status: 'active' } });
+    const staff = await tx.staff.count({ where: { businessId, isActive: true } });
+    const services = await tx.service.count({ where: { businessId, isActive: true } });
+    const photos = await tx.businessPhoto.count({ where: { businessId } });
+    const trial = await this.trialOffer(tx, businessId);
+    const request = await tx.planRequest.findFirst({ where: { businessId, status: 'pending' } });
+    return {
+      ...summary(e, { team_accounts: team, staff_profiles: staff, services, photos }),
+      trial,
+      pendingPlanRequest: request ? (await this.requestViews(tx, [request]))[0]! : null,
+    };
+  }
+
+  /** Can this business start a free trial now, and of what? Settings from the directory. */
+  private async trialOffer(tx: BusinessTx, businessId: bigint) {
+    const audience: Audience = 'business';
+    const settings = await this.plane.directory.billingSettings.findUnique({
       where: { audience },
       include: { trialPlan: true },
     });
@@ -305,17 +438,14 @@ export class AccountService {
       endsAt,
     });
     if (!settings?.enabled) return no('billing_off');
-    const owner = ownerOf(account);
-    const [used, live] = await Promise.all([
-      this.db.subscription.findFirst({ where: { ...owner, provider: 'trial' } }),
-      this.db.subscription.findFirst({
-        where: {
-          ...owner,
-          status: { in: [...LIVE] },
-          OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: new Date() } }],
-        },
-      }),
-    ]);
+    const used = await tx.subscription.findFirst({ where: { businessId, provider: 'trial' } });
+    const live = await tx.subscription.findFirst({
+      where: {
+        businessId,
+        status: { in: [...LIVE] },
+        OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: new Date() } }],
+      },
+    });
     const endsAt = used?.currentPeriodEnd?.toISOString() ?? null;
     if (used && live?.id === used.id) return no('in_trial', endsAt);
     if (used) return no('already_used', endsAt);
@@ -324,66 +454,28 @@ export class AccountService {
     return { available: true, reason: null, ...base };
   }
 
-  private async startTrial(audience: Audience, account: Account, actorId: string, ctx: RequestContext) {
-    const offer = await this.trialOffer(audience, account);
-    if (!offer.available) {
-      throw new AppError(TRIAL_REFUSALS[offer.reason!] ?? 'No trial available', ErrorCodes.CONFLICT, 409, {
-        details: { reason: offer.reason },
-      });
-    }
-    const settings = await this.db.billingSettings.findUniqueOrThrow({ where: { audience } });
-    const now = new Date();
-    try {
-      await this.db.$transaction(async (tx) => {
-        await this.expireEnded(tx, account);
-        const sub = await tx.subscription.create({
-          data: {
-            planId: settings.trialPlanId!,
-            ...ownerOf(account),
-            provider: 'trial',
-            status: 'trialing',
-            currentPeriodStart: now,
-            currentPeriodEnd: new Date(now.getTime() + settings.trialDays * 86_400_000),
-          },
-        });
-        await audit(tx, actorId, 'billing.trial_started', 'subscription', sub.id, ctx, {
-          audience,
-          days: settings.trialDays,
-        });
-      });
-    } catch (err) {
-      // Two taps at once: the database lets exactly one trial through.
-      if (isUniqueViolation(err)) throw AppError.conflict('The free trial can only be used once');
-      throw err;
-    }
-  }
-
-  private async createGrant(tx: Transaction, input: GrantInput, adminId: string, ctx: RequestContext) {
-    const plan = await tx.plan.findUnique({ where: { code: input.planCode } });
+  private async createGrant(
+    tx: BusinessTx,
+    input: Omit<GrantInput, 'businessId' | 'userId'> & { businessId: bigint },
+    adminId: bigint,
+    ctx: RequestContext,
+  ) {
+    const plan = await this.plane.directory.plan.findUnique({ where: { code: input.planCode } });
     if (!plan) throw AppError.notFound('Plan');
-    if (plan.audience !== (input.userId ? 'user' : 'business')) {
-      throw AppError.badRequest(`"${plan.code}" is a ${plan.audience} plan`);
-    }
-    if (input.userId && !(await tx.user.findUnique({ where: { id: input.userId } }))) {
-      throw AppError.notFound('User', ErrorCodes.USER_NOT_FOUND);
-    }
-    if (
-      input.businessId &&
-      !(await tx.business.findFirst({ where: { id: input.businessId, deletedAt: null } }))
-    ) {
+    if (plan.audience !== 'business') throw AppError.badRequest(`"${plan.code}" is a ${plan.audience} plan`);
+    if (!(await tx.business.findFirst({ where: { id: input.businessId, deletedAt: null } }))) {
       throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
     }
     const until = input.until ? new Date(input.until) : null;
     if (until && until <= new Date()) throw AppError.badRequest('`until` must be in the future');
-    const account: Account = input.userId ? { userId: input.userId } : { businessId: input.businessId! };
 
-    await this.expireEnded(tx, account);
+    await expireEnded(tx, input.businessId);
     const current = await tx.subscription.findFirst({
-      where: { ...ownerOf(account), status: { in: [...LIVE] } },
+      where: { businessId: input.businessId, status: { in: [...LIVE] } },
     });
     if (current) {
       if (!input.replace) {
-        throw AppError.conflict('This account already has a live subscription; end it first or replace it');
+        throw AppError.conflict('This business already has a live subscription; end it first or replace it');
       }
       if (!OURS.includes(current.provider)) {
         throw AppError.conflict(`The current plan is billed by ${current.provider}; cancel it there first`);
@@ -396,8 +488,9 @@ export class AccountService {
     try {
       const sub = await tx.subscription.create({
         data: {
+          id: this.plane.id(),
+          businessId: input.businessId,
           planId: plan.id,
-          ...ownerOf(account),
           provider: 'manual',
           status: 'active',
           currentPeriodStart: new Date(),
@@ -406,57 +499,146 @@ export class AccountService {
           grantNote: input.note,
         },
       });
-      await audit(tx, adminId, 'billing.plan_granted', 'subscription', sub.id, ctx, {
-        plan: plan.code,
-        userId: input.userId ?? null,
-        businessId: input.businessId ?? null,
-        until: input.until ?? null,
-        note: input.note,
-        replaced: current?.id ?? null,
+      await recordShardAudit(tx, this.plane.id(), {
+        userId: adminId,
+        action: 'billing.plan_granted',
+        resourceType: 'subscription',
+        resourceId: sub.id,
+        newValues: {
+          plan: plan.code,
+          until: input.until ?? null,
+          note: input.note,
+          replaced: current?.id ?? null,
+        },
+        ...auditCtx(ctx),
       });
       return sub;
     } catch (err) {
-      if (isUniqueViolation(err) && constraintNameOf(err)?.startsWith('subscriptions_one_live')) {
-        throw AppError.conflict('This account already has a live subscription');
+      if (isUniqueViolation(err) && constraintNameOf(err) === 'subscriptions_one_live') {
+        throw AppError.conflict('This business already has a live subscription');
       }
       throw err;
     }
   }
 
-  private async request(id: string) {
-    return requestView(
-      await this.db.planRequest.findUniqueOrThrow({ where: { id }, include: { plan: true } }),
+  /** The business shard holding a plan request (admins name it by its ID alone). */
+  private async businessOfRequest(requestId: bigint): Promise<bigint> {
+    const found = (
+      await this.plane.acrossBusinesses((tx) =>
+        tx.planRequest.findFirst({ where: { id: requestId }, select: { businessId: true } }),
+      )
+    ).find(Boolean);
+    if (!found) throw AppError.notFound('Open plan request');
+    return found.businessId;
+  }
+
+  /** A subscription named by its ID alone, on whichever business shard holds it. */
+  private async findSubscription(subscriptionId: bigint) {
+    return (
+      (
+        await this.plane.acrossBusinesses((tx) =>
+          tx.subscription.findFirst({
+            where: { id: subscriptionId },
+            select: { businessId: true, provider: true },
+          }),
+        )
+      ).find(Boolean) ?? null
     );
   }
 
-  private load(id: string) {
-    return this.db.subscription.findUniqueOrThrow({ where: { id }, include: { plan: true } });
+  private async subscriptionView(subscriptionId: bigint) {
+    const found = await this.findSubscription(subscriptionId);
+    if (!found) throw AppError.notFound('Subscription');
+    const row = await this.plane.inBusiness(found.businessId, (tx) =>
+      tx.subscription.findUniqueOrThrow({
+        where: { id: subscriptionId },
+        include: { business: { select: { publicId: true } } },
+      }),
+    );
+    return subscriptionView(row, row.business.publicId, await this.planNames([row.planId]));
+  }
+
+  private async requestView(tx: BusinessTx, requestId: bigint) {
+    return (
+      await this.requestViews(tx, [await tx.planRequest.findUniqueOrThrow({ where: { id: requestId } })])
+    )[0]!;
+  }
+
+  private async requestViews(
+    tx: BusinessTx,
+    rows: {
+      id: bigint;
+      businessId: bigint;
+      planId: bigint;
+      message: string;
+      status: string;
+      decidedAt: Date | null;
+      decisionNote: string | null;
+      subscriptionId: bigint | null;
+      createdAt: Date;
+    }[],
+  ) {
+    const plans = await this.planNames(rows.map((r) => r.planId));
+    const businesses = await tx.business.findMany({
+      where: { id: { in: [...new Set(rows.map((r) => r.businessId))] } },
+      select: { id: true, publicId: true },
+    });
+    const publicIds = new Map(businesses.map((b) => [b.id, b.publicId]));
+    return rows.map((r) => ({
+      id: r.id.toString(),
+      businessId: publicIds.get(r.businessId)!,
+      plan: plans.get(r.planId) ?? { code: 'unknown', name: 'Unknown plan' },
+      message: r.message,
+      status: r.status,
+      decidedAt: r.decidedAt?.toISOString() ?? null,
+      decisionNote: r.decisionNote,
+      subscriptionId: r.subscriptionId?.toString() ?? null,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  /** Plans' codes and names, from the directory. */
+  private async planNames(ids: bigint[]): Promise<Map<bigint, { code: string; name: string }>> {
+    const plans = await this.plane.directory.plan.findMany({
+      where: { id: { in: [...new Set(ids)] } },
+      select: { id: true, code: true, name: true },
+    });
+    return new Map(plans.map((p) => [p.id, { code: p.code, name: p.name }]));
+  }
+
+  /**
+   * A customer's "visits", from their own shard: appointments that are live, done or missed, and
+   * queue visits and no-shows. Cancelled, declined and rescheduled-away ones don't count — they
+   * didn't get (or block) a service with them. Shown on the account only (D-101).
+   */
+  private async visitsOf(userId: bigint): Promise<number> {
+    const db = await this.plane.user(userId);
+    const appointments = await db.userAppointment.count({
+      where: { userId, status: { in: ['pending', 'confirmed', 'checked_in', 'completed', 'no_show'] } },
+    });
+    const tickets = await db.userVisitOutcome.count({ where: { userId, source: 'queue' } });
+    return appointments + tickets;
   }
 }
 
-export interface GrantInput {
-  planCode: string;
-  userId?: string | undefined;
-  businessId?: string | undefined;
-  until?: string | undefined;
-  note: string;
-  /** End the account's current grant or trial and put this plan in its place. */
-  replace?: boolean | undefined;
+/** Trials and grants whose end date passed become `expired` (all of one shard, or one business). */
+async function expireEnded(tx: BusinessTx, businessId?: bigint): Promise<number> {
+  const { count } = await tx.subscription.updateMany({
+    where: {
+      provider: { in: OURS },
+      status: { in: [...LIVE] },
+      currentPeriodEnd: { lte: new Date() },
+      ...(businessId !== undefined && { businessId }),
+    },
+    data: { status: 'expired' },
+  });
+  return count;
 }
 
-const ownerOf = (account: Account) =>
-  'userId' in account ? { userId: account.userId } : { businessId: account.businessId };
-
-function audit(
-  db: Database | Transaction,
-  userId: string,
-  action: string,
-  resourceType: string,
-  resourceId: string,
-  ctx: RequestContext,
-  newValues: Record<string, string | number | boolean | null>,
-) {
-  return recordAudit(db, { userId, action, resourceType, resourceId, newValues, ...auditCtx(ctx) });
+function refusal(reason: string) {
+  return new AppError(TRIAL_REFUSALS[reason] ?? 'No trial available', ErrorCodes.CONFLICT, 409, {
+    details: { reason },
+  });
 }
 
 function summary(e: Entitlements, used: Record<string, number>) {
@@ -476,50 +658,27 @@ function summary(e: Entitlements, used: Record<string, number>) {
   };
 }
 
-function requestView(r: {
-  id: string;
-  businessId: string;
-  plan: { code: string; name: string };
-  message: string;
-  status: string;
-  decidedAt: Date | null;
-  decisionNote: string | null;
-  subscriptionId: string | null;
-  createdAt: Date;
-}) {
+function subscriptionView(
+  s: {
+    id: bigint;
+    planId: bigint;
+    provider: string;
+    channel: string | null;
+    status: string;
+    currentPeriodStart: Date | null;
+    currentPeriodEnd: Date | null;
+    cancelAtPeriodEnd: boolean;
+    cancelledAt: Date | null;
+    grantNote: string | null;
+    createdAt: Date;
+  },
+  businessPublicId: string,
+  plans: Map<bigint, { code: string; name: string }>,
+) {
   return {
-    id: r.id,
-    businessId: r.businessId,
-    plan: { code: r.plan.code, name: r.plan.name },
-    message: r.message,
-    status: r.status,
-    decidedAt: r.decidedAt?.toISOString() ?? null,
-    decisionNote: r.decisionNote,
-    subscriptionId: r.subscriptionId,
-    createdAt: r.createdAt.toISOString(),
-  };
-}
-
-function subscriptionView(s: {
-  id: string;
-  plan: { code: string; name: string };
-  userId: string | null;
-  businessId: string | null;
-  provider: string;
-  channel: string | null;
-  status: string;
-  currentPeriodStart: Date | null;
-  currentPeriodEnd: Date | null;
-  cancelAtPeriodEnd: boolean;
-  cancelledAt: Date | null;
-  grantNote: string | null;
-  createdAt: Date;
-}) {
-  return {
-    id: s.id,
-    plan: { code: s.plan.code, name: s.plan.name },
-    userId: s.userId,
-    businessId: s.businessId,
+    id: s.id.toString(),
+    plan: plans.get(s.planId) ?? { code: 'unknown', name: 'Unknown plan' },
+    businessId: businessPublicId,
     provider: s.provider,
     channel: s.channel,
     status: s.status,

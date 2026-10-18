@@ -1,4 +1,3 @@
-import { AppError } from '@buku/common';
 import type { BusinessTx } from '@buku/database';
 
 /**
@@ -13,23 +12,5 @@ export async function exponentOf(tx: BusinessTx, currency: string): Promise<numb
   return row?.exponent ?? 2;
 }
 
-/** 800 (or 800.5) as entered → minor units; refuses more decimals than the currency has. */
-export function toMinor(amount: number, exponent: number): bigint {
-  const scaled = amount * 10 ** exponent;
-  const minor = Math.round(scaled);
-  if (Math.abs(scaled - minor) > 1e-6) {
-    throw AppError.badRequest(`Prices in this currency have at most ${exponent} decimals`, [
-      { path: 'price', message: `at most ${exponent} decimals` },
-    ]);
-  }
-  return BigInt(minor);
-}
-
-/** Minor units → "800.00" (as many decimals as the currency has). */
-export function formatMinor(minor: bigint, exponent: number): string {
-  const negative = minor < 0n;
-  const digits = (negative ? -minor : minor).toString().padStart(exponent + 1, '0');
-  const whole = exponent ? digits.slice(0, -exponent) : digits;
-  const fraction = exponent ? `.${digits.slice(-exponent)}` : '';
-  return `${negative ? '-' : ''}${whole}${fraction}`;
-}
+/** Entered amounts → minor units, and back (shared by every service, `@buku/common`). */
+export { formatMinor, toMinor } from '@buku/common';

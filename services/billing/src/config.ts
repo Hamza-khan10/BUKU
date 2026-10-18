@@ -1,4 +1,4 @@
-import { baseServiceEnv, databaseEnv, jwtVerifyEnv, redisEnv } from '@buku/common';
+import { baseServiceEnv, databaseEnv, databaseV2Env, jwtVerifyEnv, redisEnv } from '@buku/common';
 import { z } from 'zod';
 
 /**
@@ -9,7 +9,9 @@ import { z } from 'zod';
 export const Env = baseServiceEnv
   .extend({
     ...jwtVerifyEnv.shape,
+    // DATABASE_URL: billing-service's own role, and the default server of the directory (D3).
     ...databaseEnv.shape,
+    ...databaseV2Env.shape,
     ...redisEnv.shape,
 
     // Paddle (web payments). Leave the keys empty to run without online checkout.

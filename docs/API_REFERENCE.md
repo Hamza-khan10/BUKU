@@ -718,7 +718,7 @@ data: {"businessId":"…","status":"open","waiting":3,"line":["A-007","A-004","A
 | Method & path                                                                          | Auth | Who                | Purpose                                                                                |
 | -------------------------------------------------------------------------------------- | ---- | ------------------ | -------------------------------------------------------------------------------------- |
 | `GET /v1/billing/plans?audience=user\|business&channel=web\|android\|ios&currency=USD` | —    | anyone             | The pricing page (cached 5 min)                                                        |
-| `GET /v1/billing/me`                                                                   | ✔    | a customer         | My plan and how many bookings/queue joins I have left                                  |
+| `GET /v1/billing/me`                                                                   | ✔    | a customer         | My plan (free, D-101) and my visits                                                    |
 | `GET /v1/businesses/:id/billing`                                                       | ✔    | any team role      | The business's plan, features, and usage against each limit                            |
 | `GET`/`POST /v1/admin/billing/plans` · `PATCH …/plans/:code`                           | ✔    | super_admin        | Plans: name, tagline, benefits, limits, features, on the page or not                   |
 | `POST …/plans/:code/archive` · `/restore`                                              | ✔    | super_admin        | Stop / resume selling a plan (fallback plans are protected)                            |
@@ -729,10 +729,17 @@ data: {"businessId":"…","status":"open","waiting":3,"line":["A-007","A-004","A
 | `GET …/fees` · `PUT …/fees/:channel`                                                   | ✔    | super_admin        | What each channel keeps: `{ percent, fixedAmount }`                                    |
 | `POST …/economics` `{ taxPercent?, subscribers? }`                                     | ✔    | super_admin        | Profit per price and in total; break-even                                              |
 | `GET …/subscriptions` · `POST …/grants` · `POST …/subscriptions/:id/end`               | ✔    | super_admin        | List · give any plan free (`replace: true` swaps a grant/trial) · end a grant or trial |
-| `POST /v1/billing/me/trial`                                                            | ✔    | a customer         | Start my free trial (once)                                                             |
+| `POST /v1/billing/me/trial`                                                            | ✔    | a customer         | Refused (`409`): customers are free (D-101)                                            |
 | `POST /v1/businesses/:id/billing/trial`                                                | ✔    | owner              | Start the business's free trial (once)                                                 |
 | `GET`/`POST /v1/businesses/:id/billing/plan-requests` · `POST …/:requestId/withdraw`   | ✔    | owner (list: team) | Ask for a plan, e.g. Enterprise free of charge                                         |
 | `GET /v1/admin/billing/plan-requests?status=` · `POST …/:id/approve` · `/decline`      | ✔    | super_admin        | Approve (→ grant, optional `until`, other `planCode`) or decline (`note`)              |
+
+**IDs (DATABASE.md DB-042):** a business is `:id` and `businessId` = its **public ID** (12
+characters); prices, costs, subscriptions and plan requests go by decimal IDs (`subscribers` in
+`economics` is keyed by price ID). Customers use BUKU for free (D-101): `GET /v1/billing/me` shows
+their visits but no limit, their trial and checkout are refused (`409`), they have no subscription
+to cancel or change (`404`), and a grant to a person (`userId`) is refused (`409`). Paddle's
+`custom_data` names the business by its public ID.
 
 ### The pricing page
 

@@ -1,5 +1,5 @@
 import { AppError, ErrorCodes, logger } from '@buku/common';
-import type { BusinessTx, Database, Transaction } from '@buku/database';
+import type { BusinessTx, Database, DirectoryClient, Transaction } from '@buku/database';
 import {
   FEATURE_KEYS,
   featureKeysOf,
@@ -257,6 +257,31 @@ export async function businessEntitlementsOnShard(
   }
   const plan = await planOf(settings.defaultPlanId);
   return plan ? fromPlan(audience, plan, 'default', true, null) : unlimited(audience);
+}
+
+/**
+ * A customer's entitlements on database v2: customers are free (D-101), so there are no customer
+ * subscriptions. Everyone gets the plan the directory's settings give customers — the "billing
+ * off" plan, since charging customers can't be switched on any more.
+ */
+export async function customerEntitlements(directory: DirectoryClient): Promise<Entitlements> {
+  const audience: Audience = 'user';
+  const settings = await directory.billingSettings.findUnique({
+    where: { audience },
+    include: { defaultPlan: true, planWhenDisabled: true },
+  });
+  if (!settings) {
+    logger.warn({ audience }, 'billing settings missing: treating everyone as unlimited');
+    return unlimited(audience);
+  }
+  const plan = settings.enabled ? settings.defaultPlan : settings.planWhenDisabled;
+  return fromPlan(
+    audience,
+    { ...plan, id: plan.id.toString() },
+    settings.enabled ? 'default' : 'billing_off',
+    settings.enabled,
+    null,
+  );
 }
 
 /**

@@ -7,9 +7,10 @@ import {
   readPlanValues,
   type Audience,
 } from '@buku/billing';
-import { AppError, ErrorCodes } from '@buku/common';
-import { isUniqueViolation, Prisma, recordAudit, type Database, type Transaction } from '@buku/database';
-import { auditCtx, type RequestContext } from './http/context.js';
+import { AppError, ErrorCodes, minorToNumber, toMinor } from '@buku/common';
+import { isUniqueViolation, type DataPlane, type Directory, type DirectoryClient } from '@buku/database';
+import type { RequestContext } from './http/context.js';
+import { auditByPerson, exponents, LIVE, money } from './shared.js';
 
 /**
  * The catalog (D-065): plans, prices, the on/off switch per audience, running
@@ -20,6 +21,11 @@ import { auditCtx, type RequestContext } from './http/context.js';
  *    archived) so existing subscribers keep the price they agreed to.
  *  • Plans are archived, never deleted: hidden and not for sale, while current
  *    subscribers keep them. A plan an audience falls back to can't be archived.
+ *
+ * Database v2 (D3g): the catalog is reference data on the directory, edited only by
+ * billing-service and copied to every business shard by replication (DB-015), where plan limits
+ * are read. Amounts are in minor units of their currency (DB-009). Subscriber counts come from
+ * every business shard; the audit entry from the admin's own shard.
  */
 
 type Channel = 'web' | 'android' | 'ios';
@@ -47,11 +53,13 @@ export interface PriceInput {
   externalPriceId?: string | undefined;
 }
 
-const LIVE_STATUSES = ['active', 'trialing', 'past_due', 'paused'] as const;
+/** Running costs and channel fees are kept in US dollars. */
+const USD = 'USD';
 const planInclude = {
   prices: { orderBy: [{ archivedAt: 'asc' as const }, { createdAt: 'desc' as const }] },
-} satisfies Prisma.PlanInclude;
-type PlanRow = Prisma.PlanGetPayload<{ include: typeof planInclude }>;
+} satisfies Directory.Prisma.PlanInclude;
+type PlanRow = Directory.Prisma.PlanGetPayload<{ include: typeof planInclude }>;
+type PriceRow = PlanRow['prices'][number];
 
 /** A plan's values as advertised: only features BUKU offers today (registry `launched`). */
 function advertised(audience: Audience, values: ReturnType<typeof readPlanValues>) {
@@ -63,7 +71,11 @@ function advertised(audience: Audience, values: ReturnType<typeof readPlanValues
 }
 
 export class CatalogService {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly plane: DataPlane) {}
+
+  private get dir(): DirectoryClient {
+    return this.plane.directory;
+  }
 
   // ── Public: the pricing page ─────────────────────────────────────────────
 
@@ -73,17 +85,16 @@ export class CatalogService {
    * pricing page needs to show what each plan gives.
    */
   async pricing(audience: Audience, channel: Channel, currency: string) {
-    const [settings, plans] = await Promise.all([
-      this.db.billingSettings.findUnique({
-        where: { audience },
-        include: { defaultPlan: true, trialPlan: true },
-      }),
-      this.db.plan.findMany({
-        where: { audience, isPublic: true, archivedAt: null },
-        orderBy: { sortOrder: 'asc' },
-        include: { prices: { where: { archivedAt: null, channel, currency } } },
-      }),
-    ]);
+    const settings = await this.dir.billingSettings.findUnique({
+      where: { audience },
+      include: { defaultPlan: true, trialPlan: true },
+    });
+    const plans = await this.dir.plan.findMany({
+      where: { audience, isPublic: true, archivedAt: null },
+      orderBy: { sortOrder: 'asc' },
+      include: { prices: { where: { archivedAt: null, channel, currency } } },
+    });
+    const exp = await exponents(this.dir);
     return {
       audience,
       channel,
@@ -110,8 +121,8 @@ export class CatalogService {
           benefits: p.benefits as string[],
           ...advertised(audience, readPlanValues(audience, p.limits, p.features)),
           prices: p.prices.map((x) => ({
-            id: x.id,
-            amount: x.amount.toFixed(2),
+            id: x.id.toString(),
+            amount: money(x.amountMinor, x.currency, exp),
             currency: x.currency,
             interval: x.interval,
             taxInclusive: x.taxInclusive,
@@ -125,18 +136,15 @@ export class CatalogService {
   // ── Admin: plans ─────────────────────────────────────────────────────────
 
   async listPlans() {
-    const [plans, settings, counts] = await Promise.all([
-      this.db.plan.findMany({ orderBy: [{ audience: 'asc' }, { sortOrder: 'asc' }], include: planInclude }),
-      this.db.billingSettings.findMany(),
-      this.db.subscription.groupBy({
-        by: ['planId'],
-        where: { status: { in: [...LIVE_STATUSES] } },
-        _count: { _all: true },
-      }),
-    ]);
-    const subscribers = new Map(counts.map((c) => [c.planId, c._count._all]));
+    const plans = await this.dir.plan.findMany({
+      orderBy: [{ audience: 'asc' }, { sortOrder: 'asc' }],
+      include: planInclude,
+    });
+    const settings = await this.dir.billingSettings.findMany();
+    const subscribers = await this.liveCounts('planId');
+    const exp = await exponents(this.dir);
     return plans.map((p) => ({
-      ...this.planView(p),
+      ...planView(p, exp),
       subscribers: subscribers.get(p.id) ?? 0,
       usedAs: settings
         .flatMap((s) => [
@@ -148,28 +156,26 @@ export class CatalogService {
     }));
   }
 
-  async createPlan(input: PlanInput, adminId: string, ctx: RequestContext) {
+  async createPlan(input: PlanInput, adminId: bigint, ctx: RequestContext) {
     this.validateValues(input.audience, input.limits, input.features);
     try {
-      const plan = await this.db.$transaction(async (tx) => {
-        const plan = await tx.plan.create({
-          data: {
-            code: input.code,
-            audience: input.audience,
-            name: input.name,
-            tagline: input.tagline ?? null,
-            benefits: input.benefits ?? [],
-            limits: (input.limits ?? {}) as Prisma.InputJsonObject,
-            features: (input.features ?? {}) as Prisma.InputJsonObject,
-            isPublic: input.isPublic ?? true,
-            sortOrder: input.sortOrder ?? 0,
-          },
-          include: planInclude,
-        });
-        await this.audit(tx, adminId, 'billing.plan_created', 'plan', plan.id, ctx, { code: plan.code });
-        return plan;
+      const plan = await this.dir.plan.create({
+        data: {
+          id: this.plane.id(),
+          code: input.code,
+          audience: input.audience,
+          name: input.name,
+          tagline: input.tagline ?? null,
+          benefits: input.benefits ?? [],
+          limits: input.limits ?? {},
+          features: input.features ?? {},
+          isPublic: input.isPublic ?? true,
+          sortOrder: input.sortOrder ?? 0,
+        },
+        include: planInclude,
       });
-      return this.planView(plan);
+      await this.audit(adminId, 'billing.plan_created', 'plan', plan.id, ctx, { code: plan.code });
+      return planView(plan, await exponents(this.dir));
     } catch (err) {
       if (isUniqueViolation(err)) throw AppError.conflict(`A plan with code "${input.code}" already exists`);
       throw err;
@@ -180,43 +186,40 @@ export class CatalogService {
   async updatePlan(
     code: string,
     changes: Partial<Omit<PlanInput, 'code' | 'audience'>>,
-    adminId: string,
+    adminId: bigint,
     ctx: RequestContext,
   ) {
     const plan = await this.findPlan(code);
-    this.validateValues(plan.audience, changes.limits, changes.features);
-    const updated = await this.db.$transaction(async (tx) => {
-      const updated = await tx.plan.update({
-        where: { id: plan.id },
-        data: {
-          ...(changes.name !== undefined && { name: changes.name }),
-          ...(changes.tagline !== undefined && { tagline: changes.tagline }),
-          ...(changes.benefits !== undefined && { benefits: changes.benefits }),
-          ...(changes.isPublic !== undefined && { isPublic: changes.isPublic }),
-          ...(changes.sortOrder !== undefined && { sortOrder: changes.sortOrder }),
-          ...(changes.limits && {
-            limits: { ...(plan.limits as object), ...changes.limits } as Prisma.InputJsonObject,
-          }),
-          ...(changes.features && {
-            features: { ...(plan.features as object), ...changes.features } as Prisma.InputJsonObject,
-          }),
-        },
-        include: planInclude,
-      });
-      await this.audit(tx, adminId, 'billing.plan_updated', 'plan', plan.id, ctx, {
-        code,
-        old: { limits: plan.limits, features: plan.features, name: plan.name, isPublic: plan.isPublic },
-        changes,
-      });
-      return updated;
+    this.validateValues(plan.audience as Audience, changes.limits, changes.features);
+    const updated = await this.dir.plan.update({
+      where: { id: plan.id },
+      data: {
+        ...(changes.name !== undefined && { name: changes.name }),
+        ...(changes.tagline !== undefined && { tagline: changes.tagline }),
+        ...(changes.benefits !== undefined && { benefits: changes.benefits }),
+        ...(changes.isPublic !== undefined && { isPublic: changes.isPublic }),
+        ...(changes.sortOrder !== undefined && { sortOrder: changes.sortOrder }),
+        ...(changes.limits && {
+          limits: { ...(plan.limits as object), ...changes.limits },
+        }),
+        ...(changes.features && {
+          features: { ...(plan.features as object), ...changes.features },
+        }),
+      },
+      include: planInclude,
     });
-    return this.planView(updated);
+    await this.audit(adminId, 'billing.plan_updated', 'plan', plan.id, ctx, {
+      code,
+      old: { limits: plan.limits, features: plan.features, name: plan.name, isPublic: plan.isPublic },
+      changes,
+    });
+    return planView(updated, await exponents(this.dir));
   }
 
   /** Stop selling a plan. Subscribers keep it until moved; the audience's fallback plans can't be archived. */
-  async archivePlan(code: string, adminId: string, ctx: RequestContext) {
+  async archivePlan(code: string, adminId: bigint, ctx: RequestContext) {
     const plan = await this.findPlan(code);
-    const usedBy = await this.db.billingSettings.findFirst({
+    const usedBy = await this.dir.billingSettings.findFirst({
       where: { OR: [{ defaultPlanId: plan.id }, { planWhenDisabledId: plan.id }, { trialPlanId: plan.id }] },
     });
     if (usedBy) {
@@ -225,30 +228,24 @@ export class CatalogService {
         `"${code}" is the ${usedBy.audience}s’ ${role} plan; choose another one in the billing settings first`,
       );
     }
-    const updated = await this.db.$transaction(async (tx) => {
-      const updated = await tx.plan.update({
-        where: { id: plan.id },
-        data: { archivedAt: plan.archivedAt ?? new Date() },
-        include: planInclude,
-      });
-      await this.audit(tx, adminId, 'billing.plan_archived', 'plan', plan.id, ctx, { code });
-      return updated;
+    const updated = await this.dir.plan.update({
+      where: { id: plan.id },
+      data: { archivedAt: plan.archivedAt ?? new Date() },
+      include: planInclude,
     });
-    return this.planView(updated);
+    await this.audit(adminId, 'billing.plan_archived', 'plan', plan.id, ctx, { code });
+    return planView(updated, await exponents(this.dir));
   }
 
-  async restorePlan(code: string, adminId: string, ctx: RequestContext) {
+  async restorePlan(code: string, adminId: bigint, ctx: RequestContext) {
     const plan = await this.findPlan(code);
-    const updated = await this.db.$transaction(async (tx) => {
-      const updated = await tx.plan.update({
-        where: { id: plan.id },
-        data: { archivedAt: null },
-        include: planInclude,
-      });
-      await this.audit(tx, adminId, 'billing.plan_restored', 'plan', plan.id, ctx, { code });
-      return updated;
+    const updated = await this.dir.plan.update({
+      where: { id: plan.id },
+      data: { archivedAt: null },
+      include: planInclude,
     });
-    return this.planView(updated);
+    await this.audit(adminId, 'billing.plan_restored', 'plan', plan.id, ctx, { code });
+    return planView(updated, await exponents(this.dir));
   }
 
   // ── Admin: prices ────────────────────────────────────────────────────────
@@ -258,11 +255,15 @@ export class CatalogService {
    * currency and interval) is archived in the same transaction: new
    * subscribers pay the new price, existing ones keep theirs until moved.
    */
-  async setPrice(code: string, input: PriceInput, adminId: string, ctx: RequestContext) {
+  async setPrice(code: string, input: PriceInput, adminId: bigint, ctx: RequestContext) {
     const plan = await this.findPlan(code);
     if (plan.archivedAt) throw AppError.conflict('Restore the plan before giving it a price');
+    const exp = await exponents(this.dir);
+    const currency = await this.dir.currency.findUnique({ where: { code: input.currency } });
+    if (!currency?.active) throw AppError.badRequest(`Unknown currency "${input.currency}"`);
+    const amountMinor = toMinor(input.amount, currency.exponent, 'amount');
     try {
-      const result = await this.db.$transaction(async (tx) => {
+      const { price, previous } = await this.dir.$transaction(async (tx) => {
         const previous = await tx.planPrice.findFirst({
           where: {
             planId: plan.id,
@@ -276,10 +277,11 @@ export class CatalogService {
           await tx.planPrice.update({ where: { id: previous.id }, data: { archivedAt: new Date() } });
         const price = await tx.planPrice.create({
           data: {
+            id: this.plane.id(),
             planId: plan.id,
             channel: input.channel,
             currency: input.currency,
-            amount: input.amount,
+            amountMinor,
             interval: input.interval,
             taxInclusive: input.taxInclusive ?? false,
             trialDays: input.trialDays ?? 0,
@@ -287,26 +289,24 @@ export class CatalogService {
             createdById: adminId,
           },
         });
-        const keepingOld = previous
-          ? await tx.subscription.count({
-              where: { priceId: previous.id, status: { in: [...LIVE_STATUSES] } },
-            })
-          : 0;
-        await this.audit(tx, adminId, 'billing.price_set', 'plan_price', price.id, ctx, {
-          plan: code,
-          channel: input.channel,
-          currency: input.currency,
-          interval: input.interval,
-          amount: input.amount.toFixed(2),
-          previous: previous ? { id: previous.id, amount: previous.amount.toFixed(2) } : null,
-        });
-        return { price, previous, keepingOld };
+        return { price, previous };
+      });
+      const keepingOld = previous ? ((await this.liveCounts('priceId')).get(previous.id) ?? 0) : 0;
+      await this.audit(adminId, 'billing.price_set', 'plan_price', price.id, ctx, {
+        plan: code,
+        channel: input.channel,
+        currency: input.currency,
+        interval: input.interval,
+        amount: money(price.amountMinor, price.currency, exp),
+        previous: previous
+          ? { id: previous.id.toString(), amount: money(previous.amountMinor, previous.currency, exp) }
+          : null,
       });
       return {
-        price: priceView(result.price),
-        replaced: result.previous ? priceView({ ...result.previous, archivedAt: new Date() }) : null,
+        price: priceView(price, exp),
+        replaced: previous ? priceView({ ...previous, archivedAt: new Date() }, exp) : null,
         /** Subscribers still on the replaced price (they keep it until moved, D-065). */
-        subscribersOnPreviousPrice: result.keepingOld,
+        subscribersOnPreviousPrice: keepingOld,
       };
     } catch (err) {
       if (isUniqueViolation(err))
@@ -316,37 +316,29 @@ export class CatalogService {
   }
 
   /** Stop selling on one channel (e.g. remove the iPhone price). Subscribers keep paying it. */
-  async archivePrice(priceId: string, adminId: string, ctx: RequestContext) {
-    const price = await this.db.planPrice.findUnique({ where: { id: priceId } });
+  async archivePrice(priceId: bigint, adminId: bigint, ctx: RequestContext) {
+    const price = await this.dir.planPrice.findUnique({ where: { id: priceId } });
     if (!price) throw AppError.notFound('Price');
-    const updated = await this.db.$transaction(async (tx) => {
-      const updated = await tx.planPrice.update({
-        where: { id: priceId },
-        data: { archivedAt: price.archivedAt ?? new Date() },
-      });
-      await this.audit(tx, adminId, 'billing.price_archived', 'plan_price', priceId, ctx, {});
-      return updated;
+    const updated = await this.dir.planPrice.update({
+      where: { id: priceId },
+      data: { archivedAt: price.archivedAt ?? new Date() },
     });
-    return priceView(updated);
+    await this.audit(adminId, 'billing.price_archived', 'plan_price', priceId, ctx, {});
+    return priceView(updated, await exponents(this.dir));
   }
 
   /** Link a price to the store's product/price id once it's set up there. */
   async setExternalPriceId(
-    priceId: string,
+    priceId: bigint,
     externalPriceId: string | null,
-    adminId: string,
+    adminId: bigint,
     ctx: RequestContext,
   ) {
-    if (!(await this.db.planPrice.findUnique({ where: { id: priceId } }))) throw AppError.notFound('Price');
+    if (!(await this.dir.planPrice.findUnique({ where: { id: priceId } }))) throw AppError.notFound('Price');
     try {
-      const updated = await this.db.$transaction(async (tx) => {
-        const updated = await tx.planPrice.update({ where: { id: priceId }, data: { externalPriceId } });
-        await this.audit(tx, adminId, 'billing.price_linked', 'plan_price', priceId, ctx, {
-          externalPriceId,
-        });
-        return updated;
-      });
-      return priceView(updated);
+      const updated = await this.dir.planPrice.update({ where: { id: priceId }, data: { externalPriceId } });
+      await this.audit(adminId, 'billing.price_linked', 'plan_price', priceId, ctx, { externalPriceId });
+      return priceView(updated, await exponents(this.dir));
     } catch (err) {
       if (isUniqueViolation(err))
         throw AppError.conflict('That store price id is already used by another price');
@@ -357,9 +349,7 @@ export class CatalogService {
   // ── Admin: the switch per audience ───────────────────────────────────────
 
   async getSettings() {
-    const rows = await this.db.billingSettings.findMany({
-      include: settingsInclude,
-    });
+    const rows = await this.dir.billingSettings.findMany({ include: settingsInclude });
     return rows.map(settingsView);
   }
 
@@ -369,6 +359,7 @@ export class CatalogService {
    * null plan removes trials). Off → everyone gets `planWhenDisabled` at once;
    * nothing else changes (subscriptions stay recorded and apply again when
    * back on). Switching trials off stops NEW trials; running ones finish.
+   * Business shards follow within moments, by replication.
    */
   async updateSettings(
     audience: Audience,
@@ -380,7 +371,7 @@ export class CatalogService {
       trialDays?: number | undefined;
       trialPlanCode?: string | null | undefined;
     },
-    adminId: string,
+    adminId: bigint,
     ctx: RequestContext,
   ) {
     // Customers use BUKU for free (D-101): nothing about them is limited any more, so a plan
@@ -388,7 +379,7 @@ export class CatalogService {
     if (audience === 'user' && (changes.enabled === true || changes.trialEnabled === true)) {
       throw AppError.conflict('Customers use BUKU for free; charging them can’t be switched on');
     }
-    const current = await this.db.billingSettings.findUnique({ where: { audience } });
+    const current = await this.dir.billingSettings.findUnique({ where: { audience } });
     if (!current) throw AppError.notFound('Billing settings');
     const planFor = async (code: string) => {
       const plan = await this.findPlan(code);
@@ -409,17 +400,14 @@ export class CatalogService {
       }),
       updatedById: adminId,
     };
-    const updated = await this.db.$transaction(async (tx) => {
-      const updated = await tx.billingSettings.update({
-        where: { audience },
-        data,
-        include: settingsInclude,
-      });
-      await this.audit(tx, adminId, 'billing.settings_updated', 'billing_settings', null, ctx, {
-        audience,
-        ...changes,
-      });
-      return updated;
+    const updated = await this.dir.billingSettings.update({
+      where: { audience },
+      data,
+      include: settingsInclude,
+    });
+    await this.audit(adminId, 'billing.settings_updated', 'billing_settings', null, ctx, {
+      audience,
+      ...changes,
     });
     return settingsView(updated);
   }
@@ -427,144 +415,144 @@ export class CatalogService {
   // ── Admin: costs, fees and the profit calculator ─────────────────────────
 
   async listCosts() {
-    const rows = await this.db.billingCostItem.findMany({
+    const rows = await this.dir.billingCostItem.findMany({
       where: { archivedAt: null },
       orderBy: { createdAt: 'asc' },
     });
+    const exp = await exponents(this.dir);
     return {
-      items: rows.map(costView),
-      monthlyTotal: rows.reduce((sum, r) => sum.plus(r.monthlyAmount), new Prisma.Decimal(0)).toFixed(2),
-      currency: 'USD',
+      items: rows.map((r) => costView(r, exp)),
+      monthlyTotal: money(
+        rows.reduce((sum, r) => sum + r.monthlyMinor, 0n),
+        USD,
+        exp,
+      ),
+      currency: USD,
     };
   }
 
   async addCost(
     input: { name: string; category: string; monthlyAmount: number; notes?: string | undefined },
-    adminId: string,
+    adminId: bigint,
     ctx: RequestContext,
   ) {
-    const row = await this.db.$transaction(async (tx) => {
-      const row = await tx.billingCostItem.create({ data: { ...input, notes: input.notes ?? null } });
-      await this.audit(tx, adminId, 'billing.cost_added', 'billing_cost_item', row.id, ctx, {
+    const exp = await exponents(this.dir);
+    const row = await this.dir.billingCostItem.create({
+      data: {
+        id: this.plane.id(),
         name: input.name,
-        monthlyAmount: input.monthlyAmount,
-      });
-      return row;
+        category: input.category,
+        monthlyMinor: toMinor(input.monthlyAmount, exp(USD), 'monthlyAmount'),
+        notes: input.notes ?? null,
+      },
     });
-    return costView(row);
+    await this.audit(adminId, 'billing.cost_added', 'billing_cost_item', row.id, ctx, {
+      name: input.name,
+      monthlyAmount: input.monthlyAmount,
+    });
+    return costView(row, exp);
   }
 
   async updateCost(
-    id: string,
+    id: bigint,
     changes: {
       name?: string | undefined;
       category?: string | undefined;
       monthlyAmount?: number | undefined;
       notes?: string | null | undefined;
     },
-    adminId: string,
+    adminId: bigint,
     ctx: RequestContext,
   ) {
-    const existing = await this.db.billingCostItem.findFirst({ where: { id, archivedAt: null } });
+    const existing = await this.dir.billingCostItem.findFirst({ where: { id, archivedAt: null } });
     if (!existing) throw AppError.notFound('Cost item');
-    const data = Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined));
-    const row = await this.db.$transaction(async (tx) => {
-      const row = await tx.billingCostItem.update({ where: { id }, data });
-      await this.audit(tx, adminId, 'billing.cost_updated', 'billing_cost_item', id, ctx, {
-        old: { monthlyAmount: existing.monthlyAmount.toFixed(2) },
-        changes,
-      });
-      return row;
+    const exp = await exponents(this.dir);
+    const { monthlyAmount, ...rest } = changes;
+    const data = {
+      ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)),
+      ...(monthlyAmount !== undefined && { monthlyMinor: toMinor(monthlyAmount, exp(USD), 'monthlyAmount') }),
+    };
+    const row = await this.dir.billingCostItem.update({ where: { id }, data });
+    await this.audit(adminId, 'billing.cost_updated', 'billing_cost_item', id, ctx, {
+      old: { monthlyAmount: money(existing.monthlyMinor, USD, exp) },
+      changes,
     });
-    return costView(row);
+    return costView(row, exp);
   }
 
-  async removeCost(id: string, adminId: string, ctx: RequestContext) {
-    const { count } = await this.db.billingCostItem.updateMany({
+  async removeCost(id: bigint, adminId: bigint, ctx: RequestContext) {
+    const { count } = await this.dir.billingCostItem.updateMany({
       where: { id, archivedAt: null },
       data: { archivedAt: new Date() },
     });
     if (count === 0) throw AppError.notFound('Cost item');
-    await this.audit(this.db, adminId, 'billing.cost_removed', 'billing_cost_item', id, ctx, {});
+    await this.audit(adminId, 'billing.cost_removed', 'billing_cost_item', id, ctx, {});
   }
 
   async listFees() {
-    const rows = await this.db.billingChannelFee.findMany({ orderBy: { channel: 'asc' } });
-    return rows.map(feeView);
+    const rows = await this.dir.billingChannelFee.findMany({ orderBy: { channel: 'asc' } });
+    const exp = await exponents(this.dir);
+    return rows.map((r) => feeView(r, exp));
   }
 
   async setFee(
     channel: Channel,
     input: { percent: number; fixedAmount: number; notes?: string | undefined },
-    adminId: string,
+    adminId: bigint,
     ctx: RequestContext,
   ) {
-    const row = await this.db.$transaction(async (tx) => {
-      const row = await tx.billingChannelFee.upsert({
-        where: { channel },
-        create: {
-          channel,
-          percent: input.percent,
-          fixedAmount: input.fixedAmount,
-          notes: input.notes ?? null,
-        },
-        update: {
-          percent: input.percent,
-          fixedAmount: input.fixedAmount,
-          ...(input.notes !== undefined && { notes: input.notes }),
-        },
-      });
-      await this.audit(tx, adminId, 'billing.fee_set', 'billing_channel_fee', null, ctx, {
-        channel,
-        ...input,
-      });
-      return row;
+    const exp = await exponents(this.dir);
+    const fixedMinor = toMinor(input.fixedAmount, exp(USD), 'fixedAmount');
+    const row = await this.dir.billingChannelFee.upsert({
+      where: { channel },
+      create: { channel, percent: input.percent, fixedMinor, notes: input.notes ?? null },
+      update: {
+        percent: input.percent,
+        fixedMinor,
+        ...(input.notes !== undefined && { notes: input.notes }),
+      },
     });
-    return feeView(row);
+    await this.audit(adminId, 'billing.fee_set', 'billing_channel_fee', null, ctx, { channel, ...input });
+    return feeView(row, exp);
   }
 
   /**
    * Profit per price and in total. Subscriber counts default to the real
-   * live subscriptions; pass `subscribers` (by price id) to ask "what if".
+   * live subscriptions (on every business shard); pass `subscribers` (by price
+   * id) to ask "what if".
    */
   async economics(input: {
     taxPercent?: number | undefined;
     subscribers?: Record<string, number> | undefined;
   }) {
-    const [prices, fees, costs, counts] = await Promise.all([
-      this.db.planPrice.findMany({
-        where: { archivedAt: null },
-        include: { plan: true },
-        orderBy: [{ plan: { audience: 'asc' } }, { plan: { sortOrder: 'asc' } }],
-      }),
-      this.db.billingChannelFee.findMany(),
-      this.db.billingCostItem.findMany({ where: { archivedAt: null } }),
-      this.db.subscription.groupBy({
-        by: ['priceId'],
-        where: { status: { in: ['active', 'trialing', 'past_due'] }, priceId: { not: null } },
-        _count: { _all: true },
-      }),
-    ]);
-    const actual = new Map(counts.map((c) => [c.priceId, c._count._all]));
+    const prices = await this.dir.planPrice.findMany({
+      where: { archivedAt: null },
+      include: { plan: true },
+      orderBy: [{ plan: { audience: 'asc' } }, { plan: { sortOrder: 'asc' } }],
+    });
+    const fees = await this.dir.billingChannelFee.findMany();
+    const costs = await this.dir.billingCostItem.findMany({ where: { archivedAt: null } });
+    const actual = await this.liveCounts('priceId', ['active', 'trialing', 'past_due']);
+    const exp = await exponents(this.dir);
     return computeEconomics({
       taxPercent: input.taxPercent ?? 0,
-      monthlyCosts: costs.reduce((sum, c) => sum + c.monthlyAmount.toNumber(), 0),
+      monthlyCosts: costs.reduce((sum, c) => sum + minorToNumber(c.monthlyMinor, exp(c.currency)), 0),
       fees: Object.fromEntries(
         fees.map((f) => [
           f.channel,
-          { percent: f.percent.toNumber(), fixedAmount: f.fixedAmount.toNumber() },
+          { percent: f.percent.toNumber(), fixedAmount: minorToNumber(f.fixedMinor, exp(f.currency)) },
         ]),
       ),
       prices: prices.map((p) => ({
-        priceId: p.id,
+        priceId: p.id.toString(),
         planCode: p.plan.code,
         planName: p.plan.name,
         channel: p.channel,
         currency: p.currency,
-        amount: p.amount.toNumber(),
-        interval: p.interval,
+        amount: minorToNumber(p.amountMinor, exp(p.currency)),
+        interval: p.interval as Interval,
         taxInclusive: p.taxInclusive,
-        subscribers: input.subscribers?.[p.id] ?? actual.get(p.id) ?? 0,
+        subscribers: input.subscribers?.[p.id.toString()] ?? actual.get(p.id) ?? 0,
       })),
     });
   }
@@ -572,9 +560,29 @@ export class CatalogService {
   // ── internals ────────────────────────────────────────────────────────────
 
   private async findPlan(code: string) {
-    const plan = await this.db.plan.findUnique({ where: { code } });
+    const plan = await this.dir.plan.findUnique({ where: { code } });
     if (!plan) throw AppError.notFound('Plan');
     return plan;
+  }
+
+  /** Live subscriptions per plan or price, counted on every business shard. */
+  private async liveCounts(
+    by: 'planId' | 'priceId',
+    statuses: readonly string[] = LIVE,
+  ): Promise<Map<bigint, number>> {
+    const counts = new Map<bigint, number>();
+    await this.plane.acrossBusinesses(async (tx) => {
+      const rows = await tx.subscription.groupBy({
+        by: [by],
+        where: { status: { in: [...statuses] } },
+        _count: { _all: true },
+      });
+      for (const r of rows) {
+        const key = r[by];
+        if (key !== null) counts.set(key, (counts.get(key) ?? 0) + r._count._all);
+      }
+    });
+    return counts;
   }
 
   /** Only keys the system knows, with sensible values (so a typo can't silently do nothing). */
@@ -597,59 +605,40 @@ export class CatalogService {
     }
   }
 
-  private planView(p: PlanRow) {
-    return {
-      id: p.id,
-      code: p.code,
-      audience: p.audience,
-      name: p.name,
-      tagline: p.tagline,
-      benefits: p.benefits,
-      ...readPlanValues(p.audience, p.limits, p.features),
-      isPublic: p.isPublic,
-      sortOrder: p.sortOrder,
-      archivedAt: p.archivedAt?.toISOString() ?? null,
-      prices: p.prices.map(priceView),
-    };
-  }
-
   private audit(
-    db: Database | Transaction,
-    userId: string,
+    adminId: bigint,
     action: string,
     resourceType: string,
-    resourceId: string | null,
+    resourceId: bigint | null,
     ctx: RequestContext,
     newValues: Record<string, unknown>,
   ) {
-    return recordAudit(db, {
-      userId,
-      action,
-      resourceType,
-      resourceId,
-      newValues: JSON.parse(JSON.stringify(newValues)) as Prisma.InputJsonValue,
-      ...auditCtx(ctx),
-    });
+    return auditByPerson(this.plane, adminId, ctx, { action, resourceType, resourceId, newValues });
   }
 }
 
-function priceView(p: {
-  id: string;
-  channel: string;
-  currency: string;
-  amount: Prisma.Decimal;
-  interval: string;
-  taxInclusive: boolean;
-  trialDays: number;
-  externalPriceId: string | null;
-  archivedAt: Date | null;
-  createdAt: Date;
-}) {
+function planView(p: PlanRow, exp: (currency: string) => number) {
   return {
-    id: p.id,
+    id: p.id.toString(),
+    code: p.code,
+    audience: p.audience,
+    name: p.name,
+    tagline: p.tagline,
+    benefits: p.benefits,
+    ...readPlanValues(p.audience as Audience, p.limits, p.features),
+    isPublic: p.isPublic,
+    sortOrder: p.sortOrder,
+    archivedAt: p.archivedAt?.toISOString() ?? null,
+    prices: p.prices.map((x) => priceView(x, exp)),
+  };
+}
+
+function priceView(p: PriceRow, exp: (currency: string) => number) {
+  return {
+    id: p.id.toString(),
     channel: p.channel,
     currency: p.currency,
-    amount: p.amount.toFixed(2),
+    amount: money(p.amountMinor, p.currency, exp),
     interval: p.interval,
     taxInclusive: p.taxInclusive,
     trialDays: p.trialDays,
@@ -686,37 +675,43 @@ function settingsView(s: {
   };
 }
 
-function costView(c: {
-  id: string;
-  name: string;
-  category: string;
-  monthlyAmount: Prisma.Decimal;
-  currency: string;
-  notes: string | null;
-  updatedAt: Date;
-}) {
+function costView(
+  c: {
+    id: bigint;
+    name: string;
+    category: string;
+    monthlyMinor: bigint;
+    currency: string;
+    notes: string | null;
+    updatedAt: Date;
+  },
+  exp: (currency: string) => number,
+) {
   return {
-    id: c.id,
+    id: c.id.toString(),
     name: c.name,
     category: c.category,
-    monthlyAmount: c.monthlyAmount.toFixed(2),
+    monthlyAmount: money(c.monthlyMinor, c.currency, exp),
     currency: c.currency,
     notes: c.notes,
     updatedAt: c.updatedAt.toISOString(),
   };
 }
 
-function feeView(f: {
-  channel: string;
-  percent: Prisma.Decimal;
-  fixedAmount: Prisma.Decimal;
-  currency: string;
-  notes: string | null;
-}) {
+function feeView(
+  f: {
+    channel: string;
+    percent: Directory.Prisma.Decimal;
+    fixedMinor: bigint;
+    currency: string;
+    notes: string | null;
+  },
+  exp: (currency: string) => number,
+) {
   return {
     channel: f.channel,
     percent: f.percent.toFixed(2),
-    fixedAmount: f.fixedAmount.toFixed(2),
+    fixedAmount: money(f.fixedMinor, f.currency, exp),
     currency: f.currency,
     notes: f.notes,
   };

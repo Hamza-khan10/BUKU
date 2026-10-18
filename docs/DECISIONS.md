@@ -1090,3 +1090,15 @@ visits are in the reliability ledger, their bookings in their own list). A Whats
 global handle, so an incoming message finds its person and a number belongs to one account; a
 closed account lets it go at once. The admin settings are reference data on the directory. Plan
 notices are a business owner's only (customers are free, D-101).
+
+**D-118 · billing-service on database v2 (D3g).** The catalog — plans, prices, the switch per
+audience, running costs and channel fees — is reference data on the directory, edited only by
+billing-service and copied to every business shard, where plan limits are enforced; billing reads
+plans and settings on the directory itself, so its own answers never wait for replication.
+Subscriptions and plan requests live on the business's shard, and one live subscription per
+business is a database rule again, as it was in v1, so two grants approved together, or a store
+payment and a grant, can't both take effect. A Paddle webhook is recorded as handled and applied in
+one transaction on the paying business's shard, found from the public ID we put in `custom_data`.
+Money is kept in minor units. Customers are free (D-101), so there are no customer subscriptions:
+their account page shows their visits, and checkout, trials and grants for people are refused.
+Admin lists visit every business shard; the admin's audit entries go to their own shard.
