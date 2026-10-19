@@ -39,7 +39,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
  # Prisma ships a WASM query compiler per database; BUKU only uses PostgreSQL.
  && find /out/node_modules/@prisma/client/runtime -name 'query_compiler*_bg.*' ! -name '*postgresql*' -delete
 
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:59c479c9b8c123e66047315c968aa2d35e31ae5149c856e4110a79c8b3563f0b AS runtime
 ARG SERVICE
 LABEL org.opencontainers.image.title="buku-${SERVICE}-service" \
       org.opencontainers.image.source="https://github.com/Hamza-khan10/BUKU"
