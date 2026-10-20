@@ -1021,7 +1021,10 @@ audited.
 
 ## Search service — finding businesses (2.7)
 
-All public (no sign-in), rate-limited at the gateway (200/minute per address).
+All public (no sign-in), rate-limited at the gateway (200/minute per address). Search reads the
+catalog (DB-041), kept from every business shard's events (D-120): a change to a business shows
+within seconds, and an hourly sweep repairs anything an event missed. Businesses are named by
+their public IDs; categories by decimal-string IDs.
 
 | Method & path                                    | Purpose                                                                    |
 | ------------------------------------------------ | -------------------------------------------------------------------------- |
@@ -1045,26 +1048,27 @@ are refused (400).
 ```json
 GET /v1/businesses/search?q=haircut&lat=31.52&lng=74.35&openNow=true
 { "data": [{
-    "id": "…", "slug": "fade-masters", "name": "Fade Masters",
+    "id": "z6rR1qZjf3Pj", "slug": "fade-masters", "name": "Fade Masters",
     "category": { "slug": "barbershop", "name": "Barbershop" },
     "city": "Lahore", "address": "…", "location": { "lat": 31.52, "lng": 74.36 }, "distanceKm": 1.3,
     "rating": { "average": 4.7, "count": 128 }, "verified": true,
     "reliability": { "keptPercent": 98, "basedOn": 240 },
-    "priceFrom": { "amount": 400, "currency": "PKR" },
+    "priceFrom": { "amount": "400.00", "currency": "PKR" },
     "openNow": true, "queue": { "open": true, "waiting": 4 },
     "logoUrl": "https://…", "coverPhotoUrl": "https://…", "isPromoted": false }],
   "meta": { "page": 1, "limit": 20, "total": 7, "totalPages": 1, "sort": "relevance" } }
 ```
 
 `reliability` is null until a business has 10 decided bookings; `queue` is null without an open
-queue today; `priceFrom` is the lowest active service price. **Ranking** (`relevance`): how well
+queue today; `priceFrom` is the lowest active service price in the business's currency, as a
+decimal string in the currency's decimals (D-118). **Ranking** (`relevance`): how well
 the words match (name first, then category and services, description, city) + quality (rating
 adjusted for how many reviews there are, reliability, verified) + closeness. A 5.0 from 2
 reviews does not beat a 4.8 from 200.
 
 ```json
 GET /v1/businesses/autocomplete?q=hai
-{ "data": { "businesses": [{ "id": "…", "slug": "…", "name": "Hair by Sana", "city": "Lahore", "category": "Hair Salon" }],
+{ "data": { "businesses": [{ "id": "Hq3bT9xK2mPa", "slug": "…", "name": "Hair by Sana", "city": "Lahore", "category": "Hair Salon" }],
             "categories": [{ "slug": "hair-salon", "name": "Hair Salon", "icon": null }],
             "services": ["Haircut", "Haircut + Beard", "Hair Colour"] } }
 ```

@@ -7,6 +7,7 @@ import {
   type DataPlane,
 } from '@buku/database';
 import { assertNotSuspended } from '../businesses.js';
+import { announceListing } from '../listing.js';
 import { auditCtx, type RequestContext } from '../http/context.js';
 
 /**
@@ -147,6 +148,7 @@ export class ScheduleService {
       await assertNotSuspended(tx, businessId);
       await this.addExceptions(tx, businessId, null, { ...input, kind: 'time_off' });
       await this.audit(tx, actor.id, 'booking.closure_added', 'business', businessId, ctx);
+      await announceListing(tx, this.plane, businessId, 'closures');
       return upcoming(tx, businessId, null);
     });
   }
@@ -159,6 +161,7 @@ export class ScheduleService {
       });
       if (count === 0) throw AppError.notFound('Closure');
       await this.audit(tx, actor.id, 'booking.closure_removed', 'business', businessId, ctx);
+      await announceListing(tx, this.plane, businessId, 'closures');
     });
   }
 

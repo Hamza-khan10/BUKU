@@ -12,6 +12,7 @@ import {
   type BusinessTx,
   type DataPlane,
 } from '@buku/database';
+import { createEvent, enqueueShardEvent, TOPICS } from '@buku/kafka';
 import {
   PUBLIC_PICTURE_CACHE,
   type CleanImage,
@@ -96,6 +97,7 @@ export class PictureService {
           },
         });
         await this.audit(tx, actor.id, 'business.photo_uploaded', 'business_photo', id, ctx);
+        await this.announce(tx, businessId, 'photos', ctx);
       }),
     );
     return this.listPhotos(businessId);
@@ -111,6 +113,7 @@ export class PictureService {
         data: { isPrimary: false },
       });
       await tx.businessPhoto.update({ where: { id: photoId }, data: { isPrimary: true } });
+      await this.announce(tx, businessId, 'photos');
     });
     return this.listPhotos(businessId);
   }
@@ -133,6 +136,7 @@ export class PictureService {
         if (next) await tx.businessPhoto.update({ where: { id: next.id }, data: { isPrimary: true } });
       }
       await this.audit(tx, actor.id, 'business.photo_deleted', 'business_photo', photo.id, ctx);
+      await this.announce(tx, businessId, 'photos', ctx);
     });
     return this.listPhotos(businessId);
   }
@@ -175,6 +179,7 @@ export class PictureService {
       plane.inBusiness(businessId, async (tx) => {
         await tx.business.update({ where: { id: businessId }, data: { logoStorageKey: storageKey } });
         await this.audit(tx, actor.id, 'business.logo_uploaded', 'business', businessId, ctx);
+        await this.announce(tx, businessId, 'logo', ctx);
       }),
     );
     if (previous.logoStorageKey) await this.storage.delete(this.links.mediaBucket, previous.logoStorageKey);
@@ -189,6 +194,7 @@ export class PictureService {
     await plane.inBusiness(businessId, async (tx) => {
       await tx.business.update({ where: { id: businessId }, data: { logoStorageKey: null } });
       await this.audit(tx, actor.id, 'business.logo_deleted', 'business', businessId, ctx);
+      await this.announce(tx, businessId, 'logo', ctx);
     });
   }
 
@@ -329,6 +335,34 @@ export class PictureService {
       await this.storage.delete(this.links.mediaBucket, key);
       throw err;
     }
+  }
+
+  /**
+   * The gallery (and so the cover) or the logo changed: search shows them on every card, so the
+   * change is announced like any other (DB-041, D3h).
+   */
+  private async announce(tx: BusinessTx, businessId: bigint, field: 'photos' | 'logo', ctx?: RequestContext) {
+    const { status } = await tx.business.findUniqueOrThrow({
+      where: { id: businessId },
+      select: { status: true },
+    });
+    await enqueueShardEvent(
+      tx,
+      this.plane.id(),
+      createEvent({
+        type: TOPICS.BUSINESSES_UPDATED,
+        source: 'business-service',
+        subject: businessId.toString(),
+        data: {
+          businessId: businessId.toString(),
+          changedFields: [field],
+          reverificationRequired: false,
+          status,
+        },
+        ...(ctx?.requestId && { correlationId: ctx.requestId }),
+      }),
+      'business',
+    );
   }
 
   private audit(

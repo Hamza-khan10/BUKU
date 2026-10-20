@@ -1,4 +1,4 @@
-import { baseServiceEnv, databaseEnv, jwtVerifyEnv, kafkaEnv } from '@buku/common';
+import { baseServiceEnv, databaseEnv, databaseV2Env, jwtVerifyEnv, kafkaEnv } from '@buku/common';
 import { s3Env } from '@buku/media';
 import { z } from 'zod';
 
@@ -13,8 +13,18 @@ export const Env = baseServiceEnv
   .extend({
     ...jwtVerifyEnv.shape,
     ...kafkaEnv.shape,
+    // DATABASE_URL: search-service's own role, and the default server of the directory and the
+    // catalog (D3).
     ...databaseEnv.shape,
+    ...databaseV2Env.shape,
     ...s3Env.shape,
+    /** How often every catalog row is checked against its shard (the repair; minutes). */
+    CATALOG_SWEEP_MINUTES: z.coerce
+      .number()
+      .int()
+      .min(5)
+      .max(24 * 60)
+      .default(60),
     SEARCH_ENGINE: z.enum(['postgres', 'elasticsearch']).default('postgres'),
   })
   .refine((env) => env.SEARCH_ENGINE === 'postgres', {

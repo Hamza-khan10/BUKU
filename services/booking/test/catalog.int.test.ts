@@ -85,6 +85,8 @@ describe('Service menu', () => {
       (c: { services: { name: string; isActive: boolean }[] }) => c.services,
     );
     expect(all.find((s: { name: string }) => s.name === 'Old service')).toMatchObject({ isActive: false });
+    // Every change to the menu is announced, for search's catalog (D3h): four added, one archived.
+    expect(await h.announced(b)).toEqual(['menu', 'menu', 'menu', 'menu', 'menu']);
   });
 
   it('owner and manager manage the menu; front desk and staff cannot; outsiders get 404', async () => {
@@ -361,7 +363,7 @@ describe('Working hours, time off and closures', () => {
   });
 
   it('closures apply to the whole business and need the owner or a manager', async () => {
-    const { owner, ali, base } = await teamWithEmployee();
+    const { owner, ali, base, b } = await teamWithEmployee();
     const day = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
     expect((await post(`${base}/closures`, ali, { from: day })).status).toBe(403);
     const res = await post(`${base}/closures`, owner, { from: day, reason: 'Public holiday' });
@@ -370,6 +372,8 @@ describe('Working hours, time off and closures', () => {
       expect.objectContaining({ date: day, kind: 'time_off', reason: 'Public holiday' }),
     ]);
     expect((await del(`${base}/closures/${res.body.data[0].id}`, owner)).status).toBe(204);
+    // Search shows when a business is closed (D3h).
+    expect(await h.announced(b)).toEqual(['closures', 'closures']);
   });
 
   it('working hours can only point at an employee of the same business (database guarantee)', async () => {
