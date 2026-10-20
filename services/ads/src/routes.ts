@@ -1,12 +1,13 @@
 import type { Express } from 'express';
 import type { JwtVerifier } from '@buku/common';
-import type { Database } from '@buku/database';
+import type { DataPlane } from '@buku/database';
 import type { EventProducer } from '@buku/kafka';
 import type { Redis } from 'ioredis';
 
 /** Everything a route handler may use. Constructed once in index.ts. */
 export interface ServiceDeps {
-  db: Database;
+  /** Database v2 (D3h): campaigns on business shards, the ads that may run in the catalog. */
+  plane: DataPlane;
   redis: Redis;
   producer: EventProducer;
   verifier: JwtVerifier;

@@ -61,6 +61,8 @@ export interface Harness {
   shardOf(p: Person): Promise<UserShardClient>;
   /** The internal ID of an appointment of the salon, by its public ID. */
   appointmentId(s: Salon, appointmentPublicId: string): Promise<bigint>;
+  /** What the business announced changed in its listing (listings.changed, D3h), oldest first. */
+  announced(b: { id: bigint }): Promise<string[]>;
 }
 
 export interface Person {
@@ -187,6 +189,15 @@ export function useBookingHarness(): Harness {
         tx.appointmentIndex.findUniqueOrThrow({ where: { publicId: appointmentPublicId } }),
       )
     ).appointmentId;
+  h.announced = async (b) =>
+    (
+      await h.world.inBusiness(b.id, (tx) =>
+        tx.outboxEvent.findMany({
+          where: { aggregateId: b.id, topic: 'listings.changed' },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        }),
+      )
+    ).map((e) => (e.payload as { data: { part: string } }).data.part);
   h.appointment = async (s, customer, startInMinutes, opts = {}) => {
     const minutes = opts.minutes ?? 30;
     const startAt = new Date(Date.now() + startInMinutes * 60_000);

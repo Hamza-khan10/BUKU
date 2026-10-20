@@ -13,9 +13,10 @@ import { TOPICS, type Topic } from './topics.js';
  *    (use `processOnce`, keyed by the event id).
  *  • RETRY with exponential backoff for transient failures (DB blip, 5xx).
  *  • POISON-MESSAGE ISOLATION: after `maxAttempts`, or immediately if the
- *    message is not a valid envelope, it is published to a dead-letter topic
- *    with full context and the partition moves on. One bad message never
- *    blocks a partition forever.
+ *    message is not a valid envelope or its handler refuses its payload (a
+ *    validation error fails the same way every time), it is published to a
+ *    dead-letter topic with full context and the partition moves on. One bad
+ *    message never blocks a partition forever.
  *  • If even the DLQ write fails, the offset is NOT committed and the error
  *    propagates, so the message is retried rather than silently lost.
  *  • SELF-HEALING: after Kafka has been away, the client can lose its
@@ -128,8 +129,10 @@ export async function startConsumer(options: ConsumerOptions): Promise<RunningCo
           });
           break;
         } catch (err) {
-          if (attempt >= maxAttempts) {
-            await deadLetter(payload, 'handler_failed', err, attempt);
+          // A payload the handler's schema refuses: retrying can't help.
+          const malformed = err instanceof Error && err.name === 'ZodError';
+          if (malformed || attempt >= maxAttempts) {
+            await deadLetter(payload, malformed ? 'invalid_payload' : 'handler_failed', err, attempt);
             break;
           }
           log.warn({ topic, partition, offset: message.offset, attempt, err }, 'handler failed, retrying');

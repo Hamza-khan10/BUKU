@@ -1111,3 +1111,19 @@ the webhook path, never at the gateway, so the development stack (and its passwo
 is never on the internet; the tunnel runs only while testing. The payment-link domain is the
 website's (Paddle refuses `localhost`), and until the website has its checkout page (D3i) a local
 test page opens the same payment. Business billing stays off in development unless a test needs it.
+
+**D-120 · search-service on database v2 (D3h).** Search reads only the catalog (DB-041): one row
+per business across every business shard, so finding places is one query however many shards
+there are. The catalog is kept by **refreshing from the shard**, not by applying what events say:
+an event only names a business, and search re-reads that business as it is now and replaces its
+rows. Each write carries a version taken before its read (a time-ordered ID) and holds a lock per
+business, so a late, repeated or out-of-order event can never put older facts over newer ones.
+An hourly sweep refreshes every business anyway: the repair for a lost event, and what fills an
+empty catalog. Each kind of event still has one publisher: booking announces its menu, closures
+and rating (`listings.changed`), queue its settings (`queue.settings.updated`), and business its
+photos and logo (in `businesses.updated`); today's queue (opened, joined, called, closed) takes a
+cheaper path that only touches the queue row. Ranking figures (D-076) are computed on each shard
+through search's cross-business role and copied onto the catalog every ten minutes. In the API,
+businesses are named by their public IDs, a price is a decimal string in the currency's decimals
+(`"3000.00"`), and a category's ID is a decimal string. ads-service now starts on v2 with the
+catalog (it has no routes yet); analytics keeps using ClickHouse only.

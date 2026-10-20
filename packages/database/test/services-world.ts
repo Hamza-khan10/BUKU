@@ -1,8 +1,9 @@
 /**
  * The services' database v2 world for integration tests (D3): a directory of its own,
  * buku_directory_services_test (made by `pnpm db:prepare`), with one user shard and one business
- * shard on the test cluster, the business shard's copy of the reference data (DB-015), and every
- * service's rights applied exactly as apply-access gives them in production. Rebuilt once per run
+ * shard on the test cluster, a catalog (DB-041), the business shard's and the catalog's copies of
+ * the reference data (DB-015), and every service's rights applied exactly as apply-access gives
+ * them in production. Rebuilt once per run
  * by the global setup; a service's tests sign in to it as that service's own role.
  *
  * It is kept apart from buku_directory_test, whose registry the database package's own tests
@@ -10,15 +11,24 @@
  */
 import type { ServiceName } from '../src/access.js';
 import type { DataPlane } from '../src/data-plane.js';
-import { directoryAccessStatements } from '../src/access-sql.js';
+import { CATALOG_ACCESS } from '../src/access.js';
+import { databaseAccessStatements, directoryAccessStatements } from '../src/access-sql.js';
 import { applyShardAccess, applyStatements } from '../src/apply-access.js';
 import { createDirectoryClient } from '../src/directory.js';
 import { createDatabaseClient } from '../src/index.js';
-import { dropDatabase, migrate, provisionShards, waitForReferenceCopy } from '../src/provision.js';
+import {
+  dropDatabase,
+  ensureReferenceCopy,
+  migrate,
+  provisionShards,
+  waitForReferenceCopy,
+} from '../src/provision.js';
 import { testEnv } from './int-env.js';
 import { ensureServiceRoles, passwords } from './service-roles.js';
 
 export const SERVICES_DIRECTORY = 'buku_directory_services_test';
+/** Named like the shards, so each run's clean-up drops it with them. */
+const SERVICES_CATALOG = 'buku_svctest_catalog';
 /** The setting the registry names for the test cluster's address (host and port only). */
 const CLUSTER_SECRET = 'BUKU_DB_CLUSTER_SVCTEST';
 
@@ -33,6 +43,7 @@ const urlAs = (credentials: { user: string; password: string }, database: string
 export const servicesWorld = {
   directory: SERVICES_DIRECTORY,
   shards: { user: 'buku_svctest_user_pk_1', business: 'buku_svctest_business_pk_1' },
+  catalog: SERVICES_CATALOG,
   /** Where cluster addresses are read from, as the services read them. */
   env: { ...process.env, [CLUSTER_SECRET]: testEnv.cluster } as NodeJS.ProcessEnv,
   /** A service's own role (D-092) on one database of the test cluster. */
@@ -163,31 +174,66 @@ export async function buildServicesWorld(): Promise<void> {
   }
 
   // 4. The shard databases, migrated, and the business shard's copy of the reference data.
+  const reference = {
+    conninfo: `host=localhost port=5432 dbname=${SERVICES_DIRECTORY}`,
+    replicator: testEnv.replicator,
+    publisherUrl,
+  };
   await provisionShards({
     directoryUrl: migratorUrl,
     admin: testEnv.admin,
     migrator: testEnv.migrator,
     env: servicesWorld.env,
     families: ['user', 'business'],
-    reference: {
-      conninfo: `host=localhost port=5432 dbname=${SERVICES_DIRECTORY}`,
-      replicator: testEnv.replicator,
-      publisherUrl,
-    },
+    reference,
   });
-  const copy = createDatabaseClient({
-    url: testEnv.adminUrl(servicesWorld.shards.business),
+
+  // 5. The catalog (as `pnpm db:prepare` makes buku_catalog), migrated, with its own copy.
+  const cluster = createDatabaseClient({ url: serverUrl, applicationName: 'test-setup', maxConnections: 1 });
+  try {
+    await cluster.$executeRawUnsafe(
+      `CREATE DATABASE "${SERVICES_CATALOG}" OWNER buku_migrator TEMPLATE template1`,
+    );
+    await cluster.$executeRawUnsafe(`REVOKE ALL ON DATABASE "${SERVICES_CATALOG}" FROM PUBLIC`);
+    await cluster.$executeRawUnsafe(
+      `GRANT CONNECT, TEMPORARY ON DATABASE "${SERVICES_CATALOG}" TO buku_migrator, buku_app`,
+    );
+  } finally {
+    await cluster.$disconnect();
+  }
+  migrate(
+    'prisma.catalog.config.ts',
+    'DATABASE_CATALOG_MIGRATION_URL',
+    urlAs(testEnv.migrator, SERVICES_CATALOG),
+    SERVICES_CATALOG,
+  );
+  const catalog = createDatabaseClient({
+    url: testEnv.adminUrl(SERVICES_CATALOG),
     applicationName: 'test-setup',
   });
   try {
-    await waitForReferenceCopy(copy, servicesWorld.shards.business, 60_000);
+    await ensureReferenceCopy(catalog, SERVICES_CATALOG, reference);
   } finally {
-    await copy.$disconnect();
+    await catalog.$disconnect();
+  }
+  for (const database of [servicesWorld.shards.business, SERVICES_CATALOG]) {
+    const copy = createDatabaseClient({ url: testEnv.adminUrl(database), applicationName: 'test-setup' });
+    try {
+      await waitForReferenceCopy(copy, database, 60_000);
+    } finally {
+      await copy.$disconnect();
+    }
   }
 
-  // 5. Every service's rights there, exactly as in production.
+  // 6. Every service's rights there, exactly as in production.
   await ensureServiceRoles();
   await applyStatements(publisherUrl, directoryAccessStatements(SERVICES_DIRECTORY, passwords));
   for (const [family, database] of Object.entries(servicesWorld.shards))
     await applyShardAccess(testEnv.adminUrl(database), family, passwords);
+  await applyStatements(
+    testEnv.adminUrl(SERVICES_CATALOG),
+    databaseAccessStatements(SERVICES_CATALOG, CATALOG_ACCESS, passwords, {
+      schemas: ['catalog', 'reference'],
+    }),
+  );
 }

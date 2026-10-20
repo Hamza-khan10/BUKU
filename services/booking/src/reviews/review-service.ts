@@ -10,6 +10,7 @@ import {
 import { createEvent, enqueueShardEvent, TOPICS } from '@buku/kafka';
 import { findBookableBusiness } from '../businesses.js';
 import { auditCtx, type RequestContext } from '../http/context.js';
+import { announceListing } from '../listing.js';
 
 /**
  * Reviews (D-077). Only real customers review: their own visit that happened
@@ -113,6 +114,7 @@ export class ReviewService {
           businessId: businessId.toString(),
           overall: input.overall,
         });
+        await announceListing(tx, plane, businessId, 'rating');
         return review;
       });
       return this.mineView(review, await this.context(businessId, [review]), now);
@@ -148,6 +150,7 @@ export class ReviewService {
       await this.audit(tx, userId, 'review.edited', review.id, ctx, {
         overall: { from: current.overallRating, to: input.overall },
       });
+      await announceListing(tx, this.plane, businessId, 'rating');
       return review;
     });
     return this.mineView(review, await this.context(businessId, [review]), now);
@@ -160,6 +163,7 @@ export class ReviewService {
       const current = await ownReview(tx, userId, appointmentId);
       await tx.review.delete({ where: { id: current.id } });
       await this.audit(tx, userId, 'review.deleted', current.id, ctx);
+      await announceListing(tx, this.plane, businessId, 'rating');
     });
   }
 
@@ -363,9 +367,17 @@ export class ReviewService {
     decision: { action: 'hide'; reason: string } | { action: 'keep' } | { action: 'restore' },
     ctx: RequestContext,
   ) {
-    const done = await this.plane.acrossBusinesses(async (tx) => {
+    // Found on whichever shard holds it; changed in its business's own transaction, where the
+    // rating's announcement can be written with it.
+    const found = (
+      await this.plane.acrossBusinesses((tx) =>
+        tx.review.findUnique({ where: { id: reviewId }, select: { businessId: true } }),
+      )
+    ).find(Boolean);
+    if (!found) throw AppError.notFound('Review');
+    await this.plane.inBusiness(found.businessId, async (tx) => {
       const review = await tx.review.findUnique({ where: { id: reviewId } });
-      if (!review) return false;
+      if (!review) throw AppError.notFound('Review');
       await tx.review.update({
         where: { id: reviewId },
         data:
@@ -393,9 +405,8 @@ export class ReviewService {
           ...(decision.action === 'hide' && { reason: decision.reason }),
         },
       );
-      return true;
+      if (decision.action !== 'keep') await announceListing(tx, this.plane, review.businessId, 'rating');
     });
-    if (!done.some(Boolean)) throw AppError.notFound('Review');
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

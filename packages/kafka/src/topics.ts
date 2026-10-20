@@ -36,6 +36,13 @@ export const TOPIC_SPECS = {
   /** The business replied to a review (the reviewer is told). */
   'reviews.responded': { partitions: 3, retentionMs: 30 * DAY },
 
+  // ── Listings ──
+  /**
+   * What a business's public listing shows changed on booking's side — its menu, closures or
+   * rating (data: businessId, part): search brings its catalog row up to date (DB-041, D3h).
+   */
+  'listings.changed': { partitions: 6, retentionMs: 7 * DAY },
+
   // ── Queues ──
   'queue.session.opened': { partitions: 3, retentionMs: 1 * DAY },
   'queue.session.closed': { partitions: 3, retentionMs: 1 * DAY },
@@ -46,6 +53,8 @@ export const TOPIC_SPECS = {
   'queue.entry.left': { partitions: 6, retentionMs: 1 * DAY },
   'queue.entry.no_show': { partitions: 6, retentionMs: 1 * DAY },
   'queue.position.updated': { partitions: 24, retentionMs: 1 * HOUR },
+  /** A business changed how its queue runs (search: it now offers a queue, D3h). */
+  'queue.settings.updated': { partitions: 3, retentionMs: 7 * DAY },
 
   // ── Notifications ──
   'notifications.send': { partitions: 12, retentionMs: 3 * DAY },

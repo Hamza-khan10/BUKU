@@ -9,6 +9,7 @@ import {
   type DataPlane,
 } from '@buku/database';
 import { assertNotSuspended, findBookableBusiness } from '../businesses.js';
+import { announceListing } from '../listing.js';
 import { auditCtx, type RequestContext } from '../http/context.js';
 import { exponentOf, formatMinor, toMinor } from '../money.js';
 import { effectiveSettings } from '../settings/settings-service.js';
@@ -190,6 +191,7 @@ export class CatalogService {
       });
       if (input.staffIds) await setStaff(tx, businessId, id, input.staffIds);
       await this.audit(tx, actor.id, 'booking.service_created', id, ctx);
+      await announceListing(tx, this.plane, businessId, 'menu');
       const service = await tx.service.findUniqueOrThrow({ where: { id }, include: serviceInclude });
       return manageServiceView(service, exponent);
     });
@@ -221,6 +223,7 @@ export class CatalogService {
       }
       await tx.service.update({ where: { id: serviceId }, data });
       if (staffIds) await setStaff(tx, businessId, serviceId, staffIds);
+      await announceListing(tx, this.plane, businessId, 'menu');
       await this.audit(tx, actor.id, 'booking.service_updated', serviceId, ctx, {
         fields: [
           ...Object.keys(fields).filter((k) => fields[k as keyof typeof fields] !== undefined),
@@ -244,6 +247,7 @@ export class CatalogService {
       await findService(tx, businessId, serviceId);
       await tx.service.update({ where: { id: serviceId }, data: { isActive: false } });
       await this.audit(tx, actor.id, 'booking.service_archived', serviceId, ctx);
+      await announceListing(tx, this.plane, businessId, 'menu');
     });
   }
 
