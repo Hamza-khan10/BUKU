@@ -5,6 +5,7 @@ import {
   type BusinessTx,
   type DataPlane,
 } from '@buku/database';
+import { createEvent, enqueueShardEvent, TOPICS } from '@buku/kafka';
 import { auditCtx, type RequestContext } from './http/context.js';
 
 /** How a business runs its queue. No row → these defaults (D-038, decision H). */
@@ -61,6 +62,19 @@ export class QueueSettingsService {
         newValues: data,
         ...auditCtx(ctx),
       });
+      // The business now runs a queue, as search shows it (DB-041, D3h).
+      await enqueueShardEvent(
+        tx,
+        this.plane.id(),
+        createEvent({
+          type: TOPICS.QUEUE_SETTINGS_UPDATED,
+          source: 'queue-service',
+          subject: businessId.toString(),
+          data: { businessId: businessId.toString() },
+          ...(ctx.requestId && { correlationId: ctx.requestId }),
+        }),
+        'queue_settings',
+      );
       return effectiveQueueSettings(tx, businessId);
     });
   }

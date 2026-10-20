@@ -390,6 +390,13 @@ describe('Front desk access and settings', () => {
       .set(s.owner.auth)
       .send({ ticketPrefix: 'p', remoteJoinRadiusMeters: 2000 });
     expect(put.body.data).toMatchObject({ ticketPrefix: 'P', remoteJoinRadiusMeters: 2000 });
+    // Search lists businesses that run a queue (D3h): the change is announced.
+    const announced = await h.inShop(s, (tx) =>
+      tx.outboxEvent.findMany({ where: { aggregateId: s.b.id, topic: 'queue.settings.updated' } }),
+    );
+    expect(announced.map((e) => e.payload)).toEqual([
+      expect.objectContaining({ data: { businessId: s.b.id.toString() } }),
+    ]);
     for (const bad of [{ ticketPrefix: 'A1' }, { remoteJoinRadiusMeters: 10 }, {}]) {
       expect((await request(app()).put(`${s.base}/settings`).set(s.owner.auth).send(bad)).status).toBe(400);
     }

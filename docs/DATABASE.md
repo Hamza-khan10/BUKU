@@ -1061,8 +1061,8 @@ Built in D2c (`buku_catalog`, `prisma/catalog`): `catalog.businesses` (with v1's
 name A, kind and its group B, active services B, description C, city D, and its map point, both
 kept by triggers; GIN, trigram and GiST indexes), `catalog.services`, `hours`, `closures`,
 `queues` (today's), `ads` (those that may run), and a reference copy (DB-015). Every row carries
-the `version` of the newest event applied, so a late event never overwrites a newer one. The
-search service fills it from the business shards' events in D3.
+the `version` of the newest read applied, so a late event never overwrites a newer one. The
+search service keeps it from the business shards' events (D3h, D-120).
 
 **Why not Elasticsearch now?** It is the next step if one Postgres catalog stops being enough
 (tens of millions of businesses, or heavy relevance tuning). Until then a catalog of a few
@@ -1513,3 +1513,39 @@ more.
 - **Tests:** billing-service's 31 integration tests (the catalog, switches, trials, requests,
   grants, costs and economics; Paddle against a fake Paddle) run on the services' v2 world as its
   own role, including the one-live-subscription rule and a shard whose settings copy is missing.
+
+**D3h, as built (2026-10-21).** search-service runs on v2 (D-120); nothing of it uses v1 any more.
+
+- **Search reads only the catalog** (DB-041): v1's queries (full text, trigram typos, PostGIS,
+  open now, closures, today's queue, ranking) run against `catalog.*` and the catalog's reference
+  copy of the kinds of business. Businesses are named by public ID; `priceFrom` is the lowest
+  active price in the business's currency, in minor units in the catalog and shown in the
+  currency's decimals; categories have bigint IDs, shown as decimal strings.
+- **Keeping it** (`services/search/src/catalog/catalog-sync.ts`): an event names a business;
+  search reads it on its shard (profile, active services, hours, business-wide closures from
+  yesterday on, the cover — the primary uploaded photo, else the first — and today's queue) and
+  replaces its catalog rows in one transaction. The version is a generator ID taken **before**
+  the read; the write takes an advisory lock on the business and is skipped if the row already
+  has a newer version. A deleted business, or one placed nowhere, leaves the catalog with its
+  rows. Today's queue (sessions opened and closed, tickets joined, called, served or left) only
+  rewrites `catalog.queues` and `offers_queue`.
+- **Events** (each with one publisher, D-092): `businesses.created/updated/verified/suspended`
+  (business; photo and logo changes now announce `changedFields: ["photos"|"logo"]`),
+  `listings.changed` `{ businessId, part: menu | closures | rating }` (booking: services
+  created, changed or archived, closures added or removed, reviews written, changed, deleted or
+  moderated), `queue.settings.updated` `{ businessId }` (queue), and the queue's session and
+  ticket events. Search consumes them in its own group; handling one twice changes nothing.
+- **Repair:** every `CATALOG_SWEEP_MINUTES` (60) and at start, every business on every shard is
+  refreshed, a page at a time, through search's cross-business role: what fills an empty catalog
+  and puts right anything an event missed.
+- **Ranking figures** (D-076): every ten minutes, each business shard's `business_search_stats`
+  is computed in one statement (bookings this week and last, queue joins, visits kept and
+  bookings the business cancelled in 90 days), then copied onto the catalog rows 500 at a time. A
+  refresh leaves them alone.
+- **ads-service** starts on the data plane with the catalog (no routes yet); **analytics** keeps
+  using ClickHouse only.
+- **Tests:** the services' v2 world has its own catalog (`buku_svctest_catalog`, migrated, with
+  its reference copy and every service's rights). Search's 22 integration tests (v1's 15 ported,
+  and 7 on keeping the catalog: what a refresh copies, newer wins, deleted and unplaced, the
+  queue's path, events, figures, the sweep) run as search's own role; booking, business and queue
+  tests check their announcements.

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { KafkaJS } from '@confluentinc/kafka-javascript';
+import { z } from 'zod';
 import { startConsumer } from '../src/consumer.js';
+import { createEvent } from '../src/envelope.js';
 import type { EventProducer } from '../src/producer.js';
 import { TOPICS } from '../src/topics.js';
 
@@ -100,5 +102,68 @@ describe('a consumer that lost its partitions recovers by itself', () => {
     const count = made.length;
     await wait(60);
     expect(made).toHaveLength(count);
+  });
+});
+
+/** A consumer handed one message, with a stand-in dead-letter topic: where did it go, and how often was it tried? */
+async function deliverOnce(handler: () => Promise<void>) {
+  const deadLettered: string[] = [];
+  const committed: string[] = [];
+  const event = createEvent({
+    type: TOPICS.BOOKINGS_CREATED,
+    source: 'booking-service',
+    subject: '42',
+    data: { businessId: '6f1c0d1e-uuid' },
+  });
+  const kafka = {
+    consumer: () => ({
+      connect: () => Promise.resolve(),
+      subscribe: () => Promise.resolve(),
+      run: async ({ eachMessage }: { eachMessage: (p: unknown) => Promise<void> }) => {
+        await eachMessage({
+          topic: TOPICS.BOOKINGS_CREATED,
+          partition: 0,
+          message: { offset: '7', key: null, value: Buffer.from(JSON.stringify(event)) },
+        });
+      },
+      commitOffsets: (offsets: { offset: string }[]) => {
+        committed.push(offsets[0]!.offset);
+        return Promise.resolve();
+      },
+      assignment: () => [{ topic: 'x', partition: 0 }],
+      disconnect: () => Promise.resolve(),
+    }),
+  } as unknown as KafkaJS.Kafka;
+  const producer = {
+    sendRaw: (_topic: string, m: { headers: Record<string, string> }) => {
+      deadLettered.push(m.headers['dlq-reason']!);
+      return Promise.resolve();
+    },
+  } as unknown as EventProducer;
+  const running = await startConsumer({ ...options(kafka), producer, handler, maxAttempts: 2 });
+  await running.stop();
+  return { deadLettered, committed };
+}
+
+describe('a message its handler cannot take', () => {
+  it('a payload the schema refuses goes to the dead-letter topic at once; the partition moves on', async () => {
+    let tries = 0;
+    const result = await deliverOnce(() => {
+      tries++;
+      z.object({ businessId: z.string().regex(/^[1-9][0-9]*$/) }).parse({ businessId: '6f1c0d1e-uuid' });
+      return Promise.resolve();
+    });
+    expect(tries).toBe(1);
+    expect(result).toEqual({ deadLettered: ['invalid_payload'], committed: ['8'] });
+  });
+
+  it('any other failure is retried first', async () => {
+    let tries = 0;
+    const result = await deliverOnce(() => {
+      tries++;
+      return Promise.reject(new Error('database blip'));
+    });
+    expect(tries).toBe(2);
+    expect(result).toEqual({ deadLettered: ['handler_failed'], committed: ['8'] });
   });
 });

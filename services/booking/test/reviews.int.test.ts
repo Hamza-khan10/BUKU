@@ -143,6 +143,8 @@ describe('Writing a review', () => {
 
     const mine = await request(h.app).get('/v1/appointments/reviews').set(c.auth).expect(200);
     expect(mine.body.data).toEqual([]);
+    // The rating search shows follows each change (D3h): written, edited, deleted.
+    expect(await h.announced(s.b)).toEqual(['rating', 'rating', 'rating']);
   });
 });
 
@@ -261,6 +263,8 @@ describe('The business: reply and report', () => {
       .send({ action: 'restore' })
       .expect(204);
     expect(await rating(s)).toMatchObject({ reviewCount: 2 });
+    // Two reviews, then hidden and restored: each moves the rating search shows (D3h).
+    expect(await h.announced(s.b)).toEqual(['rating', 'rating', 'rating', 'rating']);
   });
 });
 

@@ -947,6 +947,17 @@ async function uploadPicture(
 
 const keyOf = (url: string) => decodeURIComponent(new URL(url).pathname.split('/').slice(2).join('/'));
 
+/** What each businesses.updated event said changed, oldest first. */
+const updates = async (businessPublicId: string) =>
+  (
+    await inBusiness(businessPublicId, async (tx) =>
+      tx.outboxEvent.findMany({
+        where: { aggregateId: await idOf(businessPublicId), topic: 'businesses.updated' },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      }),
+    )
+  ).map((e) => (e.payload as { data: { changedFields: string[] } }).data.changedFields.join(','));
+
 describe('Pictures: gallery', () => {
   it('manager uploads; first photo is the cover; links work; staff cannot upload', async () => {
     const owner = await person();
@@ -972,6 +983,8 @@ describe('Pictures: gallery', () => {
     const after = await request(app).delete(`${base}/${photos[0]!.id}`).set(owner.auth);
     expect(after.body.data).toEqual([expect.objectContaining({ id: photos[1]!.id, isPrimary: true })]);
     expect(await storage.head(testEnv.s3.mediaBucket, keyOf(photos[0]!.url))).toBeNull();
+    // Search shows the cover (D3h): two uploads and a deletion, each announced.
+    expect(await updates(b.id)).toEqual(['photos', 'photos', 'photos']);
   });
 
   it('strips GPS and camera data, turns the photo upright, and never publishes the original', async () => {
@@ -1071,6 +1084,7 @@ describe('Pictures: logo', () => {
 
     expect((await request(app).delete(base).set(owner.auth)).status).toBe(204);
     expect((await request(app).get(`/v1/businesses/${b.slug}`)).body.data.logoUrl).toBeNull();
+    expect(await updates(b.id)).toEqual(['logo', 'logo', 'logo']);
   });
 });
 
