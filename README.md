@@ -25,6 +25,7 @@ S3 console: <http://localhost:9101>. Full details in [DEVELOPMENT.md](docs/DEVEL
 
 | Document                                | Read it to learn                                                             |
 | --------------------------------------- | ---------------------------------------------------------------------------- |
+| [Handoff](HANDOFF.md)                   | Where everything stands today, how work is done, and what comes next         |
 | [Build Guide](docs/BUILD_GUIDE.md)      | What each phase builds, in which order, acceptance criteria, open decisions  |
 | [Architecture](docs/ARCHITECTURE.md)    | How services, data stores and events fit together                            |
 | [Database](docs/DATABASE.md)            | The database architecture (v2): IDs, sharding, partitions, security, backups |
