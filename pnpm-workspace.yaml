@@ -48,3 +48,7 @@ overrides:
   # source-map-js event-loop DoS through indexed source-map offsets (high).
   # Pulled in by postcss under Next.js at build time. Same major version.
   source-map-js: 1.2.2
+  # GHSA-587h-7wmj-h5pm (high) and its siblings: launch-editor's checks and escaping on Windows.
+  # Pulled in by @changesets/cli (release tooling, never at run time). Same major version. (Vite,
+  # which bundles the same code, is Vitest's peer and is named at the root: package.json.)
+  launch-editor: 2.14.2
