@@ -1127,3 +1127,20 @@ through search's cross-business role and copied onto the catalog every ten minut
 businesses are named by their public IDs, a price is a decimal string in the currency's decimals
 (`"3000.00"`), and a category's ID is a decimal string. ads-service now starts on v2 with the
 catalog (it has no routes yet); analytics keeps using ClickHouse only.
+
+**D-121 · The website on database v2, its checkout page, and simulated time without moving
+appointments (D3i).** The website names people, businesses and appointments by their 12-character
+public IDs and everything under a business (services, employees, tickets) by decimal IDs; one
+definition of both forms lives in `@buku/validation`, shared by the services and the website, so
+an address the API would refuse never reaches it. Paddle's default payment link is the website's
+`/checkout`: it only opens Paddle's checkout for the transaction in the link (the price and plan
+were fixed when billing-service made it), and only that page may load Paddle's script and show
+its payment frame, the sandbox's or the live one according to `PADDLE_ENVIRONMENT`. Tests that
+need time to pass (a visit that happened, one about to start) use one development-only helper
+that works through the data plane as the tools' role and then runs booking's own sync for the
+customer's side. Because an appointment's time can never change on its shard (it is the
+partition key), the helper writes the same appointment — same ID, public ID and code — again at
+the new time in one transaction; services still can't move an appointment. Running the browser
+tests on v2 also showed that a service whose ID lease ran out while the directory couldn't be
+reached (for half a minute, under load) never made an ID again until restarted: it now leases a
+new generator by itself, exactly as a restart would, and makes no IDs until it has one (DB-002).

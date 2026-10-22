@@ -30,7 +30,7 @@ test.describe('Reviews', () => {
     test.skip(!canSimulateTime(), 'the development database isn’t reachable for simulated time');
     await signInFresh(page, 'Sana Reviewer');
     const booked = await bookThroughSite(page.request, baseURL!, place, await laterTime(place, 3));
-    expect(visitHappened(booked.id)).toBe(true);
+    expect(visitHappened(place.id, booked.id)).toBe(true);
 
     // The account page asks, and the receipt offers it as the next thing to do.
     await page.goto('/account');

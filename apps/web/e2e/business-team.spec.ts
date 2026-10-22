@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
-import { sql } from './db';
+import { closeBusiness } from './db';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible, watchForProblems } from './helpers';
 import { png } from './pictures';
@@ -62,8 +62,7 @@ test.describe('A business’s menu and team', () => {
   });
 
   test.afterAll(() => {
-    for (const id of made)
-      sql(`UPDATE businesses SET deleted_at = now() WHERE id = '${id}' AND deleted_at IS NULL`);
+    for (const id of made) closeBusiness(id);
   });
 
   test('services in groups: add, change, archive and bring back', async ({ page }) => {
@@ -146,8 +145,7 @@ test.describe('A business’s team: people and photos', () => {
   });
 
   test.afterAll(() => {
-    for (const id of made)
-      sql(`UPDATE businesses SET deleted_at = now() WHERE id = '${id}' AND deleted_at IS NULL`);
+    for (const id of made) closeBusiness(id);
   });
 
   test('a person customers can book, with their own hours and a photo they agreed to', async ({ page }) => {

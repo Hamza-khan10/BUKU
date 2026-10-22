@@ -1,3 +1,5 @@
+import { isDecimalId } from '@buku/validation';
+
 /**
  * What someone has chosen so far on the booking page lives in its address
  * (`/b/salt-and-pepper/book?service=…&staff=…&date=…&time=…`), so a refresh,
@@ -5,7 +7,6 @@
  * Pure: read the same way on the server and in the browser, and tested.
  */
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface BookingChoices {
@@ -36,10 +37,11 @@ const validTime = (v: string | undefined) => (v && v.length <= 40 && !Number.isN
 export function readChoices(params: Params): BookingChoices {
   const service = get(params, 'service');
   const staff = get(params, 'staff');
-  const serviceId = service && UUID.test(service) ? service : null;
+  // A service and an employee go by decimal IDs (DB-042).
+  const serviceId = isDecimalId(service) ? service : null;
   return {
     serviceId,
-    staffId: serviceId && staff && UUID.test(staff) ? staff : null,
+    staffId: serviceId && isDecimalId(staff) ? staff : null,
     date: serviceId ? validDate(get(params, 'date')) : null,
     startAt: serviceId ? validTime(get(params, 'time')) : null,
   };

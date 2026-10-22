@@ -16,8 +16,9 @@
  * people (suffixed with the run id); restores the billing switch it flips.
  */
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { call, data, eventually, signIn, sql, type Person, type Res } from './client.js';
+import { randomInt, randomUUID } from 'node:crypto';
+import { DevWorld } from '../../services/booking/scripts/dev-world.js';
+import { call, data, eventually, signIn, type Person, type Res } from './client.js';
 import { allRoutes, type Route } from './routes.js';
 
 const RUN = randomUUID().slice(0, 8);
@@ -168,17 +169,23 @@ const book = (p: Person, shop: Shop, startAt: string) =>
     body: { businessId: shop.id, serviceId: shop.serviceId, startAt },
   });
 
-/** Simulated time: the visit starts in `minutes` (negative: started that long ago). */
-function moveVisit(appointmentId: string, minutes: number, bookedDaysAgo = 3) {
-  sql(`UPDATE appointments SET
-         start_at = now() + interval '${minutes} minutes',
-         end_at = now() + interval '${minutes + 30} minutes',
-         blocked_until = now() + interval '${minutes + 30} minutes',
-         created_at = now() - interval '${bookedDaysAgo} days'
-       WHERE id = '${appointmentId}'`);
+/**
+ * Simulated time (services/booking/scripts/dev-world.ts): the only steps that touch the database
+ * directly, on the business's shard as the tools' role, the customer's side kept in step.
+ */
+let dev: DevWorld;
+
+/** The visit starts in `minutes` (negative: started that long ago), booked `bookedDaysAgo` days ago. */
+async function moveVisit(shop: Shop, appointmentId: string, minutes: number, bookedDaysAgo = 3) {
+  const moved = await dev.moveVisit(shop.id, appointmentId, {
+    startAt: new Date(Date.now() + minutes * 60_000),
+    bookedAt: new Date(Date.now() - bookedDaysAgo * 86_400_000),
+  });
+  expect(moved, `couldn't move visit ${appointmentId}`);
 }
 
 async function main() {
+  dev = await DevWorld.open();
   console.log(
     `\nBUKU Phase 2 acceptance — run ${RUN} against ${process.env.ACCEPTANCE_API ?? 'http://localhost:8000'} (shops in ${tz})\n`,
   );
@@ -237,7 +244,7 @@ async function main() {
     await eventually('customer: "Booking confirmed"', hasMessage(ayesha, /^Booking confirmed$/));
   });
   await step('reminder before the visit (simulated time: 100 min away, booked 3 days ago)', async () => {
-    moveVisit(appointmentId, 100);
+    await moveVisit(shop, appointmentId, 100);
     await eventually(
       'customer: "Soon: Haircut at …"',
       hasMessage(ayesha, /^Soon: Haircut at \d\d:\d\d$/),
@@ -270,7 +277,7 @@ async function main() {
     );
   });
   await step('the visit: front desk scans the code, then completes it', async () => {
-    moveVisit(appointmentId, -5);
+    await moveVisit(shop, appointmentId, -5);
     is(
       await call('POST', `/v1/businesses/${shop.id}/check-in`, { token: owner.token, body: { code } }),
       200,
@@ -460,8 +467,8 @@ async function main() {
     const r = await book(p, shop, (await slots(shop, 4))[8]!);
     is(r, 201, 'book');
     const a = data<{ id: string; code: string }>(r);
-    moveVisit(a.id, 60);
-    sql(`UPDATE booking_settings SET cancellation_window_hours = 0 WHERE business_id = '${shop.id}'`);
+    await moveVisit(shop, a.id, 60);
+    expect(await dev.bookingSettings(shop.id, { cancellationWindowHours: 0 }), 'booking settings');
     const [cancel, checkIn] = await Promise.all([
       call('POST', `/v1/appointments/${a.id}/cancel`, {
         token: p.token,
@@ -474,9 +481,8 @@ async function main() {
         paced: false,
       }),
     ]);
-    const final = sql(
-      `SELECT status || ',' || (checked_in_at IS NOT NULL) FROM appointments WHERE id = '${a.id}'`,
-    );
+    const visit = await dev.visit(shop.id, a.id);
+    const final = visit && `${visit.status},${visit.checkedIn}`;
     const winners = [cancel, checkIn].filter((x) => x.status === 200).length;
     expect(winners === 1, `both or neither succeeded: cancel ${show(cancel)} | check-in ${show(checkIn)}`);
     expect(final === 'cancelled,false' || final === 'confirmed,true', `inconsistent final state: ${final}`);
@@ -498,6 +504,7 @@ async function main() {
   console.log(
     `\n${failed.length ? '\x1b[31mFAILED' : '\x1b[32mPASSED'}\x1b[0m — ${results.length - failed.length}/${results.length} checks in ${secs}s (run ${RUN})\n`,
   );
+  await dev.close();
   process.exit(failed.length ? 1 : 0);
 }
 
@@ -546,6 +553,12 @@ const CUSTOMER_ACTIONS: [Route['method'], string][] = [
 
 const isIn = (list: [string, string][], r: Route) => list.some(([m, p]) => m === r.method && p === r.path);
 
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+/** A well-formed ID that names nothing, of the kind each route takes (DB-042): refused for who asks, not how. */
+const somePublicId = () => Array.from({ length: 12 }, () => BASE62[randomInt(62)]).join('');
+const someId = () =>
+  `${randomInt(1, 10)}${String(randomInt(1e9)).padStart(9, '0')}${String(randomInt(1e8)).padStart(8, '0')}`;
+
 function fill(path: string, shop: Shop): string {
   return path.replace(/:(\w+)/g, (_m, name: string) => {
     if (name === 'idOrSlug') return shop.slug;
@@ -554,7 +567,12 @@ function fill(path: string, shop: Shop): string {
     if (name === 'code') return 'business_essential';
     if (name === 'audience') return 'user';
     if (name === 'channel') return 'web';
-    return randomUUID();
+    // Uploads and devices keep their own tokens.
+    if (name === 'uploadId' || name === 'token') return randomUUID();
+    // What people share goes by a public ID; anything under it by a decimal ID.
+    if (name === 'appointmentId' || (name === 'id' && /^\/v1\/(appointments|admin\/businesses)\//.test(path)))
+      return somePublicId();
+    return someId();
   });
 }
 

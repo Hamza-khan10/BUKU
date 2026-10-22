@@ -57,7 +57,7 @@ test.describe('Booking', () => {
 
     await page.getByLabel('Note for the business').fill('First visit, please be patient with me.');
     await page.getByRole('button', { name: 'Book', exact: true }).click();
-    await expect(page).toHaveURL(onPage(/^\/appointments\/[0-9a-f-]{36}$/));
+    await expect(page).toHaveURL(onPage(/^\/appointments\/[0-9A-Za-z]{12}$/));
     await expect(page.getByRole('heading', { name: 'You’re booked' })).toBeVisible();
     await expect(page.getByText(/^BK-[A-Z0-9]{6}$/)).toBeVisible();
     await expect(page.getByRole('img', { name: /^QR code for BK-[A-Z0-9]{6}$/ })).toBeVisible();

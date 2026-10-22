@@ -97,4 +97,21 @@ describe('Content-Security-Policy', () => {
       buildCsp({ nonce: 'n', dev: false, imageOrigins: ['https://lh3.googleusercontent.com'] }),
     ).toContain("img-src 'self' data: blob: https://lh3.googleusercontent.com;");
   });
+  it('Paddle only where payments are asked for, and only the frame of the environment in use', () => {
+    const plain = buildCsp({ nonce: 'n', dev: false });
+    expect(plain).not.toContain('paddle');
+    expect(plain).toContain("frame-src 'none'");
+    const sandbox = buildCsp({ nonce: 'n', dev: false, payments: 'sandbox' });
+    expect(sandbox).toContain(
+      "script-src 'self' 'nonce-n' 'strict-dynamic' https://cdn.paddle.com https://sandbox-cdn.paddle.com;",
+    );
+    expect(sandbox).toContain(
+      "style-src 'self' 'unsafe-inline' https://cdn.paddle.com https://sandbox-cdn.paddle.com;",
+    );
+    expect(sandbox).toContain('frame-src https://sandbox-buy.paddle.com;');
+    expect(sandbox).toContain("frame-ancestors 'none'");
+    const live = buildCsp({ nonce: 'n', dev: false, payments: 'production' });
+    expect(live).toContain('frame-src https://buy.paddle.com;');
+    expect(live).not.toContain('sandbox');
+  });
 });

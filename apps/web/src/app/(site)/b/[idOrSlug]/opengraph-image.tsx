@@ -1,3 +1,4 @@
+import { isIdOrSlug } from '@buku/validation';
 import { ImageResponse } from 'next/og';
 import { BRAND, MARK } from '@/components/brand/mark';
 import type { BusinessProfile } from '@/features/business/types';
@@ -13,7 +14,7 @@ export const alt = 'A business on BUKU';
 export default async function Image({ params }: { params: Promise<{ idOrSlug: string }> }) {
   const { idOrSlug } = await params;
   let business: BusinessProfile | null = null;
-  if (/^[a-z0-9-]{1,200}$/.test(idOrSlug)) {
+  if (isIdOrSlug(idOrSlug)) {
     const res = await fetch(`${process.env.API_URL}/v1/businesses/${idOrSlug}`, {
       next: { revalidate: 3600 },
       signal: AbortSignal.timeout(5000),

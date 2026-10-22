@@ -1,3 +1,4 @@
+import { isPublicId } from '@buku/validation';
 import { ArrowLeft } from 'lucide-react';
 import type { Metadata, Route } from 'next';
 import Link from 'next/link';
@@ -7,11 +8,9 @@ import { SetupFlow } from '@/features/manage/components/setup-flow';
 
 export const metadata: Metadata = { title: 'Set up your business', robots: { index: false, follow: false } };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export default async function SetupPage({ params }: PageProps<'/business/[id]/setup'>) {
   const { id } = await params;
-  if (!UUID.test(id)) notFound();
+  if (!isPublicId(id)) notFound();
   return (
     <>
       <PageHeading

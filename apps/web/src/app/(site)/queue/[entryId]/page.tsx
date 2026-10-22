@@ -1,11 +1,10 @@
+import { isDecimalId } from '@buku/validation';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { Container } from '@/components/ui/layout';
 import { QueueTicketView } from '@/features/queue/components/queue-ticket';
 
 export const metadata: Metadata = { title: 'Your ticket', robots: { index: false, follow: false } };
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /**
  * A queue ticket, live (signed-in, its owner only — the proxy sends
@@ -14,7 +13,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
  */
 export default async function QueueTicketPage({ params, searchParams }: PageProps<'/queue/[entryId]'>) {
   const { entryId } = await params;
-  if (!UUID.test(entryId)) notFound();
+  if (!isDecimalId(entryId)) notFound();
   const joined = (await searchParams).joined === '1';
   return (
     <Container className="py-10 sm:py-14">

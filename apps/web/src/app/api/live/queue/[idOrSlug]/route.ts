@@ -1,3 +1,4 @@
+import { isIdOrSlug } from '@buku/validation';
 import type { NextRequest } from 'next/server';
 import { callGateway } from '@/lib/api/gateway';
 import { REQUEST_ID_HEADER, requestIdFrom } from '@/lib/http/request-id';
@@ -9,13 +10,12 @@ import { REQUEST_ID_HEADER, requestIdFrom } from '@/lib/http/request-id';
  * changes nothing. The visitor's address goes along for the stream limits.
  */
 
-const ID_OR_SLUG = /^[a-z0-9-]{1,200}$/;
 /** Hosting platforms end long requests; EventSource simply reconnects. */
 const MAX_STREAM_MS = 5 * 60_000;
 
 export async function GET(request: NextRequest, ctx: RouteContext<'/api/live/queue/[idOrSlug]'>) {
   const { idOrSlug } = await ctx.params;
-  if (!ID_OR_SLUG.test(idOrSlug)) return new Response('Not found', { status: 404 });
+  if (!isIdOrSlug(idOrSlug)) return new Response('Not found', { status: 404 });
   const requestId = requestIdFrom(request.headers.get(REQUEST_ID_HEADER));
   let upstream: Response;
   try {

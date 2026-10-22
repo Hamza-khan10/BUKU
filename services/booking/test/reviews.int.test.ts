@@ -114,8 +114,12 @@ describe('Writing a review', () => {
     const s = await h.salon();
     const c = await h.person();
     const a = await visit(s, c, HOUR);
-    await review(c, a.id, { overall: 2 }).expect(201);
+    const posted = await review(c, a.id, { overall: 2 }).expect(201);
     expect((await rating(s)).avgRating.toNumber()).toBe(2);
+    // Each review names its visit by the visit's public ID, as every customer route does (DB-042).
+    expect(posted.body.data.appointmentId).toBe(a.id);
+    const listed = await request(h.app).get('/v1/appointments/reviews').set(c.auth).expect(200);
+    expect(listed.body.data.map((r: { appointmentId: string }) => r.appointmentId)).toEqual([a.id]);
 
     const edited = await request(h.app)
       .patch(`/v1/appointments/${a.id}/review`)
