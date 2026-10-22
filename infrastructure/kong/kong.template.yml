@@ -222,9 +222,9 @@ services:
     write_timeout: 30000
     retries: 0
     routes:
-      # Public: a business profile by slug or id.
+      # Public: a business profile by slug or public ID (12 letters and digits, either case; DB-042).
       - name: business-public-profile
-        paths: ['~/v1/businesses/[a-z0-9-]+$']
+        paths: ['~/v1/businesses/[0-9A-Za-z-]+$']
         methods: [GET, OPTIONS]
         regex_priority: 5
         strip_path: false

@@ -543,7 +543,7 @@ describe('IDs made inside the database (DB-002)', () => {
 });
 
 describe('LeasedIdGenerator', () => {
-  it('makes IDs from its leased generator, and stops the moment its lease is gone', async () => {
+  it('makes IDs from its leased generator; a lease that is gone is never used again, and a new one is leased', async () => {
     const ids = new LeasedIdGenerator(app, { instance: 'leased-1', region: 6, ttlSeconds: 30 });
     await ids.start();
     const generator = ids.generator!;
@@ -553,11 +553,18 @@ describe('LeasedIdGenerator', () => {
     expect(Number((a >> 12n) & 1023n)).toBe(generator);
     expect(await ids.renew()).toBe(true);
 
-    // Another instance takes it over (as if this one had frozen past its lease).
+    // Another instance takes it over (as if this one had frozen past its lease): this one leaves it
+    // and leases another, as a restart would.
     await owner.idGenerator.update({ where: { generatorId: generator }, data: { leasedBy: 'leased-2' } });
-    expect(await ids.renew()).toBe(false);
-    expect(() => ids.next()).toThrow(IdLeaseLostError);
+    expect(await ids.renew()).toBe(true);
+    const fresh = ids.generator!;
+    expect(fresh).not.toBe(generator);
+    expect(Number((ids.next() >> 12n) & 1023n)).toBe(fresh);
+    expect(await owner.idGenerator.findUniqueOrThrow({ where: { generatorId: fresh } })).toMatchObject({
+      leasedBy: 'leased-1',
+    });
     await ids.stop();
+    expect(() => ids.next()).toThrow(IdLeaseLostError);
   });
 
   it('gives its generator back on stop', async () => {

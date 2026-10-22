@@ -51,7 +51,7 @@ test.describe('Walk-in queue', () => {
     await expect(card.getByText('Joining checks once that you’re within')).toBeVisible();
     await card.getByRole('button', { name: 'Join the queue' }).click();
 
-    await expect(page).toHaveURL(/\/queue\/[0-9a-f-]{36}\?joined=1$/);
+    await expect(page).toHaveURL(/\/queue\/[1-9][0-9]{0,18}\?joined=1$/);
     await expect(page.getByRole('heading', { name: 'You’re in the queue' })).toBeVisible();
     await expect(page.getByText('This page updates by itself. Keep it open.')).toBeVisible();
     const entryId = new URL(page.url()).pathname.split('/').pop()!;

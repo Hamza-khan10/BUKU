@@ -76,7 +76,7 @@ test.describe('Your data', () => {
     await expectAccessible(page);
     await dialog.getByRole('button', { name: 'Keep my account' }).click();
     await expect(dialog).toBeHidden();
-    expect(appointmentStatus(visit.id)).toBe('confirmed');
+    expect(appointmentStatus(place.id, visit.id)).toBe('confirmed');
 
     await page.getByRole('button', { name: 'Delete my account' }).click();
     await page
@@ -92,7 +92,7 @@ test.describe('Your data', () => {
     await expectAccessible(page);
     // Signed out at the API too, and the business no longer expects them.
     expect((await page.request.get('/api/v1/auth/me', { headers: ours })).status()).toBe(401);
-    await expect.poll(() => appointmentStatus(visit.id), { timeout: 30_000 }).toBe('cancelled');
+    await expect.poll(() => appointmentStatus(place.id, visit.id), { timeout: 30_000 }).toBe('cancelled');
   });
 
   test('a sign-in from long ago is asked to sign in again first', async ({ page }) => {

@@ -43,6 +43,8 @@ export class LeasedIdGenerator {
   #generator: IdGenerator | null = null;
   #deadline = 0;
   #timer: NodeJS.Timeout | null = null;
+  #stopped = false;
+  #leasing: Promise<boolean> | null = null;
   readonly #log = logger.child({ module: 'ids' });
 
   constructor(
@@ -64,6 +66,15 @@ export class LeasedIdGenerator {
   }
 
   async start(): Promise<void> {
+    this.#stopped = false;
+    await this.#lease();
+    this.#timer = setInterval(() => void this.renew(), (this.ttl * 1000) / 3);
+    this.#timer.unref();
+    this.#log.info({ generator: this.generator, region: this.options.region }, 'ID generator leased');
+  }
+
+  /** A generator of its own for this instance (the registry hands out only free ones). */
+  async #lease(): Promise<void> {
     const asked = performance.now();
     const rows = await this.directory.$queryRaw<{ generator_id: number }[]>`
       SELECT generator_id FROM registry.lease_generator(${this.options.instance}, ${this.options.region}::smallint, ${this.ttl}::int)`;
@@ -71,9 +82,6 @@ export class LeasedIdGenerator {
     if (generator === undefined) throw new Error('no ID generator was leased');
     this.#generator = new IdGenerator(Number(generator));
     this.#extend(asked);
-    this.#timer = setInterval(() => void this.renew(), (this.ttl * 1000) / 3);
-    this.#timer.unref();
-    this.#log.info({ generator, region: this.options.region }, 'ID generator leased');
   }
 
   /** The next ID; throws IdLeaseLostError once the lease may have run out. */
@@ -87,6 +95,7 @@ export class LeasedIdGenerator {
   }
 
   async stop(): Promise<void> {
+    this.#stopped = true;
     if (this.#timer) clearInterval(this.#timer);
     this.#timer = null;
     const generator = this.#generator?.generator;
@@ -103,13 +112,17 @@ export class LeasedIdGenerator {
   }
 
   /**
-   * Renew the lease now (it also renews itself every third of its life). False when this instance
-   * holds no lease any more, or the renewal didn't get through (IDs then stop by themselves when
-   * the current lease could run out).
+   * Renew the lease now (it also renews itself every third of its life). True when this instance
+   * may go on making IDs. A renewal that doesn't get through keeps the current deadline (IDs then
+   * stop by themselves when the lease could run out). A lease that is gone — run out while the
+   * directory couldn't be reached, or taken by another instance — is never used again: this
+   * instance stops at once and leases a new generator, as a restart would, and keeps trying every
+   * renewal until it gets one. Until then it makes no IDs.
    */
   async renew(): Promise<boolean> {
+    if (this.#stopped) return false;
     const generator = this.#generator?.generator;
-    if (generator === undefined) return false;
+    if (generator === undefined) return this.#leaseAgain();
     const asked = performance.now();
     try {
       const rows = await this.directory.$queryRaw<{ expires: Date | null }[]>`
@@ -118,14 +131,35 @@ export class LeasedIdGenerator {
         this.#extend(asked);
         return true;
       }
-      this.#log.error({ generator }, 'ID generator lease lost: no more IDs from this instance');
-      this.#deadline = 0;
-      return false;
     } catch (err) {
       // Keep the old deadline: IDs stop by themselves if renewals keep failing.
       this.#log.warn({ err, generator }, 'could not renew the ID generator lease');
       return false;
     }
+    this.#log.error({ generator }, 'ID generator lease lost: no more IDs from it; leasing a new one');
+    this.#generator = null;
+    this.#deadline = 0;
+    return this.#leaseAgain();
+  }
+
+  /** One new lease at a time, however many renewals ask for it. */
+  #leaseAgain(): Promise<boolean> {
+    this.#leasing ??= this.#lease()
+      .then(() => {
+        this.#log.warn(
+          { generator: this.generator, region: this.options.region },
+          'ID generator leased again',
+        );
+        return true;
+      })
+      .catch((err: unknown) => {
+        this.#log.error({ err }, 'could not lease a new ID generator; no IDs until one is leased');
+        return false;
+      })
+      .finally(() => {
+        this.#leasing = null;
+      });
+    return this.#leasing;
   }
 }
 

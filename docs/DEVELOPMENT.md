@@ -235,6 +235,14 @@ request APIs, no `next lint`). The browser never holds a token: it calls `/api/v
 server, which adds the session (D-085). Browser tests need Chromium once:
 `pnpm --filter @buku/web exec playwright install chromium`.
 
+**Simulated time.** A test can't wait a day for a visit to happen, so the acceptance run and a
+few browser tests move one with `services/booking/scripts/dev-world.ts` — the only step that
+touches the database directly. It works on the business's own shard as `buku_app` (row-level
+security still applies) and then brings the customer's side up to date with booking's own sync;
+it refuses any database not on this machine. By hand:
+`pnpm exec tsx services/booking/scripts/dev-world.ts visit-happened <businessPublicId> <appointmentPublicId>`
+(also `move-visit`, `visit-status`, `close-business`, `signed-in-ago`, …).
+
 ### Deploy the website on Vercel
 
 One Vercel project, connected to this repository, with these settings:
@@ -348,20 +356,21 @@ checkouts against Paddle's sandbox (test cards, no real money) — tested end to
    after every price change.
 7. **Checkout domain:** _Checkout → Website approval_: add the website's domain
    (`https://thebuku.vercel.app`); then _Checkout settings → Default payment link_:
-   `https://thebuku.vercel.app/checkout` (Paddle refuses `localhost`). Until the website has that
-   page (D3i), open a payment on the local test page instead —
-   `pnpm exec tsx scripts/paddle-sandbox-checkout.ts`, then
-   `http://localhost:8098/checkout?_ptxn=<transactionId from the checkout response>`.
+   `https://thebuku.vercel.app/checkout` (Paddle refuses `localhost`). That is the website's
+   checkout page (D3i); locally, put `PADDLE_CLIENT_TOKEN=test_…` and `PADDLE_ENVIRONMENT=sandbox`
+   in `apps/web/.env.local` and open
+   `http://localhost:3000/checkout?_ptxn=<transactionId from the checkout response>`.
 8. **Switch billing on for businesses** while testing: `PUT /v1/admin/billing/settings/business
 { "enabled": true }` (customers are free and can't be charged, D-101). Pay with the test card
    `4242 4242 4242 4242`, any future expiry, CVC `100`. Then try cancel, undo, a plan change and
    the card portal (`/v1/businesses/:id/billing/subscription/…`).
-9. **Afterwards:** stop the tunnel, the relay and the test page, and switch business billing off
+9. **Afterwards:** stop the tunnel and the relay, and switch business billing off
    again (otherwise every demo shop is held to the Starter plan's limits).
 
 Never put the API key or webhook secret in the web or mobile app — only the client-side token.
 For going live: a live Paddle account, BUKU's own domain approved (Paddle may not accept a
-`vercel.app` address for live payments), the website's checkout page (D3i) and live keys.
+`vercel.app` address for live payments) and live keys (`PADDLE_ENVIRONMENT=production` and a
+`live_…` client-side token for the website).
 
 ### Set up WhatsApp (Meta WhatsApp Cloud API)
 

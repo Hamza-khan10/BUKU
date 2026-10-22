@@ -1549,3 +1549,31 @@ more.
   and 7 on keeping the catalog: what a refresh copies, newer wins, deleted and unplaced, the
   queue's path, events, figures, the sweep) run as search's own role; booking, business and queue
   tests check their announcements.
+
+**D3i, as built (2026-10-23).** The website and the whole stack's tests run on v2 (D-121).
+
+- **IDs on the website:** one definition of both forms (`@buku/validation` `ids.ts`: a 12-character
+  public ID for people, businesses and appointments; a positive 64-bit decimal for everything under
+  a business), shared with the services (`@buku/common` re-uses it). Pages and links check each
+  address in its own form: appointments and businesses by public ID, tickets, services and staff
+  by decimal ID; a business's address is its public ID or its slug (the live queue stream accepted
+  only lower-case before). Search prices are decimal strings.
+- **Found on the way:** the gateway's public-profile route matched only lower-case slugs, so a link
+  to a business by its public ID (every notification's) was a 404 (now `[0-9A-Za-z-]+`); "my
+  reviews" named each visit by its internal ID instead of its public ID; and a service whose ID
+  lease ran out while the directory was unreachable never made an ID again (it now leases a new
+  generator by itself, `LeasedIdGenerator.renew`).
+- **Checkout:** `/checkout` opens Paddle's checkout for `?_ptxn=txn_…`; only that page may load
+  Paddle (script, styles, its API and the payment frame of `PADDLE_ENVIRONMENT`, sandbox or
+  live). The local test page (`scripts/paddle-sandbox-checkout.ts`) is gone.
+- **Simulated time:** `services/booking/scripts/dev-world.ts`, development only, as `buku_app` on
+  the business's shard (row-level security applies), then booking's own PersonSync for the
+  customer's side. An appointment's time is fixed on its shard (`appointments_fixed`: it is the
+  partition key), so a move writes the same appointment (same ID, public ID and code) again at the
+  new time in one transaction. A business a test closes is announced (`businesses.updated`), so
+  search drops it at once. The acceptance run imports it; the browser tests call its command line.
+- **Tests on v2:** acceptance 22/22 (journeys, races, every route; its authorization scan now sends
+  well-formed IDs of each kind, so a refusal is about who asks, not how); the website's browser
+  tests 220 passed (6 skip by design: keyboard tests on phones, a phone-only one on desktop, Google
+  set up or not), including the checkout page with a stand-in for Paddle.js; the admin app's 5;
+  unit 395, integration 406.

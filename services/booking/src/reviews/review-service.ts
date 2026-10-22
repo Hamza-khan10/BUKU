@@ -58,7 +58,7 @@ export function reviewerName(name: string, deleted: boolean): string {
 type Review = BusinessShard.Review;
 /** What a review is shown with: the visit it is about, and who wrote it. */
 interface Context {
-  visits: Map<bigint, { startAt: Date; service: string; staff: string | null }>;
+  visits: Map<bigint, { publicId: string; startAt: Date; service: string; staff: string | null }>;
   authors: Map<bigint, { name: string; deleted: boolean }>;
 }
 
@@ -447,7 +447,8 @@ export class ReviewService {
   private mineView(r: Review, context: Context, now: Date) {
     return {
       ...publicView(r, context),
-      appointmentId: r.appointmentId.toString(),
+      // The visit as the customer names it everywhere else: its public ID (DB-042).
+      appointmentId: context.visits.get(r.appointmentId)?.publicId ?? null,
       visible: r.isVisible,
       editableUntil: new Date(r.createdAt.getTime() + REVIEW_RULES.editDays * DAY).toISOString(),
       canEdit: now.getTime() - r.createdAt.getTime() <= REVIEW_RULES.editDays * DAY,
@@ -503,6 +504,7 @@ async function visitsOf(tx: BusinessTx, reviews: Review[]): Promise<Context['vis
     },
     select: {
       id: true,
+      publicId: true,
       startAt: true,
       service: { select: { name: true } },
       staff: { select: { displayName: true } },
@@ -511,7 +513,12 @@ async function visitsOf(tx: BusinessTx, reviews: Review[]): Promise<Context['vis
   return new Map(
     rows.map((a) => [
       a.id,
-      { startAt: a.startAt, service: a.service.name, staff: a.staff?.displayName ?? null },
+      {
+        publicId: a.publicId,
+        startAt: a.startAt,
+        service: a.service.name,
+        staff: a.staff?.displayName ?? null,
+      },
     ]),
   );
 }

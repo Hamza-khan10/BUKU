@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { DECIMAL_ID_PATTERN, PUBLIC_ID_PATTERN } from '@buku/validation';
 
 /**
  * UUID version 7 (RFC 9562): 48-bit Unix-millisecond timestamp + 74 random bits.
@@ -122,14 +123,14 @@ export const regionOfId = (id: bigint): number => Number((id >> 19n) & 7n);
  * positive 64-bit decimal is refused, so a crafted value never reaches a query.
  */
 export function idFromString(value: string): bigint | null {
-  if (!/^[1-9][0-9]{0,18}$/.test(value)) return null;
+  if (!DECIMAL_ID_PATTERN.test(value)) return null;
   const id = BigInt(value);
   return id <= 0x7fff_ffff_ffff_ffffn ? id : null;
 }
 
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 export const PUBLIC_ID_LENGTH = 12;
-export const PUBLIC_ID_PATTERN = /^[0-9A-Za-z]{12}$/;
+export { PUBLIC_ID_PATTERN };
 
 /**
  * A public ID (DB-001): 12 Base62 characters from the system's cryptographic source, about 71 bits,

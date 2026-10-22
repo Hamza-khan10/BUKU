@@ -1081,7 +1081,7 @@ GET /v1/businesses/autocomplete?q=hai
 | `POST /v1/appointments/:id/review`                                | the customer  | Review a visit that happened (within 30 days, once)                           |
 | `PATCH /v1/appointments/:id/review`                               | the customer  | Change it (7 days after posting)                                              |
 | `DELETE /v1/appointments/:id/review`                              | the customer  | Delete it                                                                     |
-| `GET /v1/appointments/reviews`                                    | ✔             | My reviews                                                                    |
+| `GET /v1/appointments/reviews`                                    | ✔             | My reviews; each names its visit (`appointmentId`) by the visit's public ID   |
 | `PUT`/`DELETE /v1/businesses/:id/reviews/:reviewId/response`      | owner/manager | Reply (replaces an earlier reply) / remove the reply                          |
 | `POST /v1/businesses/:id/reviews/:reviewId/report`                | owner/manager | `{ reason: offensive·fake·not_a_customer·personal_info·other, note? }`        |
 | `GET /v1/admin/reviews`                                           | admin         | Reported reviews, oldest report first                                         |

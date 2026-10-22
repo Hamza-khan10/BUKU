@@ -109,7 +109,11 @@ test.describe('Discovery', () => {
 
     // More places as you scroll, until the end says so.
     if (total > 12) {
-      for (let i = 0; i < 12 && (await page.getByText(/^That’s all \d+ places/).count()) === 0; i++) {
+      // (Only what is on show: an earlier view's end stays in the page, hidden.)
+      const atEnd = page.getByText(/^That’s all \d+ places/).filter({ visible: true });
+      // The category's own end goes once every place is back on show (more than one page of them).
+      await expect(atEnd).toHaveCount(0);
+      for (let i = 0; i < 12 && (await atEnd.count()) === 0; i++) {
         // Straight to the bottom (a wheel would start the page's smooth scrolling, which keeps
         // going after the test has moved on).
         await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
@@ -118,11 +122,15 @@ test.describe('Discovery', () => {
         // Places keep loading by themselves at first, so the button may move or be gone a moment later.
         if ((await more.count()) > 0) await more.click({ timeout: 3000 }).catch(() => undefined);
       }
-      await expect(page.getByText(`That’s all ${total} places for this search.`)).toBeVisible();
-      await expect(places.locator(':scope > li.reveal')).toHaveCount(total);
+      // The end counts exactly what is listed. (Tests running alongside may add a place while this
+      // one scrolls, so the count is the end's own, not the one read at the start.)
+      const end = page.getByText(/^That’s all \d+ places for this search\.$/).filter({ visible: true });
+      await expect(end).toBeVisible();
+      const listed = Number((await end.textContent())!.match(/\d+/)![0]);
+      await expect(places.locator(':scope > li.reveal')).toHaveCount(listed);
       // While the end of the list is on screen it steps aside (the list's own buttons are there);
       // higher up, one tap takes you back to the search.
-      await page.getByText(`That’s all ${total} places for this search.`).scrollIntoViewIfNeeded();
+      await end.scrollIntoViewIfNeeded();
       await expect(page.getByRole('button', { name: 'Back to the search' })).toBeHidden();
       await page.evaluate(() => window.scrollTo(0, 2000));
       await page.getByRole('button', { name: 'Back to the search' }).click();

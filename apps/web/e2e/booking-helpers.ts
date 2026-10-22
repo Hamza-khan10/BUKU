@@ -11,15 +11,17 @@ export interface Bookable {
   service: { id: string; name: string; staffIds: string[] };
 }
 
-/** A seeded business with a service someone takes bookings for. */
+/** A seeded business that confirms bookings at once, with a service someone takes bookings for. */
 export async function bookable(): Promise<Bookable> {
   const search = (await (await fetch(`${API}/v1/businesses/search?limit=20`)).json()) as {
     data: { id: string; slug: string; name: string }[];
   };
   for (const b of search.data) {
     const menu = (await (await fetch(`${API}/v1/businesses/${b.slug}/services`)).json()) as {
-      data: { categories: { services: Bookable['service'][] }[] };
+      data: { categories: { services: Bookable['service'][] }[]; booking: { confirmationMode: string } };
     };
+    // Some seeded businesses approve each booking by hand: these tests book and expect a confirmation.
+    if (menu.data.booking.confirmationMode !== 'automatic') continue;
     const service = menu.data.categories.flatMap((c) => c.services).find((s) => s.staffIds.length > 0);
     if (service) return { id: b.id, slug: b.slug, name: b.name, service };
   }

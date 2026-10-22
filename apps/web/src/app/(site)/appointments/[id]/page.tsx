@@ -1,3 +1,4 @@
+import { isPublicId } from '@buku/validation';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { Container } from '@/components/ui/layout';
@@ -8,8 +9,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
 /**
  * One booking's receipt, for the person who made it (signed-out visitors are
  * sent to sign in by the proxy; the API shows a booking only to its owner).
@@ -17,7 +16,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
  */
 export default async function AppointmentPage({ params, searchParams }: PageProps<'/appointments/[id]'>) {
   const { id } = await params;
-  if (!UUID.test(id)) notFound();
+  if (!isPublicId(id)) notFound();
   const query = await searchParams;
   const arrival: Arrival = query.new === '1' ? 'booked' : query.moved === '1' ? 'moved' : null;
   return (

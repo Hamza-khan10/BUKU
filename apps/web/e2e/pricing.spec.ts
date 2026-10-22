@@ -77,9 +77,20 @@ test.describe('Pricing', () => {
     const xml = await (await request.get('/sitemap.xml')).text();
     for (const path of ['/pricing', '/for-business', '/legal/privacy', '/categories'])
       expect(xml).toContain(`${path}</loc>`);
-    const listed = (
-      (await (await fetch(`${api}/v1/businesses/search?limit=1`)).json()) as { meta: { total: number } }
-    ).meta.total;
-    expect((xml.match(/\/b\/[a-z0-9-]+<\/loc>/g) ?? []).length).toBe(listed);
+    // The sitemap is cached for an hour and other tests add and close businesses meanwhile, so it is
+    // checked against the businesses that stay: the verified ones (tests only ever make new ones).
+    const verified: string[] = [];
+    for (let page = 1; ; page++) {
+      const res = (await (await fetch(`${api}/v1/businesses/search?limit=50&page=${page}`)).json()) as {
+        data: { slug: string; verified: boolean }[];
+        meta: { totalPages: number };
+      };
+      verified.push(...res.data.filter((b) => b.verified).map((b) => b.slug));
+      if (page >= res.meta.totalPages) break;
+    }
+    expect(verified.length).toBeGreaterThan(0);
+    for (const slug of verified) expect(xml).toContain(`/b/${slug}</loc>`);
+    // Only business pages by their own address, nothing else under /b/.
+    for (const loc of xml.match(/\/b\/[^<]+<\/loc>/g) ?? []) expect(loc).toMatch(/^\/b\/[a-z0-9-]+<\/loc>$/);
   });
 });

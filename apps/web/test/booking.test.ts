@@ -12,8 +12,9 @@ import {
   todayIn,
 } from '../src/features/booking/choices';
 
-const SERVICE = '0190a0b2-7c4e-7a3e-9f00-000000000001';
-const STAFF = '0190a0b2-7c4e-7a3e-9f00-000000000002';
+// A service and an employee go by decimal IDs (DB-042).
+const SERVICE = '104862745937051649';
+const STAFF = '104862745937051650';
 const TIME = '2026-10-06T05:00:00.000Z';
 
 describe('booking choices in the address', () => {
@@ -34,6 +35,9 @@ describe('booking choices in the address', () => {
       serviceId: SERVICE,
     });
     expect(readChoices({ service: [SERVICE, 'x'] }).serviceId).toBe(SERVICE);
+    // An old UUID or an ID past 64 bits is not an ID any more.
+    expect(readChoices({ service: '0190a0b2-7c4e-7a3e-9f00-000000000001' }).serviceId).toBeNull();
+    expect(readChoices({ service: '9223372036854775808' }).serviceId).toBeNull();
     expect(readChoices({ service: SERVICE, date: '2026-02-30x' }).date).toBeNull();
   });
 
