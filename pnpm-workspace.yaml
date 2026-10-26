@@ -52,3 +52,9 @@ overrides:
   # Pulled in by @changesets/cli (release tooling, never at run time). Same major version. (Vite,
   # which bundles the same code, is Vitest's peer and is named at the root: package.json.)
   launch-editor: 2.14.2
+  # GHSA-27r3-jxmh-p828 (high): denial of service through trailing bytes after a compressed body.
+  # Pulled in by Express in every service (request bodies). Within Express 5.3's own range (^2.3.0).
+  body-parser: 2.4.0
+  # GHSA-mrhx-c7xc-m3w5 (high): memory exhaustion validating oversized collections. Only the React
+  # hooks lint plugin still resolved an older zod; it accepts any zod 4, and gets the one BUKU uses.
+  eslint-plugin-react-hooks>zod: 4.6.6
