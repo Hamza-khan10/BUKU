@@ -15,7 +15,7 @@
     "@buku/kafka": "workspace:*",
     "express": "5.3.0",
     "ioredis": "6.0.0",
-    "nodemailer": "10.1.0",
+    "nodemailer": "10.1.4",
     "zod": "4.6.6"
   },
   "devDependencies": {
