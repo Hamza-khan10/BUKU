@@ -6,12 +6,14 @@ compromised service. Every decision below has a number (DB-…) and a reason. Wh
 and the code disagree, this document is the plan and the code is the state; the build phases at
 the end say what is done.
 
-Status: **design approved by the owner's brief (2026-10-16). D1 and D2 are built, D3 is under way (§15): the
-directory, the shard registry, ID generators and the router; global lookups; user and business
-shards provisioned from the registry; reference data copied by replication; the search catalog;
-each service's rights everywhere; and the development data placed across shards the way the
-services will. D3 (moving the services onto v2) is next.** Website work pauses until D1–D3 are
-done (DB-000).
+Status (2026-10-27): **D1 and D2 are built; D3 is built up to D3i (§15).** v2 has the directory,
+the shard registry, ID generators and the router; global lookups; user and business shards
+provisioned from the registry; reference data copied by replication; the search catalog; each
+service's rights everywhere; and its own development data (D2e). Every service now runs on v2
+through the data plane (D3a–D3h), and the website, the acceptance run and the browser tests do
+too (D3i), all on the integration branch `feat/db-v2-services`. **Next: D3j** — v1 leaves the
+stack and one pull request brings v2 to `main`; then D4 (safety) and D5 (proof at scale).
+Website work resumes after D3 (DB-000).
 
 ---
 
@@ -1097,7 +1099,7 @@ million rows is fast in Postgres, exact, and has one less system to run.
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **D1 Foundation** ✅  | Postgres image with the extensions; directory schema (registry, generators, settings, currencies); the ID generator (`@buku/ids`: TypeScript and `buku_id()` in SQL) and public IDs; the shard router in `@buku/database` (one shard per family locally) | unit and integration tests for IDs (uniqueness under concurrency, ordering, region bits), allocation (limit reached → next shard, limit changed), routing |
 | **D2 Schema v2** ✅   | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed. In five slices, below      | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
-| **D3 Services**       | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
+| **D3 Services** 🚧    | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
 | **D4 Safety**         | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
 | **D5 Proof at scale** | a synthetic data set (10M people, 1M businesses, 200M appointments) on a test cluster; the slow-query review                                                                                                                                             | the targets in §3 met for the main queries                                                                                                                |
 
@@ -1271,18 +1273,18 @@ CodeQL; when every service is on v2 and the stack's tests pass, one pull request
 `main`, and the website resumes. There is no production data, so nothing is copied from v1: v2
 starts from its own seed (D2e).
 
-| Slice                          | What                                                                                                                                                                                                                         |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **D3a** Foundation             | API identifiers (DB-042); the services' data plane (`DataPlane`: router, leased IDs, shard pools, `inBusiness`, `acrossBusinesses`, handles); v2 events (shard outbox, relays per shard, dedupe by the event's time); config |
-| **D3b** auth                   | sign-up and sign-in, sessions, two-step sign-in, Google, employee logins, account erasure, data export, admin roles                                                                                                          |
-| **D3c** business               | profiles, photos, documents, legal profiles, reports, favourites, members, suggested kinds of business                                                                                                                       |
-| **D3d** booking                | services, team, schedules, appointments (the customer's time first), check-in, shifts, reviews                                                                                                                               |
-| **D3e** queue                  | sessions, tickets, one queue at a time                                                                                                                                                                                       |
-| **D3f** notification           | preferences, messages, marks, WhatsApp, push; reminders and suggestions across business shards                                                                                                                               |
-| **D3g** billing                | plans on the directory, subscriptions and requests on business shards, store handles                                                                                                                                         |
-| **D3h** search, ads, analytics | the catalog kept from events; v1's search queries against it; ads from the catalog                                                                                                                                           |
-| **D3i** apps                   | the website and admin app on public IDs; the whole stack's acceptance and browser tests                                                                                                                                      |
-| **D3j** retire v1              | services stop using the v1 database; it leaves the stack                                                                                                                                                                     |
+| Slice                          | What                                                                                                                                                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D3a** Foundation             | API identifiers (DB-042); the services' data plane (`DataPlane`: router, leased IDs, shard pools, `inBusiness`, `acrossBusinesses`, handles); v2 events (shard outbox, relays per shard, dedupe by the event's time); config — ✅ 2026-10-17 (#122) |
+| **D3b** auth                   | sign-up and sign-in, sessions, two-step sign-in, Google, employee logins, account erasure, data export, admin roles — ✅ 2026-10-18 (#123)                                                                                                          |
+| **D3c** business               | profiles, photos, documents, legal profiles, reports, favourites, members, suggested kinds of business — ✅ 2026-10-18 (#124)                                                                                                                       |
+| **D3d** booking                | services, team, schedules, appointments (the customer's time first), check-in, shifts, reviews — ✅ 2026-10-18 (#125)                                                                                                                               |
+| **D3e** queue                  | sessions, tickets, one queue at a time — ✅ 2026-10-18 (#126)                                                                                                                                                                                       |
+| **D3f** notification           | preferences, messages, marks, WhatsApp, push; reminders and suggestions across business shards — ✅ 2026-10-18 (#127)                                                                                                                               |
+| **D3g** billing                | plans on the directory, subscriptions and requests on business shards, store handles — ✅ 2026-10-18 (#128, Paddle sandbox #129)                                                                                                                    |
+| **D3h** search, ads, analytics | the catalog kept from events; v1's search queries against it; ads from the catalog — ✅ 2026-10-21 (#144)                                                                                                                                           |
+| **D3i** apps                   | the website and admin app on public IDs; the whole stack's acceptance and browser tests — ✅ 2026-10-23 (#145)                                                                                                                                      |
+| **D3j** retire v1              | services stop using the v1 database; it leaves the stack — **next**                                                                                                                                                                                 |
 
 **D3a, as built (2026-10-17).**
 
