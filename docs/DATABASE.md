@@ -11,8 +11,8 @@ registry, ID generators and the router; global lookups; user and business shards
 the registry; reference data copied by replication; the search catalog; each service's rights
 everywhere; and its own development data (D2e). Every service runs on v2 through the data plane,
 the website and every test run on it too, and v1's `buku` database has left the stack (D3j).
-**D4 is under way:** backups with point-in-time recovery and a restore drill (D4a) are built; TLS
-and monitoring follow; then D5 (proof at scale). Website work resumes now that D3 is done
+**D4 is under way:** backups with point-in-time recovery and a restore drill (D4a), and TLS 1.3 on
+every connection (D4b), are built; audit and monitoring follow; then D5 (proof at scale). Website work resumes now that D3 is done
 (DB-000).
 
 ---
@@ -1614,7 +1614,7 @@ more.
 | Slice                         | What                                                                                                                  |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | **D4a** backups ✅ 2026-10-31 | pgBackRest: WAL archived continuously, encrypted repository, full/differential/incremental backups; the restore drill |
-| **D4b** TLS                   | every connection over TLS, the server's certificate verified by every client (DB-020)                                 |
+| **D4b** TLS ✅ 2026-10-31     | every connection over TLS, the server's certificate verified by every client (DB-020)                                 |
 | **D4c** audit and monitoring  | pgaudit for human sessions; monitoring of archiving, backup age, replication slots, partitions, connections           |
 
 **D4a, as built (2026-10-31).** Backups and point-in-time recovery in development (DB-030, DB-034).
@@ -1638,3 +1638,37 @@ more.
      passes.
 - **verify.sh** checks that WAL reaches the repository with no failures, and that an encrypted
   backup exists.
+
+**D4b, as built (2026-10-31).** TLS on every connection in development (DB-020, layer 2).
+
+- **Certificates:** `pnpm bootstrap` runs `scripts/dev-certs.sh`, which makes a local authority
+  (`secrets/ca`, its key never leaves that folder) and the server's certificate for `postgres`,
+  `localhost` and `127.0.0.1` (ECDSA P-256), all in the git-ignored `secrets/`. Production uses
+  the provider's authority.
+- **Server:** the image's entrypoint installs the certificate and key from a read-only mount,
+  owned by the server and the key readable by it alone. Settings: `ssl = on`,
+  `ssl_min_protocol_version = TLSv1.3`, and the image's own `pg_hba.conf` (`hba_file`), which has
+  `hostssl` lines and no `host` line, so a network connection without TLS is refused. Only the
+  server's socket, inside its container, needs no TLS (pgBackRest, the administrator's `psql`).
+- **Clients** use libpq's settings, `PGSSLMODE=verify-full` and `PGSSLROOTCERT`: the chain is
+  checked against the authority, and the certificate's name against the host dialled.
+  - Services and database jobs get them from compose, with the authority mounted read-only.
+  - Tools on the host (tests, scripts, Prisma's CLI) read them from `.env`, written by bootstrap.
+  - `tlsOptions()` (`packages/database/src/tls.ts`) gives every Prisma client the same settings.
+    It refuses any other mode, so a client that doesn't check the server can't be configured.
+  - `cliUrl()` translates them into the URL settings of Prisma's migration engine
+    (`sslmode=require&sslaccept=strict&sslcert=…`).
+- **Reference copies:** subscriptions connect with `sslmode=verify-full` and the authority the
+  image installs (`localReferenceSource()`), so replication is encrypted too.
+- **The restore drill's scratch server** has no certificate. The same `pg_hba.conf` therefore
+  refuses every network connection, and it is reachable through its own socket alone.
+- **Tests:**
+  - unit: the settings are read and refused as above;
+  - integration: our clients connect with TLS 1.3, and a connection without TLS, with TLS 1.2, or
+    trusting another authority is refused;
+  - by hand: Prisma's CLI refuses a host name the certificate doesn't name, and an authority that
+    didn't sign the certificate.
+  - `verify.sh` checks that TLS 1.3 is the minimum, that a connection without TLS is refused, that
+    every network connection is encrypted, and that a wrong host name is refused.
+  - Every service's and every replication connection showed TLSv1.3 in `pg_stat_ssl`. Unit 396,
+    integration 380 in 22 files, acceptance 22/22, the restore drill passes.

@@ -32,3 +32,11 @@ RUN install -d -o postgres -g postgres -m 0750 /var/lib/pgbackrest /var/spool/pg
 # Our own init script creates the roles and installs every extension into an
 # `extensions` schema (keeps Prisma's `public` schema clean).
 COPY init/ /docker-entrypoint-initdb.d/
+
+# TLS (docs/DATABASE.md DB-020): who may connect and how (network: TLS only), and an entrypoint that
+# installs the server's certificate from its read-only mount before the official one runs.
+COPY tls/pg_hba.conf /etc/postgresql/pg_hba.conf
+COPY --chmod=0755 tls/entrypoint.sh /usr/local/bin/buku-entrypoint
+RUN chmod 0644 /etc/postgresql/pg_hba.conf
+ENTRYPOINT ["buku-entrypoint"]
+CMD ["postgres"]

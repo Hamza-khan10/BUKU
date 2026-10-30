@@ -19,6 +19,7 @@ import { createDatabaseClient } from '../src/index.js';
 import {
   dropDatabase,
   ensureReferenceCopy,
+  localReferenceSource,
   migrate,
   provisionShards,
   waitForReferenceCopy,
@@ -175,7 +176,7 @@ export async function buildServicesWorld(): Promise<void> {
 
   // 4. The shard databases, migrated, and the business shard's copy of the reference data.
   const reference = {
-    conninfo: `host=localhost port=5432 dbname=${SERVICES_DIRECTORY}`,
+    conninfo: localReferenceSource(SERVICES_DIRECTORY),
     replicator: testEnv.replicator,
     publisherUrl,
   };

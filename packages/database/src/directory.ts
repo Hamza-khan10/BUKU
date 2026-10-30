@@ -1,6 +1,7 @@
 import { IdGenerator, logger, regionOfId } from '@buku/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from './generated/directory/client.js';
+import { tlsOptions } from './tls.js';
 
 /**
  * The directory database (docs/DATABASE.md §6): where every person and business lives, and the ID
@@ -21,6 +22,8 @@ export function createDirectoryClient(options: {
     application_name: options.applicationName,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
+    // TLS 1.3, the server's certificate and name checked (DB-020; tls.ts).
+    ssl: tlsOptions(),
   });
   return new PrismaClient({ adapter });
 }

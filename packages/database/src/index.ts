@@ -1,6 +1,7 @@
 import { logger } from '@buku/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from './generated/directory/client.js';
+import { tlsOptions } from './tls.js';
 
 /**
  * Database v2 (docs/DATABASE.md): the directory, user and business shards, and the catalog, reached
@@ -8,6 +9,7 @@ import { PrismaClient } from './generated/directory/client.js';
  */
 
 export { showUpCountsOf, showUpLabelsOf, type PersonShowUpCounts } from './reliability.js';
+export { cliUrl, tlsOptions, type TlsOptions } from './tls.js';
 export {
   createDirectoryClient,
   Directory,
@@ -69,6 +71,8 @@ export function createDatabaseClient(options: CreateDatabaseOptions) {
     application_name: options.applicationName,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
+    // TLS 1.3, the server's certificate and name checked (DB-020; tls.ts).
+    ssl: tlsOptions(),
   });
   const log = logger.child({ module: 'database' });
   const client = new PrismaClient({

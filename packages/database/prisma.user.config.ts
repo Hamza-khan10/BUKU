@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { defineConfig } from 'prisma/config';
+import { cliUrl } from './src/tls.js';
 
 /**
  * Prisma CLI configuration for the USER shard family (docs/DATABASE.md §6, DB-010). Every user
@@ -21,5 +22,5 @@ const migrationUrl =
 export default defineConfig({
   schema: 'prisma/user/schema.prisma',
   migrations: { path: 'prisma/user/migrations' },
-  ...(migrationUrl ? { datasource: { url: migrationUrl } } : {}),
+  ...(migrationUrl ? { datasource: { url: cliUrl(migrationUrl) } } : {}),
 });
