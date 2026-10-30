@@ -18,7 +18,16 @@ RUN apt-get update \
       postgresql-17-partman \
       postgresql-17-cron \
       postgresql-17-pgaudit \
+      pgbackrest \
  && rm -rf /var/lib/apt/lists/*
+
+# Backups (docs/DATABASE.md DB-030): pgBackRest, its settings, and the archive command that pushes
+# every WAL file to the repository. Its directories belong to the server's own user.
+COPY pgbackrest/pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
+COPY --chmod=0755 pgbackrest/archive-push.sh /usr/local/bin/pgbackrest-archive-push
+RUN install -d -o postgres -g postgres -m 0750 /var/lib/pgbackrest /var/spool/pgbackrest \
+ && install -d -o postgres -g postgres -m 0770 /var/log/pgbackrest /tmp/pgbackrest \
+ && chmod 0644 /etc/pgbackrest/pgbackrest.conf
 
 # Our own init script creates the roles and installs every extension into an
 # `extensions` schema (keeps Prisma's `public` schema clean).

@@ -11,8 +11,9 @@ registry, ID generators and the router; global lookups; user and business shards
 the registry; reference data copied by replication; the search catalog; each service's rights
 everywhere; and its own development data (D2e). Every service runs on v2 through the data plane,
 the website and every test run on it too, and v1's `buku` database has left the stack (D3j).
-**Next: D4** — backups, a tested restore, TLS and monitoring; then D5 (proof at scale). Website
-work resumes now that D3 is done (DB-000).
+**D4 is under way:** backups with point-in-time recovery and a restore drill (D4a) are built; TLS
+and monitoring follow; then D5 (proof at scale). Website work resumes now that D3 is done
+(DB-000).
 
 ---
 
@@ -1099,7 +1100,7 @@ million rows is fast in Postgres, exact, and has one less system to run.
 | **D1 Foundation** ✅  | Postgres image with the extensions; directory schema (registry, generators, settings, currencies); the ID generator (`@buku/ids`: TypeScript and `buku_id()` in SQL) and public IDs; the shard router in `@buku/database` (one shard per family locally) | unit and integration tests for IDs (uniqueness under concurrency, ordering, region bits), allocation (limit reached → next shard, limit changed), routing |
 | **D2 Schema v2** ✅   | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed. In five slices, below      | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
 | **D3 Services** ✅    | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
-| **D4 Safety**         | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
+| **D4 Safety** 🚧      | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
 | **D5 Proof at scale** | a synthetic data set (10M people, 1M businesses, 200M appointments) on a test cluster; the slow-query review                                                                                                                                             | the targets in §3 met for the main queries                                                                                                                |
 
 Website work resumes after D3.
@@ -1607,3 +1608,33 @@ more.
 - **Tests:** unit 391, integration 376 in 21 files (v1's constraint, retention, outbox and
   idempotency tests removed; their v2 equivalents run on the shards), acceptance 22/22 on the
   stack with every service connecting through the directory.
+
+**D4, in slices** (each a pull request into `feat/db-v2-services`, D-112).
+
+| Slice                         | What                                                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **D4a** backups ✅ 2026-10-31 | pgBackRest: WAL archived continuously, encrypted repository, full/differential/incremental backups; the restore drill |
+| **D4b** TLS                   | every connection over TLS, the server's certificate verified by every client (DB-020)                                 |
+| **D4c** audit and monitoring  | pgaudit for human sessions; monitoring of archiving, backup age, replication slots, partitions, connections           |
+
+**D4a, as built (2026-10-31).** Backups and point-in-time recovery in development (DB-030, DB-034).
+
+- **Archiving:** the BUKU Postgres image has pgBackRest (2.60, from PGDG). `archive_mode = on`,
+  `archive_timeout = 60s`, and `archive_command` is `pgbackrest-archive-push`, which pushes each
+  WAL file to the repository and, on a new cluster, makes the repository's stanza first, so
+  archiving can't stall unnoticed with WAL piling up.
+- **Repository:** a Docker volume (`pgbackrest-repo`), encrypted with AES-256
+  (`BUKU_BACKUP_CIPHER_PASS`, generated by `pnpm bootstrap`, read from the environment only);
+  zstd compression; two full backups kept with their differentials. Production points the same
+  settings at two object stores (DB-033).
+- **Backups:** `pnpm db:backup [full|diff|incr]`.
+- **The restore drill**, `pnpm db:restore-drill` (and CI on every pull request), runs four steps:
+  1. It verifies every backup and WAL file.
+  2. It writes a marker at a moment T and counts the rows people create in every database (the
+     directory, the catalog, each shard), then deletes the marker after T.
+  3. It restores the latest backup to a scratch server (same image, empty volume, repository
+     read-only; no archiving, replication or scheduled jobs) and recovers to T.
+  4. It checks the marker is back and every count matches. First run: 8 databases, every check
+     passes.
+- **verify.sh** checks that WAL reaches the repository with no failures, and that an encrypted
+  backup exists.

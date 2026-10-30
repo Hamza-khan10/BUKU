@@ -1154,3 +1154,13 @@ then grants its own map from nothing; no service ever had more than its map, and
 leftover v1 grant can linger either. An administrative connection is a plain one, for raw SQL
 only. The outbox relay, the idempotency ledger and billing's checks keep only their shard
 versions, so there is one way to do each.
+
+**D-123 · Backups and the restore drill in development (D4a).** Every Postgres server archives its
+WAL with pgBackRest into an encrypted repository from the moment it starts (the archive command
+makes the repository's stanza itself on a new server), so point-in-time recovery covers every
+second since the oldest kept full backup. A backup is trusted only once it has been restored: the
+drill restores the latest backup to a scratch server at a chosen moment and checks it against
+counts taken at that moment, and runs on every pull request. The scratch server never archives,
+replicates or runs jobs, so a drill can't write into the live repository or reach the live
+directory. The repository's passphrase lives only in the environment; losing it loses the
+backups, so it is kept in the password manager too.

@@ -57,6 +57,8 @@ networks:
 
 volumes:
   postgres-data:
+  # The backup repository (pgBackRest, DB-030): WAL and backups, encrypted.
+  pgbackrest-repo:
   valkey-data:
   kafka-data:
   kafka-access-state:
@@ -174,6 +176,8 @@ services:
       POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C.UTF-8 --data-checksums'
       BUKU_MIGRATOR_PASSWORD: ${BUKU_MIGRATOR_PASSWORD:?run pnpm bootstrap}
       BUKU_APP_PASSWORD: ${BUKU_APP_PASSWORD:?run pnpm bootstrap}
+      # The backup repository's passphrase (pgBackRest reads it from here, never from a file).
+      PGBACKREST_REPO1_CIPHER_PASS: ${BUKU_BACKUP_CIPHER_PASS:?run pnpm bootstrap}
     command: >
       postgres
         -c shared_buffers=256MB
@@ -195,7 +199,10 @@ services:
         -c max_worker_processes=32
         -c pgaudit.log=ddl,role
         -c pgaudit.log_parameter=off
-    volumes: [postgres-data:/var/lib/postgresql/data]
+        -c archive_mode=on
+        -c archive_command='pgbackrest-archive-push %p'
+        -c archive_timeout=60
+    volumes: [postgres-data:/var/lib/postgresql/data, pgbackrest-repo:/var/lib/pgbackrest]
     ports: ['127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U buku_admin -d buku -q']
