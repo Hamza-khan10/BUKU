@@ -44,6 +44,8 @@ password `buku-dev-password-2026`.
 | `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent)     |
 | `pnpm db:shards`                                | Make every registered shard a migrated database (idempotent)              |
 | `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)           |
+| `pnpm db:backup [full\|diff\|incr]`             | A pgBackRest backup of the dev cluster (encrypted repository)             |
+| `pnpm db:restore-drill`                         | Restore the latest backup at a point in time to a scratch server; check   |
 
 Services hot-reload: edit anything under `packages/*/src` or `services/*/src` and the affected
 containers restart within a second. After changing `package.json`/`pnpm-lock.yaml`, run

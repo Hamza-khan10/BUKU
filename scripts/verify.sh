@@ -65,6 +65,8 @@ check "Reference data copied to the business shard (replication ready)" eq "$(ps
 check "Seed data present (≥ 20 businesses, ≥ 200 appointments)" eq "$(psql_q "SELECT (SELECT count(*) FROM businesses) >= 20 AND (SELECT count(*) FROM appointments) >= 200" "$BIZ")" "t"
 check "The catalog lists every live business" eq "$(psql_q "SELECT count(*) FROM catalog.businesses" buku_catalog)" "$(psql_q "SELECT count(*) FROM businesses WHERE deleted_at IS NULL" "$BIZ")"
 check "User emails stored encrypted (bytes, version 1), never plaintext" eq "$(psql_q "SELECT count(*) FROM users WHERE email_enc IS NOT NULL AND get_byte(email_enc, 0) <> 1" "$USR")" 0
+check "Every WAL file reaches the backup repository (no archiving failures)" eq "$(psql_q "SELECT failed_count = 0 OR last_archived_time > last_failed_time FROM pg_stat_archiver")" "t"
+check "A backup exists, and the repository is encrypted" bash -c "docker compose -f docker-compose.dev.yml exec -T -u postgres postgres pgbackrest --stanza=buku info --output=json | grep -q '\"backup\":\\[{' && docker compose -f docker-compose.dev.yml exec -T -u postgres postgres pgbackrest --stanza=buku info | grep -q 'cipher: aes-256-cbc'"
 check "App role cannot DROP tables (least privilege)"  bash -c "! docker compose -f docker-compose.dev.yml exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql -h localhost -U buku_app -d $BIZ -c 'DROP TABLE businesses' 2>/dev/null"
 
 echo "═══ 4. Kafka ═══"

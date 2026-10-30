@@ -104,6 +104,10 @@ jobs:
           pnpm db:shards
       - name: Seed database v2 the way the services will (fails on any broken rule)
         run: pnpm db:seed:v2
+      - name: Backups — a full backup, then the restore drill to a point in time (DB-030, DB-034)
+        run: |
+          pnpm db:backup full
+          pnpm db:restore-drill
       - name: Fail if a schema and its migrations disagree
         working-directory: packages/database
         run: |
