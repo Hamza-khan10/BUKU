@@ -59,7 +59,7 @@ check "Every shard in the registry exists ($(wc -w <<< "$SHARDS"))" eq "$(psql_q
 check "Extensions on shards: postgis, vector, pg_trgm, btree_gist, pgcrypto" eq "$(psql_q "SELECT count(*) FROM pg_extension WHERE extname IN ('postgis','vector','pg_trgm','btree_gist','pgcrypto')" "$BIZ")" 5
 check "Appointments partitioned by month, kept by pg_partman" eq "$(psql_q "SELECT count(*) FROM partman.part_config WHERE parent_table = 'public.appointments'" "$BIZ")" 1
 check "No double booking: staff, resource and customer exclusions" eq "$(psql_q "SELECT count(*) FROM pg_constraint WHERE contype = 'x' AND conname LIKE 'appointment_index_%_free'" "$BIZ")" 3
-check "Row-level security by business on the business shard" ge "$(psql_q "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity" "$BIZ")" 40
+check "Row-level security on every table holding a business's rows" eq "$(psql_q "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname IN ('public', 'ai') AND c.relkind IN ('r', 'p') AND NOT c.relispartition AND (EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'business_id' AND NOT a.attisdropped) OR c.relname = 'businesses') AND NOT c.relrowsecurity" "$BIZ")" 0
 check "Reference data copied to the business shard (replication ready)" eq "$(psql_q "SELECT count(*) = count(*) FILTER (WHERE srsubstate IN ('r','s')) AND count(*) > 0 FROM pg_subscription_rel" "$BIZ")" "t"
 # At least the seed: data created while using the dev app must not fail this check.
 check "Seed data present (≥ 20 businesses, ≥ 200 appointments)" eq "$(psql_q "SELECT (SELECT count(*) FROM businesses) >= 20 AND (SELECT count(*) FROM appointments) >= 200" "$BIZ")" "t"
