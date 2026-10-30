@@ -57,4 +57,4 @@ overrides:
   body-parser: 2.4.0
   # GHSA-mrhx-c7xc-m3w5 (high): memory exhaustion validating oversized collections. Only the React
   # hooks lint plugin still resolved an older zod; it accepts any zod 4, and gets the one BUKU uses.
-  eslint-plugin-react-hooks>zod: 4.6.6
+  eslint-plugin-react-hooks>zod: 4.6.7
