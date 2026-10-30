@@ -96,6 +96,7 @@ x-node-hardening: &node-hardening
 
 # Source is mounted READ-ONLY for hot reload; dependencies stay in the image.
 x-shared-src: &shared-src # used by db-migrate
+  - ./secrets/postgres-ca:/run/buku-ca:ro
   - ./packages/common/src:/app/packages/common/src:ro
   - ./packages/validation/src:/app/packages/validation/src:ro
   - ./packages/database/src:/app/packages/database/src:ro
@@ -104,7 +105,14 @@ x-shared-src: &shared-src # used by db-migrate
   - ./packages/database/prisma.catalog.config.ts:/app/packages/database/prisma.catalog.config.ts:ro
   - ./packages/kafka/src:/app/packages/kafka/src:ro
 
+# Every client of Postgres connects over TLS 1.3 and checks the server's certificate and name
+# (DB-020; packages/database/src/tls.ts), trusting the development authority mounted at /run/buku-ca.
+x-db-tls-env: &db-tls-env
+  PGSSLMODE: verify-full
+  PGSSLROOTCERT: /run/buku-ca/ca.crt
+
 x-service-env: &service-env
+  <<: *db-tls-env
   NODE_ENV: development
   LOG_LEVEL: ${LOG_LEVEL:-info}
   LOG_PRETTY: 'true'
@@ -202,7 +210,16 @@ services:
         -c archive_mode=on
         -c archive_command='pgbackrest-archive-push %p'
         -c archive_timeout=60
-    volumes: [postgres-data:/var/lib/postgresql/data, pgbackrest-repo:/var/lib/pgbackrest]
+        -c ssl=on
+        -c ssl_cert_file=/var/lib/postgresql/tls/server.crt
+        -c ssl_key_file=/var/lib/postgresql/tls/server.key
+        -c ssl_min_protocol_version=TLSv1.3
+        -c hba_file=/etc/postgresql/pg_hba.conf
+    # TLS (DB-020): the server's certificate and key, made by `pnpm bootstrap` (scripts/dev-certs.sh).
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - pgbackrest-repo:/var/lib/pgbackrest
+      - ./secrets/postgres:/run/buku-tls:ro
     ports: ['127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U buku_admin -d buku -q']
@@ -457,11 +474,13 @@ services:
     working_dir: /app/packages/database
     command: ['/app/node_modules/.bin/tsx', 'scripts/prepare-databases.ts']
     environment:
+      <<: *db-tls-env
       NODE_ENV: development
       DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/postgres
       # The role reference data is copied with (DB-015).
       BUKU_REPLICATOR_PASSWORD: ${BUKU_REPLICATOR_PASSWORD:?run pnpm bootstrap}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -483,6 +502,7 @@ services:
         node_modules/.bin/prisma migrate deploy --config prisma.catalog.config.ts &&
         /app/node_modules/.bin/tsx prisma/directory/seed.ts
     environment:
+      <<: *db-tls-env
       NODE_ENV: development
       # Migrations run as the schema owner.
       DATABASE_DIRECTORY_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_directory
@@ -505,6 +525,7 @@ services:
         '/app/node_modules/.bin/tsx scripts/provision-shards.ts && /app/node_modules/.bin/tsx prisma/seed-v2.ts',
       ]
     environment:
+      <<: *db-tls-env
       NODE_ENV: development
       DATABASE_DIRECTORY_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_directory
       # The seed signs in as the tools' role, so it passes the same rights and policies as traffic.
@@ -520,9 +541,10 @@ services:
       BUKU_DB_CLUSTER_LOCAL_1: postgresql://postgres:5432
       # Reference data is copied to business shards and the catalog (DB-015). The servers reach
       # the directory as localhost (one server); the replicator signs in with this.
-      BUKU_REFERENCE_SOURCE: host=localhost port=5432 dbname=buku_directory
+      BUKU_REFERENCE_SOURCE: host=localhost port=5432 dbname=buku_directory sslmode=verify-full sslrootcert=/var/lib/postgresql/tls/ca.crt
       BUKU_REPLICATOR_PASSWORD: ${BUKU_REPLICATOR_PASSWORD:?run pnpm bootstrap}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -541,6 +563,7 @@ services:
     working_dir: /app/packages/database
     command: ['/app/node_modules/.bin/tsx', 'scripts/apply-access.ts']
     environment:
+      <<: *db-tls-env
       NODE_ENV: development
       DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku_directory
       # The same roles' rights in the directory (read the registry, lease ID generators, place rows).
@@ -558,6 +581,7 @@ services:
       BUKU_DB_PASSWORD_ADS: ${BUKU_DB_PASSWORD_ADS:?run pnpm bootstrap}
       BUKU_DB_PASSWORD_ANALYTICS: ${BUKU_DB_PASSWORD_ANALYTICS:?run pnpm bootstrap}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -622,6 +646,7 @@ services:
       PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -660,6 +685,7 @@ services:
       PORT: '3002'
       REDIS_URL: redis://buku-booking:${VALKEY_PASSWORD_BOOKING:?run pnpm bootstrap}@valkey:6379/0
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -697,6 +723,7 @@ services:
       PORT: '3003'
       REDIS_URL: redis://buku-queue:${VALKEY_PASSWORD_QUEUE:?run pnpm bootstrap}@valkey:6379/0
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -754,6 +781,7 @@ services:
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -796,6 +824,7 @@ services:
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
       S3_BUCKET_DOCUMENTS: buku-documents-dev
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -839,6 +868,7 @@ services:
       # Paddle's tax category for BUKU's plans: `saas` once Paddle allows it on the account (D3g.1).
       PADDLE_TAX_CATEGORY: ${PADDLE_TAX_CATEGORY:-standard}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -876,6 +906,7 @@ services:
       # reserved for later and refused until built.
       SEARCH_ENGINE: postgres
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -913,6 +944,7 @@ services:
       REDIS_URL: redis://buku-ads:${VALKEY_PASSWORD_ADS:?run pnpm bootstrap}@valkey:6379/0
       AD_ATTRIBUTION_WINDOW_DAYS: '7'
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -952,6 +984,7 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DATABASE: buku_analytics
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro

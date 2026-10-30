@@ -1164,3 +1164,13 @@ counts taken at that moment, and runs on every pull request. The scratch server 
 replicates or runs jobs, so a drill can't write into the live repository or reach the live
 directory. The repository's passphrase lives only in the environment; losing it loses the
 backups, so it is kept in the password manager too.
+
+**D-124 · TLS 1.3 on every database connection (D4b).** Postgres accepts network connections only
+over TLS 1.3: its `pg_hba.conf` has `hostssl` lines and no `host` line, and ships in the image
+(`hba_file`), so even a server whose data directory predates it enforces it. Every client checks
+the server's certificate and that it names the host dialled (`verify-full`). Services and tools
+use libpq's own settings, `PGSSLMODE` and `PGSSLROOTCERT`, and our Prisma clients accept no mode
+but `verify-full` (or `disable`, which the server refuses), so a client that connects without
+checking can't be configured. Prisma's migration engine gets the same checks in its own URL
+words, and reference-data subscriptions use `verify-full` too. Development certificates come from
+a local authority made by `pnpm bootstrap`, git-ignored; production uses the provider's.

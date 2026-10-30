@@ -7,6 +7,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
+import { localReferenceSource } from '../src/provision.js';
 
 const rootEnv = resolve(import.meta.dirname, '../../../.env');
 if (existsSync(rootEnv)) loadEnv({ path: rootEnv, quiet: true });
@@ -38,9 +39,9 @@ export const testEnv = {
     `postgresql://buku_admin:${encodeURIComponent(required('POSTGRES_SUPERUSER_PASSWORD'))}@${host}:${port}/${database}`,
   /**
    * The test directory as the database server reaches it (reference data is copied from it,
-   * DB-015): itself, so localhost on the server's own port.
+   * DB-015): itself, so localhost on the server's own port, over TLS (DB-020).
    */
-  referenceSource: 'host=localhost port=5432 dbname=buku_directory_test',
+  referenceSource: localReferenceSource('buku_directory_test'),
   // The catalog's test twin (DB-041).
   catalogAppUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_catalog_test`,
   catalogMigratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_catalog_test`,

@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { defineConfig } from 'prisma/config';
+import { cliUrl } from './src/tls.js';
 
 /**
  * Prisma CLI configuration for the BUSINESS shard family (docs/DATABASE.md §6, DB-010). Every business
@@ -21,5 +22,5 @@ const migrationUrl =
 export default defineConfig({
   schema: 'prisma/business/schema.prisma',
   migrations: { path: 'prisma/business/migrations' },
-  ...(migrationUrl ? { datasource: { url: migrationUrl } } : {}),
+  ...(migrationUrl ? { datasource: { url: cliUrl(migrationUrl) } } : {}),
 });

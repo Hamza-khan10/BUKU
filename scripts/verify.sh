@@ -67,14 +67,20 @@ check "The catalog lists every live business" eq "$(psql_q "SELECT count(*) FROM
 check "User emails stored encrypted (bytes, version 1), never plaintext" eq "$(psql_q "SELECT count(*) FROM users WHERE email_enc IS NOT NULL AND get_byte(email_enc, 0) <> 1" "$USR")" 0
 check "Every WAL file reaches the backup repository (no archiving failures)" eq "$(psql_q "SELECT failed_count = 0 OR last_archived_time > last_failed_time FROM pg_stat_archiver")" "t"
 check "A backup exists, and the repository is encrypted" bash -c "docker compose -f docker-compose.dev.yml exec -T -u postgres postgres pgbackrest --stanza=buku info --output=json | grep -q '\"backup\":\\[{' && docker compose -f docker-compose.dev.yml exec -T -u postgres postgres pgbackrest --stanza=buku info | grep -q 'cipher: aes-256-cbc'"
-check "App role cannot DROP tables (least privilege)"  bash -c "! docker compose -f docker-compose.dev.yml exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql -h localhost -U buku_app -d $BIZ -c 'DROP TABLE businesses' 2>/dev/null"
+# TLS (DB-020): network connections only over TLS 1.3, and clients check the server's name.
+TLS_CA=/var/lib/postgresql/tls/ca.crt
+check "Postgres: TLS on, nothing older than TLS 1.3"     eq "$(psql_q "SELECT current_setting('ssl') = 'on' AND current_setting('ssl_min_protocol_version') = 'TLSv1.3'")" "t"
+check "Postgres refuses a network connection without TLS" bash -c "${COMPOSE[*]} exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql 'host=localhost sslmode=disable user=buku_app dbname=buku_directory' -c 'SELECT 1' 2>&1 | grep -q 'no encryption'"
+check "Every network connection to Postgres is encrypted" eq "$(psql_q "SELECT count(*) FROM pg_stat_activity a LEFT JOIN pg_stat_ssl s USING (pid) WHERE a.client_addr IS NOT NULL AND NOT coalesce(s.ssl, false)")" 0
+check "A client checking the certificate refuses the wrong host name" bash -c "${COMPOSE[*]} exec -T postgres sh -c 'psql \"host=\$(hostname -i | cut -d\" \" -f1) sslmode=verify-full sslrootcert=${TLS_CA} user=buku_app dbname=buku_directory\" -c \"SELECT 1\" 2>&1' | grep -q 'does not match host name'"
+check "App role cannot DROP tables (least privilege)"  bash -c "docker compose -f docker-compose.dev.yml exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql 'host=localhost sslmode=verify-full sslrootcert=${TLS_CA} user=buku_app dbname=$BIZ' -c 'DROP TABLE businesses' 2>&1 | grep -q 'must be owner'"
 
 echo "═══ 4. Kafka ═══"
 check "Kafka topics exactly match the registry"        bash -c "docker compose -f docker-compose.dev.yml run --rm --no-deps kafka-init /app/node_modules/.bin/tsx scripts/sync-topics.ts --check"
 check "Alert rules are valid (promtool)"                bash -c "docker run --rm --entrypoint promtool -v \"$PWD/infrastructure/monitoring:/r:ro\" prom/prometheus:v3.7.0 check rules /r/alerts.yml >/dev/null"
 check "Auto topic creation disabled"                   bash -c "docker compose -f docker-compose.dev.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server 127.0.0.1:29093 --entity-type brokers --entity-name 1 --describe --all | grep -q 'auto.create.topics.enable=false'"
 check "Kafka refuses connections that don't sign in"    bash -c "docker compose -f docker-compose.dev.yml exec -T kafka /opt/kafka/bin/kafka-configs.sh --bootstrap-server 127.0.0.1:29093 --entity-type brokers --entity-name 1 --describe --all | grep -q 'listener.security.protocol.map=CONTROLLER:PLAINTEXT,LOCAL:PLAINTEXT,INTERNAL:SASL_PLAINTEXT,EXTERNAL:SASL_PLAINTEXT'"
-check "Kafka users and permissions applied from the plan"bash -c "docker compose -f docker-compose.dev.yml run --rm kafka-access >/dev/null 2>&1"
+check "Kafka users and permissions applied from the plan" bash -c "docker compose -f docker-compose.dev.yml run --rm kafka-access >/dev/null 2>&1"
 
 echo "═══ 5. Search & analytics stores ═══"
 check "Postgres full-text search index on the catalog" eq "$(psql_q "SELECT count(*) FROM pg_indexes WHERE schemaname='catalog' AND indexname='businesses_search_vector_idx'" buku_catalog)" 1
@@ -116,7 +122,7 @@ check "Admin routes don't exist without the admin app's key (D-091)" bash -c "[ 
 check "Admin routes still need a token with the admin app's key" bash -c "K=\$(grep ^ADMIN_GATEWAY_KEY= .env | cut -d= -f2); curl -s -H \"X-BUKU-Admin-Key: \$K\" http://localhost:8000/v1/admin/billing/plans | grep -q '\"message\":\"Unauthorized\"'"
 check "Search paths reach search (not business profiles)"  bash -c "curl -s 'http://localhost:8000/v1/businesses/search?q=haircut' | grep -q '\"sort\":\"relevance\"'"
 check "Categories are public"                            bash -c "curl -s http://localhost:8000/v1/categories | grep -q '\"children\"'"
-check "Public business profile works without a token"   bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/businesses/\$(docker compose -f docker-compose.dev.yml exec -T postgres psql -U buku_admin -d buku -tAc \"select slug from businesses where status='verified' limit 1\")) == 200 ]]"
+check "Public business profile works without a token"   bash -c "[[ \$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/v1/businesses/\$(docker compose -f docker-compose.dev.yml exec -T postgres psql -U buku_admin -d buku_catalog -tAc \"select slug from catalog.businesses where status='verified' limit 1\")) == 200 ]]"
 check "Sign-in → /me → log out everywhere works end to end" bash -c '
   T=$(curl -s -X POST http://localhost:8000/v1/auth/dev/login -H "Content-Type: application/json" -d "{\"email\":\"verify@buku.dev\"}" | python3 -c "import sys,json;print(json.load(sys.stdin)[\"data\"][\"accessToken\"])")
   [[ $(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $T" http://localhost:8000/v1/auth/me) == 200 ]] &&

@@ -99,12 +99,13 @@ docker run --rm --user postgres -e PGBACKREST_REPO1_CIPHER_PASS \
   -v "${REPO}:/var/lib/pgbackrest:ro" -v "${SCRATCH}:/var/lib/postgresql/data" "$IMAGE" \
   pgbackrest --stanza=buku --type=time "--target=${TARGET}" --target-action=promote restore >/dev/null
 # The same limits as the cluster it came from (recovery requires them), nothing published, nothing
-# replicated, no scheduled jobs.
+# replicated, no scheduled jobs. The image's pg_hba admits network connections only over TLS, and the
+# scratch server has none: it is reachable through its own socket alone.
 docker run -d --name "$SCRATCH" -e PGBACKREST_REPO1_CIPHER_PASS \
   -v "${REPO}:/var/lib/pgbackrest:ro" -v "${SCRATCH}:/var/lib/postgresql/data" "$IMAGE" \
   postgres -c archive_mode=off -c max_connections=150 -c max_worker_processes=32 -c max_wal_senders=32 \
   -c max_replication_slots=32 -c max_logical_replication_workers=0 -c wal_level=logical \
-  -c shared_preload_libraries=pg_stat_statements,pgaudit >/dev/null
+  -c shared_preload_libraries=pg_stat_statements,pgaudit -c hba_file=/etc/postgresql/pg_hba.conf >/dev/null
 for _ in $(seq 1 120); do
   [[ "$(docker exec "$SCRATCH" psql -U buku_admin -d postgres -tAc 'SELECT NOT pg_is_in_recovery()' 2>/dev/null)" == "t" ]] && break
   sleep 1

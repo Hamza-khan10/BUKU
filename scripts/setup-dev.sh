@@ -121,6 +121,16 @@ if [[ -z "$(get_value JWT_PRIVATE_KEY)" ]]; then
 fi
 chmod 600 .env
 
+# TLS for Postgres (DB-020): a development authority and the server's certificate (kept if present),
+# and the settings every tool on this machine connects with. The authority's path follows the repo.
+bash scripts/dev-certs.sh
+set_if_empty PGSSLMODE verify-full
+if [[ "$(get_value PGSSLROOTCERT)" != "$PWD/secrets/postgres-ca/ca.crt" ]]; then
+  sed -i '/^PGSSLROOTCERT=/d' .env
+  set_if_empty PGSSLROOTCERT "$PWD/secrets/postgres-ca/ca.crt"
+fi
+ok "Postgres TLS certificates in secrets/ (git-ignored)"
+
 # The web servers' settings, sharing the gateway keys — created only now that the keys exist:
 # the website's (apps/web/.env.local, D-084) and the admin app's (apps/admin/.env.local, D-091).
 if [[ ! -f apps/web/.env.local ]]; then

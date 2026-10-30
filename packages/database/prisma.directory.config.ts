@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { defineConfig } from 'prisma/config';
+import { cliUrl } from './src/tls.js';
 
 /**
  * Prisma CLI configuration for the DIRECTORY database (docs/DATABASE.md §6): the shard registry and
@@ -22,5 +23,5 @@ const migrationUrl =
 export default defineConfig({
   schema: 'prisma/directory/schema.prisma',
   migrations: { path: 'prisma/directory/migrations' },
-  ...(migrationUrl ? { datasource: { url: migrationUrl } } : {}),
+  ...(migrationUrl ? { datasource: { url: cliUrl(migrationUrl) } } : {}),
 });

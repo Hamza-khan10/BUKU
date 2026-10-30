@@ -24,7 +24,8 @@ export const SHARD_FAMILIES: Readonly<Record<string, { config: string; reference
 export interface ReferenceSource {
   /**
    * The directory as the database SERVERS reach it, as libpq parameters without credentials:
-   * "host=… port=… dbname=buku_directory" (on one server in development: host=localhost).
+   * "host=… port=… dbname=buku_directory sslmode=verify-full sslrootcert=…" (DB-020: TLS, the
+   * server's certificate checked); on one server in development, localReferenceSource().
    */
   conninfo: string;
   /** The role the copies sign in as (LOGIN REPLICATION, reads the published tables). */
@@ -61,7 +62,15 @@ const PACKAGE_DIR = resolve(import.meta.dirname, '..');
 /** Database names come from the registry, whose CHECK allows only these; checked again here. */
 const SAFE_NAME = /^[a-z][a-z0-9_]{0,62}$/;
 /** Values that end up inside SQL text (a subscription's connection) are held to this. */
-const SAFE_CONNINFO = /^[A-Za-z0-9_.= -]+$/;
+const SAFE_CONNINFO = /^[A-Za-z0-9_.=/ -]+$/;
+
+/**
+ * The directory as a development server reaches it: itself, on localhost, over TLS and checking its
+ * own certificate against the authority the BUKU image installs (docker/postgres/tls; DB-020).
+ */
+export function localReferenceSource(database: string): string {
+  return `host=localhost port=5432 dbname=${database} sslmode=verify-full sslrootcert=/var/lib/postgresql/tls/ca.crt`;
+}
 const SAFE_SECRET = /^[A-Za-z0-9_-]{16,128}$/;
 
 const admin = (url: string) =>

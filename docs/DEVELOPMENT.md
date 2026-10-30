@@ -36,7 +36,7 @@ password `buku-dev-password-2026`.
 | `pnpm test` / `pnpm test:watch`                 | Unit tests                                                                |
 | `pnpm test:int`                                 | Integration tests against the running stack (in their own test databases) |
 | `pnpm typecheck` · `pnpm lint` · `pnpm format`  | Code quality                                                              |
-| `pnpm verify`                                   | Stack and quality checks (45)                                             |
+| `pnpm verify`                                   | Stack and quality checks (code, health, database, security, gateway)      |
 | `pnpm web`                                      | The website on http://localhost:3000 (hot reload; needs the stack)        |
 | `pnpm web:e2e`                                  | Browser tests: desktop + phone, WCAG 2.2 AA, CSP, clean text, session     |
 | `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route)     |
@@ -46,6 +46,11 @@ password `buku-dev-password-2026`.
 | `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)           |
 | `pnpm db:backup [full\|diff\|incr]`             | A pgBackRest backup of the dev cluster (encrypted repository)             |
 | `pnpm db:restore-drill`                         | Restore the latest backup at a point in time to a scratch server; check   |
+
+Postgres accepts network connections only over TLS 1.3 (DB-020). `pnpm bootstrap` makes the
+development certificates in `secrets/` (git-ignored) and writes `PGSSLMODE=verify-full` and
+`PGSSLROOTCERT` into `.env`, so psql, Prisma's CLI and the tests check the server's certificate.
+From a shell, load them first: `set -a; . ./.env; set +a; psql -h localhost -U buku_app buku_directory`.
 
 Services hot-reload: edit anything under `packages/*/src` or `services/*/src` and the affected
 containers restart within a second. After changing `package.json`/`pnpm-lock.yaml`, run
