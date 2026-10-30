@@ -1,5 +1,5 @@
 import { AppError, ErrorCodes, logger } from '@buku/common';
-import type { BusinessTx, Database, DirectoryClient, Transaction } from '@buku/database';
+import type { BusinessTx, DirectoryClient } from '@buku/database';
 import {
   FEATURE_KEYS,
   featureKeysOf,
@@ -7,7 +7,6 @@ import {
   limitKeysOf,
   readPlanValues,
   type Audience,
-  type BusinessFeature,
   type BusinessLimit,
   type KeyInfo,
 } from './registry.js';
@@ -47,49 +46,6 @@ export interface Entitlements {
   } | null;
 }
 
-/** Statuses that still give access (past_due: the store is retrying the payment). */
-const ENTITLED = ['active', 'trialing', 'past_due'] as const;
-
-export async function entitlementsOf(
-  db: Database | Transaction,
-  account: Account,
-  now = new Date(),
-): Promise<Entitlements> {
-  const audience: Audience = 'userId' in account ? 'user' : 'business';
-  const settings = await db.billingSettings.findUnique({
-    where: { audience },
-    include: { defaultPlan: true, planWhenDisabled: true },
-  });
-  if (!settings) {
-    logger.warn({ audience }, 'billing settings missing: treating everyone as unlimited');
-    return unlimited(audience);
-  }
-
-  if (!settings.enabled) return fromPlan(audience, settings.planWhenDisabled, 'billing_off', false, null);
-
-  const sub = await db.subscription.findFirst({
-    where: {
-      ...('userId' in account ? { userId: account.userId } : { businessId: account.businessId }),
-      status: { in: [...ENTITLED] },
-      OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: now } }],
-    },
-    include: { plan: true },
-    orderBy: { createdAt: 'desc' },
-  });
-  if (sub && sub.plan.audience === audience) {
-    return fromPlan(audience, sub.plan, sub.provider === 'trial' ? 'trial' : 'subscription', true, {
-      id: sub.id,
-      status: sub.status,
-      provider: sub.provider,
-      channel: sub.channel,
-      currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
-      cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
-    });
-  }
-  return fromPlan(audience, settings.defaultPlan, 'default', true, null);
-}
-
-/** Refuse creating one more of `key` when `used` already reaches the plan's limit. */
 export function assertWithinLimit(e: Entitlements, key: string, used: number, message?: string): void {
   const max = e.limits[key];
   if (max === null || max === undefined || used < max) return;
@@ -110,24 +66,6 @@ export function assertFeature(e: Entitlements, key: string): void {
     403,
     { details: { feature: key, plan: e.plan.code } },
   );
-}
-
-/**
- * A customer's "visits": appointments and queue tickets that are live,
- * completed or missed. Cancelled, declined, rescheduled-away and left ones
- * don't count — the customer didn't get (or block) a service with them.
- * Shown on the account only: customers are never limited (D-101).
- */
-export async function countVisits(db: Database | Transaction, userId: string): Promise<number> {
-  const [appointments, tickets] = await Promise.all([
-    db.appointment.count({
-      where: { userId, status: { in: ['pending', 'confirmed', 'completed', 'no_show'] } },
-    }),
-    db.queueEntry.count({
-      where: { userId, status: { in: ['waiting', 'called', 'serving', 'completed', 'no_show'] } },
-    }),
-  ]);
-  return appointments + tickets;
 }
 
 // ── internals ──────────────────────────────────────────────────────────────
@@ -185,33 +123,15 @@ export async function lockForLimit(
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`limit:${scope}:${id}`}, 0))`;
 }
 
-/** Business limit check inside the creating transaction (locked per business and limit). */
-export async function assertBusinessLimit(
-  tx: Transaction,
-  businessId: string,
-  key: BusinessLimit,
-  count: () => Promise<number>,
-): Promise<void> {
-  await lockForLimit(tx, key, businessId);
-  const e = await entitlementsOf(tx, { businessId });
-  if (e.limits[key] === null || e.limits[key] === undefined) return;
-  assertWithinLimit(e, key, await count());
-}
-
-export async function assertBusinessFeature(
-  db: Database | Transaction,
-  businessId: string,
-  key: BusinessFeature,
-): Promise<void> {
-  assertFeature(await entitlementsOf(db, { businessId }), key);
-}
-
 // ── Database v2 (D3) ───────────────────────────────────────────────────────
 
+/** Statuses that still give access (past_due: the store is retrying the payment). */
+const ENTITLED = ['active', 'trialing', 'past_due'] as const;
+
 /**
- * A business's entitlements on database v2: the same rules as `entitlementsOf`, read on the
- * business's own shard — its subscriptions, and the plans and billing settings replicated there
- * from the directory (DB-015). Call it in the business's transaction (`DataPlane.inBusiness`).
+ * A business's entitlements on database v2: the rules above, read on the business's own shard —
+ * its subscriptions, and the plans and billing settings replicated there from the directory
+ * (DB-015). Call it in the business's transaction (`DataPlane.inBusiness`).
  * A plan not copied yet (replication catching up) counts as unlimited, never as a refusal.
  */
 export async function businessEntitlementsOnShard(

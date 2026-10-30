@@ -1,8 +1,8 @@
 /**
- * Connection settings for integration tests. They run against the dev stack
- * (`pnpm dev`) but in the separate `buku_test` database, so they can never
- * touch development data. Tests connect as `buku_app` — the same least-
- * privilege role the services use — so privilege mistakes show up in tests.
+ * Connection settings for integration tests. They run against the dev stack (`pnpm dev`) but in
+ * databases of their own — the test twins of the directory and the catalog, `buku_test_*` shards
+ * and the services' world (services-world.ts) — so they can never touch development data. Tests
+ * connect as `buku_app` or as a service's own role, so privilege mistakes show up in tests.
  */
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -21,8 +21,6 @@ const host = process.env.TEST_DB_HOST ?? 'localhost';
 const port = process.env.POSTGRES_HOST_PORT ?? '5432';
 
 export const testEnv = {
-  appUrl: `postgresql://buku_app:${encodeURIComponent(required('BUKU_APP_PASSWORD'))}@${host}:${port}/buku_test`,
-  migratorUrl: `postgresql://buku_migrator:${encodeURIComponent(required('BUKU_MIGRATOR_PASSWORD'))}@${host}:${port}/buku_test`,
   // The test cluster's address (host and port only) and the roles that build shard databases on it.
   cluster: `postgresql://${host}:${port}`,
   admin: { user: 'buku_admin', password: required('POSTGRES_SUPERUSER_PASSWORD') },

@@ -49,7 +49,7 @@ if (!replicatorPassword || !/^[A-Za-z0-9_-]{16,128}$/.test(replicatorPassword)) 
   process.exit(1);
 }
 
-/** Databases that must exist, besides the main one created with the server. */
+/** Databases that must exist (the server's first database stays empty: v1 left the stack in D3j). */
 const DATABASES = [
   'buku_directory',
   'buku_directory_test',
@@ -58,8 +58,8 @@ const DATABASES = [
   // The services' integration tests have a v2 world of their own (test/services-world.ts).
   'buku_directory_services_test',
 ] as const;
-/** Every database that gets the monitoring and audit extensions. */
-const MONITORED = ['template1', 'buku', 'buku_test', ...DATABASES] as const;
+/** Every database that gets the monitoring and audit extensions (shards inherit them from template1). */
+const MONITORED = ['template1', ...DATABASES] as const;
 
 const at = (database: string) => {
   const u = new URL(url);

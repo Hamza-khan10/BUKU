@@ -1,9 +1,8 @@
 /**
- * Vitest global setup for the integration project: rebuilds the `buku_test`
- * schema from scratch and applies every migration, exactly as a production
- * deploy would (`prisma migrate deploy`); the same for the directory's and
- * the catalog's test twins, `buku_directory_test` and `buku_catalog_test`
- * (created by `pnpm db:prepare`).
+ * Vitest global setup for the integration project: rebuilds the directory's and the catalog's
+ * test twins, `buku_directory_test` and `buku_catalog_test` (created by `pnpm db:prepare`), from
+ * scratch and applies every migration, exactly as a production deploy would
+ * (`prisma migrate deploy`).
  *
  * The last run's shard databases (buku_test_*) and reference copies go first,
  * subscriptions and replication slots before anything else: a slot left behind
@@ -38,21 +37,6 @@ async function reset(url: string, schemas: string) {
 }
 
 export default async function setup(): Promise<void> {
-  const db = createDatabaseClient({
-    url: testEnv.migratorUrl,
-    applicationName: 'test-setup',
-    maxConnections: 1,
-  });
-  try {
-    await db.$executeRawUnsafe('DROP SCHEMA IF EXISTS public, ai, partitions CASCADE');
-    // Default privileges (set up by docker/postgres/init) grant the app role
-    // USAGE on schemas the migrator creates, so no explicit GRANT is needed.
-    await db.$executeRawUnsafe('CREATE SCHEMA public');
-  } finally {
-    await db.$disconnect();
-  }
-  prisma(['migrate', 'deploy'], { DATABASE_MIGRATION_URL: testEnv.migratorUrl });
-
   // The last run's copies of the test directory: shard databases, then the catalog's copy, then
   // any slot nobody holds any more (a run that crashed).
   const publisherUrl = testEnv.adminUrl('buku_directory_test');

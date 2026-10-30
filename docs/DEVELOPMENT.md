@@ -27,24 +27,23 @@ password `buku-dev-password-2026`.
 
 ## Everyday commands
 
-| Command                                         | What it does                                                          |
-| ----------------------------------------------- | --------------------------------------------------------------------- |
-| `pnpm dev` / `pnpm dev:down`                    | Start / stop the stack (data kept in Docker volumes)                  |
-| `pnpm dev:wipe`                                 | Stop and **delete all local data** (fresh DB + seed on next start)    |
-| `pnpm dev:tools`                                | Also start Kibana (:5601), Kafka UI (:8080), Redis Insight (:5540)    |
-| `pnpm dev:logs`                                 | Follow logs of all containers                                         |
-| `pnpm test` / `pnpm test:watch`                 | Unit tests                                                            |
-| `pnpm test:int`                                 | Integration tests against the running stack (uses the `buku_test` DB) |
-| `pnpm typecheck` · `pnpm lint` · `pnpm format`  | Code quality                                                          |
-| `pnpm verify`                                   | Stack and quality checks (45)                                         |
-| `pnpm web`                                      | The website on http://localhost:3000 (hot reload; needs the stack)    |
-| `pnpm web:e2e`                                  | Browser tests: desktop + phone, WCAG 2.2 AA, CSP, clean text, session |
-| `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route) |
-| `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)            |
-| `pnpm db:studio`                                | Browse the database in Prisma Studio                                  |
-| `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent) |
-| `pnpm db:shards`                                | Make every registered shard a migrated database (idempotent)          |
-| `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)       |
+| Command                                         | What it does                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------- |
+| `pnpm dev` / `pnpm dev:down`                    | Start / stop the stack (data kept in Docker volumes)                      |
+| `pnpm dev:wipe`                                 | Stop and **delete all local data** (fresh DB + seed on next start)        |
+| `pnpm dev:tools`                                | Also start Kibana (:5601), Kafka UI (:8080), Redis Insight (:5540)        |
+| `pnpm dev:logs`                                 | Follow logs of all containers                                             |
+| `pnpm test` / `pnpm test:watch`                 | Unit tests                                                                |
+| `pnpm test:int`                                 | Integration tests against the running stack (in their own test databases) |
+| `pnpm typecheck` · `pnpm lint` · `pnpm format`  | Code quality                                                              |
+| `pnpm verify`                                   | Stack and quality checks (45)                                             |
+| `pnpm web`                                      | The website on http://localhost:3000 (hot reload; needs the stack)        |
+| `pnpm web:e2e`                                  | Browser tests: desktop + phone, WCAG 2.2 AA, CSP, clean text, session     |
+| `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route)     |
+| `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)                |
+| `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent)     |
+| `pnpm db:shards`                                | Make every registered shard a migrated database (idempotent)              |
+| `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)           |
 
 Services hot-reload: edit anything under `packages/*/src` or `services/*/src` and the affected
 containers restart within a second. After changing `package.json`/`pnpm-lock.yaml`, run
@@ -54,18 +53,24 @@ containers restart within a second. After changing `package.json`/`pnpm-lock.yam
 
 ### Change the database schema
 
-1. Edit `packages/database/prisma/schema.prisma`.
-2. `pnpm db:migrate:dev --name <what_changed>` → creates `prisma/migrations/<ts>_<name>/migration.sql`
-   and applies it. **Read the generated SQL.**
-3. Need something Prisma can't express (CHECK, EXCLUDE, trigger, partial index)? Create with
-   `pnpm --filter @buku/database migrate:create --name <x>`, append the SQL by hand, then apply.
-4. `pnpm db:generate` (the dev containers use the client generated on your machine).
-5. Add/adjust integration tests in `packages/database/test`.
-   CI fails if `schema.prisma` and the migrations disagree.
+Database v2 has four schemas, each with its own Prisma config in `packages/database`: the
+directory (`prisma.directory.config.ts`), user shards (`prisma.user.config.ts`), business shards
+(`prisma.business.config.ts`) and the catalog (`prisma.catalog.config.ts`).
+
+1. Edit the schema (`prisma/<directory|user|business|catalog>/schema.prisma`).
+2. Create the migration with that schema's config, e.g.
+   `pnpm --filter @buku/database exec prisma migrate dev --config prisma.business.config.ts --create-only --name <what_changed>`
+   (against a scratch database: `DATABASE_SHARD_MIGRATION_URL` for shards). **Read the generated
+   SQL**; add by hand what Prisma can't express (CHECK, EXCLUDE, triggers, partial indexes, rights).
+3. Apply it: `pnpm db:migrate:deploy` (directory and catalog) or `pnpm db:shards` (every shard in
+   the registry), then `pnpm db:generate` (the dev containers use the clients generated on your
+   machine) and, if a service needs new rights, `src/access.ts` + `docker compose -f docker-compose.dev.yml run --rm --no-deps db-access`.
+4. Add/adjust integration tests in `packages/database/test`. CI fails if any schema and its
+   migrations disagree.
 
 ### Integration tests of a service on database v2
 
-Services on v2 (auth so far, D3) test against a world of their own: the directory
+Every service tests against a world of its own (D3): the directory
 `buku_directory_services_test` with one user shard and one business shard, rebuilt by the
 integration tests' global setup with every service's rights applied as in production
 (`packages/database/test/services-world.ts`). A service's tests start a `DataPlane` as the

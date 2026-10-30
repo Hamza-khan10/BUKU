@@ -1144,3 +1144,13 @@ the new time in one transaction; services still can't move an appointment. Runni
 tests on v2 also showed that a service whose ID lease ran out while the directory couldn't be
 reached (for half a minute, under load) never made an ID again until restarted: it now leases a
 new generator by itself, exactly as a restart would, and makes no IDs until it has one (DB-002).
+
+**D-122 · v1's database leaves the stack (D3j).** With every service, the website and every test
+on v2, v1's schema, migrations, seed, client and the helpers only it used are deleted, and nothing
+creates or migrates its databases any more (the server's first database simply stays empty).
+Each service's `DATABASE_URL` names its own role on the directory, where the data plane starts.
+The roles belong to the whole server, so they are made from the directory, and every database
+then grants its own map from nothing; no service ever had more than its map, and now no
+leftover v1 grant can linger either. An administrative connection is a plain one, for raw SQL
+only. The outbox relay, the idempotency ledger and billing's checks keep only their shard
+versions, so there is one way to do each.
