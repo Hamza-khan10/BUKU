@@ -6,10 +6,10 @@ import {
   type ServiceName,
 } from './access.js';
 import {
-  accessStatements,
   crossBusinessRoleStatements,
   databaseAccessStatements,
   directoryAccessStatements,
+  roleStatements,
 } from './access-sql.js';
 import { createDirectoryClient } from './directory.js';
 import { createDatabaseClient } from './index.js';
@@ -17,9 +17,9 @@ import { clusterUrl, type Credentials } from './shards.js';
 
 /**
  * Makes every service's database rights exactly what src/access.ts says, everywhere (D-092,
- * DB-020): the v1 database (and the roles themselves, with their passwords), the cross-business
- * roles, the directory, the catalog, and every shard in the registry. Idempotent; run as an
- * administrator after migrations and after provisioning new shards.
+ * DB-020): the roles themselves (with their passwords) and their cross-business roles, the
+ * directory, the catalog, and every shard in the registry. Idempotent; run as an administrator
+ * after migrations and after provisioning new shards.
  */
 
 /** Each shard family's map, the schemas its databases have tables in, and whether it has RLS by business. */
@@ -34,10 +34,8 @@ export const SHARD_ACCESS: Readonly<
 };
 
 export interface AccessOptions {
-  /** The administrator on the v1 database (the roles are made from there). */
-  mainUrl: string;
-  /** The administrator on the directory. */
-  directoryUrl?: string;
+  /** The administrator on the directory (the roles, which belong to the whole server, are made from there). */
+  directoryUrl: string;
   /** The administrator on the catalog. */
   catalogUrl?: string;
   /** Every shard in the registry, reached as this administrator (clusters' addresses from `env`). */
@@ -82,19 +80,14 @@ export async function applyAccess(options: AccessOptions): Promise<void> {
   const { passwords } = options;
   const services = Object.keys(passwords).join(', ');
 
-  await applyStatements(options.mainUrl, [
-    ...accessStatements(databaseOf(options.mainUrl), passwords),
+  await applyStatements(options.directoryUrl, [
+    ...roleStatements(passwords),
     ...crossBusinessRoleStatements(passwords),
+    ...directoryAccessStatements(databaseOf(options.directoryUrl), passwords),
   ]);
-  log(`service roles on "${databaseOf(options.mainUrl)}", and their cross-business roles: ${services}`);
-
-  if (options.directoryUrl) {
-    await applyStatements(
-      options.directoryUrl,
-      directoryAccessStatements(databaseOf(options.directoryUrl), passwords),
-    );
-    log(`the same roles on "${databaseOf(options.directoryUrl)}"`);
-  }
+  log(
+    `service roles and their cross-business roles (${services}), and their rights on "${databaseOf(options.directoryUrl)}"`,
+  );
   if (options.catalogUrl) {
     await applyStatements(
       options.catalogUrl,
@@ -104,7 +97,7 @@ export async function applyAccess(options: AccessOptions): Promise<void> {
     );
     log(`the same roles on "${databaseOf(options.catalogUrl)}"`);
   }
-  if (options.shards && options.directoryUrl) {
+  if (options.shards) {
     const directory = createDirectoryClient({ url: options.directoryUrl, applicationName: 'apply-access' });
     const shards = await directory.shard
       .findMany({

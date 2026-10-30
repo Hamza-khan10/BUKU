@@ -1,22 +1,23 @@
 /**
- * Makes every service's database role exactly what src/access.ts says (D-092):
- * creates missing roles, sets their passwords (rotation: change the password in
- * the environment and run this again), takes away everything else, grants the
- * map. Idempotent; run after every migration, as an admin role that can create
- * roles (the Postgres superuser in development; doadmin on managed Postgres).
+ * Makes every service's database rights exactly what src/access.ts says (D-092): creates missing
+ * roles, sets their passwords (rotation: change the password in the environment and run this
+ * again), and in each database takes away everything else and grants the map — the directory
+ * (registry, leases, placing, handles, reference data), the catalog, and every shard in the
+ * registry, reached through its cluster's address (the setting its `dsn_secret` names, e.g.
+ * BUKU_DB_CLUSTER_LOCAL_1) with the same administrator. Business-shard work across businesses goes
+ * through each service's buku_svc_<name>_all role (DB-020), made here too. Idempotent; run after
+ * migrations and after provisioning shards, as an admin that can create roles (the Postgres
+ * superuser in development; doadmin on managed Postgres).
  *
- *   DATABASE_ADMIN_URL=postgresql://<admin>@host:5432/buku \
+ *   DATABASE_ADMIN_URL=postgresql://<admin>@host:5432/buku_directory \
  *   BUKU_DB_PASSWORD_AUTH=… BUKU_DB_PASSWORD_BOOKING=… … tsx scripts/apply-access.ts
  *
- * Then, with each URL set, the same roles' rights in database v2 (src/apply-access.ts): the
- * directory (DATABASE_DIRECTORY_ADMIN_URL: registry, leases, placing, handles, reference data),
- * the catalog (DATABASE_CATALOG_ADMIN_URL), and every shard in the registry, reached through its
- * cluster's address (the setting its `dsn_secret` names, e.g. BUKU_DB_CLUSTER_LOCAL_1) with the
- * same administrator. Business-shard work across businesses goes through each service's
- * buku_svc_<name>_all role (DB-020), made here too.
+ * DATABASE_DIRECTORY_ADMIN_URL and DATABASE_CATALOG_ADMIN_URL name those databases when they live
+ * elsewhere; by default they are buku_directory and buku_catalog on DATABASE_ADMIN_URL's server.
  */
 import { SERVICES, type ServiceName } from '../src/access.js';
 import { applyAccess } from '../src/apply-access.js';
+import { sameServer } from '../src/data-plane.js';
 
 const url = process.env.DATABASE_ADMIN_URL;
 if (!url) {
@@ -35,12 +36,11 @@ for (const s of SERVICES) {
 
 const admin = new URL(url);
 await applyAccess({
-  mainUrl: url,
-  directoryUrl: process.env.DATABASE_DIRECTORY_ADMIN_URL,
-  catalogUrl: process.env.DATABASE_CATALOG_ADMIN_URL,
-  shards: process.env.DATABASE_DIRECTORY_ADMIN_URL
-    ? { admin: { user: decodeURIComponent(admin.username), password: decodeURIComponent(admin.password) } }
-    : undefined,
+  directoryUrl: process.env.DATABASE_DIRECTORY_ADMIN_URL ?? sameServer(url, 'buku_directory'),
+  catalogUrl: process.env.DATABASE_CATALOG_ADMIN_URL ?? sameServer(url, 'buku_catalog'),
+  shards: {
+    admin: { user: decodeURIComponent(admin.username), password: decodeURIComponent(admin.password) },
+  },
   passwords,
   log: (line) => console.log(`apply-access: ${line}`),
 });

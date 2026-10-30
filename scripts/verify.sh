@@ -14,7 +14,8 @@ check() { # check "<description>" <command...>
   if "$@" > /dev/null 2>&1; then printf '  \033[32m✔\033[0m %s\n' "$desc"; PASS=$((PASS+1));
   else printf '  \033[31m✘\033[0m %s\n' "$desc"; FAIL=$((FAIL+1)); fi
 }
-psql_q() { "${COMPOSE[@]}" exec -T postgres psql -U buku_admin -d buku -tAc "$1" 2>/dev/null; }
+# psql_q "<sql>" [database]: one value, as the administrator (database v2: the directory by default).
+psql_q() { "${COMPOSE[@]}" exec -T postgres psql -U buku_admin -d "${2:-buku_directory}" -tAc "$1" 2>/dev/null; }
 eq() { [[ "$1" == "$2" ]]; }
 RUNNING=$("${COMPOSE[@]}" ps --status running --services 2>/dev/null)
 running() { grep -qx "$1" <<< "$RUNNING"; }
@@ -48,20 +49,23 @@ check "No HIGH/CRITICAL dependency vulnerabilities" pnpm audit:deps
 echo "═══ 2. Stack health ═══"
 check "Every component healthy (health-check.sh)" bash scripts/health-check.sh
 
-echo "═══ 3. Database ═══"
-EXPECTED_TABLES=$(grep -c '^model ' packages/database/prisma/schema.prisma)
-check "All $EXPECTED_TABLES Prisma models exist as tables in public" eq "$(psql_q "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename <> '_prisma_migrations'")" "$EXPECTED_TABLES"
-check "Extensions: postgis, vector, pg_trgm, btree_gist, pgcrypto" eq "$(psql_q "SELECT count(*) FROM pg_extension WHERE extname IN ('postgis','vector','pg_trgm','btree_gist','pgcrypto')")" 5
-check "All migrations applied, no drift"               bash -c "cd packages/database && pnpm exec prisma migrate status | grep -q 'Database schema is up to date'"
-check "3 tables range-partitioned by month"            eq "$(psql_q "SELECT count(*) FROM pg_partitioned_table")" 3
-check "≥ 12 future monthly partitions per table"       ge "$(psql_q "SELECT count(*) FROM pg_inherits i JOIN pg_class c ON c.oid=i.inhrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='partitions'")" 39
-check "Exclusion constraints (staff, resource, customer)" eq "$(psql_q "SELECT count(*) FROM pg_constraint WHERE contype='x'")" 3
-check "≥ 60 CHECK constraints"                          ge "$(psql_q "SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE contype='c' AND n.nspname='public'")" 60
-check "HNSW vector index on ai.business_knowledge_chunks" eq "$(psql_q "SELECT count(*) FROM pg_indexes WHERE schemaname='ai' AND indexdef ILIKE '%hnsw%'")" 1
+echo "═══ 3. Database (v2: docs/DATABASE.md) ═══"
+# Every live shard in the registry, and the first open business and user shards (where the seed is).
+SHARDS=$(psql_q "SELECT string_agg(database_name, ' ') FROM registry.shards WHERE status <> 'retired'")
+BIZ=$(psql_q "SELECT database_name FROM registry.shards WHERE entity = 'business' AND status = 'open' ORDER BY shard_no LIMIT 1")
+USR=$(psql_q "SELECT database_name FROM registry.shards WHERE entity = 'user' AND status = 'open' ORDER BY shard_no LIMIT 1")
+check "The directory and the catalog are migrated, no drift" bash -c "cd packages/database && pnpm exec prisma migrate status --config prisma.directory.config.ts | grep -q 'Database schema is up to date' && pnpm exec prisma migrate status --config prisma.catalog.config.ts | grep -q 'Database schema is up to date'"
+check "Every shard in the registry exists ($(wc -w <<< "$SHARDS"))" eq "$(psql_q "SELECT count(*) FROM pg_database WHERE datname = ANY(string_to_array('$SHARDS', ' '))" postgres)" "$(wc -w <<< "$SHARDS")"
+check "Extensions on shards: postgis, vector, pg_trgm, btree_gist, pgcrypto" eq "$(psql_q "SELECT count(*) FROM pg_extension WHERE extname IN ('postgis','vector','pg_trgm','btree_gist','pgcrypto')" "$BIZ")" 5
+check "Appointments partitioned by month, kept by pg_partman" eq "$(psql_q "SELECT count(*) FROM partman.part_config WHERE parent_table = 'public.appointments'" "$BIZ")" 1
+check "No double booking: staff, resource and customer exclusions" eq "$(psql_q "SELECT count(*) FROM pg_constraint WHERE contype = 'x' AND conname LIKE 'appointment_index_%_free'" "$BIZ")" 3
+check "Row-level security on every table holding a business's rows" eq "$(psql_q "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname IN ('public', 'ai') AND c.relkind IN ('r', 'p') AND NOT c.relispartition AND (EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = c.oid AND a.attname = 'business_id' AND NOT a.attisdropped) OR c.relname = 'businesses') AND NOT c.relrowsecurity" "$BIZ")" 0
+check "Reference data copied to the business shard (replication ready)" eq "$(psql_q "SELECT count(*) = count(*) FILTER (WHERE srsubstate IN ('r','s')) AND count(*) > 0 FROM pg_subscription_rel" "$BIZ")" "t"
 # At least the seed: data created while using the dev app must not fail this check.
-check "Seed data present (≥ 20 businesses, ≥ 200 appointments)" eq "$(psql_q "SELECT (SELECT count(*) FROM businesses) >= 20 AND (SELECT count(*) FROM appointments) >= 200")" "t"
-check "User emails stored encrypted, never plaintext"  eq "$(psql_q "SELECT count(*) FROM users WHERE email_encrypted IS NOT NULL AND email_encrypted NOT LIKE 'enc:1:%'")" 0
-check "App role cannot DROP tables (least privilege)"  bash -c "! docker compose -f docker-compose.dev.yml exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql -h localhost -U buku_app -d buku -c 'DROP TABLE categories' 2>/dev/null"
+check "Seed data present (≥ 20 businesses, ≥ 200 appointments)" eq "$(psql_q "SELECT (SELECT count(*) FROM businesses) >= 20 AND (SELECT count(*) FROM appointments) >= 200" "$BIZ")" "t"
+check "The catalog lists every live business" eq "$(psql_q "SELECT count(*) FROM catalog.businesses" buku_catalog)" "$(psql_q "SELECT count(*) FROM businesses WHERE deleted_at IS NULL" "$BIZ")"
+check "User emails stored encrypted (bytes, version 1), never plaintext" eq "$(psql_q "SELECT count(*) FROM users WHERE email_enc IS NOT NULL AND get_byte(email_enc, 0) <> 1" "$USR")" 0
+check "App role cannot DROP tables (least privilege)"  bash -c "! docker compose -f docker-compose.dev.yml exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql -h localhost -U buku_app -d $BIZ -c 'DROP TABLE businesses' 2>/dev/null"
 
 echo "═══ 4. Kafka ═══"
 check "Kafka topics exactly match the registry"        bash -c "docker compose -f docker-compose.dev.yml run --rm --no-deps kafka-init /app/node_modules/.bin/tsx scripts/sync-topics.ts --check"
@@ -71,7 +75,7 @@ check "Kafka refuses connections that don't sign in"    bash -c "docker compose 
 check "Kafka users and permissions applied from the plan"bash -c "docker compose -f docker-compose.dev.yml run --rm kafka-access >/dev/null 2>&1"
 
 echo "═══ 5. Search & analytics stores ═══"
-check "Postgres full-text search index on businesses"  eq "$(psql_q "SELECT count(*) FROM pg_indexes WHERE indexname='businesses_search_vector_idx'")" 1
+check "Postgres full-text search index on the catalog" eq "$(psql_q "SELECT count(*) FROM pg_indexes WHERE schemaname='catalog' AND indexname='businesses_search_vector_idx'" buku_catalog)" 1
 if running elasticsearch; then
   check "Elasticsearch alias businesses → businesses_v1" bash -c "curl -sf http://localhost:9200/_alias/businesses | grep -q businesses_v1"
   check "Elasticsearch mapping is strict"                bash -c "curl -sf http://localhost:9200/businesses_v1/_mapping | grep -q '\"dynamic\":\"strict\"'"

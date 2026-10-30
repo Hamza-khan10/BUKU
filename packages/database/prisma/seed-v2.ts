@@ -1,7 +1,7 @@
 /**
- * Development data for database v2 (docs/DATABASE.md §15, D2e): the same world as the v1 seed
- * (prisma/seed.ts: 4 cities, 20 businesses, 71 people, 200 appointments, reviews, queues), written
- * the way the services will write it (D3):
+ * Development data for database v2 (docs/DATABASE.md §15, D2e): 4 cities, 20 businesses, 71
+ * people, 200 appointments, reviews and queues (the world v1's seed built, before v1 left the
+ * stack in D3j), written the way the services write it (D3):
  *
  *  • IDs from a leased generator (DB-002); every person and business placed by the registry
  *    (registry.place, DB-011) on the shard that holds its ID;

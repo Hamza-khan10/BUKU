@@ -6,14 +6,13 @@ compromised service. Every decision below has a number (DB-…) and a reason. Wh
 and the code disagree, this document is the plan and the code is the state; the build phases at
 the end say what is done.
 
-Status (2026-10-27): **D1 and D2 are built; D3 is built up to D3i (§15).** v2 has the directory,
-the shard registry, ID generators and the router; global lookups; user and business shards
-provisioned from the registry; reference data copied by replication; the search catalog; each
-service's rights everywhere; and its own development data (D2e). Every service now runs on v2
-through the data plane (D3a–D3h), and the website, the acceptance run and the browser tests do
-too (D3i), all on the integration branch `feat/db-v2-services`. **Next: D3j** — v1 leaves the
-stack and one pull request brings v2 to `main`; then D4 (safety) and D5 (proof at scale).
-Website work resumes after D3 (DB-000).
+Status (2026-10-31): **D1, D2 and D3 are built (§15).** v2 has the directory, the shard
+registry, ID generators and the router; global lookups; user and business shards provisioned from
+the registry; reference data copied by replication; the search catalog; each service's rights
+everywhere; and its own development data (D2e). Every service runs on v2 through the data plane,
+the website and every test run on it too, and v1's `buku` database has left the stack (D3j).
+**Next: D4** — backups, a tested restore, TLS and monitoring; then D5 (proof at scale). Website
+work resumes now that D3 is done (DB-000).
 
 ---
 
@@ -1099,7 +1098,7 @@ million rows is fast in Postgres, exact, and has one less system to run.
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **D1 Foundation** ✅  | Postgres image with the extensions; directory schema (registry, generators, settings, currencies); the ID generator (`@buku/ids`: TypeScript and `buku_id()` in SQL) and public IDs; the shard router in `@buku/database` (one shard per family locally) | unit and integration tests for IDs (uniqueness under concurrency, ordering, region bits), allocation (limit reached → next shard, limit changed), routing |
 | **D2 Schema v2** ✅   | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed. In five slices, below      | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
-| **D3 Services** 🚧    | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
+| **D3 Services** ✅    | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
 | **D4 Safety**         | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
 | **D5 Proof at scale** | a synthetic data set (10M people, 1M businesses, 200M appointments) on a test cluster; the slow-query review                                                                                                                                             | the targets in §3 met for the main queries                                                                                                                |
 
@@ -1284,7 +1283,7 @@ starts from its own seed (D2e).
 | **D3g** billing                | plans on the directory, subscriptions and requests on business shards, store handles — ✅ 2026-10-18 (#128, Paddle sandbox #129)                                                                                                                    |
 | **D3h** search, ads, analytics | the catalog kept from events; v1's search queries against it; ads from the catalog — ✅ 2026-10-21 (#144)                                                                                                                                           |
 | **D3i** apps                   | the website and admin app on public IDs; the whole stack's acceptance and browser tests — ✅ 2026-10-23 (#145)                                                                                                                                      |
-| **D3j** retire v1              | services stop using the v1 database; it leaves the stack — **next**                                                                                                                                                                                 |
+| **D3j** retire v1              | services stop using the v1 database; it leaves the stack — ✅ 2026-10-31                                                                                                                                                                            |
 
 **D3a, as built (2026-10-17).**
 
@@ -1579,3 +1578,32 @@ more.
   tests 220 passed (6 skip by design: keyboard tests on phones, a phone-only one on desktop, Google
   set up or not), including the checkout page with a stand-in for Paddle.js; the admin app's 5;
   unit 395, integration 406.
+
+**D3j, as built (2026-10-31).** v1 has left the stack (D-122); D3 is complete.
+
+- **Gone:** v1's schema, its 30 migrations and its seed (`prisma/schema.prisma`, `prisma/migrations`,
+  `prisma/seed.ts`, `prisma.config.ts`), its client and the helpers only it used (soft delete,
+  v1 audit and authorization, show-up counts, retention, partition upkeep); kafka's v1 outbox
+  writer and v1 `processOnce`; billing's v1 entitlement checks; the v1 rights map; the `buku_test`
+  database the init script made. What v2 shared with them stayed: the database error helpers,
+  `lockForLimit`.
+- **Databases now:** the directory, the catalog, the shards in the registry, and their test twins.
+  The server's first database (`POSTGRES_DB`) stays empty. Each service's `DATABASE_URL` is its
+  own role on the **directory**; the data plane reaches shards through the registry.
+- **Rights:** the roles belong to the server, so they're made from the directory
+  (`roleStatements`, then each database grants its own map from nothing:
+  `directoryAccessStatements`, `databaseAccessStatements`). `apply-access` needs only the
+  directory's administrator; the catalog and every shard follow.
+- **Admin connections:** `createDatabaseClient` is a plain connection for administrative SQL
+  (provisioning, rights, test set-up), built on the directory's generated client; it has no
+  models. Prisma error codes are recognised by shape, from whichever generated client throws.
+- **Relays:** every outbox is a shard's (numeric IDs, old days dropped with their partitions), so
+  the relay has one mode. Two outbox behaviours v1's tests covered are now shard tests: an event goes
+  out only if its change commits, and a handler that fails leaves the event to be handled again.
+- **Tooling:** `pnpm db:migrate:deploy` migrates the directory and the catalog; `pnpm db:shards`
+  every shard; `pnpm db:seed` seeds the directory's registry; `pnpm verify` checks v2 (registry
+  shards exist, extensions, partitions, exclusions, row-level security, replication, seed,
+  catalog, encryption, least privilege). CI drops v1's drift check.
+- **Tests:** unit 391, integration 376 in 21 files (v1's constraint, retention, outbox and
+  idempotency tests removed; their v2 equivalents run on the shards), acceptance 22/22 on the
+  stack with every service connecting through the directory.

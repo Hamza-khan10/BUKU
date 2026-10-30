@@ -10,7 +10,7 @@ import { TOPICS, type Topic } from './topics.js';
  *  • AT-LEAST-ONCE: offsets are committed manually, only after the handler
  *    succeeded (or the message was parked in the DLQ). A crash mid-handler
  *    means the message is redelivered — so handlers must be IDEMPOTENT
- *    (use `processOnce`, keyed by the event id).
+ *    (use `processOnceOnShard`, keyed by the event).
  *  • RETRY with exponential backoff for transient failures (DB blip, 5xx).
  *  • POISON-MESSAGE ISOLATION: after `maxAttempts`, or immediately if the
  *    message is not a valid envelope or its handler refuses its payload (a

@@ -1,7 +1,7 @@
 # BUKU — Handoff
 
 The state of the whole project in one place: what is built, how it is run and worked on, where
-things stand on GitHub, and what comes next. Last updated **2026-10-27**.
+things stand on GitHub, and what comes next. Last updated **2026-10-31**.
 
 Deeper detail lives in the docs this page points to — [BUILD_GUIDE](docs/BUILD_GUIDE.md) (the
 phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-119),
@@ -25,7 +25,7 @@ free** (D-101); businesses pay (Starter free, Essential, Professional, Enterpris
 | 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                          |
 | 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred  |
 | 3      | Web app (Next.js) and admin app                                                      | ⏸ paused at 3.5 for the database rebuild (D-105) |
-| **3D** | **Database v2** — built for hundreds of millions of people                           | 🚧 **D1, D2 done; D3 a–i done; D3j next**        |
+| **3D** | **Database v2** — built for hundreds of millions of people                           | 🚧 **D1–D3 built; D3j in review; D4 next**       |
 | 4      | Mobile app (Expo)                                                                    | planned                                          |
 | 5      | Production: deployment, observability, backups, load and security testing            | planned                                          |
 
@@ -39,26 +39,27 @@ business), and a search **catalog**. IDs are 64-bit numbers from a leased genera
 businesses and appointments are shown to the outside world by **public IDs** (12 characters,
 DB-042).
 
-| Step    | What                                                                                                                                      | Status       |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| D1      | Foundation: directory, ID generator, shard registry                                                                                       | ✅           |
-| D2a–e   | The new schema: user shard, business shard, replicated reference data and the catalog, each service's rights everywhere, development data | ✅ on `main` |
-| D3a     | The services' foundation: `DataPlane` (routing, transactions per business, handles, IDs), v2 events                                       | ✅           |
-| D3b     | auth-service on v2                                                                                                                        | ✅           |
-| D3c     | business-service on v2                                                                                                                    | ✅           |
-| D3d     | booking-service on v2 (the customer's time claimed first; one booking for one slot, proven by a same-instant test)                        | ✅           |
-| D3e     | queue-service on v2 (one queue at a time, kept on the person's shard)                                                                     | ✅           |
-| D3f     | notification-service on v2 (inbox and marks per person; WhatsApp numbers as handles)                                                      | ✅           |
-| D3g     | billing-service on v2 (catalog on the directory; one live subscription per business)                                                      | ✅           |
-| D3g.1   | **Paddle sandbox connected and a real test payment made end to end**                                                                      | ✅           |
-| D3h     | search on v2: the catalog kept from every shard's events, newer wins, an hourly sweep (D-120); ads starts on v2                           | ✅           |
-| D3i     | website on public IDs, acceptance and browser tests on v2, the checkout page, ID leases that recover (D-121)                              | ✅           |
-| **D3j** | the old database leaves the stack; then one PR brings everything to `main`                                                                | **next**     |
-| D4      | backups, a tested point-in-time restore, TLS, monitoring                                                                                  | planned      |
-| D5      | proof at scale (10M people, 1M businesses, 200M appointments)                                                                             | planned      |
+| Step   | What                                                                                                                                      | Status       |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| D1     | Foundation: directory, ID generator, shard registry                                                                                       | ✅           |
+| D2a–e  | The new schema: user shard, business shard, replicated reference data and the catalog, each service's rights everywhere, development data | ✅ on `main` |
+| D3a    | The services' foundation: `DataPlane` (routing, transactions per business, handles, IDs), v2 events                                       | ✅           |
+| D3b    | auth-service on v2                                                                                                                        | ✅           |
+| D3c    | business-service on v2                                                                                                                    | ✅           |
+| D3d    | booking-service on v2 (the customer's time claimed first; one booking for one slot, proven by a same-instant test)                        | ✅           |
+| D3e    | queue-service on v2 (one queue at a time, kept on the person's shard)                                                                     | ✅           |
+| D3f    | notification-service on v2 (inbox and marks per person; WhatsApp numbers as handles)                                                      | ✅           |
+| D3g    | billing-service on v2 (catalog on the directory; one live subscription per business)                                                      | ✅           |
+| D3g.1  | **Paddle sandbox connected and a real test payment made end to end**                                                                      | ✅           |
+| D3h    | search on v2: the catalog kept from every shard's events, newer wins, an hourly sweep (D-120); ads starts on v2                           | ✅           |
+| D3i    | website on public IDs, acceptance and browser tests on v2, the checkout page, ID leases that recover (D-121)                              | ✅           |
+| D3j    | the old database left the stack (D-122); next, one PR brings everything to `main`                                                         | ✅ in review |
+| **D4** | backups, a tested point-in-time restore, TLS, monitoring                                                                                  | **next**     |
+| D5     | proof at scale (10M people, 1M businesses, 200M appointments)                                                                             | planned      |
 
-All D3 work lives on the integration branch **`feat/db-v2-services`** (D-112); `main` and the live
-website stay on the old database until D3 is complete.
+All D3 work lives on the integration branch **`feat/db-v2-services`** (D-112). One pull request
+then brings it to `main`, the branch the live website deploys from (the API isn't deployed yet,
+Phase 5, so nothing live depends on the old database).
 
 ### Services
 
@@ -75,7 +76,7 @@ website stay on the old database until D3 is complete.
 
 ### Web and admin apps
 
-- **Website** (`apps/web`, live at `thebuku.vercel.app`, on the old database): public site,
+- **Website** (`apps/web`, live at `thebuku.vercel.app` from `main`; on v2 in the integration branch): public site,
   business pages, explore and categories, pricing, sign-in (including employees and two-step),
   booking, visits and tickets, the walk-in queue, reviews, notifications, account settings and
   data; the business area — adding a business, today, appointments, check-in, services and team.
@@ -151,25 +152,25 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
   content; anything a user types is validated against breaking the system (duplicates, malicious
   input, characters that corrupt data).
 
-## 5. GitHub today (2026-10-27)
+## 5. GitHub today (2026-10-31)
 
 - `main`: CI green; 0 code-scanning, 0 Dependabot and 0 secret-scanning alerts; no open issues.
-  The live website runs **Next.js 16.4.2** (#146, 2026-10-23: the 22 October remote-code-execution
-  advisories were fixed from 16.4.1).
-- `feat/db-v2-services`: D3a → D3i merged (last: #145 D3i, 9cc88ec), 0 code-scanning alerts.
-- **12 Dependabot update PRs (#130–#140, #142)** into `main` — Playwright, axe-core,
-  lucide-react, zod 4.6.7, lenis, the AWS SDK, CodeQL actions, Vitest, lint/types, Prisma, the
-  distroless and Node 24.22 base images. All mergeable; they wait for the owner's go-ahead.
-  `feat/db-v2-services` takes them in when `main` is merged into it before the final PR.
+  The live website runs **Next.js 16.4.2** (#146) with body-parser 2.4.0 and zod 4.6.6 (#148).
+- **#153** into `main`: the 14 pending Dependabot updates combined (base images pinned to the
+  registries' current digests, the CodeQL action checked against its tag), 20/20 green; it waits
+  for the owner's merge, and Dependabot then closes its own PRs.
+- `feat/db-v2-services`: D3a → D3i merged (last: #147, e0118a6); D3j in review.
+- **Branches:** 36 on GitHub belong to merged or closed PRs whose last commit is the PR's (safe to
+  delete; deleting needs the owner, see the session note of 2026-10-31); two more
+  (`feat/categories-and-motion`, `feat/redesign-foundation`) have commits after their PR and stay.
 
 ## 6. What's next
 
-1. **D3j** (next) — retire the old database (and its leftover helpers); merge `main` into the
-   integration branch; one PR to `main`; website work resumes (3.5 → 3.7). D3i is done (#145): the
-   website on public IDs, the acceptance run (22/22) and the browser tests on database v2, the
-   checkout page, and three fixes found on the way (links by public ID were a 404 at the gateway,
-   "my reviews" named visits by an internal ID, a service that lost its ID lease needed a restart).
-2. **D4, D5** — backups and restore drills; proof at scale.
+1. **D3j** (built, in review): v1 has left the stack. After it merges, `main` (with #153) is merged
+   into the integration branch and one PR brings database v2 to `main`; website work resumes
+   (3.5 → 3.7).
+2. **D4** — backups (pgBackRest), a tested point-in-time restore, TLS, monitoring.
+3. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster.
 
 ### Follow-ups noted along the way
 

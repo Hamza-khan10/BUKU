@@ -47,10 +47,10 @@ export const servicesWorld = {
   /** Where cluster addresses are read from, as the services read them. */
   env: { ...process.env, [CLUSTER_SECRET]: testEnv.cluster } as NodeJS.ProcessEnv,
   /** A service's own role (D-092) on one database of the test cluster. */
-  urlFor: (service: ServiceName, database = 'buku_test') =>
+  urlFor: (service: ServiceName, database = SERVICES_DIRECTORY) =>
     urlAs({ user: `buku_svc_${service}`, password: passwords[service] }, database),
   /** buku_app, the tools' and tests' role: what fixtures are written as. */
-  appUrl: (database = 'buku_test') => urlAs(testEnv.app, database),
+  appUrl: (database = SERVICES_DIRECTORY) => urlAs(testEnv.app, database),
   /** The schema owner, for fixtures no service may write (reference data BUKU curates). */
   ownerUrl: (database = SERVICES_DIRECTORY) => urlAs(testEnv.migrator, database),
 };

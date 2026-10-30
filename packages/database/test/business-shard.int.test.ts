@@ -779,7 +779,7 @@ describe('a service’s data plane on business shards (D3a)', () => {
       data: { test: true },
     });
     await asBusiness(b.id, (tx) => enqueueShardEvent(tx, ids.next(), event, 'business'));
-    const relay = new OutboxRelay({ db: app, shard: true, producer, source: 'buku-app-service' });
+    const relay = new OutboxRelay({ db: app, producer, source: 'buku-app-service' });
     expect(await relay.runOnce()).toBe(1);
     expect(published).toEqual([eventId.toString()]);
     expect(await relay.runOnce()).toBe(0);
@@ -787,5 +787,46 @@ describe('a service’s data plane on business shards (D3a)', () => {
     const first = await app.$transaction((tx) => processOnceOnShard(tx, 'plane-test', event));
     const again = await app.$transaction((tx) => processOnceOnShard(tx, 'plane-test', event));
     expect([first, again]).toEqual([true, false]);
+  });
+
+  it('an event goes out only if its change commits; a handler that fails leaves it to be handled again', async () => {
+    const b = await aBusiness('plane-rollback');
+    const published: string[] = [];
+    const producer = {
+      publishMany: (messages: { event: { id: string } }[]) => {
+        for (const m of messages) published.push(m.event.id);
+        return Promise.resolve();
+      },
+    } as unknown as EventProducer;
+    const event = (id: bigint) =>
+      createEvent({
+        id: id.toString(),
+        type: 'bookings.created',
+        source: 'buku-app-service',
+        subject: b.id.toString(),
+        data: { test: true },
+      });
+    const kept = event(ids.next());
+    const dropped = event(ids.next());
+    await asBusiness(b.id, (tx) => enqueueShardEvent(tx, ids.next(), kept, 'business'));
+    await expect(
+      asBusiness(b.id, async (tx) => {
+        await enqueueShardEvent(tx, ids.next(), dropped, 'business');
+        throw new Error('the change failed');
+      }),
+    ).rejects.toThrow('the change failed');
+    const relay = new OutboxRelay({ db: app, producer, source: 'buku-app-service' });
+    while ((await relay.runOnce()) > 0);
+    expect(published).toContain(kept.id);
+    expect(published).not.toContain(dropped.id);
+
+    // The mark that it was handled is written with the handler's work: if that fails, so does the mark.
+    await expect(
+      app.$transaction(async (tx) => {
+        await processOnceOnShard(tx, 'plane-test', kept);
+        throw new Error('the side effect failed');
+      }),
+    ).rejects.toThrow('the side effect failed');
+    expect(await app.$transaction((tx) => processOnceOnShard(tx, 'plane-test', kept))).toBe(true);
   });
 });
