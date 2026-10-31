@@ -23,14 +23,23 @@
 #   pnpm db:health --prometheus > /var/lib/node_exporter/textfile/buku_db.prom
 #
 # Development: checks the cluster in docker-compose.dev.yml, as the administrator on its socket.
+# With BUKU_HEALTH_DIRECT=1 it connects itself instead — over TLS as PGUSER to PGHOST (libpq's own
+# settings), with pgBackRest beside it — as the monitoring sidecar does every minute (D-127), and
+# as a database host would in production.
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 COMPOSE=(docker compose -f docker-compose.dev.yml)
 FORMAT=text
 [[ "${1:-}" == "--prometheus" ]] && FORMAT=prometheus
 
-# One value from the cluster (as the administrator, on its own socket).
-q() { "${COMPOSE[@]}" exec -T postgres psql -U buku_admin -d "${2:-postgres}" -v ON_ERROR_STOP=1 -tAc "$1" 2>/dev/null; }
+# One value from the cluster, as the administrator.
+if [[ "${BUKU_HEALTH_DIRECT:-}" == 1 ]]; then
+  q() { psql -d "${2:-postgres}" -v ON_ERROR_STOP=1 -tAc "$1" 2>/dev/null; }
+  backrest_info() { pgbackrest --stanza=buku info --output=json 2>/dev/null; }
+else
+  q() { "${COMPOSE[@]}" exec -T postgres psql -U buku_admin -d "${2:-postgres}" -v ON_ERROR_STOP=1 -tAc "$1" 2>/dev/null; }
+  backrest_info() { "${COMPOSE[@]}" exec -T -u postgres postgres pgbackrest --stanza=buku info --output=json 2>/dev/null; }
+fi
 
 NAMES=() STATUSES=() VALUES=() DETAILS=()
 # report <check> <0 ok | 1 warning | 2 critical> <value> <detail>
@@ -53,9 +62,11 @@ else
     else report archiving 0 "$age" "last WAL file archived ${age}s ago"; fi
   else unknown archiving; fi
 
-  info=$("${COMPOSE[@]}" exec -T -u postgres postgres pgbackrest --stanza=buku info --output=json 2>/dev/null)
+  info=$(backrest_info)
   if [[ -n "$info" ]]; then
-    stop=$(python3 -c 'import json,sys; b=json.load(sys.stdin)[0]["backup"]; print(max(x["timestamp"]["stop"] for x in b) if b else -1)' <<<"$info" 2>/dev/null || echo -1)
+    # The latest backup's end (seconds): the only numeric "stop" in pgBackRest's report.
+    stop=$(grep -o '"stop":[0-9]*' <<<"$info" | cut -d: -f2 | sort -n | tail -1)
+    stop=${stop:--1}
     if ((stop < 0)); then report backup_age 2 -1 "no backup in the repository"
     else
       age=$(($(date +%s) - stop))

@@ -7,6 +7,11 @@ what happened and what changes.
 
 ## Alerts
 
+Every alert has a Grafana dashboard to start from (D-127; `pnpm dev:monitoring` in development,
+http://localhost:3300): **BUKU · Platform** (traffic, errors, latency, resources per service),
+**BUKU · Security** (refusals, rate limits, security events, firing alerts), **BUKU · Gateway**
+(everything that came in from outside) and **BUKU · Database** (the database's health checks).
+
 ### Service down
 
 `ServiceDown` — a service stopped answering metrics scrapes for 2 minutes.

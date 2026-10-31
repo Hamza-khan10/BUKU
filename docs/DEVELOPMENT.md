@@ -27,27 +27,28 @@ password `buku-dev-password-2026`.
 
 ## Everyday commands
 
-| Command                                         | What it does                                                              |
-| ----------------------------------------------- | ------------------------------------------------------------------------- |
-| `pnpm dev` / `pnpm dev:down`                    | Start / stop the stack (data kept in Docker volumes)                      |
-| `pnpm dev:wipe`                                 | Stop and **delete all local data** (fresh DB + seed on next start)        |
-| `pnpm dev:tools`                                | Also start Kibana (:5601), Kafka UI (:8080), Redis Insight (:5540)        |
-| `pnpm dev:logs`                                 | Follow logs of all containers                                             |
-| `pnpm test` / `pnpm test:watch`                 | Unit tests                                                                |
-| `pnpm test:int`                                 | Integration tests against the running stack (in their own test databases) |
-| `pnpm typecheck` · `pnpm lint` · `pnpm format`  | Code quality                                                              |
-| `pnpm verify`                                   | Stack and quality checks (code, health, database, security, gateway)      |
-| `pnpm web`                                      | The website on http://localhost:3000 (hot reload; needs the stack)        |
-| `pnpm web:e2e`                                  | Browser tests: desktop + phone, WCAG 2.2 AA, CSP, clean text, session     |
-| `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route)     |
-| `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)                |
-| `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent)     |
-| `pnpm db:shards`                                | Make every registered shard a migrated database (idempotent)              |
-| `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)           |
-| `pnpm db:backup [full\|diff\|incr]`             | A pgBackRest backup of the dev cluster (encrypted repository)             |
-| `pnpm db:restore-drill`                         | Restore the latest backup at a point in time to a scratch server; check   |
-| `pnpm db:health`                                | The database's health checks (✔ ok, ! warning, ✘ critical)                |
-| `pnpm db:break-glass --reason "…" [--db …]`     | A person's read-only, audited session on one database (dropped after)     |
+| Command                                         | What it does                                                                              |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `pnpm dev` / `pnpm dev:down`                    | Start / stop the stack (data kept in Docker volumes)                                      |
+| `pnpm dev:wipe`                                 | Stop and **delete all local data** (fresh DB + seed on next start)                        |
+| `pnpm dev:tools`                                | Also start Kibana (:5601), Kafka UI (:8080), Redis Insight (:5540)                        |
+| `pnpm dev:monitoring`                           | Also start Prometheus (:9090) and Grafana (:3300, user `admin`, `GRAFANA_ADMIN_PASSWORD`) |
+| `pnpm dev:logs`                                 | Follow logs of all containers                                                             |
+| `pnpm test` / `pnpm test:watch`                 | Unit tests                                                                                |
+| `pnpm test:int`                                 | Integration tests against the running stack (in their own test databases)                 |
+| `pnpm typecheck` · `pnpm lint` · `pnpm format`  | Code quality                                                                              |
+| `pnpm verify`                                   | Stack and quality checks (code, health, database, security, gateway)                      |
+| `pnpm web`                                      | The website on http://localhost:3000 (hot reload; needs the stack)                        |
+| `pnpm web:e2e`                                  | Browser tests: desktop + phone, WCAG 2.2 AA, CSP, clean text, session                     |
+| `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route)                     |
+| `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)                                |
+| `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent)                     |
+| `pnpm db:shards`                                | Make every registered shard a migrated database (idempotent)                              |
+| `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)                           |
+| `pnpm db:backup [full\|diff\|incr]`             | A pgBackRest backup of the dev cluster (encrypted repository)                             |
+| `pnpm db:restore-drill`                         | Restore the latest backup at a point in time to a scratch server; check                   |
+| `pnpm db:health`                                | The database's health checks (✔ ok, ! warning, ✘ critical)                                |
+| `pnpm db:break-glass --reason "…" [--db …]`     | A person's read-only, audited session on one database (dropped after)                     |
 
 Postgres accepts network connections only over TLS 1.3 (DB-020). `pnpm bootstrap` makes the
 development certificates in `secrets/` (git-ignored) and writes `PGSSLMODE=verify-full` and

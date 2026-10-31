@@ -99,6 +99,15 @@ if running clickhouse; then
   check "ClickHouse: 4 analytics tables"                 eq "$("${COMPOSE[@]}" exec -T clickhouse clickhouse-client --user buku_analytics --password "$(grep ^CLICKHOUSE_PASSWORD= .env | cut -d= -f2)" -q "SELECT count() FROM system.tables WHERE database='buku_analytics'" 2>/dev/null)" 4
 else skip "ClickHouse checks"; fi
 check "S3 buckets created"                             bash -c "docker compose -f docker-compose.dev.yml logs s3-init 2>/dev/null | grep -q 'buku-documents-dev'"
+# Monitoring (D-127, opt-in): every target read, the alert rules loaded, the database checks flowing.
+if running prometheus; then
+  check "Prometheus reads every service, the gateway and the database checks" bash -c "! curl -sf http://localhost:9090/api/v1/targets | grep -q '\"health\":\"down\"' && curl -sf http://localhost:9090/api/v1/targets | grep -q 'db-health'"
+  check "Prometheus has the alert rules, and none is firing" bash -c "curl -sf http://localhost:9090/api/v1/rules | grep -q 'DatabaseCheckCritical' && ! curl -sf 'http://localhost:9090/api/v1/alerts' | grep -q '\"state\":\"firing\"'"
+  check "The database's health checks reach Prometheus (13)" eq "$(curl -sf 'http://localhost:9090/api/v1/query?query=count(buku_db_check_status)' | grep -o '\"[0-9]*\"\]' | tr -dc 0-9)" 13
+else skip "Monitoring checks"; fi
+if running grafana; then
+  check "Grafana: four BUKU dashboards, no anonymous access" bash -c "[ \$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3300/api/search) = 401 ] && curl -sf -u admin:\$(grep ^GRAFANA_ADMIN_PASSWORD= .env | cut -d= -f2) 'http://localhost:3300/api/search?tag=buku' | grep -o '\"uid\":\"buku-' | wc -l | grep -qx 4"
+fi
 
 echo "═══ 6. Gateway & security baseline ═══"
 check "Only localhost-bound published ports"          bash -c "! docker compose -f docker-compose.dev.yml ps --format '{{.Publishers}}' | grep -q '0.0.0.0'"

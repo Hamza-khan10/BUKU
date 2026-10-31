@@ -27,6 +27,12 @@ else skip "Elasticsearch" elasticsearch; fi
 if running clickhouse; then
   [[ "$(curl -sf http://localhost:8123/ping)" == "Ok." ]] && ok "ClickHouse" || bad "ClickHouse"
 else skip "ClickHouse" analytics; fi
+if running prometheus; then
+  [[ "$(curl -sf http://localhost:9090/-/ready)" == *Ready* ]] && ok "Prometheus" "$(curl -sf http://localhost:9090/api/v1/targets | grep -o '"health":"up"' | wc -l) targets up" || bad "Prometheus"
+else skip "Prometheus" monitoring; fi
+if running grafana; then
+  curl -sf http://localhost:3300/api/health | grep -q '"database": *"ok"' && ok "Grafana" "http://localhost:3300" || bad "Grafana"
+else skip "Grafana" monitoring; fi
 curl -s -o /dev/null http://localhost:9100 && ok "Object storage (S3)" || bad "Object storage (S3)"
 curl -sf http://localhost:8025/livez > /dev/null && ok "Mailpit" || bad "Mailpit"
 

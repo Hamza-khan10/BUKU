@@ -27,7 +27,10 @@ COPY pgbackrest/pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
 COPY --chmod=0755 pgbackrest/archive-push.sh /usr/local/bin/pgbackrest-archive-push
 RUN install -d -o postgres -g postgres -m 0750 /var/lib/pgbackrest /var/spool/pgbackrest \
  && install -d -o postgres -g postgres -m 0770 /var/log/pgbackrest /tmp/pgbackrest \
- && chmod 0644 /etc/pgbackrest/pgbackrest.conf
+ && chmod 0644 /etc/pgbackrest/pgbackrest.conf \
+ # Where the monitoring sidecar writes the health checks' results (D-127), owned by the server's
+ # user so a fresh volume mounted here is too.
+ && install -d -o postgres -g postgres -m 0755 /var/lib/buku-health
 
 # Our own init script creates the roles and installs every extension into an
 # `extensions` schema (keeps Prisma's `public` schema clean).

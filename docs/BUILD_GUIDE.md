@@ -650,6 +650,18 @@ The detailed plan — every page, its data and edge cases, the design system and
     time zone (summer-time changes included); the API keeps the old and new times in the audit
     log. A clock-out before its clock-in, a time in the future and a shift over 24 hours are
     said on the field before anything is sent.
+- **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
+  Grafana (:3300) beside the stack:
+  - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request
+    from outside, with status, latency and bandwidth) and the database's health checks (run every
+    minute by a sidecar, the same script as `pnpm db:health`), every 15 seconds, and evaluates
+    the alert rules.
+  - Four Grafana dashboards, provisioned from files: **Platform** (traffic, errors, latency,
+    memory, CPU, event loop per service), **Security** (refusals, rate limits, security events,
+    firing alerts, the most refused routes), **Gateway** and **Database** (every check, backup
+    age, connections, slots, archiving, wraparound).
+  - Grafana: its own admin login, nothing anonymous, nothing sent out; everything on localhost.
+  - `pnpm health` and `pnpm verify` include it when it's running.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business
