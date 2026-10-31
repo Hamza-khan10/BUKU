@@ -27,7 +27,7 @@ test.describe('Admin app', () => {
     expect(robots).toContain('noindex');
   });
 
-  test('a new admin must set up two-step sign-in first, then sees the access review', async ({
+  test('a new admin must set up two-step sign-in first, then sees the console and the access review', async ({
     page,
     context,
   }) => {
@@ -53,6 +53,14 @@ test.describe('Admin app', () => {
     await page.getByLabel('I’ve saved my recovery codes somewhere safe').check();
     await page.getByRole('button', { name: 'Done' }).click();
 
+    // The console (3.6b): the overview first, then the access review under Security.
+    await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Waiting for a decision' })).toBeVisible();
+    await expectAccessible(page);
+    await page
+      .getByRole('navigation', { name: 'Console' })
+      .getByRole('link', { name: 'Access review' })
+      .click();
     await expect(page.getByRole('heading', { name: 'Access review' })).toBeVisible();
     const me = page.getByRole('row').filter({ hasText: email });
     await expect(me).toContainText('On');

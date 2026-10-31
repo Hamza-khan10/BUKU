@@ -662,6 +662,22 @@ The detailed plan — every page, its data and edge cases, the design system and
     age, connections, slots, archiving, wraparound).
   - Grafana: its own admin login, nothing anonymous, nothing sent out; everything on localhost.
   - `pnpm health` and `pnpm verify` include it when it's running.
+- **3.6b The operator console — ✅ done (D-128).** The admin app becomes a console: a sidebar of
+  sections, a top bar that says where it's acting (Development, Preview or, in red, Production) and
+  who is signed in, and a dark control-room theme (light follows the device):
+  - **Overview:** the system over the last five minutes, read from Prometheus by the app's server
+    (targets answering, requests, server errors, the 95th percentile, security events, refusals,
+    alerts firing, the database's checks), and what's waiting for a decision (businesses to
+    verify, open reports, admins without two-step sign-in); links to the Grafana dashboards.
+  - **Businesses:** by status (to verify, verified, suspended, not approved), oldest first, with
+    the steps each status allows; rejecting and suspending ask why (the owner is told). The API's
+    refusal (a verification checklist not met, say) is shown word for word.
+  - **Reports:** open, looked into, dismissed; close each one.
+  - **Monitoring:** every target, the alerts firing, the database's checks, the dashboards.
+  - **Security → Access review:** as before.
+  - Every action goes through the app's own endpoints (our origin, our header, then the session);
+    the API checks the admin and two-step sign-in again and records it. A passed check is
+    remembered for a minute per session, so browsing doesn't run into the API's sign-in limits.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business

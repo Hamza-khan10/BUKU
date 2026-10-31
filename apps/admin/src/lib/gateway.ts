@@ -5,8 +5,16 @@ import { REQUEST_ID_HEADER } from '@buku/web-security/request-id';
 import { env } from './env';
 
 /** An answer from the API, unwrapped: the data, or the error the API gave. */
+/** A list's paging, as the API gives it. */
+export interface PageMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
 export type Answer<T> =
-  | { ok: true; status: number; data: T }
+  | { ok: true; status: number; data: T; meta?: PageMeta | undefined }
   | {
       ok: false;
       status: number;
@@ -62,9 +70,10 @@ export async function callApi<T>(call: {
   if (res.status === 204) return { ok: true, status: 204, data: undefined as T };
   const body = (await res.json().catch(() => null)) as {
     data?: T;
+    meta?: PageMeta;
     error?: { code?: string; message?: string; details?: unknown };
   } | null;
-  if (res.ok) return { ok: true, status: res.status, data: body?.data as T };
+  if (res.ok) return { ok: true, status: res.status, data: body?.data as T, meta: body?.meta };
   return {
     ok: false,
     status: res.status,

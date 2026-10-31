@@ -86,8 +86,10 @@ deployed yet, Phase 5).
   hours, closed days, people's time off and extra hours, and attendance. Still to build: the rest
   of the business area (calendar, reviews, insights, billing, settings), the operator console, and
   polish.
-- **Admin app** (`apps/admin`, D-091): sign-in and two-step only so far; operator tools come with
-  3.6.
+- **Admin app** (`apps/admin`, D-091, D-128): an operator console — the overview (system status
+  from Prometheus, what's waiting for a decision), businesses (verify, reject, suspend, reinstate),
+  reports, monitoring (targets, alerts, the database's checks, links to Grafana) and the access
+  review. Emergency switches, accounts, the audit log and the rest of 3.6 come next.
 
 ### Payments (Paddle)
 
