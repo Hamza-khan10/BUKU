@@ -12,8 +12,8 @@ the registry; reference data copied by replication; the search catalog; each ser
 everywhere; and its own development data (D2e). Every service runs on v2 through the data plane,
 the website and every test run on it too, and v1's `buku` database has left the stack (D3j). D4
 made it safe to run: backups with point-in-time recovery and a restore drill (D4a), TLS 1.3 on
-every connection (D4b), break-glass access for people and health checks with alerts (D4c). Next:
-database v2 comes to `main`, website work resumes (DB-000), and D5 proves it at scale.
+every connection (D4b), break-glass access for people and health checks with alerts (D4c).
+Database v2 is on `main` (2026-10-31); website work resumes (DB-000), and D5 proves it at scale.
 
 ---
 
