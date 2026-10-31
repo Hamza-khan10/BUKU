@@ -53,7 +53,9 @@ export function Avatar({
           className="size-full object-cover"
         />
       ) : (
-        <span aria-hidden>{initials(name)}</span>
+        // Drawn by CSS from the attribute, not written as text: initials are a picture of the name,
+        // and as text they'd become part of the name of a button the picture sits in (WCAG 2.5.3).
+        <span aria-hidden data-initials={initials(name)} className="before:content-[attr(data-initials)]" />
       )}
       <span className="sr-only">{name}</span>
     </span>

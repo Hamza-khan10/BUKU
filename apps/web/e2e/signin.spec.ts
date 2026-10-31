@@ -69,7 +69,7 @@ test.describe('Signing in', () => {
 
     await page.reload();
     const account = page.getByRole('button', { name: 'Account: Bilal Raza' });
-    await expect(account).toContainText('BR');
+    await expect(account.locator('[data-initials="BR"]')).toBeVisible();
     await expect(account.locator('img')).toHaveCount(0);
   });
 

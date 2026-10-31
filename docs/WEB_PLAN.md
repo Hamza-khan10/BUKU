@@ -237,7 +237,7 @@ closed/paused, business suspended mid-flow, session expired mid-flow (resume aft
 | `/business/[id]/calendar`     | Week view per employee                                                                            |
 | `/business/[id]/check-in`     | Scan the QR with the camera or type the code                                                      |
 | `/business/[id]/queue`        | Front-desk board: call next, serve, done, no-show, walk-ins, priority, pause/close (live)         |
-| `/business/[id]/queue/screen` | Full-screen waiting-room display: now serving, next tickets (public data only)                    |
+| `/b/[slug]/screen`            | Full-screen waiting-room display: now serving, next tickets (public data only, no sign-in; D-126) |
 | `/business/[id]/services`     | Menu: categories, services, prices, durations, who does what                                      |
 | `/business/[id]/staff`        | Profiles, hours, time off, photos (with consent), attendance                                      |
 | `/business/[id]/hours`        | Opening hours, closures and holidays                                                              |

@@ -62,3 +62,17 @@ export async function loadBookingPage(idOrSlug: string) {
   ]);
   return { business: profile.data, menu, staff };
 }
+
+/**
+ * What the waiting-room screen needs (3.5c): the business's name and its queue's public state
+ * (ticket numbers only). The profile decides whether the screen exists.
+ */
+export async function loadQueueScreen(idOrSlug: string) {
+  if (!isIdOrSlug(idOrSlug)) return null;
+  const profile = await findPublic<BusinessProfile>(`/v1/businesses/${idOrSlug}`, { revalidate: 60 });
+  if (!profile) return null;
+  const queue = await section(
+    getPublic<QueueState>(`/v1/queue/public/${profile.data.slug}`, { revalidate: 0 }).then((r) => r.data),
+  );
+  return { business: profile.data, queue };
+}

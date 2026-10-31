@@ -1183,3 +1183,10 @@ dropped afterwards. The reason sits on the role, so the audit log says who, why 
 database's health (archiving, backups, slots, copies, partitions, jobs, limits, the registry, roles
 left behind) is one script. People run it, CI runs it, and Prometheus reads it as metrics, so the
 same checks that pass in development are the ones that page in production.
+
+**D-126 · The waiting-room screen is public (3.5c).** The screen a business puts on a TV shows
+only what its public page already shows: ticket numbers, never names. So it lives at
+`/b/<slug>/screen` and needs no sign-in, instead of inside the signed-in business area
+(`/business/<id>/queue/screen`, as WEB_PLAN first had it). A TV in a waiting room is a shared
+screen anyone can touch; signed in, it would hold a login that can call, serve and close the
+queue. The front desk's board stays private and acts; the screen only watches.
