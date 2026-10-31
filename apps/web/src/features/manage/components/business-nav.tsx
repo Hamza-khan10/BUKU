@@ -27,6 +27,7 @@ export function BusinessNav({ id }: { id: string }) {
     { href: `/business/${id}/check-in`, label: 'Check-in', show: true },
     { href: `/business/${id}/queue`, label: 'Queue', show: true },
     { href: `/business/${id}/hours`, label: 'Hours', show: true },
+    { href: `/business/${id}/attendance`, label: 'Attendance', show: true },
     { href: `/business/${id}/services`, label: 'Services', show: can(role, 'services.manage') },
     { href: `/business/${id}/team`, label: 'Team', show: can(role, 'staff.manage') },
   ].filter((p) => p.show);
