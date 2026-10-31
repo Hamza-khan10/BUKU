@@ -620,6 +620,20 @@ The detailed plan — every page, its data and edge cases, the design system and
   link to hand over in person, and per login: change role, a new password (also unlocks), turn
   off/on, remove. Setup now adds as many services as wanted and the team (optional) before the
   logo and photos. Plan limits, rate limits and taken usernames are said in words.
+- **3.5e Opening hours and closed days — ✅ done.** `/business/[id]/hours`, an "Hours" tab for
+  the whole team:
+  - The usual week, as a summary; owners and managers change it in place, with the same form as
+    setup (now one component for both).
+  - Closed days: holidays, a half day, a day off for everyone. No free times are offered then;
+    bookings already made stay, and the page says so.
+    - A stretch of whole days with the same reason ("Eid holidays", three days) is shown and
+      removed as one, though the API keeps a row per day.
+    - Part of a day takes a start and an end.
+    - Days in the past, a last day before the first, more than 62 days at once, and an end before
+      its start are said on the field before anything is sent, as the API would refuse them.
+  - Changing is for owners and managers (`business.hours`, `schedule.manage_all`); the rest of the
+    team sees the same page without the buttons.
+  - People's own time off and extra hours come next, on the same rules.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business
