@@ -157,16 +157,20 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
 
 ## 5. GitHub today (2026-10-31)
 
-- `main`: database v2 merged from `feat/db-v2-services` (D1–D4); 0 code-scanning, 0 Dependabot
-  and 0 secret-scanning alerts; no open issues. The live website runs **Next.js 16.4.2**.
-- Latest on `main` before it: **#158** (the four Dependabot updates opened after #153, and qs,
-  ip-address and fast-uri patched for moderate advisories). Dependabot closes its own PRs (#136,
-  #151, #152, #156) on its next run.
+- `main`: database v2 (D1–D4, #160), the checkout page working without the API (#161),
+  lucide-react 1.63.0 (#152); 0 Dependabot and 0 secret-scanning alerts; no open issues. The live
+  website runs **Next.js 16.4.2**.
+- **Code scanning: 26 open warnings, `js/missing-rate-limiting`**, raised on `main` by #160. They
+  are the same false positive as the 93 dismissed on 2026-10-04: the routes are limited by
+  express-rate-limit per address before every route (`packages/common/src/http/app.ts`, D-086),
+  most also by a route limiter, and Kong. CodeQL can't follow routes registered through the
+  routes callback; the v2 rewrite changed those lines, so it raised them again. Dismissing needs
+  the owner (the command is in the session note of 2026-10-31).
 - `feat/db-v2-services` is done: every slice D3a → D4c is on `main`.
 - **Branches:** 40 on GitHub belong to merged or closed PRs whose last commit is the PR's (safe to
-  delete; deleting needs the owner, see the session note of 2026-10-31), plus `feat/db-v2-d4c`
-  and `feat/db-v2-services` now; two more (`feat/categories-and-motion`,
-  `feat/redesign-foundation`) have commits after their PR and stay.
+  delete; deleting needs the owner, see the session note of 2026-10-31), plus `feat/db-v2-d4c`,
+  `feat/db-v2-services` and `fix/web-checkout-without-api` now; two more
+  (`feat/categories-and-motion`, `feat/redesign-foundation`) have commits after their PR and stay.
 
 ## 6. What's next
 
