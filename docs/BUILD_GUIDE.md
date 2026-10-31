@@ -634,6 +634,13 @@ The detailed plan — every page, its data and edge cases, the design system and
   - Changing is for owners and managers (`business.hours`, `schedule.manage_all`); the rest of the
     team sees the same page without the buttons.
   - People's own time off and extra hours come next, on the same rules.
+- **3.5f Time off and extra hours — ✅ done.** On the Hours page, for each person customers book:
+  - their coming days off (a day, a stretch, part of a day) and extra hours (staying late one
+    day), shown and removed as stretches like closed days;
+  - added with the same form as closed days, plus a choice of time off or extra hours (extra
+    hours are one day, from one time to another);
+  - owners and managers keep anyone's (a choice of person); everyone else keeps their own — the
+    profile linked to their login — and is told plainly if there's none.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business

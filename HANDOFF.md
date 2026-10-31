@@ -24,7 +24,7 @@ free** (D-101); businesses pay (Starter free, Essential, Professional, Enterpris
 | ------ | ------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                         |
 | 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred |
-| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 business area: a–d done, e (hours) built  |
+| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 business area: a–f done                   |
 | **3D** | **Database v2** — built for hundreds of millions of people                           | ✅ **D1–D4 built and on `main`**; D5 later      |
 | 4      | Mobile app (Expo)                                                                    | planned                                         |
 | 5      | Production: deployment, observability, backups, load and security testing            | planned                                         |
@@ -83,8 +83,9 @@ deployed yet, Phase 5).
   booking, visits and tickets, the walk-in queue, reviews, notifications, account settings and
   data; the checkout page for payments; the business area — adding a business, today,
   appointments, check-in, the queue board and the waiting-room screen, services and team, opening
-  hours and closed days. Still to build: the rest of the business area (calendar, time off and
-  attendance, reviews, insights, billing, settings), the operator console, and polish.
+  hours, closed days, and people's time off and extra hours. Still to build: the rest of the
+  business area (attendance, calendar, reviews, insights, billing, settings), the operator console,
+  and polish.
 - **Admin app** (`apps/admin`, D-091): sign-in and two-step only so far; operator tools come with
   3.6.
 
@@ -176,9 +177,10 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
 
 1. **Website, Phase 3.5 → 3.7**, on database v2. Done in 3.5, the business area: 3.5a (adding a
    business), 3.5b (today, appointments, check-in), 3.5c (the queue board and the waiting-room
-   screen, D-126), 3.5d (services and team) and 3.5e (opening hours and closed days). Still to
-   build (WEB_PLAN §7): people's time off and extra hours, attendance, the calendar, reviews,
-   insights, billing and settings. Then 3.6, the operator console, and 3.7, polish and proof.
+   screen, D-126), 3.5d (services and team), 3.5e (opening hours and closed days) and 3.5f
+   (people's time off and extra hours). Still to build (WEB_PLAN §7): attendance, the calendar,
+   reviews, insights, billing and settings. Then 3.6, the operator console, and 3.7, polish and
+   proof.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
 3. **Phase 5** — production: deployment, PgBouncer, the standby and a second region, backups to
