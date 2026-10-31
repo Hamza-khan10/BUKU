@@ -68,10 +68,13 @@ export async function systemStatus(): Promise<SystemStatus | null> {
   const [up, rps, errors, p95, security, refused, alerts, database] = await Promise.all([
     query('up'),
     query(`sum(rate(${REQ}[5m]))`),
-    query(`100 * sum(rate(${REQ}{status_code=~"5.."}[5m])) / clamp_min(sum(rate(${REQ}[5m])), 1e-9)`),
+    query(
+      `100 * (sum(rate(${REQ}{status_code=~"5.."}[5m])) or vector(0)) / clamp_min(sum(rate(${REQ}[5m])), 1e-9)`,
+    ),
     query('histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))'),
     query('sum(increase(security_events_total[1h]))'),
-    query(`sum(rate(${REQ}{status_code=~"401|403|429"}[5m]))`),
+    // Refusals counted at the gateway, which turns most away before any service sees them.
+    query('sum(rate(kong_http_requests_total{code=~"401|403|429"}[5m])) or vector(0)'),
     // Alerts that are firing now (pending ones are still being sure).
     query('ALERTS{alertstate="firing"}'),
     query('max by (check) (buku_db_check_status)'),
