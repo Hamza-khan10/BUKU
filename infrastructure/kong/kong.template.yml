@@ -91,7 +91,7 @@ services:
       # operator turning parts off during an attack mustn't run into it. Still only from the admin
       # app (below), and the service wants a platform admin with two-step sign-in.
       - name: auth-admin
-        paths: ['/v1/admin/access-review', '/v1/admin/switches', '/v1/admin/accounts']
+        paths: ['/v1/admin/access-review', '/v1/admin/switches', '/v1/admin/accounts', '/v1/admin/audit']
         strip_path: false
         plugins:
           - *jwt

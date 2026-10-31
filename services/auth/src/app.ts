@@ -1,6 +1,7 @@
 import { MfaService } from './mfa/mfa-service.js';
 import { AccessReview } from './admin/access-review.js';
 import { AccountControl } from './admin/accounts.js';
+import { AuditLog } from './admin/audit-log.js';
 import { SwitchControl } from './admin/switches.js';
 import {
   createHttpApp,
@@ -139,6 +140,7 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
         accessReview: new AccessReview({ plane, cipher: deps.cipher }),
         switches: new SwitchControl(plane),
         accounts: new AccountControl({ plane, cipher: deps.cipher, indexer: deps.indexer, sessions }),
+        audit: new AuditLog(plane),
         businessIdOf: (publicId: string) => plane.idOfPublic('business', publicId),
         mfa,
       }),

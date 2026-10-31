@@ -1744,14 +1744,27 @@ describe('Accounts, for platform admins (3.6)', () => {
     expect((await act(me.accessToken, person.user.id, 'suspend', { reason: 'test: again' })).status).toBe(
       409,
     );
-    expect(await audited(personId, 'admin.account_suspended')).toBe(1);
+    // On the person's record, by the admin; on the admin's own, as an admin step.
+    expect(
+      await (
+        await shardOf(personId)
+      ).auditLog.count({
+        where: { userId: me.userId, resourceId: personId, action: 'account.suspended' },
+      }),
+    ).toBe(1);
     expect(await audited(me.userId, 'admin.account_suspended')).toBe(1);
 
     const back = await act(me.accessToken, person.user.id, 'reinstate', { reason: 'test: cleared' });
     expect(back.status).toBe(200);
     expect(back.body.data.status).toBe('active');
     expect((await signInAs(sub)).status).toBe(200);
-    expect(await audited(personId, 'admin.account_reinstated')).toBe(1);
+    expect(
+      await (
+        await shardOf(personId)
+      ).auditLog.count({
+        where: { userId: me.userId, resourceId: personId, action: 'account.reinstated' },
+      }),
+    ).toBe(1);
     expect((await act(me.accessToken, person.user.id, 'reinstate')).status).toBe(409);
   });
 
@@ -1780,6 +1793,93 @@ describe('Accounts, for platform admins (3.6)', () => {
     expect((await act(me.accessToken, 'AAAAAAAAAAAA', 'suspend', { reason: 'test: nobody' })).status).toBe(
       404,
     );
+  });
+});
+
+describe('The audit log, for platform admins (3.6f)', () => {
+  const feed = (token: string, query: string) =>
+    request(app).get(`/v1/admin/audit?${query}`).set(bearer(token));
+  type Entry = {
+    id: string;
+    at: string;
+    action: string;
+    actor: { id: string; name: string } | null;
+    target: { type: string; id: string | null } | null;
+    reason: string | null;
+  };
+
+  it('shows what admins did, newest first, by area and page by page; never twice; customers can’t', async () => {
+    const me = await admin();
+    const person = await signUp();
+    const act = (step: string, body: object) =>
+      request(app)
+        .post(`/v1/admin/accounts/${person.user.id}/${step}`)
+        .set(bearer(me.accessToken))
+        .send(body);
+    expect((await act('suspend', { reason: 'test: audit feed' })).status).toBe(200);
+    expect((await act('reinstate', { reason: 'test: cleared' })).status).toBe(200);
+
+    const res = await feed(me.accessToken, 'days=1&area=accounts&limit=100');
+    expect(res.status).toBe(200);
+    const mine = (res.body.data.entries as Entry[]).filter(
+      (e) => e.actor?.id === me.user.id && e.target?.id === person.user.id,
+    );
+    // The admin's record holds each step once; the person's record (account.*) isn't read here.
+    expect(mine.map((e) => e.action)).toEqual(['admin.account_reinstated', 'admin.account_suspended']);
+    expect(mine[1]).toMatchObject({ reason: 'test: audit feed', target: { type: 'person' } });
+
+    // Sign-ins: an admin's are in it; a customer's never are.
+    const signIns = await feed(me.accessToken, 'days=1&area=sign-in&limit=100');
+    const actors = (signIns.body.data.entries as Entry[]).map((e) => e.actor?.id);
+    expect(actors).toContain(me.user.id);
+    expect(actors).not.toContain(person.user.id);
+
+    // Pages: each starts where the last ended, newest first, none repeated.
+    const first = await feed(me.accessToken, 'days=1&limit=2');
+    expect(first.body.data.next).toMatch(/^\d+_\d+$/);
+    const second = await feed(me.accessToken, `days=1&limit=2&before=${first.body.data.next}`);
+    const a = first.body.data.entries as Entry[];
+    const b = second.body.data.entries as Entry[];
+    expect(b.length).toBeGreaterThan(0);
+    expect(b.some((e) => a.some((x) => x.id === e.id))).toBe(false);
+    expect(+new Date(b[0]!.at)).toBeLessThanOrEqual(+new Date(a[a.length - 1]!.at));
+
+    // (The suspended person's token died with the suspension; ask as another customer.)
+    expect((await feed((await signUp()).accessToken, 'days=1')).status).toBe(403);
+    expect((await feed(me.accessToken, 'area=everything')).status).toBe(400);
+    expect((await feed(me.accessToken, 'before=yesterday')).status).toBe(400);
+  });
+
+  it('a person’s trail: their own steps and what was done to them; opening it is recorded', async () => {
+    const me = await admin();
+    const person = await signUp();
+    await request(app)
+      .post(`/v1/admin/accounts/${person.user.id}/suspend`)
+      .set(bearer(me.accessToken))
+      .send({ reason: 'test: trail' });
+    const res = await request(app)
+      .get(`/v1/admin/accounts/${person.user.id}/audit`)
+      .set(bearer(me.accessToken));
+    expect(res.status).toBe(200);
+    const entries = res.body.data as Entry[];
+    expect(entries.find((e) => e.action === 'account.suspended')).toMatchObject({
+      actor: { id: me.user.id },
+      reason: 'test: trail',
+    });
+    // Their own sign-up is there too, with no separate target (it's their own account).
+    expect(entries.some((e) => e.actor?.id === person.user.id && e.target === null)).toBe(true);
+    expect(
+      await (
+        await shardOf(me.userId)
+      ).auditLog.count({ where: { userId: me.userId, action: 'admin.account_trail_viewed' } }),
+    ).toBe(1);
+    expect(
+      (
+        await request(app)
+          .get(`/v1/admin/accounts/${me.user.id}/audit`)
+          .set(bearer((await signUp()).accessToken))
+      ).status,
+    ).toBe(403);
   });
 });
 

@@ -86,9 +86,11 @@ export class AccountControl {
         throw AppError.conflict('This account is deleted or being deleted');
       if (user.status === 'suspended') throw AppError.conflict('This account is already suspended');
       await tx.user.update({ where: { id: userId }, data: { status: 'suspended' } });
+      // On the person's record: who did it (the admin) and to whom. The admin's record says the same
+      // as `admin.account_suspended`; the names differ so the audit log never shows it twice.
       await recordShardAudit(tx, this.deps.plane.id(), {
-        userId,
-        action: 'admin.account_suspended',
+        userId: adminId,
+        action: 'account.suspended',
         resourceType: 'user',
         resourceId: userId,
         oldValues: { status: user.status },
@@ -116,8 +118,8 @@ export class AccountControl {
       if (user.status !== 'suspended') throw AppError.conflict('This account isn’t suspended');
       await tx.user.update({ where: { id: userId }, data: { status: 'active' } });
       await recordShardAudit(tx, this.deps.plane.id(), {
-        userId,
-        action: 'admin.account_reinstated',
+        userId: adminId,
+        action: 'account.reinstated',
         resourceType: 'user',
         resourceId: userId,
         oldValues: { status: 'suspended' },
