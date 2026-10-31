@@ -1546,23 +1546,28 @@ describe('Profile picture (private)', () => {
 const codeFor = (secret: string, offset = 0) =>
   hotp(base32Decode(secret), stepAt(Date.now()) + BigInt(offset));
 
-describe('Access review (SOC 2)', () => {
-  /** An admin: signed up, promoted in the database, then a fresh token carrying the role. */
-  async function admin() {
-    const s = await signUp();
-    await (await shardOf(s.userId)).user.update({ where: { id: s.userId }, data: { role: 'super_admin' } });
-    const r = await post('/v1/auth/refresh').send({ refreshToken: s.refreshToken });
-    expect(r.status).toBe(200);
-    // Admin tools need two-step sign-in (D-081).
-    const token = r.body.data.accessToken as string;
-    const setup = await request(app).post('/v1/auth/mfa/setup').set(bearer(token));
-    const confirm = await request(app)
-      .post('/v1/auth/mfa/confirm')
-      .set(bearer(token))
-      .send({ code: codeFor(setup.body.data.secret) });
-    return { ...s, accessToken: confirm.body.data.session.accessToken as string };
-  }
+/** An admin: signed up, promoted in the database, then a fresh token carrying the role. */
+async function admin() {
+  const s = await signUp();
+  await (await shardOf(s.userId)).user.update({ where: { id: s.userId }, data: { role: 'super_admin' } });
+  const r = await post('/v1/auth/refresh').send({ refreshToken: s.refreshToken });
+  expect(r.status).toBe(200);
+  // Admin tools need two-step sign-in (D-081).
+  const token = r.body.data.accessToken as string;
+  const setup = await request(app).post('/v1/auth/mfa/setup').set(bearer(token));
+  const confirm = await request(app)
+    .post('/v1/auth/mfa/confirm')
+    .set(bearer(token))
+    .send({ code: codeFor(setup.body.data.secret) });
+  return {
+    ...s,
+    accessToken: confirm.body.data.session.accessToken as string,
+    // Confirming marks this session as two-step; its refresh token (the rotated one) stays.
+    refreshToken: r.body.data.refreshToken as string,
+  };
+}
 
+describe('Access review (SOC 2)', () => {
   it('lists platform admins with their last activity, flags dormant ones, and is itself audited', async () => {
     const me = await admin();
     const idle = await admin();
@@ -1599,6 +1604,86 @@ describe('Access review (SOC 2)', () => {
     const customer = await signUp();
     const res = await request(app).get('/v1/admin/access-review').set(bearer(customer.accessToken));
     expect(res.status).toBe(403);
+  });
+});
+
+describe('Emergency switches (D-129)', () => {
+  const flip = (token: string, key: string, body: Record<string, unknown>) =>
+    request(app).put(`/v1/admin/switches/${key}`).set(bearer(token)).send(body);
+  const googleSignIn = async (sub: string) =>
+    post('/v1/auth/oauth/google').send({
+      idToken: await googleIdToken({ sub }),
+      acceptedTermsVersion: TERMS,
+      device: { name: 'Test phone', platform: 'ios' },
+    });
+
+  it('sign-ups off: new accounts are refused, people with one still sign in; it says who and why', async () => {
+    const me = await admin();
+    const known = randomUUID();
+    expect((await googleSignIn(known)).status).toBe(201);
+    try {
+      const noReason = await flip(me.accessToken, 'signups', { off: true });
+      expect(noReason.status).toBe(400);
+
+      const off = await flip(me.accessToken, 'signups', { off: true, reason: 'test: a flood of sign-ups' });
+      expect(off.status).toBe(200);
+      expect(off.body.data.find((s: { key: string }) => s.key === 'signups')).toMatchObject({
+        off: true,
+        reason: 'test: a flood of sign-ups',
+        changedBy: { id: me.user.id },
+      });
+
+      const refused = await googleSignIn(randomUUID());
+      expect(refused.status).toBe(503);
+      expect(refused.body.error.code).toBe('SERVICE_PAUSED');
+      expect((await googleSignIn(known)).status).toBe(200);
+
+      expect(
+        await (
+          await shardOf(me.userId)
+        ).auditLog.count({ where: { userId: me.userId, action: 'admin.switch_turned_off' } }),
+      ).toBe(1);
+    } finally {
+      expect((await flip(me.accessToken, 'signups', { off: false })).status).toBe(200);
+    }
+    expect((await googleSignIn(randomUUID())).status).toBe(201);
+    const list = await request(app).get('/v1/admin/switches').set(bearer(me.accessToken));
+    expect(list.body.data.every((s: { off: boolean }) => !s.off)).toBe(true);
+  });
+
+  it('signing in off: everyone but platform admins, who can still reach the console to turn it on', async () => {
+    const me = await admin();
+    const customer = await signUp();
+    try {
+      expect(
+        (await flip(me.accessToken, 'signin', { off: true, reason: 'test: stolen sessions' })).status,
+      ).toBe(200);
+      const refused = await post('/v1/auth/refresh').send({ refreshToken: customer.refreshToken });
+      expect(refused.status).toBe(503);
+      expect(refused.body.error.code).toBe('SERVICE_PAUSED');
+      const mine = await post('/v1/auth/refresh').send({ refreshToken: me.refreshToken });
+      expect(mine.status).toBe(200);
+    } finally {
+      expect((await flip(me.accessToken, 'signin', { off: false })).status).toBe(200);
+    }
+    expect((await post('/v1/auth/refresh').send({ refreshToken: customer.refreshToken })).status).toBe(200);
+  });
+
+  it('only platform admins see or change them; a switch the code doesn’t know is refused', async () => {
+    const me = await admin();
+    const customer = await signUp();
+    expect((await request(app).get('/v1/admin/switches').set(bearer(customer.accessToken))).status).toBe(403);
+    expect(
+      (await flip(customer.accessToken, 'bookings', { off: true, reason: 'test: not mine' })).status,
+    ).toBe(403);
+    expect((await flip(me.accessToken, 'everything', { off: true, reason: 'test: no such' })).status).toBe(
+      400,
+    );
+    const list = await request(app).get('/v1/admin/switches').set(bearer(me.accessToken));
+    expect(list.status).toBe(200);
+    expect(list.body.data.map((s: { key: string }) => s.key)).toEqual(
+      expect.arrayContaining(['signups', 'signin', 'bookings', 'queue', 'payments', 'uploads', 'reviews']),
+    );
   });
 });
 

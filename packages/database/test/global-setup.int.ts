@@ -72,7 +72,7 @@ export default async function setup(): Promise<void> {
   } finally {
     await directory.$disconnect();
   }
-  await reset(testEnv.directoryMigratorUrl, 'registry, ids, lookup, reference');
+  await reset(testEnv.directoryMigratorUrl, 'registry, ids, lookup, reference, ops');
   prisma(['migrate', 'deploy', '--config', 'prisma.directory.config.ts'], {
     DATABASE_DIRECTORY_MIGRATION_URL: testEnv.directoryMigratorUrl,
   });
