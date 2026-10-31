@@ -58,9 +58,10 @@ DB-042).
 | D5    | proof at scale (10M people, 1M businesses, 200M appointments)                                                                                                | planned      |
 
 D3 and D4 were built on the integration branch **`feat/db-v2-services`** (D-112), one reviewed
-pull request per slice, and came to `main` in one pull request on 2026-10-31, merged with a merge
-commit so each slice stays its own commit. `main` is the branch the live website deploys from (the
-API isn't deployed yet, Phase 5).
+pull request per slice, and came to `main` in one pull request on 2026-10-31 (#160, squashed:
+`main` keeps a linear history). Each slice's own commit stays on `feat/db-v2-services` and in its
+pull request (#122 → #159). `main` is the branch the live website deploys from (the API isn't
+deployed yet, Phase 5).
 
 ### Services
 
