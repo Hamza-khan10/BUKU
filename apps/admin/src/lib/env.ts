@@ -33,6 +33,13 @@ const schema = z
         ),
     ),
     ADMIN_GOOGLE_CLIENT_SECRET: optional(z.string().min(10).max(200)),
+    /**
+     * Monitoring (D-127), both optional: Prometheus, read by this server for the console's system
+     * status (never by the browser), and Grafana, linked to. Unset: the console says monitoring
+     * isn't connected here.
+     */
+    PROMETHEUS_URL: optional(z.url().transform((u) => u.replace(/\/+$/, ''))),
+    GRAFANA_URL: optional(z.url().transform((u) => u.replace(/\/+$/, ''))),
     DEV_SIGN_IN: z
       .enum(['true', 'false'])
       .default('false')

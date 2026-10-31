@@ -3,6 +3,7 @@ import { REQUEST_ID_HEADER, requestIdFrom } from '@buku/web-security/request-id'
 import type { Route } from 'next';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { cache } from 'react';
 import { callApi } from './gateway';
 import { readTokens } from './session';
 
@@ -26,9 +27,10 @@ export type Gate =
  * Who is asking, checked with the API on every page: a valid session, a
  * platform admin, with two-step sign-in set up. The API checks all of this
  * again on every admin call (role, and a session that passed two-step); this
- * only decides what the page shows.
+ * only decides what the page shows. Asked once per request (the console's layout and its page
+ * share the answer).
  */
-export async function adminGate(): Promise<Gate> {
+export const adminGate = cache(async function adminGate(): Promise<Gate> {
   const jar = await cookies();
   const incoming = await headers();
   const requestId = requestIdFrom(incoming.get(REQUEST_ID_HEADER));
@@ -47,7 +49,7 @@ export async function adminGate(): Promise<Gate> {
   if (!mfa.ok) return { kind: 'unavailable', message: mfa.error.message, reference: mfa.requestId };
   if (!mfa.data.enabled) return { kind: 'needs-two-step', me: me.data };
   return { kind: 'ok', me: me.data, accessToken, requestId, incoming };
-}
+});
 
 /** For pages that need a fully signed-in admin: anything else goes where it should. */
 export async function requireAdmin(path: string): Promise<Extract<Gate, { kind: 'ok' | 'unavailable' }>> {

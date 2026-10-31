@@ -92,12 +92,79 @@ export function Notice({
 
 export function Card({ title, children }: { title?: string; children: ReactNode }) {
   return (
-    <section
-      aria-label={title}
-      className="flex flex-col gap-4 rounded-lg border border-line bg-surface p-5 shadow-[0_1px_2px_rgb(0_0_0/0.04)]"
-    >
+    <section aria-label={title} className="flex flex-col gap-4 rounded-lg border border-line bg-surface p-5">
       {title && <h2 className="text-lg font-semibold text-ink">{title}</h2>}
       {children}
     </section>
+  );
+}
+
+type Tone = 'ok' | 'wait' | 'danger' | 'info' | 'neutral';
+const TONE: Record<Tone, string> = {
+  ok: 'bg-ok-soft text-ok',
+  wait: 'bg-wait-soft text-wait',
+  danger: 'bg-danger-soft text-danger',
+  info: 'bg-info-soft text-info',
+  neutral: 'bg-sunken text-ink-2',
+};
+
+/** A short status word in its colour ("Up", "Critical", "Pending"). */
+export function Pill({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
+  return (
+    <span className={cx('inline-flex items-center rounded px-2 py-0.5 text-xs font-semibold', TONE[tone])}>
+      {children}
+    </span>
+  );
+}
+
+/** A page's heading: what it is, one line on what it's for, and its actions. */
+export function PageTitle({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+        {description && <p className="max-w-2xl text-sm text-ink-3">{description}</p>}
+      </div>
+      {actions}
+    </div>
+  );
+}
+
+/** One number that matters, with what it means. */
+export function Stat({
+  label,
+  value,
+  tone = 'neutral',
+  hint,
+}: {
+  label: string;
+  value: ReactNode;
+  tone?: Tone;
+  hint?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border border-line bg-surface p-4">
+      <p className="text-xs font-semibold tracking-wide text-ink-3 uppercase">{label}</p>
+      <p
+        className={cx(
+          'text-2xl font-semibold tabular-nums',
+          tone === 'ok' && 'text-ok',
+          tone === 'wait' && 'text-wait',
+          tone === 'danger' && 'text-danger',
+          tone === 'info' && 'text-info',
+        )}
+      >
+        {value}
+      </p>
+      {hint && <p className="text-xs text-ink-3">{hint}</p>}
+    </div>
   );
 }

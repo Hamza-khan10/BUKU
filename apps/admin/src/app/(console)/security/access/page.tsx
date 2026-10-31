@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
-import { SignOut } from '@admin/components/sign-out';
-import { Card, Notice } from '@admin/components/ui';
+import { Card, Notice, PageTitle } from '@admin/components/ui';
 import { requireAdmin } from '@admin/lib/admin';
 import { callApi } from '@admin/lib/gateway';
 
@@ -33,12 +32,12 @@ const when = (iso: string | null) =>
     : 'Never';
 
 /**
- * The first thing an operator sees: who holds platform admin access, whether
- * they use two-step sign-in, and who has gone quiet (SOC 2 access review, D-080).
+ * Who holds platform admin access, whether they use two-step sign-in, and who
+ * has gone quiet (SOC 2 access review, D-080).
  * Producing it is itself recorded in the audit log.
  */
-export default async function HomePage() {
-  const gate = await requireAdmin('/');
+export default async function AccessReviewPage() {
+  const gate = await requireAdmin('/security/access');
   if (gate.kind === 'unavailable') {
     return (
       <Notice tone="danger" title={gate.message}>
@@ -55,16 +54,10 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Access review</h1>
-          <p className="text-sm text-ink-3">
-            Signed in as {gate.me.name}
-            {gate.me.email && ` (${gate.me.email})`}
-          </p>
-        </div>
-        <SignOut />
-      </div>
+      <PageTitle
+        title="Access review"
+        description="Who holds platform admin access, whether they use two-step sign-in, and who has gone quiet. Producing it is recorded in the audit log."
+      />
       {!report.ok ? (
         <Notice
           tone="danger"
