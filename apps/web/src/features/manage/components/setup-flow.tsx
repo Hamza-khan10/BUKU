@@ -29,8 +29,6 @@ import {
   fetchStaff,
   managedKey,
   menuKey,
-  MINE_KEY,
-  setOpeningHours,
   setStaffHours,
   staffKey,
   updateStaff,
@@ -38,22 +36,11 @@ import {
   type ManagedMenu,
   type ManagedStaff,
 } from '../api';
-import {
-  dayLabel,
-  DURATIONS,
-  durationLabel,
-  parsePrice,
-  WEEK,
-  weekFromApi,
-  weekProblems,
-  weekToApi,
-  weekToStaffDays,
-  type Week,
-} from '../setup';
+import { dayLabel, DURATIONS, durationLabel, parsePrice, WEEK, weekFromApi, weekToStaffDays } from '../setup';
 import { BusinessPictures } from './business-pictures';
+import { OpeningHoursForm } from './opening-hours-form';
 import { PeopleSection } from './people';
 import { ServiceForm } from './service-form';
-import { WeekEditor } from './week-editor';
 
 /**
  * The rest of setting up, right after registering (3.5a): opening hours, then the first service
@@ -130,7 +117,7 @@ export function SetupFlow({ id }: { id: string }) {
           </ul>
         }
       >
-        <HoursForm business={b} onSaved={() => setEditingHours(false)} />
+        <OpeningHoursForm business={b} onSaved={() => setEditingHours(false)} />
       </Step>
 
       <Step number={2} title={hasService ? 'Your services' : 'Your first service'}>
@@ -231,64 +218,6 @@ function MoreServices({
         </div>
       )}
     </div>
-  );
-}
-
-function HoursForm({ business, onSaved }: { business: ManagedBusiness; onSaved: () => void }) {
-  const queryClient = useQueryClient();
-  const [week, setWeek] = useState<Week>(() => weekFromApi(business.hours));
-  const [shown, setShown] = useState<ReturnType<typeof weekProblems>>({ days: {} });
-  const [problem, setProblem] = useState<Problem | undefined>();
-  const [busy, setBusy] = useState(false);
-
-  const save = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const problems = weekProblems(week);
-    setShown(problems);
-    if (problems.week || Object.keys(problems.days).length > 0) return;
-    setProblem(undefined);
-    setBusy(true);
-    try {
-      await setOpeningHours(business.id, weekToApi(week));
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: managedKey(business.id) }),
-        queryClient.invalidateQueries({ queryKey: MINE_KEY }),
-      ]);
-      onSaved();
-    } catch (err) {
-      setProblem(problemFrom(err, 'Your opening hours couldn’t be saved. Please try again.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form noValidate onSubmit={(e) => void save(e)} className="flex flex-col gap-4">
-      <p className="text-ink-2">
-        When people can come, in {business.name}’s time ({business.timezone.replaceAll('_', ' ')}). Free times
-        are only ever offered inside them.
-      </p>
-      <ProblemAlert problem={problem} />
-      <WeekEditor
-        week={week}
-        onChange={(w) => {
-          setWeek(w);
-          // Problems clear as they're fixed, never appear while typing.
-          if (shown.week || Object.keys(shown.days).length > 0) setShown(weekProblems(w));
-        }}
-        problems={shown.days}
-      />
-      {shown.week && (
-        <p role="alert" className="text-sm font-medium text-danger">
-          {shown.week}
-        </p>
-      )}
-      <div>
-        <Button type="submit" variant="primary" loading={busy}>
-          Save opening hours
-        </Button>
-      </div>
-    </form>
   );
 }
 
