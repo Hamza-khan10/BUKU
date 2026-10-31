@@ -73,7 +73,7 @@ services:
       # Everything else under /v1/auth needs a token (longest prefix wins, so
       # /v1/auth/logout-all lands here, not on the public /v1/auth/logout).
       - name: auth-private
-        paths: ['/v1/auth', '/v1/auth/logout-all', '/v1/admin/access-review']
+        paths: ['/v1/auth', '/v1/auth/logout-all']
         strip_path: false
         plugins:
           - &jwt
@@ -86,6 +86,26 @@ services:
               header_names: [authorization]
               uri_param_names: [] # never accept tokens in URLs (they end up in logs)
               cookie_names: []
+      # Platform admins' tools here (the access review, D-080; emergency switches, D-129): a token
+      # as above, and a limit of their own instead of the 20 a minute that guard signing in — an
+      # operator turning parts off during an attack mustn't run into it. Still only from the admin
+      # app (below), and the service wants a platform admin with two-step sign-in.
+      - name: auth-admin
+        paths: ['/v1/admin/access-review', '/v1/admin/switches']
+        strip_path: false
+        plugins:
+          - *jwt
+          - name: rate-limiting
+            config:
+              minute: 120
+              limit_by: header
+              header_name: X-BUKU-Client-IP
+              policy: redis
+              fault_tolerant: true
+              hide_client_headers: false
+              error_code: 429
+              error_message: Too many requests, please slow down
+              redis: *redis
       # A business's team (employee accounts, roles) lives in auth-service (D-044).
       - name: business-members
         paths: ['~/v1/businesses/[^/]+/members($|/)']
