@@ -41,7 +41,7 @@ export default async function SignInPage({ searchParams }: PageProps<'/signin'>)
           // A plain link to this app's own endpoint: the sign-in happens on the server (D-090).
           <a
             href={GOOGLE_START}
-            className="inline-flex h-10 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-ink hover:opacity-90"
+            className="inline-flex h-10 items-center justify-center rounded-md bg-brand px-4 text-sm font-semibold text-brand-ink hover:bg-brand-hover"
           >
             Continue with Google
           </a>

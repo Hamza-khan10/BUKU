@@ -1,6 +1,15 @@
 'use client';
 
-import { Activity, Flag, LayoutDashboard, Power, ShieldCheck, Store, type LucideIcon } from 'lucide-react';
+import {
+  Activity,
+  Flag,
+  LayoutDashboard,
+  Power,
+  ShieldCheck,
+  Store,
+  UserSearch,
+  type LucideIcon,
+} from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -19,6 +28,7 @@ const SECTIONS: { title: string | null; items: Item[] }[] = [
     items: [
       { href: '/businesses', label: 'Businesses', icon: Store },
       { href: '/reports', label: 'Reports', icon: Flag },
+      { href: '/accounts', label: 'Accounts', icon: UserSearch },
     ],
   },
   { title: 'Watch', items: [{ href: '/monitoring', label: 'Monitoring', icon: Activity }] },

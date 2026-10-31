@@ -18,12 +18,23 @@ export interface RowAction {
   body?: Record<string, unknown>;
 }
 
+/** Called with the endpoint's answer when a step is done (besides the page reloading its data). */
+export type OnDone = (data: unknown) => void;
+
 /**
  * The steps an operator can take on one row (a business, a report). One that needs a reason opens
  * a short form in place; the API's answer — done, or why not, word for word — is said right there,
  * and the page reloads its list.
  */
-export function RowActions({ subject, actions }: { subject: string; actions: RowAction[] }) {
+export function RowActions({
+  subject,
+  actions,
+  onDone,
+}: {
+  subject: string;
+  actions: RowAction[];
+  onDone?: OnDone;
+}) {
   const router = useRouter();
   const formId = useId();
   const [asking, setAsking] = useState<RowAction | null>(null);
@@ -40,6 +51,7 @@ export function RowActions({ subject, actions }: { subject: string; actions: Row
       setAsking(null);
       setReason('');
       setSaid({ ok: true, text: `${action.label}: done.` });
+      onDone?.(result.data);
       router.refresh();
     } else {
       setSaid({

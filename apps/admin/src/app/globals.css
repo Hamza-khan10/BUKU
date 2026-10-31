@@ -22,7 +22,10 @@
   --brand: #3fd49c;
   --brand-ink: #03140c;
   --brand-soft: #0f2a1f;
+  /* Hover moves away from the text colour, so contrast only grows (never opacity: it fades it). */
+  --brand-hover: #6ce0b5;
   --danger: #ff8a7e;
+  --danger-hover: #ffa89f;
   --danger-soft: #3a1513;
   --ok: #57d9a3;
   --ok-soft: #0f2a1f;
@@ -47,7 +50,9 @@
     --brand: #0b7a52;
     --brand-ink: #ffffff;
     --brand-soft: #e2f4ec;
+    --brand-hover: #086342;
     --danger: #b42318;
+    --danger-hover: #961d14;
     --danger-soft: #fdecea;
     --ok: #157048;
     --ok-soft: #e2f4ec;
@@ -71,6 +76,8 @@
   --color-brand: var(--brand);
   --color-brand-ink: var(--brand-ink);
   --color-brand-soft: var(--brand-soft);
+  --color-brand-hover: var(--brand-hover);
+  --color-danger-hover: var(--danger-hover);
   --color-info: var(--info);
   --color-info-soft: var(--info-soft);
   --color-line-strong: var(--line-strong);
