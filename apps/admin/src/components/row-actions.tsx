@@ -9,7 +9,7 @@ export interface RowAction {
   /** This app's endpoint for it. */
   path: `/api/${string}`;
   label: string;
-  tone?: 'primary' | 'secondary' | 'danger';
+  tone?: 'primary' | 'secondary' | 'danger' | 'danger-quiet';
   /** Asks for a reason first (the owner is told it); the question shown. */
   reason?: string;
   /** Sent as the body, besides any reason. */
@@ -100,7 +100,7 @@ export function RowActions({ subject, actions }: { subject: string; actions: Row
             </Button>
             <Button
               type="submit"
-              variant={asking.tone ?? 'danger'}
+              variant={asking.tone === 'danger-quiet' ? 'danger' : (asking.tone ?? 'danger')}
               className="h-8 px-3 text-xs"
               busy={busy !== null}
             >

@@ -1,4 +1,5 @@
 import 'server-only';
+import { createHash } from 'node:crypto';
 import { REQUEST_ID_HEADER, requestIdFrom } from '@buku/web-security/request-id';
 import type { Route } from 'next';
 import { cookies, headers } from 'next/headers';
@@ -30,6 +31,21 @@ export type Gate =
  * only decides what the page shows. Asked once per request (the console's layout and its page
  * share the answer).
  */
+/**
+ * A fully passed check (a platform admin, two-step sign-in on), remembered for a minute per
+ * session: every page asks, and the API's sign-in routes allow only 20 calls a minute from one
+ * place, so browsing the console quickly would otherwise run out. The API still checks role and
+ * two-step on every admin call; this only decides what a page draws. Nothing else is remembered —
+ * someone setting up two-step, or no longer an admin, is asked again at once.
+ */
+const PASSED_FOR_MS = 60_000;
+const passed = new Map<string, { until: number; me: Me }>();
+const sessionKey = (accessToken: string) => createHash('sha256').update(accessToken).digest('hex');
+function remember(accessToken: string, me: Me) {
+  if (passed.size >= 500) passed.delete(passed.keys().next().value!);
+  passed.set(sessionKey(accessToken), { until: Date.now() + PASSED_FOR_MS, me });
+}
+
 export const adminGate = cache(async function adminGate(): Promise<Gate> {
   const jar = await cookies();
   const incoming = await headers();
@@ -37,6 +53,9 @@ export const adminGate = cache(async function adminGate(): Promise<Gate> {
   const { accessToken, signedIn } = readTokens(jar);
   const lapsed = (): Gate => (signedIn ? { kind: 'renew' } : { kind: 'signed-out' });
   if (!accessToken) return lapsed();
+  const known = passed.get(sessionKey(accessToken));
+  if (known && known.until > Date.now())
+    return { kind: 'ok', me: known.me, accessToken, requestId, incoming };
 
   const me = await callApi<Me>({ path: '/v1/auth/me', accessToken, incoming, requestId });
   if (!me.ok) {
@@ -48,6 +67,7 @@ export const adminGate = cache(async function adminGate(): Promise<Gate> {
   const mfa = await callApi<{ enabled: boolean }>({ path: '/v1/auth/mfa', accessToken, incoming, requestId });
   if (!mfa.ok) return { kind: 'unavailable', message: mfa.error.message, reference: mfa.requestId };
   if (!mfa.data.enabled) return { kind: 'needs-two-step', me: me.data };
+  remember(accessToken, me.data);
   return { kind: 'ok', me: me.data, accessToken, requestId, incoming };
 });
 

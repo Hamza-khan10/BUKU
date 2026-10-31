@@ -43,7 +43,7 @@ function actionsFor(b: AdminBusiness): RowAction[] {
   const suspend: RowAction = {
     path: `${base}/suspend`,
     label: 'Suspend',
-    tone: 'danger',
+    tone: 'danger-quiet',
     reason: 'Why suspend it? The owner is told, and it disappears from search and booking.',
   };
   if (b.status === 'pending')
@@ -52,7 +52,7 @@ function actionsFor(b: AdminBusiness): RowAction[] {
       {
         path: `${base}/reject`,
         label: 'Reject',
-        tone: 'danger',
+        tone: 'secondary',
         reason: 'Why isn’t it approved? The owner is told.',
       },
       suspend,

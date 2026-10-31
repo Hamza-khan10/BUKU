@@ -8,7 +8,10 @@ export function Button({
   className,
   children,
   ...props
-}: ComponentProps<'button'> & { variant?: 'primary' | 'secondary' | 'danger'; busy?: boolean }) {
+}: ComponentProps<'button'> & {
+  variant?: 'primary' | 'secondary' | 'danger' | 'danger-quiet';
+  busy?: boolean;
+}) {
   return (
     <button
       {...props}
@@ -20,6 +23,7 @@ export function Button({
         variant === 'primary' && 'bg-brand text-brand-ink hover:opacity-90',
         variant === 'secondary' && 'border border-line bg-surface text-ink hover:bg-sunken',
         variant === 'danger' && 'bg-danger text-surface hover:opacity-90',
+        variant === 'danger-quiet' && 'border border-danger/50 text-danger hover:bg-danger-soft',
         className,
       )}
     >
