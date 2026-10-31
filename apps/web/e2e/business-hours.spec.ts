@@ -5,9 +5,10 @@ import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
 
 /**
- * A business's hours (3.5e), against the development stack: the owner of a new business sets the
- * usual week, opens on Sundays too, then adds closed days — three for Eid (shown, and removed, as
- * one stretch) and an afternoon — and removes the stretch. The business is removed afterwards.
+ * A business's hours (3.5e, 3.5f), against the development stack: the owner of a new business sets
+ * the usual week, opens on Sundays too, then adds closed days — three for Eid (shown, and removed,
+ * as one stretch) and an afternoon — and removes the stretch; then keeps one person's days: two
+ * days off and an evening of extra hours, removed again. The business is removed afterwards.
  */
 
 const made: string[] = [];
@@ -63,7 +64,9 @@ test.describe('Business hours', () => {
     for (const id of made) closeBusiness(id);
   });
 
-  test('set the week, open on Sundays, add closed days and remove a stretch', async ({ page }) => {
+  test('set the week, open on Sundays, add closed days, keep someone’s time off and extra hours', async ({
+    page,
+  }) => {
     const business = await ownerWithBusiness(page);
     await page.goto(`/business/${business.id}/hours`);
     await expect(page.getByRole('heading', { name: 'Hours', exact: true })).toBeVisible();
@@ -117,5 +120,43 @@ test.describe('Business hours', () => {
       .click();
     await expect(list.getByRole('listitem')).toHaveCount(1);
     await expect(list).not.toContainText('Eid holidays');
+
+    // Someone customers book: a stretch of days off, then extra hours one evening.
+    const headers = { 'x-buku-csrf': '1', origin: new URL(page.url()).origin };
+    const made = await page.request.post(`/api/v1/businesses/${business.id}/staff`, {
+      headers,
+      data: { displayName: 'Ali Raza' },
+    });
+    expect(made.ok(), `add staff: ${made.status()} ${await made.text()}`).toBe(true);
+    await page.reload();
+    const away = page.getByRole('region', { name: 'Time off and extra hours' });
+    await expect(away.getByText('Nothing coming up for Ali Raza')).toBeVisible();
+    const awayForm = away.getByRole('form', { name: 'Add days for Ali Raza' });
+    await awayForm.getByLabel('First day').fill(karachiDate(20));
+    await awayForm.getByLabel(/^Last day/).fill(karachiDate(21));
+    await awayForm.getByLabel(/^Why/).fill('Family wedding');
+    await awayForm.getByRole('button', { name: 'Add days for Ali Raza' }).click();
+    const days = away.getByRole('list', { name: 'Ali Raza’s coming days off and extra hours' });
+    await expect(days.getByRole('listitem')).toHaveCount(1);
+    await expect(days.getByRole('listitem').first()).toContainText('2 days');
+
+    await awayForm.getByRole('radio', { name: 'Extra hours' }).check();
+    await expect(awayForm.getByRole('checkbox', { name: 'Only part of the day' })).toHaveCount(0);
+    await awayForm.getByLabel('The day').fill(karachiDate(7));
+    await awayForm.getByLabel('Working from').fill('20:00');
+    await awayForm.getByLabel('Until').fill('22:00');
+    await awayForm.getByRole('button', { name: 'Add days for Ali Raza' }).click();
+    await expect(days.getByRole('listitem')).toHaveCount(2);
+    await expect(days.getByRole('listitem').first()).toContainText('Extra hours');
+    await expect(days.getByRole('listitem').first()).toContainText('20:00–22:00');
+    await expectAccessible(page);
+
+    await days
+      .getByRole('listitem')
+      .first()
+      .getByRole('button', { name: /^Remove/ })
+      .click();
+    await expect(days.getByRole('listitem')).toHaveCount(1);
+    await expect(days).not.toContainText('Extra hours');
   });
 });
