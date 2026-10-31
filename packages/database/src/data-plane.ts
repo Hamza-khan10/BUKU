@@ -2,11 +2,13 @@ import {
   AppError,
   can,
   ErrorCodes,
+  logger,
   PUBLIC_ID_PATTERN,
   type BusinessPermission,
   type BusinessRole,
 } from '@buku/common';
 import { CROSS_BUSINESS, type ServiceName } from './access.js';
+import { whenDatabaseReady } from './index.js';
 import {
   createDirectoryClient,
   LeasedIdGenerator,
@@ -118,8 +120,14 @@ export class DataPlane {
           maxConnections: pool,
         })
       : null;
-    await router.start();
-    await ids.start();
+    // The registry and an ID lease come first; a database still starting up is waited for.
+    const onWait = (err: unknown, waitMs: number) =>
+      logger.warn(
+        { service: name, waitMs, reason: (err as Error).message?.slice(0, 120) },
+        'database not ready yet',
+      );
+    await whenDatabaseReady(() => router.start(), { onWait });
+    await whenDatabaseReady(() => ids.start(), { onWait });
     return new DataPlane(options.service, directory, router, ids, users, businesses, catalog);
   }
 
