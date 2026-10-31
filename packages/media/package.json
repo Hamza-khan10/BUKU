@@ -8,11 +8,11 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.1149.0",
-    "@aws-sdk/s3-request-presigner": "3.1149.0",
+    "@aws-sdk/client-s3": "3.1158.0",
+    "@aws-sdk/s3-request-presigner": "3.1158.0",
     "@buku/common": "workspace:*",
     "ioredis": "6.0.0",
     "sharp": "0.35.5",
-    "zod": "4.6.6"
+    "zod": "4.6.7"
   }
 }
