@@ -641,6 +641,15 @@ The detailed plan — every page, its data and edge cases, the design system and
     hours are one day, from one time to another);
   - owners and managers keep anyone's (a choice of person); everyone else keeps their own — the
     profile linked to their login — and is told plainly if there's none.
+- **3.5g Attendance — ✅ done.** `/business/[id]/attendance`, an "Attendance" tab:
+  - Who's in: everyone customers book, in (since when, for how long) or out. The front desk,
+    managers and the owner clock anyone in or out; everyone else clocks themselves (the profile
+    linked to their login). Who's in also tells the queue how many serve.
+  - Shifts, day by day (today first, never past today): who came and went, how long, and the
+    day's total. Owners and managers correct a forgotten or wrong time, in the business's own
+    time zone (summer-time changes included); the API keeps the old and new times in the audit
+    log. A clock-out before its clock-in, a time in the future and a shift over 24 hours are
+    said on the field before anything is sent.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business
