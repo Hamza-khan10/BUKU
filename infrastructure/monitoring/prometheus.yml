@@ -1,0 +1,40 @@
+# Prometheus for BUKU (D-127): every service's metrics, the gateway's, and the alert rules.
+# Development: `pnpm dev:monitoring` (docker-compose.dev.yml, profile "monitoring").
+# Production (Phase 5) uses the same jobs and rules against its own targets.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/buku/alerts.yml
+
+scrape_configs:
+  # Each service's /metrics (never routed through the gateway): requests by route and status,
+  # latency, security events, Node's own (memory, CPU, event loop). Ads and analytics are opt-in
+  # profiles in development, so they aren't scraped here.
+  - job_name: buku-auth-service
+    static_configs: [{ targets: ['auth-service:3001'] }]
+  - job_name: buku-booking-service
+    static_configs: [{ targets: ['booking-service:3002'] }]
+  - job_name: buku-queue-service
+    static_configs: [{ targets: ['queue-service:3003'] }]
+  - job_name: buku-notification-service
+    static_configs: [{ targets: ['notification-service:3004'] }]
+  - job_name: buku-search-service
+    static_configs: [{ targets: ['search-service:3005'] }]
+  - job_name: buku-business-service
+    static_configs: [{ targets: ['business-service:3008'] }]
+  - job_name: buku-billing-service
+    static_configs: [{ targets: ['billing-service:3009'] }]
+
+  # The gateway: every request from outside, refused ones included (rate limits, bad tokens).
+  - job_name: kong
+    static_configs: [{ targets: ['kong:8100'] }]
+
+  # The database's own health checks (scripts/db/health.sh, every minute): archiving, backups,
+  # replication, partitions, jobs, limits, the registry, break-glass roles.
+  - job_name: db-health
+    static_configs: [{ targets: ['db-health-exporter:9100'] }]
+
+  - job_name: prometheus
+    static_configs: [{ targets: ['localhost:9090'] }]

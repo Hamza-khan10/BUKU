@@ -1,0 +1,10 @@
+# BUKU's dashboards, from files in the repository: changed by pull request, not in the UI.
+apiVersion: 1
+providers:
+  - name: buku
+    folder: BUKU
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards

@@ -54,6 +54,8 @@ networks:
   svc-search: { internal: true }
   svc-ads: { internal: true }
   svc-analytics: { internal: true }
+  # Grafana ↔ Prometheus (D-127); Prometheus also joins each service's network to read /metrics.
+  monitoring: { internal: true }
 
 volumes:
   postgres-data:
@@ -65,6 +67,10 @@ volumes:
   elasticsearch-data:
   clickhouse-data:
   s3-data:
+  prometheus-data:
+  grafana-data:
+  # The database's health, written every minute by db-health, served by db-health-exporter.
+  db-health-metrics:
 
 # ── Shared building blocks ─────────────────────────────────────────────────
 x-logging: &logging
@@ -1043,7 +1049,9 @@ services:
       # docker exec buku-kong-1 resty -e 'print(require("resty.http").new():request_uri("http://127.0.0.1:8001/status").body)'
       # Off entirely in production.
       KONG_ADMIN_LISTEN: '127.0.0.1:8001'
-      KONG_STATUS_LISTEN: '127.0.0.1:8100'
+      # Status API (read-only: health and, with the prometheus plugin, /metrics): reachable on the
+      # services' internal networks for Prometheus (D-127), never published.
+      KONG_STATUS_LISTEN: '0.0.0.0:8100'
       KONG_PROXY_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
@@ -1083,6 +1091,132 @@ services:
       retries: 10
       start_period: 15s
     deploy: { resources: { limits: { memory: 512m } } }
+
+  # ═════════════════════════════ MONITORING (--profile monitoring, D-127) ═════════════════════════════
+  # `pnpm dev:monitoring`: Prometheus reads every service's and the gateway's metrics and evaluates
+  # the alert rules; Grafana shows them (http://localhost:3300, user admin, GRAFANA_ADMIN_PASSWORD).
+
+  prometheus:
+    <<: *infra
+    profiles: [monitoring]
+    networks:
+      [
+        published,
+        monitoring,
+        svc-auth,
+        svc-booking,
+        svc-queue,
+        svc-notification,
+        svc-business,
+        svc-billing,
+        svc-search,
+      ]
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    command:
+      - --config.file=/etc/prometheus/buku/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    # The folder, not single files: Docker Desktop loses a single-file mount once the file is rewritten.
+    volumes:
+      - ./infrastructure/monitoring:/etc/prometheus/buku:ro
+      - prometheus-data:/prometheus
+    # The admin app's server reads it on this machine (system status); nothing beyond localhost.
+    ports: ['127.0.0.1:9090:9090']
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:9090/-/ready']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    deploy: { resources: { limits: { memory: 512m } } }
+
+  # The database's health checks (scripts/db/health.sh) every minute, for Prometheus: run from the
+  # BUKU Postgres image (psql, pgBackRest), connecting over TLS like any client; the backup
+  # repository read-only. In production this runs on the database host.
+  db-health:
+    <<: *infra
+    profiles: [monitoring]
+    networks: [migrate]
+    image: buku/postgres:local
+    user: postgres
+    command: ['bash', '/scripts/db/health-loop.sh']
+    environment:
+      BUKU_HEALTH_OUT: /var/lib/buku-health/buku_db.prom
+      PGHOST: postgres
+      PGUSER: buku_admin
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}
+      PGSSLMODE: verify-full
+      PGSSLROOTCERT: /run/buku-ca/ca.crt
+      PGBACKREST_REPO1_CIPHER_PASS: ${BUKU_BACKUP_CIPHER_PASS:?run pnpm bootstrap}
+    volumes:
+      - ./scripts/db:/scripts/db:ro
+      - ./secrets/postgres-ca:/run/buku-ca:ro
+      - pgbackrest-repo:/var/lib/pgbackrest:ro
+      - db-health-metrics:/var/lib/buku-health
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    depends_on:
+      postgres: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 128m } } }
+
+  # Serves db-health's file to Prometheus (node_exporter's textfile collector, nothing else).
+  db-health-exporter:
+    <<: *infra
+    profiles: [monitoring]
+    networks: [monitoring]
+    image: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    command:
+      - --collector.disable-defaults
+      - --collector.textfile
+      - --collector.textfile.directory=/metrics
+      - --web.listen-address=:9100
+    volumes: [db-health-metrics:/metrics:ro]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    deploy: { resources: { limits: { memory: 64m } } }
+
+  grafana:
+    <<: *infra
+    profiles: [monitoring]
+    networks: [published, monitoring]
+    image: grafana/grafana:13.2.5@sha256:9f7aa1e1e3246aade5792d35a738049f7f32f89cd51d1956cf426a4e86268a84
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run pnpm bootstrap}
+      GF_SECURITY_DISABLE_GRAVATAR: 'true'
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: 'false'
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_USERS_ALLOW_ORG_CREATE: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_AUTH_DISABLE_LOGIN_FORM: 'false'
+      # Nothing leaves this machine: no usage reports, update checks, news, plugin downloads or
+      # public snapshots.
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
+      GF_NEWS_NEWS_FEED_ENABLED: 'false'
+      GF_PLUGINS_PREINSTALL_DISABLED: 'true'
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: 'false'
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/platform.json
+    volumes:
+      - ./infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ['127.0.0.1:3300:3000']
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '-O', '/dev/null', 'http://localhost:3000/api/health']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    depends_on:
+      prometheus: { condition: service_healthy }
+    deploy: { resources: { limits: { memory: 384m } } }
 
   # ═════════════════════════════ OPTIONAL TOOLS (--profile tools) ═════════════════════════════
 

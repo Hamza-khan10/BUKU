@@ -18,6 +18,7 @@
     "admin": "pnpm --filter @buku/admin dev",
     "admin:e2e": "pnpm --filter @buku/admin e2e",
     "dev:tools": "docker compose -f docker-compose.dev.yml --profile tools up -d",
+    "dev:monitoring": "docker compose -f docker-compose.dev.yml --profile monitoring up -d",
     "dev:full": "docker compose -f docker-compose.dev.yml --profile '*' up -d",
     "dev:logs": "docker compose -f docker-compose.dev.yml logs -f --tail=100",
     "dev:down": "docker compose -f docker-compose.dev.yml --profile '*' down",
