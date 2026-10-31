@@ -4,7 +4,7 @@ The state of the whole project in one place: what is built, how it is run and wo
 things stand on GitHub, and what comes next. Last updated **2026-11-01**.
 
 Deeper detail lives in the docs this page points to — [BUILD_GUIDE](docs/BUILD_GUIDE.md) (the
-phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-131),
+phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-132),
 [DATABASE](docs/DATABASE.md) (database v2), [ARCHITECTURE](docs/ARCHITECTURE.md),
 [SECURITY](docs/SECURITY.md), [API_REFERENCE](docs/API_REFERENCE.md),
 [DEVELOPMENT](docs/DEVELOPMENT.md) (setting up and running) and [WEB_PLAN](docs/WEB_PLAN.md).
@@ -24,7 +24,7 @@ free** (D-101); businesses pay (Starter free, Essential, Professional, Enterpris
 | ------ | ------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                         |
 | 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred |
-| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 a–g and 3.6 a–e done                      |
+| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 a–g and 3.6 a–f done                      |
 | **3D** | **Database v2** — built for hundreds of millions of people                           | ✅ **D1–D4 built and on `main`**; D5 later      |
 | 4      | Mobile app (Expo)                                                                    | planned                                         |
 | 5      | Production: deployment, observability, backups, load and security testing            | planned                                         |
@@ -91,8 +91,8 @@ deployed yet, Phase 5).
   suspend, reinstate), reports, **accounts** (find one person; suspend, reinstate or sign out
   everywhere, D-130), monitoring (targets, alerts, the database's checks, links to Grafana),
   **emergency switches** (turn sign-ups, signing in, bookings, queues, payments, uploads, reviews
-  or business registration off at once, D-129) and the access review. The audit and security view
-  and the rest of 3.6 (review moderation, billing, notification settings) come next.
+  or business registration off at once, D-129), the **audit log** (what every admin did, D-132) and
+  the access review. The rest of 3.6 (review moderation, billing, notification settings) comes next.
 - **Monitoring** (D-127, `pnpm dev:monitoring`): Prometheus reads every service, the gateway and
   the database's checks; Grafana (localhost:3300) has four dashboards: platform, security, gateway
   and database.
@@ -169,9 +169,9 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
 - `main`: database v2 (D1–D4, #160), the checkout page working without the API (#161),
   lucide-react 1.63.0 (#152), the queue board (3.5c, #162), services waiting for the database at
   start (#163), opening hours (3.5e, #164), time off (3.5f, #165), attendance (3.5g, #166) and
-  monitoring (3.6a, #167), the operator console (3.6b, #168), emergency switches (3.6c, #169) and accounts (3.6d, #170); 0 Dependabot and 0 secret-scanning alerts; no open issues. The live
+  monitoring (3.6a, #167), the operator console (3.6b, #168), emergency switches (3.6c, #169), accounts (3.6d, #170) and the console redrawn (3.6e, #171); 0 Dependabot and 0 secret-scanning alerts; no open issues. The live
   website runs **Next.js 16.4.2**.
-- **Open:** the console redrawn (3.6e, D-131).
+- **Open:** the audit log in the console (3.6f, D-132).
 - **GitGuardian** flagged `PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?…}` in
   `docker-compose.dev.yml` on #167: a reference to a variable, not a secret. It isn't a required
   check; the owner marks it as a false positive in GitGuardian.
@@ -195,7 +195,7 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    time off and extra hours) and 3.5g (attendance). Still to build (WEB_PLAN §7): the calendar,
    reviews, insights, billing and settings. In 3.6, the operator console: 3.6a monitoring
    (Prometheus and Grafana, D-127), 3.6b the console itself (D-128), 3.6c emergency switches
-   (D-129), 3.6d accounts (D-130) and 3.6e the console redrawn (D-131) are done; next, the audit and security view, then review
+   (D-129), 3.6d accounts (D-130), 3.6e the console redrawn (D-131) and 3.6f the audit log (D-132) are done; next, review
    moderation, billing and notification settings in the console. Then 3.7, polish and proof.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.

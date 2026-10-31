@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–e done (2026-11-01)            |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–f done (2026-11-01)            |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -710,6 +710,13 @@ The detailed plan — every page, its data and edge cases, the design system and
   lines (Prometheus range queries) with a readout under the pointer. Segmented tabs, quieter
   tables, initials for people and businesses, composed empty states, switches as a control panel,
   a two-part sign-in. Checked with axe on every page in both themes.
+- **3.6f The audit log — ✅ done (D-132).** Security → Audit log: everything platform admins did
+  (each look at an account, each switch, each business decision, billing and notification changes,
+  their own sign-ins), newest first, by kind (accounts, businesses, switches, sign-ins, billing,
+  access) and period (24 hours, 7 or 30 days), with security events by kind beside it. Each step:
+  who, what, to what, why, address, reference. Accounts → "Show their activity": one person's
+  trail (recorded). Business moderation is now also on the admin's own record. Auth:
+  `GET /v1/admin/audit`, `GET /v1/admin/accounts/:id/audit`.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business
