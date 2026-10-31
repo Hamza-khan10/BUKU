@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import { RowActions } from '@admin/components/row-actions';
-import { Card, Notice, PageTitle, Pill } from '@admin/components/ui';
+import { Card, Notice, PageTitle, Pill, beat, cx } from '@admin/components/ui';
 import { requireAdmin } from '@admin/lib/admin';
 import { callApi } from '@admin/lib/gateway';
-import { switchName, type SwitchView } from '@admin/lib/switches';
+import { switchIcon, switchName, type SwitchView } from '@admin/lib/switches';
 
 export const metadata: Metadata = { title: 'Emergency switches' };
 
@@ -43,67 +43,90 @@ export default async function SwitchesPage() {
         </Notice>
       ) : (
         <>
-          {off.length > 0 ? (
-            <div className="mb-4">
+          <div className="rise mb-6">
+            {off.length > 0 ? (
               <Notice tone="danger" title={`Off now: ${off.map((s) => switchName(s.key)).join(', ')}`}>
                 People trying these are told it’s paused and to try again later.
               </Notice>
-            </div>
-          ) : (
-            <div className="mb-4">
+            ) : (
               <Notice tone="ok" title="Everything is on" />
-            </div>
-          )}
-          <ul aria-label="Switches" className="mb-8 flex flex-col gap-3">
-            {list.data.map((s) => (
-              <li
-                key={s.key}
-                className={`flex flex-col gap-3 rounded-lg border bg-surface p-4 sm:flex-row sm:items-start sm:justify-between ${
-                  s.off ? 'border-danger/50' : 'border-line'
-                }`}
-              >
-                <div className="flex min-w-0 flex-col gap-1">
-                  <p className="flex items-center gap-2 font-medium text-ink">
-                    {switchName(s.key)}
-                    {s.off ? <Pill tone="danger">Off</Pill> : <Pill tone="ok">On</Pill>}
-                  </p>
-                  <p className="text-sm text-ink-2">{s.what}</p>
-                  {s.changedAt && (
+            )}
+          </div>
+          <ul aria-label="Switches" className="mb-10 grid gap-4 lg:grid-cols-2">
+            {list.data.map((s, i) => {
+              const Icon = switchIcon(s.key);
+              return (
+                <li
+                  key={s.key}
+                  style={beat(i + 1)}
+                  className={cx(
+                    'panel rise flex flex-col gap-4 p-4 sm:p-5',
+                    s.off &&
+                      'border-danger/50 bg-[color-mix(in_oklab,var(--danger-soft)_45%,var(--surface))]',
+                  )}
+                >
+                  <div className="flex items-start gap-3.5">
+                    <span
+                      className={cx(
+                        'grid size-11 shrink-0 place-items-center rounded-xl ring-1 ring-inset',
+                        s.off
+                          ? 'bg-danger-soft text-danger ring-danger/30'
+                          : 'bg-sunken text-ink-2 ring-line',
+                      )}
+                    >
+                      <Icon aria-hidden strokeWidth={1.8} className="size-5" />
+                    </span>
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <p className="flex flex-wrap items-center gap-2 font-semibold text-ink">
+                        {switchName(s.key)}
+                        {s.off ? <Pill tone="danger">Off</Pill> : <Pill tone="ok">On</Pill>}
+                      </p>
+                      <p className="text-sm text-ink-2">{s.what}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-3 border-t border-line pt-3 sm:flex-row sm:items-start sm:justify-between">
                     <p className="text-xs text-ink-3">
-                      {s.off ? 'Turned off' : 'Turned back on'} {when(s.changedAt)}
-                      {s.changedBy && <> by {s.changedBy.name}</>}
-                      {s.reason && (
+                      {s.changedAt ? (
                         <>
-                          {' '}
-                          · {s.off ? '' : 'it was off for '}“{s.reason}”
+                          {s.off ? 'Turned off' : 'Turned back on'} {when(s.changedAt)}
+                          {s.changedBy && <> by {s.changedBy.name}</>}
+                          {s.reason && (
+                            <>
+                              {' '}
+                              · {s.off ? '' : 'it was off for '}“{s.reason}”
+                            </>
+                          )}
                         </>
+                      ) : (
+                        'Never changed'
                       )}
                     </p>
-                  )}
-                </div>
-                <RowActions
-                  subject={switchName(s.key)}
-                  actions={[
-                    s.off
-                      ? {
-                          path: `/api/switches/${s.key}`,
-                          label: 'Turn back on',
-                          tone: 'primary',
-                          body: { off: false },
-                        }
-                      : {
-                          path: `/api/switches/${s.key}`,
-                          label: 'Turn off',
-                          tone: 'danger-quiet',
-                          reason:
-                            'Why turn it off? It’s recorded with your name; people only see that it’s paused.',
-                          reasonMax: 500,
-                          body: { off: true },
-                        },
-                  ]}
-                />
-              </li>
-            ))}
+                    <RowActions
+                      subject={switchName(s.key)}
+                      actions={[
+                        s.off
+                          ? {
+                              path: `/api/switches/${s.key}`,
+                              label: 'Turn back on',
+                              tone: 'primary',
+                              body: { off: false },
+                            }
+                          : {
+                              path: `/api/switches/${s.key}`,
+                              label: 'Turn off',
+                              // Neutral until asked: the confirming button is the red one.
+                              tone: 'secondary',
+                              reason:
+                                'Why turn it off? It’s recorded with your name; people only see that it’s paused.',
+                              reasonMax: 500,
+                              body: { off: true },
+                            },
+                      ]}
+                    />
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </>
       )}

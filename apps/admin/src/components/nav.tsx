@@ -10,9 +10,11 @@ import {
   UserSearch,
   type LucideIcon,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { cx } from './ui';
 
 interface Item {
   href: Route;
@@ -41,35 +43,53 @@ const SECTIONS: { title: string | null; items: Item[] }[] = [
   },
 ];
 
-const cx = (...c: (string | false)[]) => c.filter(Boolean).join(' ');
-
+/**
+ * The console's sections. The highlight glides to the page you open (a critically damped spring:
+ * it arrives without bouncing), so the eye follows where you went.
+ */
 export function Nav() {
   const path = usePathname();
   const current = (href: string) =>
     href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`);
   return (
-    <nav aria-label="Console" className="flex gap-1 overflow-x-auto lg:flex-col lg:gap-5 lg:overflow-visible">
+    <nav
+      aria-label="Console"
+      className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-col lg:gap-6 lg:overflow-visible lg:px-0 lg:pb-0"
+    >
       {SECTIONS.map((section) => (
-        <div key={section.title ?? 'top'} className="flex gap-1 lg:flex-col">
+        <div key={section.title ?? 'top'} className="flex gap-1 lg:flex-col lg:gap-0.5">
           {section.title && (
-            <p className="hidden px-3 pb-1 text-[0.7rem] font-semibold tracking-[0.08em] text-ink-3 uppercase lg:block">
-              {section.title}
-            </p>
+            <p className="hidden px-3 pb-1.5 text-xs font-medium text-ink-3 lg:block">{section.title}</p>
           )}
-          {section.items.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              aria-current={current(href) ? 'page' : undefined}
-              className={cx(
-                'flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                current(href) ? 'bg-brand-soft text-ink' : 'text-ink-2 hover:bg-raised hover:text-ink',
-              )}
-            >
-              <Icon aria-hidden className={cx('size-4', current(href) ? 'text-brand' : 'text-ink-3')} />
-              {label}
-            </Link>
-          ))}
+          {section.items.map(({ href, label, icon: Icon }) => {
+            const active = current(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? 'page' : undefined}
+                className={cx(
+                  'press relative flex h-9 shrink-0 items-center gap-2.5 rounded-[10px] px-3 text-sm font-medium',
+                  active ? 'text-ink' : 'text-ink-2 hover:bg-raised/70 hover:text-ink',
+                )}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="nav-active"
+                    aria-hidden
+                    className="absolute inset-0 rounded-[10px] bg-brand-soft ring-1 ring-brand/25 ring-inset"
+                    transition={{ type: 'spring', bounce: 0, duration: 0.38 }}
+                  />
+                )}
+                <Icon
+                  aria-hidden
+                  strokeWidth={1.9}
+                  className={cx('relative size-[1.05rem]', active ? 'text-brand-text' : 'text-ink-3')}
+                />
+                <span className="relative">{label}</span>
+              </Link>
+            );
+          })}
         </div>
       ))}
     </nav>

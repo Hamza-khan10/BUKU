@@ -5,7 +5,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { ROLE_NAMES, type Account } from '@admin/lib/accounts';
 import { fieldText, post } from '@admin/lib/client';
 import { RowActions, type RowAction } from './row-actions';
-import { Button, Field, inputClass, Notice, Pill } from './ui';
+import { Button, cx, Field, Initials, inputClass, Notice, Pill } from './ui';
 
 const day = (iso: string) =>
   new Intl.DateTimeFormat('en-GB', {
@@ -105,30 +105,36 @@ function AccountCard({ account: a, onChange }: { account: Account; onChange: (a:
   return (
     <section
       aria-label={`Account: ${a.name}`}
-      className={`flex flex-col gap-4 rounded-lg border bg-surface p-5 ${
-        a.status === 'suspended' ? 'border-danger/50' : 'border-line'
-      }`}
+      className={cx(
+        'panel rise flex flex-col gap-5 p-5 sm:p-6',
+        a.status === 'suspended' && 'border-danger/50',
+      )}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex flex-col gap-1.5">
-          <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold text-ink">
-            {a.name}
-            {a.status === 'active' && <Pill tone="ok">Active</Pill>}
-            {a.status === 'suspended' && <Pill tone="danger">Suspended</Pill>}
-            {a.status === 'deleted' && <Pill>Deleted</Pill>}
-            <Pill tone={a.role === 'super_admin' ? 'info' : 'neutral'}>{ROLE_NAMES[a.role] ?? a.role}</Pill>
-            {a.employeeLogin && <Pill>Employee login</Pill>}
-          </h2>
-          <p className="text-sm text-ink-2">
-            {a.email ?? 'No email'} · <span className="font-mono">{a.id}</span>
-          </p>
+        <div className="flex items-start gap-3.5">
+          <Initials name={a.name} />
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <h2 className="flex flex-wrap items-center gap-2 text-lg font-semibold text-ink">
+              {a.name}
+              {a.status === 'active' && <Pill tone="ok">Active</Pill>}
+              {a.status === 'suspended' && <Pill tone="danger">Suspended</Pill>}
+              {a.status === 'deleted' && <Pill>Deleted</Pill>}
+              <Pill tone={a.role === 'super_admin' ? 'brand' : 'neutral'}>
+                {ROLE_NAMES[a.role] ?? a.role}
+              </Pill>
+              {a.employeeLogin && <Pill>Employee login</Pill>}
+            </h2>
+            <p className="text-sm text-ink-2">
+              {a.email ?? 'No email'} · <span className="font-mono">{a.id}</span>
+            </p>
+          </div>
         </div>
         {steps.length > 0 && (
           <RowActions subject={a.name} actions={steps} onDone={(data) => onChange(data as Account)} />
         )}
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
         <Fact term="Since">{day(a.since)}</Fact>
         <Fact term="Last sign-in">{a.lastSignIn ? day(a.lastSignIn) : 'Never'}</Fact>
         <Fact term="Signed in on">{a.sessions === 1 ? '1 device' : `${a.sessions} devices`}</Fact>
@@ -167,7 +173,7 @@ function AccountCard({ account: a, onChange }: { account: Account; onChange: (a:
 
 function Fact({ term, children }: { term: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5">
+    <div className="flex flex-col gap-1 rounded-xl bg-sunken/60 px-3.5 py-3 ring-1 ring-line ring-inset">
       <dt className="text-xs text-ink-3">{term}</dt>
       <dd className="font-medium text-ink">{children}</dd>
     </div>

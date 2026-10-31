@@ -65,7 +65,7 @@ export function VerifyForm() {
       <button
         type="button"
         onClick={() => setMode(mode === 'code' ? 'recovery' : 'code')}
-        className="w-fit text-sm font-medium text-brand underline-offset-4 hover:underline"
+        className="w-fit text-sm font-medium text-brand-text underline-offset-4 hover:underline"
       >
         {mode === 'code' ? 'Use a recovery code instead' : 'Use the code from your app instead'}
       </button>

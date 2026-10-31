@@ -1,7 +1,9 @@
 import type { Metadata, Route } from 'next';
-import Link from 'next/link';
 import { RowActions } from '@admin/components/row-actions';
-import { Notice, PageTitle, Pill } from '@admin/components/ui';
+import { FlagOff } from 'lucide-react';
+import { Empty } from '@admin/components/empty';
+import { Tabs } from '@admin/components/tabs';
+import { Initials, Notice, PageTitle, Pill, beat } from '@admin/components/ui';
 import { requireAdmin } from '@admin/lib/admin';
 import { callApi } from '@admin/lib/gateway';
 
@@ -55,47 +57,49 @@ export default async function ReportsPage({ searchParams }: PageProps<'/reports'
         title="Reports"
         description="What customers reported about businesses. Look into each; suspend the business from Businesses if it breaks the rules, then close the report."
       />
-      <nav aria-label="By status" className="mb-4 flex flex-wrap gap-1 border-b border-line">
-        {STATUSES.map((s) => (
-          <Link
-            key={s.value}
-            href={`/reports?status=${s.value}` as Route}
-            aria-current={s.value === status ? 'page' : undefined}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-              s.value === status ? 'border-brand text-ink' : 'border-transparent text-ink-3 hover:text-ink'
-            }`}
-          >
-            {s.label}
-          </Link>
-        ))}
-      </nav>
+      <Tabs
+        label="By status"
+        items={STATUSES.map((s) => ({
+          href: `/reports?status=${s.value}` as Route,
+          label: s.label,
+          current: s.value === status,
+        }))}
+      />
       {!list.ok ? (
         <Notice tone="danger" title={list.error.message} />
       ) : list.data.length === 0 ? (
-        <Notice tone="ok" title="Nothing here">
-          {status === 'open' ? 'No report is waiting.' : 'No report in this list.'}
-        </Notice>
+        <Empty
+          icon={FlagOff}
+          title="Nothing here"
+          text={status === 'open' ? 'No report is waiting.' : 'No report in this list.'}
+        />
       ) : (
         <ul className="flex flex-col gap-3">
-          {list.data.map((r) => (
+          {list.data.map((r, i) => (
             <li
               key={r.id}
-              className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4 sm:flex-row sm:items-start sm:justify-between"
+              style={beat(i + 1)}
+              className="panel rise flex flex-col gap-4 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5"
             >
-              <div className="flex min-w-0 flex-col gap-1">
-                <p className="font-medium text-ink">
-                  {r.business.name}{' '}
-                  <Pill tone={r.business.status === 'suspended' ? 'danger' : 'neutral'}>
-                    {r.business.status}
-                  </Pill>
-                </p>
-                <p className="text-sm text-ink-2">
-                  <span className="font-medium">{r.reason.replaceAll('_', ' ')}</span>
-                  {r.details && <> — “{r.details}”</>}
-                </p>
-                <p className="text-xs text-ink-3">
-                  Reported {when(r.createdAt)} · <span className="font-mono">{r.business.id}</span>
-                </p>
+              <div className="flex min-w-0 gap-3">
+                <Initials name={r.business.name} />
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <p className="flex flex-wrap items-center gap-2 font-medium text-ink">
+                    {r.business.name}
+                    <Pill tone={r.business.status === 'suspended' ? 'danger' : 'neutral'}>
+                      {r.business.status}
+                    </Pill>
+                  </p>
+                  <p className="text-sm text-ink-2">
+                    <span className="inline-flex items-center rounded-md bg-wait-soft px-1.5 py-0.5 text-xs font-semibold text-wait">
+                      {r.reason.replaceAll('_', ' ')}
+                    </span>
+                    {r.details && <span className="ml-2">“{r.details}”</span>}
+                  </p>
+                  <p className="text-xs text-ink-3">
+                    Reported {when(r.createdAt)} · <span className="font-mono">{r.business.id}</span>
+                  </p>
+                </div>
               </div>
               {r.status === 'open' && (
                 <RowActions

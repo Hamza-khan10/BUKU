@@ -69,7 +69,7 @@ export function RowActions({
             key={a.label}
             type="button"
             variant={a.tone ?? 'secondary'}
-            className="h-8 px-3 text-xs"
+            size="sm"
             busy={busy === a.label}
             disabled={busy !== null}
             aria-expanded={a.reason ? asking === a : undefined}
@@ -101,21 +101,16 @@ export function RowActions({
             rows={2}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            className="w-full rounded-md border border-line bg-sunken px-2 py-1.5 text-sm text-ink"
+            className="w-full rounded-[10px] border border-control bg-sunken px-3 py-2 text-sm text-ink focus-visible:border-focus focus-visible:shadow-[0_0_0_4px_color-mix(in_oklab,var(--focus)_22%,transparent)] focus-visible:outline-none"
           />
           <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              className="h-8 px-3 text-xs"
-              onClick={() => setAsking(null)}
-            >
+            <Button type="button" variant="secondary" size="sm" onClick={() => setAsking(null)}>
               Keep it
             </Button>
             <Button
               type="submit"
-              variant={asking.tone === 'danger-quiet' ? 'danger' : (asking.tone ?? 'danger')}
-              className="h-8 px-3 text-xs"
+              variant={asking.tone === 'primary' ? 'primary' : 'danger'}
+              size="sm"
               busy={busy !== null}
             >
               {asking.label}

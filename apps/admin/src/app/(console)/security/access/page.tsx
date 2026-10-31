@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Card, Notice, PageTitle } from '@admin/components/ui';
+import { Card, Initials, Notice, PageTitle, Pill } from '@admin/components/ui';
 import { requireAdmin } from '@admin/lib/admin';
 import { callApi } from '@admin/lib/gateway';
 
@@ -71,45 +71,40 @@ export default async function AccessReviewPage() {
         </Notice>
       ) : (
         <>
-          <Card title="Platform admins">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-ink-3">
+          <Card
+            title="Platform admins"
+            description="Remove access that isn’t needed with pnpm admin:role (recorded, with a reason)."
+            className="rise"
+          >
+            <div className="-mx-5 -mb-5 overflow-x-auto border-t border-line sm:-mx-6 sm:-mb-6">
+              <table className="data-table min-w-[40rem]">
+                <thead>
                   <tr>
-                    <th scope="col" className="py-2 pr-4 font-medium">
-                      Admin
-                    </th>
-                    <th scope="col" className="py-2 pr-4 font-medium">
-                      Two-step
-                    </th>
-                    <th scope="col" className="py-2 pr-4 font-medium">
-                      Last active
-                    </th>
-                    <th scope="col" className="py-2 font-medium">
-                      Review
-                    </th>
+                    <th scope="col">Admin</th>
+                    <th scope="col">Two-step</th>
+                    <th scope="col">Last active</th>
+                    <th scope="col">Review</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-line">
+                <tbody>
                   {report.data.platformAdmins.map((a) => (
                     <tr key={a.id}>
-                      <td className="py-2 pr-4">
-                        <span className="font-medium text-ink">{a.name}</span>
-                        {a.email && <span className="block text-ink-3">{a.email}</span>}
+                      <td>
+                        <div className="flex items-center gap-3">
+                          <Initials name={a.name} />
+                          <div className="min-w-0">
+                            <p className="font-medium text-ink">{a.name}</p>
+                            {a.email && <p className="truncate text-xs text-ink-3">{a.email}</p>}
+                          </div>
+                        </div>
                       </td>
-                      <td className="py-2 pr-4">
-                        {a.mfa ? (
-                          <span className="text-ok">On</span>
-                        ) : (
-                          <span className="font-semibold text-danger">Off</span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-4 tabular-nums">{when(a.lastActive)}</td>
-                      <td className="py-2">
+                      <td>{a.mfa ? <Pill tone="ok">On</Pill> : <Pill tone="danger">Off</Pill>}</td>
+                      <td className="whitespace-nowrap text-ink-2 tabular-nums">{when(a.lastActive)}</td>
+                      <td>
                         {a.dormant ? (
-                          <span className="font-semibold text-wait">Not active for 90 days: remove?</span>
+                          <Pill tone="wait">Not active for 90 days: remove?</Pill>
                         ) : (
-                          'Active'
+                          <span className="text-ink-2">Active</span>
                         )}
                       </td>
                     </tr>
@@ -118,7 +113,7 @@ export default async function AccessReviewPage() {
               </table>
             </div>
           </Card>
-          <Card title="Business access">
+          <Card title="Business access" className="rise">
             <dl className="grid gap-3 text-sm sm:grid-cols-3">
               <div>
                 <dt className="text-ink-3">Business owners</dt>
