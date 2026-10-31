@@ -20,9 +20,9 @@ export function Button({
       className={cx(
         'inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold',
         'transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60',
-        variant === 'primary' && 'bg-brand text-brand-ink hover:opacity-90',
+        variant === 'primary' && 'bg-brand text-brand-ink hover:bg-brand-hover',
         variant === 'secondary' && 'border border-line bg-surface text-ink hover:bg-sunken',
-        variant === 'danger' && 'bg-danger text-surface hover:opacity-90',
+        variant === 'danger' && 'bg-danger text-surface hover:bg-danger-hover',
         variant === 'danger-quiet' && 'border border-danger/50 text-danger hover:bg-danger-soft',
         className,
       )}

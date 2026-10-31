@@ -1232,3 +1232,18 @@ out platform admins, so the console can always turn it back on. Off stops new ac
 bookings made, people in a queue and payments taken stay as they are (Paddle's confirmations still
 arrive). The admin tools on auth got a gateway route and a limit of their own (120 a minute) instead
 of the 20 that guard signing in, so an operator in the middle of an incident doesn't run into it.
+
+**D-130 · Accounts in the console: one person at a time, every look recorded (3.6d).** An account
+that was taken over, or is abusing BUKU, must be stopped from the console, not from a terminal.
+Operators find one person by email or account ID; there is deliberately no list of everyone,
+because a console that lists every person's email is the first thing an attacker with an admin's
+session would read. The email travels in a request body, never in a URL, so it isn't in the
+browser's history or any access log. Each look is recorded on the admin's audit trail (found or
+not); each step on both the admin's and the person's. Suspending sets the account to suspended,
+ends every session and revokes its access tokens at once (the revocation list), so the person is
+out within seconds and refused at sign-in until reinstated; their bookings and businesses stay.
+"Sign out everywhere" does the same without suspending (a stolen phone). Platform admins can't be
+suspended or signed out here, and nobody can act on their own account: a stolen admin session
+must not be able to lock the other admins out. Their access is removed first with
+`pnpm admin:role`, which leaves an audited trail, then they're an ordinary account. Suspensions
+and sign-outs count as security events on the Security dashboard.

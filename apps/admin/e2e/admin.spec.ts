@@ -207,6 +207,52 @@ test.describe('Admin app', () => {
     await expect(uploads.getByRole('button', { name: 'Turn off (Uploads)' })).toBeVisible();
     await expect(page.getByRole('status').filter({ hasText: 'Everything is on' })).toBeVisible();
   });
+
+  test('an account: found by email, suspended with a reason (its access stops at once), reinstated', async ({
+    page,
+  }) => {
+    const email = newEmail();
+    const made = await fetch(`${API}/v1/auth/dev/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, name: 'Kamran Customer' }),
+    });
+    expect(made.ok).toBe(true);
+    const customerToken = ((await made.json()) as { data: { accessToken: string } }).data.accessToken;
+    const me = () => fetch(`${API}/v1/auth/me`, { headers: { authorization: `Bearer ${customerToken}` } });
+    expect((await me()).status).toBe(200);
+
+    await newOperator(page);
+    await page.getByRole('navigation', { name: 'Console' }).getByRole('link', { name: 'Accounts' }).click();
+    await expect(page.getByRole('heading', { name: 'Accounts', level: 1 })).toBeVisible();
+    await expectAccessible(page);
+
+    await page.getByLabel('Email or account ID').fill(newEmail());
+    await page.getByRole('button', { name: 'Find' }).click();
+    await expect(
+      page.getByRole('status').filter({ hasText: 'No account has that email or ID.' }),
+    ).toBeVisible();
+
+    await page.getByLabel('Email or account ID').fill(email);
+    await page.getByRole('button', { name: 'Find' }).click();
+    const card = page.getByRole('region', { name: 'Account: Kamran Customer' });
+    await expect(card).toContainText('Active');
+    await expect(card).toContainText(email);
+    // The email stays out of the address bar.
+    expect(page.url()).not.toContain('example.com');
+    await expectAccessible(page);
+
+    await card.getByRole('button', { name: 'Suspend (Kamran Customer)' }).click();
+    await card.getByLabel(/Why suspend this account\?/).fill('e2e: checking suspension');
+    await card.getByRole('button', { name: 'Suspend', exact: true }).click();
+    await expect(card).toContainText('Suspended');
+    await expect(card).toContainText('0 devices');
+    expect((await me()).status).toBe(401);
+
+    await card.getByRole('button', { name: 'Reinstate (Kamran Customer)' }).click();
+    await expect(card).toContainText('Active');
+    await expect(card.getByRole('button', { name: 'Suspend (Kamran Customer)' })).toBeVisible();
+  });
 });
 
 /** A new platform admin with two-step sign-in set up, on the overview. */

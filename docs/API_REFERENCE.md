@@ -1179,3 +1179,17 @@ Keys: `signups`, `signin`, `bookings`, `queue`, `payments`, `uploads`, `reviews`
 `business_signup`. Admin app only (D-091). While one is off, the routes it covers answer
 `503 SERVICE_PAUSED` ("This is paused for a moment. Please try again a little later."); every
 service sees a change within five seconds. Signing in off never applies to platform admins.
+
+## Accounts, for platform admins (D-130)
+
+| Method & path                                           | Auth                    | Purpose                                                                      |
+| ------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------- |
+| `POST /v1/admin/accounts/find` `{ email }` or `{ id }`  | ✔ super_admin, two-step | One person's account (404 if none); every look is audited                    |
+| `POST /v1/admin/accounts/:id/suspend` `{ reason }`      | ✔ super_admin, two-step | Suspend: every session ended, access tokens revoked at once, sign-in refused |
+| `POST /v1/admin/accounts/:id/reinstate` `{ reason? }`   | ✔ super_admin, two-step | Back to active                                                               |
+| `POST /v1/admin/accounts/:id/end-sessions` `{ reason }` | ✔ super_admin, two-step | Signed out everywhere; the account stays active                              |
+
+`:id` is the person's public ID. Answers are the account: `{ id, name, email, role, status, since,
+lastSignIn, deletionRequested, twoStep, sessions, employeeLogin, businesses[] }`. Platform admins'
+accounts and the admin's own are refused (`403`, `400`); suspending twice or reinstating an active
+account is `409`. Admin app only (D-091).

@@ -143,6 +143,19 @@ export const MfaVerifyBody = zBody({
   recoveryCode: zRecoveryCode.optional(),
 }).refine((b) => Boolean(b.code) !== Boolean(b.recoveryCode), 'give either `code` or `recoveryCode`');
 
+// ── Accounts, for platform admins (3.6) ────────────────────────────────────
+/** One person, by email or by public ID (in the body: an email never goes in a URL or a log). */
+export const AccountLookupBody = zBody({
+  email: zEmail.optional(),
+  id: zPublicId.optional(),
+}).refine((b) => Boolean(b.email) !== Boolean(b.id), 'give either `email` or `id`');
+export const AccountParams = z.object({ id: zPublicId });
+/** Why: the person's record and the admin's keep it (3–500 characters, plain text). */
+export const AccountReasonBody = zBody({ reason: zSafeText({ kind: 'text', min: 3, max: 500 }) });
+export const AccountReinstateBody = zBody({
+  reason: zSafeText({ kind: 'text', min: 3, max: 500 }).optional(),
+});
+
 // ── Emergency switches (D-129) ─────────────────────────────────────────────
 export const SwitchParams = z.object({ key: z.enum(SWITCH_KEYS as [SwitchKey, ...SwitchKey[]]) });
 /** Off says why (3–500 characters, plain text); on may say why too. */

@@ -65,7 +65,10 @@ export type SecurityEvent =
   | 'webhook_signature_invalid'
   /** A platform admin turned an emergency switch off, or back on (D-129). */
   | 'emergency_switch_off'
-  | 'emergency_switch_on';
+  | 'emergency_switch_on'
+  /** A platform admin suspended a person's account, or signed them out everywhere (3.6). */
+  | 'account_suspended_by_admin'
+  | 'sessions_ended_by_admin';
 
 let securityEvents: Counter<'event'> | null = null;
 

@@ -86,12 +86,12 @@ services:
               header_names: [authorization]
               uri_param_names: [] # never accept tokens in URLs (they end up in logs)
               cookie_names: []
-      # Platform admins' tools here (the access review, D-080; emergency switches, D-129): a token
+      # Platform admins' tools here (access review D-080, switches D-129, accounts 3.6): a token
       # as above, and a limit of their own instead of the 20 a minute that guard signing in — an
       # operator turning parts off during an attack mustn't run into it. Still only from the admin
       # app (below), and the service wants a platform admin with two-step sign-in.
       - name: auth-admin
-        paths: ['/v1/admin/access-review', '/v1/admin/switches']
+        paths: ['/v1/admin/access-review', '/v1/admin/switches', '/v1/admin/accounts']
         strip_path: false
         plugins:
           - *jwt
