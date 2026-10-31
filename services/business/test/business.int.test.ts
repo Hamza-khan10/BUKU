@@ -583,6 +583,21 @@ describe('Platform admin moderation', () => {
       (await request(app).post(`/v1/admin/businesses/${b.id}/reinstate`).set(admin.auth)).body.data.status,
     ).toBe('pending');
     expect((await request(app).get(`/v1/businesses/${b.slug}`)).status).toBe(200);
+
+    // Each step is on the business's record and, for the audit log, on the admin's own (D-132).
+    const id = await idOf(b.id);
+    const onBusiness = await world.inBusiness(id, (tx) =>
+      tx.auditLog.findMany({ where: { resourceId: id, action: { startsWith: 'admin.business_' } } }),
+    );
+    const onAdmin = await (
+      await world.user(admin.id)
+    ).auditLog.findMany({ where: { userId: admin.id, resourceId: id }, orderBy: { createdAt: 'asc' } });
+    expect(onBusiness.map((e) => e.action).sort()).toEqual([
+      'admin.business_reinstated',
+      'admin.business_suspended',
+    ]);
+    expect(onAdmin.map((e) => e.action)).toEqual(['admin.business_suspended', 'admin.business_reinstated']);
+    expect(onAdmin[0]!.newValues).toMatchObject({ status: 'suspended', reason: 'Multiple fraud reports' });
   });
 
   it('rejection shows the owner why; fixing details resubmits for review', async () => {
