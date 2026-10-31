@@ -31,3 +31,11 @@ export function googleSignInEnabled(): boolean {
     apiConfigured() && process.env.GOOGLE_CLIENT_ID?.trim() && process.env.GOOGLE_CLIENT_SECRET?.trim(),
   );
 }
+
+/**
+ * Paying for a plan on the checkout page (D-119): needs Paddle's client-side token and the API
+ * that made the payment. On a site without them the page says payments aren't available.
+ */
+export function paymentsConfigured(): boolean {
+  return Boolean(apiConfigured() && process.env.PADDLE_CLIENT_TOKEN?.trim());
+}

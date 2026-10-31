@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Container } from '@/components/ui/layout';
 import { PaddleCheckout } from '@/features/pricing/components/paddle-checkout';
 import { env } from '@/lib/env';
+import { paymentsConfigured } from '@/lib/flags';
 
 export const metadata: Metadata = {
   title: 'Checkout',
@@ -22,14 +23,16 @@ const TRANSACTION = /^txn_[a-z0-9]{26}$/;
 export default async function CheckoutPage({ searchParams }: PageProps<'/checkout'>) {
   const ptxn = (await searchParams)._ptxn;
   const transactionId = typeof ptxn === 'string' && TRANSACTION.test(ptxn) ? ptxn : null;
-  const { PADDLE_CLIENT_TOKEN: token, PADDLE_ENVIRONMENT: environment } = env();
+  // The settings are read only where payments are set up: a site deployed without the API has none.
+  const settings = paymentsConfigured() ? env() : undefined;
+  const token = settings?.PADDLE_CLIENT_TOKEN;
   const nonce = (await headers()).get('x-nonce') ?? undefined;
 
   return (
     <Container className="flex justify-center py-16 sm:py-24">
       <div className="flex w-full max-w-lg flex-col gap-5">
         <h1 className="type-app-title">Checkout</h1>
-        {!token ? (
+        {!settings || !token ? (
           <p className="text-ink-2">Payments aren’t available here yet. Nothing was charged.</p>
         ) : !transactionId ? (
           <>
@@ -46,7 +49,7 @@ export default async function CheckoutPage({ searchParams }: PageProps<'/checkou
         ) : (
           <PaddleCheckout
             token={token}
-            environment={environment}
+            environment={settings.PADDLE_ENVIRONMENT}
             transactionId={transactionId}
             nonce={nonce}
           />
