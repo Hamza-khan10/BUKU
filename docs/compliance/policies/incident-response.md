@@ -24,7 +24,7 @@ vulnerabilities reported to us, suspicious alerts.
 2. **Record** — open an incident note at once: time, what is known, who is handling it. Keep
    adding as you go.
 3. **Contain** — stop the harm: end sessions, rotate secrets, block addresses, roll back, take a
-   feature offline ([runbooks](../runbooks.md)).
+   feature offline with an emergency switch (admin console, D-129) ([runbooks](../runbooks.md)).
 4. **Assess personal data** — what data, whose, how many people, could it harm them?
 5. **Notify** — see below.
 6. **Recover** — restore service and data; confirm with checks.

@@ -136,6 +136,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/reviews/:reviewId/response',
     auth,
     writeLimit,
+    deps.plane.switches.guard('reviews'),
     validated({ params: ReviewParams, body: ReviewResponseBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
@@ -691,6 +692,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   mine.post(
     '/',
     bookLimit,
+    deps.plane.switches.guard('bookings'),
     validated({ body: BookBody }, async ({ body }, req, res) => {
       sendCreated(res, await deps.appointments.book(requireActor(req), body, requestContext(req)));
     }),
@@ -731,6 +733,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   mine.post(
     '/:id/review',
     reviewLimit,
+    deps.plane.switches.guard('reviews'),
     validated({ params: AppointmentParams, body: ReviewBody }, async ({ params, body }, req, res) => {
       sendCreated(res, await deps.reviews.create(requireActor(req).id, params.id, body, requestContext(req)));
     }),
@@ -738,6 +741,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   mine.patch(
     '/:id/review',
     reviewLimit,
+    deps.plane.switches.guard('reviews'),
     validated({ params: AppointmentParams, body: ReviewBody }, async ({ params, body }, req, res) => {
       sendSuccess(res, await deps.reviews.update(requireActor(req).id, params.id, body, requestContext(req)));
     }),
@@ -769,6 +773,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   mine.post(
     '/:id/reschedule',
     bookLimit,
+    deps.plane.switches.guard('bookings'),
     validated({ params: AppointmentParams, body: RescheduleBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,

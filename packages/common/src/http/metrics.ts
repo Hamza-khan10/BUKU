@@ -62,7 +62,10 @@ export type SecurityEvent =
   | 'member_locked_out'
   /** The breached-password check couldn't be reached; the password was allowed (our own rules still apply). */
   | 'breach_check_unavailable'
-  | 'webhook_signature_invalid';
+  | 'webhook_signature_invalid'
+  /** A platform admin turned an emergency switch off, or back on (D-129). */
+  | 'emergency_switch_off'
+  | 'emergency_switch_on';
 
 let securityEvents: Counter<'event'> | null = null;
 

@@ -10,6 +10,7 @@ import {
   type RevocationStore,
 } from '@buku/common';
 import type { AccessReview } from '../admin/access-review.js';
+import type { SwitchControl } from '../admin/switches.js';
 import type { MfaService } from '../mfa/mfa-service.js';
 import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
@@ -42,6 +43,8 @@ import {
   MfaCodeBody,
   MfaSecondFactorBody,
   MfaVerifyBody,
+  SwitchBody,
+  SwitchParams,
 } from './schemas.js';
 import type { JwtVerifier } from '@buku/common';
 
@@ -58,6 +61,7 @@ export interface RouteDeps {
   identity: { google: OidcVerifier | null; apple: OidcVerifier | null };
   devLoginEnabled: boolean;
   accessReview: AccessReview;
+  switches: SwitchControl;
   mfa: MfaService;
   /** A business's internal ID from the public one in the URL (DB-042); null when there is none. */
   businessIdOf: (publicId: string) => Promise<bigint | null>;
@@ -213,6 +217,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/me/avatar/uploads',
     auth,
     writeLimit,
+    deps.switches.guard('uploads'),
     validated({ body: AvatarUploadBody }, async ({ body }, req, res) => {
       sendSuccess(res, await deps.avatars.requestUpload(actorOf(req).id, body), 201);
     }),
@@ -372,6 +377,20 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   app.get('/v1/admin/access-review', auth, requireRole('super_admin'), async (req, res) => {
     sendSuccess(res, await deps.accessReview.generate(actorOf(req).id, requestContext(req)));
   });
+
+  // ── Platform admins: emergency switches (D-129) ──────────────────────────
+  app.get('/v1/admin/switches', auth, requireRole('super_admin'), async (_req, res) => {
+    sendSuccess(res, await deps.switches.list());
+  });
+  app.put(
+    '/v1/admin/switches/:key',
+    auth,
+    requireRole('super_admin'),
+    writeLimit,
+    validated({ params: SwitchParams, body: SwitchBody }, async ({ params, body }, req, res) => {
+      sendSuccess(res, await deps.switches.set(params.key, body, actorOf(req).id, requestContext(req)));
+    }),
+  );
 
   // ── Two-step sign-in (D-081) ─────────────────────────────────────────────
   const mfaLimit = rateLimit({

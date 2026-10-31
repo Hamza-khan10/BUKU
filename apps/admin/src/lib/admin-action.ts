@@ -12,7 +12,8 @@ export const DECIMAL_ID = /^[1-9][0-9]{0,18}$/;
 
 /** What a route makes of the page's request: the API call, or why not. */
 export type Plan =
-  { path: string; body?: unknown } | { refuse: { status: number; code: string; message: string } };
+  | { path: string; method?: 'POST' | 'PUT'; body?: unknown }
+  | { refuse: { status: number; code: string; message: string } };
 
 /**
  * One operator action from the console's own pages, passed to the admin API. First, that it came
@@ -34,7 +35,7 @@ export async function adminAction(
   const access = await currentAccess(request, requestId);
   if (!access) return errorJson(requestId, 401, 'NOT_SIGNED_IN', 'Please sign in again.');
   const answer = await callApi({
-    method: 'POST',
+    method: call.method ?? 'POST',
     path: call.path,
     body: call.body,
     accessToken: access.accessToken,

@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ Resumes at 3.5 (database v2 is on `main`)      |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–c done (2026-11-01)            |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -678,6 +678,20 @@ The detailed plan — every page, its data and edge cases, the design system and
   - Every action goes through the app's own endpoints (our origin, our header, then the session);
     the API checks the admin and two-step sign-in again and records it. A passed check is
     remembered for a minute per session, so browsing doesn't run into the API's sign-in limits.
+- **3.6c Emergency switches — ✅ done (D-129).** Security → Emergency switches in the console:
+  - Eight parts of BUKU that can be turned off at once: sign-ups, signing in (never for platform
+    admins), bookings, walk-in queues, payments, uploads, reviews and registering businesses. Each
+    shows what it stops, whether it's on, and who changed it last and why; off asks why.
+  - Every service obeys within five seconds (auth at once): 503 `SERVICE_PAUSED`, "paused, try
+    again later". What's done stays done. A service that can't read them keeps the last state.
+  - `ops.switches` in the directory: known keys only, off needs a reason, only auth may change it
+    (`GET /v1/admin/switches`, `PUT /v1/admin/switches/:key`). Audited
+    (`admin.switch_turned_off`/`_on`) and counted on the Security dashboard.
+  - The overview leads with what's off. The admin tools on auth have a gateway route and limit of
+    their own (120 a minute), apart from sign-in's 20.
+  - Tests: the reader (unit), the table's rules and rights (integration), sign-ups and signing in
+    off end to end and who may flip them (auth integration), and a browser test that turns uploads
+    off, sees the API refuse an upload, and turns it back on.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business

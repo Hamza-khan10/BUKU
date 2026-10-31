@@ -90,6 +90,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/join',
     auth,
     joinLimit,
+    deps.plane.switches.guard('queue'),
     validated({ body: JoinBody }, async ({ body }, req, res) => {
       sendCreated(res, await deps.queue.join(requireActor(req), body, requestContext(req)));
     }),

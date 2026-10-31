@@ -6,7 +6,7 @@ compromised service. Every decision below has a number (DB-…) and a reason. Wh
 and the code disagree, this document is the plan and the code is the state; the build phases at
 the end say what is done.
 
-Status (2026-10-31): **D1, D2, D3 and D4 are built (§15).** v2 has the directory, the shard
+Status (2026-11-01): **D1, D2, D3 and D4 are built (§15).** v2 has the directory, the shard
 registry, ID generators and the router; global lookups; user and business shards provisioned from
 the registry; reference data copied by replication; the search catalog; each service's rights
 everywhere; and its own development data (D2e). Every service runs on v2 through the data plane,
@@ -14,6 +14,7 @@ the website and every test run on it too, and v1's `buku` database has left the 
 made it safe to run: backups with point-in-time recovery and a restore drill (D4a), TLS 1.3 on
 every connection (D4b), break-glass access for people and health checks with alerts (D4c).
 Database v2 is on `main` (2026-10-31); website work resumes (DB-000), and D5 proves it at scale.
+The directory also holds the emergency switches (`ops.switches`, D-129, 2026-11-01).
 
 ---
 
@@ -917,6 +918,7 @@ Where every current table goes. "→" is its v2 name when it changes.
 | outbox_events, processed_events                                                                                                                                                       | every shard / consumer       | daily                  |                                                    |
 | categories, plans, plan_prices, billing_settings, billing_channel_fees, billing_cost_items, notification_settings                                                                     | directory (copied to shards) | no                     | DB-015                                             |
 | — (new) registry.*, currencies                                                                                                                                                        | directory                    | no                     | DB-013, DB-009                                     |
+| — (new) ops.switches                                                                                                                                                                  | directory                    | no                     | emergency switches (D-129); only auth may update   |
 
 ---
 

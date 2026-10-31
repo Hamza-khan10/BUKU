@@ -13,6 +13,8 @@ export const ErrorCodes = {
   RATE_LIMITED: 'RATE_LIMITED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  /** An operator turned this part of BUKU off for now (an emergency switch, D-129). */
+  SERVICE_PAUSED: 'SERVICE_PAUSED',
 
   // AuthN / AuthZ
   UNAUTHORIZED: 'UNAUTHORIZED',
@@ -197,6 +199,10 @@ export class AppError extends Error {
   }
   static unavailable(message = 'Service temporarily unavailable', cause?: unknown): AppError {
     return new AppError(message, ErrorCodes.SERVICE_UNAVAILABLE, HttpStatus.SERVICE_UNAVAILABLE, { cause });
+  }
+  /** Paused by an operator (D-129): said plainly, nothing about why (that's for the operators). */
+  static paused(message = 'This is paused for a moment. Please try again a little later.'): AppError {
+    return new AppError(message, ErrorCodes.SERVICE_PAUSED, HttpStatus.SERVICE_UNAVAILABLE);
   }
 }
 

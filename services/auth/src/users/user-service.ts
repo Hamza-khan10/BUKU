@@ -547,6 +547,8 @@ export class UserService {
     oauth?: { provider: 'google' | 'apple'; subjectHash: Buffer<ArrayBuffer> },
   ): Promise<{ db: UserShardClient; created: User }> {
     const { plane } = this.deps;
+    // New accounts paused by an operator (D-129).
+    plane.switches.check('signups');
     const id = plane.id();
     const pid = publicId();
     const db = await plane.placeUser(id);

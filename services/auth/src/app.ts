@@ -1,5 +1,6 @@
 import { MfaService } from './mfa/mfa-service.js';
 import { AccessReview } from './admin/access-review.js';
+import { SwitchControl } from './admin/switches.js';
 import {
   createHttpApp,
   type BlindIndexer,
@@ -135,6 +136,7 @@ export function buildAuthApp(deps: AuthAppDeps): { app: Express; rights: DataRig
         identity: deps.identity,
         devLoginEnabled: settings.devLoginEnabled,
         accessReview: new AccessReview({ plane, cipher: deps.cipher }),
+        switches: new SwitchControl(plane),
         businessIdOf: (publicId: string) => plane.idOfPublic('business', publicId),
         mfa,
       }),

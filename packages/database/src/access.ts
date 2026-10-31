@@ -57,8 +57,10 @@ export interface Access {
  * without a deploy. The same rights as buku_app's (the directory migrations grant those).
  */
 export const DIRECTORY_ACCESS = {
-  schemas: ['registry', 'lookup'],
+  schemas: ['registry', 'lookup', 'ops'],
   reads: [
+    // The emergency switches (D-129): every service obeys them, so every service reads them.
+    'ops.switches',
     'registry.regions',
     'registry.entities',
     'registry.clusters',
@@ -428,6 +430,8 @@ export const DIRECTORY_REFERENCE_ACCESS: Readonly<Partial<Record<ServiceName, Ac
   // Owners add kinds of business BUKU doesn't list yet (D-098); admins review them.
   business: { owns: [], inserts: ['reference.categories'], updates: { 'reference.categories': '*' } },
   notification: { owns: [], updates: { 'reference.notification_settings': '*' } },
+  // The emergency switches' admin endpoints (D-129): flipping one, never adding or removing one.
+  auth: { owns: [], updates: { 'ops.switches': ['off', 'reason', 'changed_by', 'changed_at'] } },
 };
 
 /**

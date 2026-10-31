@@ -45,7 +45,7 @@ describe('each service’s own role (D-092)', () => {
 });
 
 describe('what each service may do in the directory database', () => {
-  const migration = ['20261016120000_registry', '20261017090000_lookups']
+  const migration = ['20261016120000_registry', '20261017090000_lookups', '20261031180000_emergency_switches']
     .map((m) =>
       readFileSync(new URL(`../prisma/directory/migrations/${m}/migration.sql`, import.meta.url), 'utf8'),
     )
@@ -69,7 +69,15 @@ describe('what each service may do in the directory database', () => {
     const grant = sql.findIndex((s) => s.startsWith('GRANT SELECT'));
     expect(revoke).toBeGreaterThan(-1);
     expect(revoke).toBeLessThan(grant);
-    expect(sql.some((s) => /GRANT (INSERT|UPDATE|DELETE|ALL)/.test(s))).toBe(false);
+    // The one write: auth's admin endpoints flip an emergency switch (D-129), never add or remove one.
+    expect(sql.filter((s) => /GRANT (INSERT|UPDATE|DELETE|ALL)/.test(s))).toEqual([
+      'GRANT UPDATE ("off", "reason", "changed_by", "changed_at") ON "ops"."switches" TO "buku_svc_auth"',
+    ]);
+    expect(
+      directoryAccessStatements('buku_directory', { booking: 'p'.repeat(32) }).some((s) =>
+        /GRANT (INSERT|UPDATE|DELETE|ALL)/.test(s),
+      ),
+    ).toBe(false);
     expect(sql).toContain(
       'GRANT EXECUTE ON FUNCTION "registry"."route"(text, bigint), "registry"."region_of"(bigint), ' +
         '"registry"."lease_generator"(text, smallint, integer), "registry"."renew_generator"(smallint, text, integer), ' +

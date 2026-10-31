@@ -102,6 +102,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/checkout',
     auth,
     writeLimit,
+    deps.plane.switches.guard('payments'),
     validated({ body: CheckoutBody }, async ({ body }, req, res) => {
       const actor = requireActor(req);
       sendCreated(
@@ -122,6 +123,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/me/subscription/change',
     auth,
     writeLimit,
+    deps.plane.switches.guard('payments'),
     validated({ body: ChangePlanBody }, async ({ body }, req, res) => {
       const actor = requireActor(req);
       sendSuccess(
@@ -153,6 +155,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   biz.post(
     '/trial',
     writeLimit,
+    deps.plane.switches.guard('payments'),
     validated({ params: BusinessParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
@@ -203,6 +206,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   biz.post(
     '/checkout',
     writeLimit,
+    deps.plane.switches.guard('payments'),
     validated({ params: BusinessParams, body: CheckoutBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,

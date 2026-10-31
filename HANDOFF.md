@@ -1,10 +1,10 @@
 # BUKU — Handoff
 
 The state of the whole project in one place: what is built, how it is run and worked on, where
-things stand on GitHub, and what comes next. Last updated **2026-10-31**.
+things stand on GitHub, and what comes next. Last updated **2026-11-01**.
 
 Deeper detail lives in the docs this page points to — [BUILD_GUIDE](docs/BUILD_GUIDE.md) (the
-phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-126),
+phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-129),
 [DATABASE](docs/DATABASE.md) (database v2), [ARCHITECTURE](docs/ARCHITECTURE.md),
 [SECURITY](docs/SECURITY.md), [API_REFERENCE](docs/API_REFERENCE.md),
 [DEVELOPMENT](docs/DEVELOPMENT.md) (setting up and running) and [WEB_PLAN](docs/WEB_PLAN.md).
@@ -24,7 +24,7 @@ free** (D-101); businesses pay (Starter free, Essential, Professional, Enterpris
 | ------ | ------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                         |
 | 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred |
-| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 business area: a–g done                   |
+| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 a–g and 3.6 a–c done                      |
 | **3D** | **Database v2** — built for hundreds of millions of people                           | ✅ **D1–D4 built and on `main`**; D5 later      |
 | 4      | Mobile app (Expo)                                                                    | planned                                         |
 | 5      | Production: deployment, observability, backups, load and security testing            | planned                                         |
@@ -84,12 +84,17 @@ deployed yet, Phase 5).
   data; the checkout page for payments; the business area — adding a business, today,
   appointments, check-in, the queue board and the waiting-room screen, services and team, opening
   hours, closed days, people's time off and extra hours, and attendance. Still to build: the rest
-  of the business area (calendar, reviews, insights, billing, settings), the operator console, and
-  polish.
+  of the business area (calendar, reviews, insights, billing, settings), the rest of the operator
+  console, and polish.
 - **Admin app** (`apps/admin`, D-091, D-128): an operator console — the overview (system status
   from Prometheus, what's waiting for a decision), businesses (verify, reject, suspend, reinstate),
-  reports, monitoring (targets, alerts, the database's checks, links to Grafana) and the access
-  review. Emergency switches, accounts, the audit log and the rest of 3.6 come next.
+  reports, monitoring (targets, alerts, the database's checks, links to Grafana), **emergency
+  switches** (turn sign-ups, signing in, bookings, queues, payments, uploads, reviews or business
+  registration off at once, D-129) and the access review. Accounts, the audit log and the rest of
+  3.6 come next.
+- **Monitoring** (D-127, `pnpm dev:monitoring`): Prometheus reads every service, the gateway and
+  the database's checks; Grafana (localhost:3300) has four dashboards: platform, security, gateway
+  and database.
 
 ### Payments (Paddle)
 
@@ -158,11 +163,17 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
   content; anything a user types is validated against breaking the system (duplicates, malicious
   input, characters that corrupt data).
 
-## 5. GitHub today (2026-10-31)
+## 5. GitHub today (2026-11-01)
 
 - `main`: database v2 (D1–D4, #160), the checkout page working without the API (#161),
-  lucide-react 1.63.0 (#152); 0 Dependabot and 0 secret-scanning alerts; no open issues. The live
+  lucide-react 1.63.0 (#152), the queue board (3.5c, #162), services waiting for the database at
+  start (#163), opening hours (3.5e, #164), time off (3.5f, #165), attendance (3.5g, #166) and
+  monitoring (3.6a, #167); 0 Dependabot and 0 secret-scanning alerts; no open issues. The live
   website runs **Next.js 16.4.2**.
+- **Open:** the operator console (3.6b, #168) and the emergency switches (3.6c, stacked on it).
+- **GitGuardian** flagged `PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?…}` in
+  `docker-compose.dev.yml` on #167: a reference to a variable, not a secret. It isn't a required
+  check; the owner marks it as a false positive in GitGuardian.
 - **Code scanning: 26 open warnings, `js/missing-rate-limiting`**, raised on `main` by #160. They
   are the same false positive as the 93 dismissed on 2026-10-04: the routes are limited by
   express-rate-limit per address before every route (`packages/common/src/http/app.ts`, D-086),
@@ -181,8 +192,10 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    business), 3.5b (today, appointments, check-in), 3.5c (the queue board and the waiting-room
    screen, D-126), 3.5d (services and team), 3.5e (opening hours and closed days), 3.5f (people's
    time off and extra hours) and 3.5g (attendance). Still to build (WEB_PLAN §7): the calendar,
-   reviews, insights, billing and settings. Then 3.6, the operator console, and 3.7, polish and
-   proof.
+   reviews, insights, billing and settings. In 3.6, the operator console: 3.6a monitoring
+   (Prometheus and Grafana, D-127), 3.6b the console itself (D-128) and 3.6c emergency switches
+   (D-129) are done; next, accounts (suspend a person, end their sessions) and the audit and
+   security view. Then 3.7, polish and proof.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
 3. **Phase 5** — production: deployment, PgBouncer, the standby and a second region, backups to
@@ -190,6 +203,8 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
 
 ### Follow-ups noted along the way
 
+- Emergency switches: a Prometheus gauge of which are off (Grafana shows only the flips today), and
+  an alert when one stays off for hours.
 - WhatsApp setup needs a webhook-only relay like Paddle's, so testing never exposes the dev stack.
 - Paddle going live: own domain, live account, live keys; rotate the sandbox key before January 2027.
 - ID leases are renewed through each service's ordinary pool: under heavy load renewals can wait

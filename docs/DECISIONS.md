@@ -1215,3 +1215,20 @@ came from its pages before passing it on; the API remains the judge (a platform 
 sign-in, every step recorded). Each page used to ask the API who is signed in, twice, and the
 gateway allows 20 such calls a minute from one place: a passed check is now remembered for a
 minute per session, only when fully passed, never "not an admin" or "set up two-step".
+
+**D-129 · Emergency switches: parts of BUKU turned off at once, from the console (3.6c).** Under
+attack (a flood of fake accounts, card testing at checkout, a wave of fake reviews, stolen
+sessions) or when one part misbehaves, an operator must stop that part within seconds, without a
+deploy and without stopping the rest. Eight switches (sign-ups, signing in, bookings, walk-in
+queues, payments, uploads, reviews, registering businesses) are rows of one table in the directory,
+`ops.switches`: every one there from its migration, only known keys allowed, and off only with a
+reason. Every service reads them every five seconds; a route behind an off switch answers 503
+`SERVICE_PAUSED`, "paused, try again later" (the reason is for operators). Only auth may change
+the table, through its admin endpoints (a platform admin with two-step sign-in, from the admin
+app); each change is on the admin's audit trail and counted as a security event. How it fails was
+chosen: a service that can't read the table keeps the last state it saw, so a database hiccup
+never turns anything off, and one that never read it serves everything; signing in off never locks
+out platform admins, so the console can always turn it back on. Off stops new actions only:
+bookings made, people in a queue and payments taken stay as they are (Paddle's confirmations still
+arrive). The admin tools on auth got a gateway route and a limit of their own (120 a minute) instead
+of the 20 that guard signing in, so an operator in the middle of an incident doesn't run into it.

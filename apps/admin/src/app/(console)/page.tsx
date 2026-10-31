@@ -5,6 +5,7 @@ import { Card, Notice, PageTitle, Pill, Stat } from '@admin/components/ui';
 import { requireAdmin } from '@admin/lib/admin';
 import { callApi } from '@admin/lib/gateway';
 import { grafana, systemStatus } from '@admin/lib/prometheus';
+import { switchName, type SwitchView } from '@admin/lib/switches';
 
 export const metadata: Metadata = { title: 'Overview' };
 
@@ -30,12 +31,14 @@ export default async function OverviewPage() {
   }
   const call = <T,>(path: string) =>
     callApi<T>({ path, accessToken: gate.accessToken, incoming: gate.incoming, requestId: gate.requestId });
-  const [status, pending, reports, access] = await Promise.all([
+  const [status, pending, reports, access, switches] = await Promise.all([
     systemStatus(),
     call<unknown[]>('/v1/admin/businesses?status=pending&limit=1'),
     call<unknown[]>('/v1/admin/business-reports?status=open&limit=1'),
     call<AccessReport>('/v1/admin/access-review'),
+    call<SwitchView[]>('/v1/admin/switches'),
   ]);
+  const switchedOff = switches.ok ? switches.data.filter((s) => s.off) : [];
   const links = grafana();
   const down = status?.services.filter((s) => !s.up) ?? [];
   const critical = status?.alerts.filter((a) => a.severity === 'critical') ?? [];
@@ -60,6 +63,27 @@ export default async function OverviewPage() {
           )
         }
       />
+
+      {switchedOff.length > 0 && (
+        <div className="mb-6">
+          <Notice tone="danger" title={`Turned off: ${switchedOff.map((s) => switchName(s.key)).join(', ')}`}>
+            <Link href="/security/switches" className="font-medium underline">
+              Emergency switches
+            </Link>{' '}
+            says who turned them off and why.
+          </Notice>
+        </div>
+      )}
+      {!switches.ok && (
+        <div className="mb-6">
+          <Notice tone="wait" title="The emergency switches couldn’t be read">
+            <Link href="/security/switches" className="font-medium underline">
+              Emergency switches
+            </Link>{' '}
+            shows them, or why not.
+          </Notice>
+        </div>
+      )}
 
       <section aria-labelledby="system" className="mb-8 flex flex-col gap-3">
         <h2 id="system" className="text-sm font-semibold tracking-wide text-ink-3 uppercase">

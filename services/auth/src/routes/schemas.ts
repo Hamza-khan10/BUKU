@@ -9,6 +9,7 @@ import {
   zSafeText,
   zTimezone,
 } from '@buku/common';
+import { SWITCH_KEYS, type SwitchKey } from '@buku/database';
 import { MAX_PHOTO_BYTES, PHOTO_TYPES } from '@buku/media';
 import { z } from 'zod';
 
@@ -141,3 +142,14 @@ export const MfaVerifyBody = zBody({
   code: zCode.optional(),
   recoveryCode: zRecoveryCode.optional(),
 }).refine((b) => Boolean(b.code) !== Boolean(b.recoveryCode), 'give either `code` or `recoveryCode`');
+
+// ── Emergency switches (D-129) ─────────────────────────────────────────────
+export const SwitchParams = z.object({ key: z.enum(SWITCH_KEYS as [SwitchKey, ...SwitchKey[]]) });
+/** Off says why (3–500 characters, plain text); on may say why too. */
+export const SwitchBody = zBody({
+  off: z.boolean(),
+  reason: zSafeText({ kind: 'text', min: 3, max: 500 }).optional(),
+}).refine((b) => !b.off || b.reason !== undefined, {
+  message: 'Say why it’s being turned off',
+  path: ['reason'],
+});
