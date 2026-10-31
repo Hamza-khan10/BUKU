@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–c done (2026-11-01)            |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–d done (2026-11-01)            |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -692,6 +692,18 @@ The detailed plan — every page, its data and edge cases, the design system and
   - Tests: the reader (unit), the table's rules and rights (integration), sign-ups and signing in
     off end to end and who may flip them (auth integration), and a browser test that turns uploads
     off, sees the API refuse an upload, and turns it back on.
+- **3.6d Accounts — ✅ done (D-130).** Operations → Accounts in the console:
+  - Find one person by email or account ID (no list of everyone; the email stays out of URLs and
+    logs). Shows status, role, since, last sign-in, devices signed in, two-step, businesses.
+  - Suspend (with a reason: signed out everywhere at once, refused at sign-in), reinstate, or sign
+    out everywhere (with a reason). Not for platform admins or one's own account.
+  - Auth: `POST /v1/admin/accounts/find`, `/:id/suspend`, `/:id/reinstate`, `/:id/end-sessions`;
+    every look and step audited; security events `account_suspended_by_admin`,
+    `sessions_ended_by_admin`. Kong's admin route on auth includes `/v1/admin/accounts`.
+  - The console's buttons no longer fade on hover (that dropped white-on-green below 4.5:1); each
+    theme has a hover colour with more contrast.
+  - Tests: auth integration (find, suspend → token dead, sign-in refused, reinstate; sign out
+    everywhere; admins and oneself refused) and a browser test of the same.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business

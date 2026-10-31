@@ -111,8 +111,10 @@ without a reason is refused). Services pick it up within five seconds, as from t
 
 ### Compromised account
 
-1. End all sessions: an admin runs `pnpm admin:role` to remove elevated roles (ends sessions at
-   once); for any account, support can revoke sessions.
+1. Stop it: admin console → Accounts → find the person → **Suspend** (with the reason) if the
+   account is being used against BUKU or its owner, or **Sign out everywhere** if only a device was
+   lost. Either ends every session and its access at once. A platform admin's account: remove the
+   role first with `pnpm admin:role` (ends their sessions at once), then suspend it if needed.
 2. Read the account's audit trail (`GET /v1/auth/me/export` as the person, or the audit log).
 3. Personal data exposed? → breach assessment under the incident response policy.
 
