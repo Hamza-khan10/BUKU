@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–d done (2026-11-01)            |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–e done (2026-11-01)            |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -704,6 +704,12 @@ The detailed plan — every page, its data and edge cases, the design system and
     theme has a hover colour with more contrast.
   - Tests: auth integration (find, suspend → token dead, sign-in refused, reinstate; sign out
     everywhere; admins and oneself refused) and a browser test of the same.
+- **3.6e The console redrawn — ✅ done (D-131).** BUKU's palette (Midnight and Porcelain, emerald,
+  saffron, crimson), the website's fonts, raised panels, a glass sidebar whose highlight glides,
+  entries that rise in, status lights. The overview: a status band and the last hour as trend
+  lines (Prometheus range queries) with a readout under the pointer. Segmented tabs, quieter
+  tables, initials for people and businesses, composed empty states, switches as a control panel,
+  a two-part sign-in. Checked with axe on every page in both themes.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business
