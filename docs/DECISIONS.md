@@ -1204,3 +1204,14 @@ snapshots). The database's checks run every minute in a sidecar beside it (the s
 reachable only from this machine; in development it is an opt-in profile, since the laptop has
 little memory to spare. Production (Phase 5) runs the same configuration against its own targets,
 with alerts delivered to whoever is on call.
+
+**D-128 · The admin app becomes an operator console (3.6b).** The admin app had one page. It now
+has the shape an operator works in: sections on the side, where it is acting (production in red)
+and who is signed in on top, and pages for what the API already offered — verifying and
+suspending businesses, reports — beside the system's state from Prometheus. Its look stays
+deliberately unlike the public website (D-091), now as a dark control room watched for long
+stretches next to Grafana. Changes go through the app's own endpoints, which check that the call
+came from its pages before passing it on; the API remains the judge (a platform admin, two-step
+sign-in, every step recorded). Each page used to ask the API who is signed in, twice, and the
+gateway allows 20 such calls a minute from one place: a passed check is now remembered for a
+minute per session, only when fully passed, never "not an admin" or "set up two-step".
