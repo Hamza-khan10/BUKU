@@ -20,14 +20,14 @@ free** (D-101); businesses pay (Starter free, Essential, Professional, Enterpris
 
 ## 2. Where everything stands
 
-| Phase  | What                                                                                 | Status                                           |
-| ------ | ------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                          |
-| 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred  |
-| 3      | Web app (Next.js) and admin app                                                      | ⏸ paused at 3.5 for the database rebuild (D-105) |
-| **3D** | **Database v2** — built for hundreds of millions of people                           | 🚧 **D1–D3 built; D4a built; D4b in review**     |
-| 4      | Mobile app (Expo)                                                                    | planned                                          |
-| 5      | Production: deployment, observability, backups, load and security testing            | planned                                          |
+| Phase  | What                                                                                 | Status                                              |
+| ------ | ------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                             |
+| 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred     |
+| 3      | Web app (Next.js) and admin app                                                      | ⏸ paused at 3.5 for the database rebuild (D-105)    |
+| **3D** | **Database v2** — built for hundreds of millions of people                           | 🚧 **D1–D4 built (D4c in review); next: to `main`** |
+| 4      | Mobile app (Expo)                                                                    | planned                                             |
+| 5      | Production: deployment, observability, backups, load and security testing            | planned                                             |
 
 ### Database v2 (the current work)
 
@@ -39,23 +39,23 @@ business), and a search **catalog**. IDs are 64-bit numbers from a leased genera
 businesses and appointments are shown to the outside world by **public IDs** (12 characters,
 DB-042).
 
-| Step   | What                                                                                                                                      | Status               |
-| ------ | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| D1     | Foundation: directory, ID generator, shard registry                                                                                       | ✅                   |
-| D2a–e  | The new schema: user shard, business shard, replicated reference data and the catalog, each service's rights everywhere, development data | ✅ on `main`         |
-| D3a    | The services' foundation: `DataPlane` (routing, transactions per business, handles, IDs), v2 events                                       | ✅                   |
-| D3b    | auth-service on v2                                                                                                                        | ✅                   |
-| D3c    | business-service on v2                                                                                                                    | ✅                   |
-| D3d    | booking-service on v2 (the customer's time claimed first; one booking for one slot, proven by a same-instant test)                        | ✅                   |
-| D3e    | queue-service on v2 (one queue at a time, kept on the person's shard)                                                                     | ✅                   |
-| D3f    | notification-service on v2 (inbox and marks per person; WhatsApp numbers as handles)                                                      | ✅                   |
-| D3g    | billing-service on v2 (catalog on the directory; one live subscription per business)                                                      | ✅                   |
-| D3g.1  | **Paddle sandbox connected and a real test payment made end to end**                                                                      | ✅                   |
-| D3h    | search on v2: the catalog kept from every shard's events, newer wins, an hourly sweep (D-120); ads starts on v2                           | ✅                   |
-| D3i    | website on public IDs, acceptance and browser tests on v2, the checkout page, ID leases that recover (D-121)                              | ✅                   |
-| D3j    | the old database left the stack (D-122); next, one PR brings everything to `main`                                                         | ✅                   |
-| **D4** | backups with point-in-time recovery and the restore drill (D4a, D-123); TLS 1.3 on every connection (D4b, D-124); then monitoring         | **a ✅ b in review** |
-| D5     | proof at scale (10M people, 1M businesses, 200M appointments)                                                                             | planned              |
+| Step  | What                                                                                                                                                         | Status           |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| D1    | Foundation: directory, ID generator, shard registry                                                                                                          | ✅               |
+| D2a–e | The new schema: user shard, business shard, replicated reference data and the catalog, each service's rights everywhere, development data                    | ✅ on `main`     |
+| D3a   | The services' foundation: `DataPlane` (routing, transactions per business, handles, IDs), v2 events                                                          | ✅               |
+| D3b   | auth-service on v2                                                                                                                                           | ✅               |
+| D3c   | business-service on v2                                                                                                                                       | ✅               |
+| D3d   | booking-service on v2 (the customer's time claimed first; one booking for one slot, proven by a same-instant test)                                           | ✅               |
+| D3e   | queue-service on v2 (one queue at a time, kept on the person's shard)                                                                                        | ✅               |
+| D3f   | notification-service on v2 (inbox and marks per person; WhatsApp numbers as handles)                                                                         | ✅               |
+| D3g   | billing-service on v2 (catalog on the directory; one live subscription per business)                                                                         | ✅               |
+| D3g.1 | **Paddle sandbox connected and a real test payment made end to end**                                                                                         | ✅               |
+| D3h   | search on v2: the catalog kept from every shard's events, newer wins, an hourly sweep (D-120); ads starts on v2                                              | ✅               |
+| D3i   | website on public IDs, acceptance and browser tests on v2, the checkout page, ID leases that recover (D-121)                                                 | ✅               |
+| D3j   | the old database left the stack (D-122); next, one PR brings everything to `main`                                                                            | ✅               |
+| D4    | backups with point-in-time recovery and the restore drill (D4a, D-123); TLS 1.3 on every connection (D4b, D-124); break-glass and health checks (D4c, D-125) | ✅ (c in review) |
+| D5    | proof at scale (10M people, 1M businesses, 200M appointments)                                                                                                | planned          |
 
 All D3 work lives on the integration branch **`feat/db-v2-services`** (D-112). One pull request
 then brings it to `main`, the branch the live website deploys from (the API isn't deployed yet,
@@ -154,26 +154,27 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
 
 ## 5. GitHub today (2026-10-31)
 
-- `main`: CI green at ff892ba; 0 code-scanning, 0 Dependabot and 0 secret-scanning alerts; no open
-  issues. The live website runs **Next.js 16.4.2** (#146) with body-parser 2.4.0 and zod 4.6.6
-  (#148).
-- **#153** merged into `main` (ff892ba): the 14 Dependabot updates of that day. Four newer ones are
-  open since (#136 the AWS SDK group, #151 react-query 5.105.0, #152 lucide-react 1.62.0, #156
-  typescript-eslint 8.72.1); combine them in one PR once each is past the one-day release age.
-- `feat/db-v2-services`: D3a → D3j and D4a merged (last: #155, ce4e984); D4b in review.
-- **Branches:** 36 on GitHub belong to merged or closed PRs whose last commit is the PR's (safe to
+- `main`: c8eb8d9; 0 code-scanning, 0 Dependabot and 0 secret-scanning alerts; no open issues.
+  The live website runs **Next.js 16.4.2** (#146).
+- **#158** merged into `main` (c8eb8d9): the four Dependabot updates opened after #153 (AWS SDK
+  3.1158.0, react-query 5.105.0, lucide-react 1.62.0, typescript-eslint 8.72.1), and qs, ip-address
+  and fast-uri patched for moderate advisories. Dependabot closes its own PRs (#136, #151, #152,
+  #156) on its next run.
+- `feat/db-v2-services`: D3a → D3j, D4a and D4b merged (last: #157, 2e7d15f); D4c in review.
+- **Branches:** 40 on GitHub belong to merged or closed PRs whose last commit is the PR's (safe to
   delete; deleting needs the owner, see the session note of 2026-10-31); two more
   (`feat/categories-and-motion`, `feat/redesign-foundation`) have commits after their PR and stay.
-  `feat/db-v2-d3j` and `feat/db-v2-d4a` are merged too and can go with them.
 
 ## 6. What's next
 
-1. **D4** — D4a ✅: pgBackRest backups, encrypted, with point-in-time recovery and a restore drill
-   on every pull request (`pnpm db:backup`, `pnpm db:restore-drill`). D4b (in review): TLS 1.3 on
-   every connection, every client checking the server's certificate; run `pnpm bootstrap` once
-   to make the development certificates, then recreate the stack. Then D4c, audit and monitoring.
-2. Then `main` (with #153) is merged into the integration branch and one PR brings database v2 to
-   `main`; website work resumes (3.5 → 3.7).
+1. **D4 is complete** once D4c merges:
+   - backups with point-in-time recovery, and a restore drill on every pull request
+     (`pnpm db:backup`, `pnpm db:restore-drill`);
+   - TLS 1.3 on every connection (`pnpm bootstrap` makes the development certificates);
+   - break-glass access for people (`pnpm db:break-glass`) and the database's health checks
+     (`pnpm db:health`) with alert rules.
+2. **Database v2 to `main`:** `main` is merged into the integration branch, then one PR brings
+   database v2 to `main`. Website work resumes (3.5 → 3.7).
 3. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster.
 
 ### Follow-ups noted along the way

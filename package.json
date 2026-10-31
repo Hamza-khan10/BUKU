@@ -41,6 +41,8 @@
     "db:seed:v2": "pnpm --filter @buku/database seed:v2",
     "db:backup": "bash scripts/db/backup.sh",
     "db:restore-drill": "bash scripts/db/restore-drill.sh",
+    "db:health": "bash scripts/db/health.sh",
+    "db:break-glass": "bash scripts/db/break-glass.sh",
     "kafka:topics": "pnpm --filter @buku/kafka topics:sync",
     "changeset": "changeset",
     "audit:deps": "pnpm audit --audit-level high",

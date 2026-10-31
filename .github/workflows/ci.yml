@@ -108,6 +108,15 @@ jobs:
         run: |
           pnpm db:backup full
           pnpm db:restore-drill
+      - name: Database health, and a break-glass session that is read-only and audited (D4c)
+        run: |
+          pnpm db:health
+          read=$(pnpm db:break-glass --reason "CI: the break-glass path" -- -tAc "SELECT 'ci-break-glass'")
+          grep -q ci-break-glass <<<"$read"
+          audit=$(docker compose -f docker-compose.dev.yml logs --no-log-prefix postgres)
+          grep -q "human_.*AUDIT: SESSION.*ci-break-glass" <<<"$audit"
+          refused=$(pnpm db:break-glass --reason "CI: a refused write" -- -c "UPDATE registry.regions SET name = name" 2>&1 || true)
+          grep -q "read-only transaction" <<<"$refused"
       - name: Fail if a schema and its migrations disagree
         working-directory: packages/database
         run: |

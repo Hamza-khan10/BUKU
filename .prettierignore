@@ -10,3 +10,5 @@ Buku-platformd-developement-guide.md
 next-env.d.ts
 test-results
 playwright-report
+# The local code map (graphify), git-excluded: never formatted or committed.
+graphify-out

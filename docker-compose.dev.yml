@@ -207,6 +207,7 @@ services:
         -c max_worker_processes=32
         -c pgaudit.log=ddl,role
         -c pgaudit.log_parameter=off
+        -c log_line_prefix='%m [%p] %q%u@%d '
         -c archive_mode=on
         -c archive_command='pgbackrest-archive-push %p'
         -c archive_timeout=60

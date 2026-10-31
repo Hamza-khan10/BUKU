@@ -6,14 +6,14 @@ compromised service. Every decision below has a number (DB-…) and a reason. Wh
 and the code disagree, this document is the plan and the code is the state; the build phases at
 the end say what is done.
 
-Status (2026-10-31): **D1, D2 and D3 are built (§15).** v2 has the directory, the shard
+Status (2026-10-31): **D1, D2, D3 and D4 are built (§15).** v2 has the directory, the shard
 registry, ID generators and the router; global lookups; user and business shards provisioned from
 the registry; reference data copied by replication; the search catalog; each service's rights
 everywhere; and its own development data (D2e). Every service runs on v2 through the data plane,
-the website and every test run on it too, and v1's `buku` database has left the stack (D3j).
-**D4 is under way:** backups with point-in-time recovery and a restore drill (D4a), and TLS 1.3 on
-every connection (D4b), are built; audit and monitoring follow; then D5 (proof at scale). Website work resumes now that D3 is done
-(DB-000).
+the website and every test run on it too, and v1's `buku` database has left the stack (D3j). D4
+made it safe to run: backups with point-in-time recovery and a restore drill (D4a), TLS 1.3 on
+every connection (D4b), break-glass access for people and health checks with alerts (D4c). Next:
+database v2 comes to `main`, website work resumes (DB-000), and D5 proves it at scale.
 
 ---
 
@@ -1079,7 +1079,8 @@ million rows is fast in Postgres, exact, and has one less system to run.
   in the BUKU Postgres image.
 - **Connection pooling:** PgBouncer in transaction mode per cluster; Prisma connects through it.
 - **Monitoring:** replication lag, WAL archive lag, backup age, bloat, slow queries, connection
-  saturation, partition coverage (a missing future partition is an alert).
+  saturation, partition coverage (a missing future partition is an alert). The database's own
+  checks are `pnpm db:health` (`scripts/db/health.sh`, D4c), read by Prometheus as metrics.
 - **Migrations:** expand → migrate → contract; every shard migrated by the same migration, tracked
   per shard; large indexes `CONCURRENTLY`.
 - **Databases and admin-only extensions** (the directory, the catalog, `pg_cron`, `pgaudit`,
@@ -1100,7 +1101,7 @@ million rows is fast in Postgres, exact, and has one less system to run.
 | **D1 Foundation** ✅  | Postgres image with the extensions; directory schema (registry, generators, settings, currencies); the ID generator (`@buku/ids`: TypeScript and `buku_id()` in SQL) and public IDs; the shard router in `@buku/database` (one shard per family locally) | unit and integration tests for IDs (uniqueness under concurrency, ordering, region bits), allocation (limit reached → next shard, limit changed), routing |
 | **D2 Schema v2** ✅   | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed. In five slices, below      | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
 | **D3 Services** ✅    | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
-| **D4 Safety** 🚧      | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
+| **D4 Safety** ✅      | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
 | **D5 Proof at scale** | a synthetic data set (10M people, 1M businesses, 200M appointments) on a test cluster; the slow-query review                                                                                                                                             | the targets in §3 met for the main queries                                                                                                                |
 
 Website work resumes after D3.
@@ -1611,11 +1612,11 @@ more.
 
 **D4, in slices** (each a pull request into `feat/db-v2-services`, D-112).
 
-| Slice                         | What                                                                                                                  |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **D4a** backups ✅ 2026-10-31 | pgBackRest: WAL archived continuously, encrypted repository, full/differential/incremental backups; the restore drill |
-| **D4b** TLS ✅ 2026-10-31     | every connection over TLS, the server's certificate verified by every client (DB-020)                                 |
-| **D4c** audit and monitoring  | pgaudit for human sessions; monitoring of archiving, backup age, replication slots, partitions, connections           |
+| Slice                                      | What                                                                                                                  |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| **D4a** backups ✅ 2026-10-31              | pgBackRest: WAL archived continuously, encrypted repository, full/differential/incremental backups; the restore drill |
+| **D4b** TLS ✅ 2026-10-31                  | every connection over TLS, the server's certificate verified by every client (DB-020)                                 |
+| **D4c** audit and monitoring ✅ 2026-10-31 | pgaudit for human sessions; monitoring of archiving, backup age, replication slots, partitions, connections           |
 
 **D4a, as built (2026-10-31).** Backups and point-in-time recovery in development (DB-030, DB-034).
 
@@ -1672,3 +1673,42 @@ more.
     every network connection is encrypted, and that a wrong host name is refused.
   - Every service's and every replication connection showed TLSv1.3 in `pg_stat_ssl`. Unit 396,
     integration 380 in 22 files, acceptance 22/22, the restore drill passes.
+
+**D4c, as built (2026-10-31).** People's access and the database's own health (DB-021, DB-022,
+§14).
+
+- **Break-glass**, `pnpm db:break-glass --reason "…" [--db …] [--write]`
+  (`scripts/db/break-glass.sh`), makes a login role for this person and this session only:
+  - it is read-only (`pg_read_all_data`, and every transaction read-only by default); `--write`
+    adds `pg_write_all_data`;
+  - on a business shard it reads across businesses, through membership of `buku_all_businesses`;
+  - who, why and until when are written on the role (`COMMENT`, which pgaudit records);
+  - every statement is audited: `pgaudit.log = all` is set on the role, and only a superuser can
+    change it;
+  - it has no password, so it signs in only through the server's own socket, never over the
+    network;
+  - it gets one connection, a 5-minute statement limit and a 15-minute idle limit;
+  - it is dropped when the session ends, or after `--minutes` (at most 60).
+- **Who did it, in the log:** every Postgres log line now names the role and the database
+  (`log_line_prefix` `%u@%d`), so an audit line reads `human_<person>_<id>@<database> … AUDIT:
+SESSION,…`.
+- **Health**, `pnpm db:health` (`scripts/db/health.sh`): 13 checks, each ok, a warning (look today)
+  or critical (act now). The exit code is 1 if any is critical. The checks:
+  - archiving failures and the last archived WAL file;
+  - backup age (a warning after 26 hours, critical after 8 days);
+  - abandoned replication slots, and the WAL slots hold back;
+  - reference copies whose subscription stopped;
+  - partition coverage ahead of now, and rows in a `_default` partition, on every registry shard;
+  - failed pg_cron jobs;
+  - connections in use, the longest open transaction, transaction ID age;
+  - open registry alerts;
+  - break-glass roles that outlived their time.
+- **Alerts:** `--prometheus` prints the results as metrics for node_exporter's textfile collector.
+  `infrastructure/monitoring/alerts.yml` (group `database`) pages on a critical check, warns after
+  30 minutes of a warning, and pages when the checks stop running. Each check has a runbook entry
+  (`docs/compliance/runbooks.md#database`).
+- **Tests:**
+  - by hand: an abandoned slot and an expired break-glass role are both reported critical;
+  - `verify.sh` and CI: health has no critical check; a break-glass session reads, its statement
+    is in the audit log under its role, and a write is refused;
+  - unit 396, integration 380, acceptance 22/22, the restore drill passes, `pnpm verify` 59/59.
