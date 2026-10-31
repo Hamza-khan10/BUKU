@@ -10,6 +10,7 @@ import {
   type RevocationStore,
 } from '@buku/common';
 import type { AccessReview } from '../admin/access-review.js';
+import type { AccountControl } from '../admin/accounts.js';
 import type { SwitchControl } from '../admin/switches.js';
 import type { MfaService } from '../mfa/mfa-service.js';
 import { Router, type Express } from 'express';
@@ -45,6 +46,10 @@ import {
   MfaVerifyBody,
   SwitchBody,
   SwitchParams,
+  AccountLookupBody,
+  AccountParams,
+  AccountReasonBody,
+  AccountReinstateBody,
 } from './schemas.js';
 import type { JwtVerifier } from '@buku/common';
 
@@ -62,6 +67,7 @@ export interface RouteDeps {
   devLoginEnabled: boolean;
   accessReview: AccessReview;
   switches: SwitchControl;
+  accounts: AccountControl;
   mfa: MfaService;
   /** A business's internal ID from the public one in the URL (DB-042); null when there is none. */
   businessIdOf: (publicId: string) => Promise<bigint | null>;
@@ -389,6 +395,47 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: SwitchParams, body: SwitchBody }, async ({ params, body }, req, res) => {
       sendSuccess(res, await deps.switches.set(params.key, body, actorOf(req).id, requestContext(req)));
+    }),
+  );
+
+  // ── Platform admins: accounts (3.6) ──────────────────────────────────────
+  const admin = [auth, requireRole('super_admin'), writeLimit] as const;
+  app.post(
+    '/v1/admin/accounts/find',
+    ...admin,
+    validated({ body: AccountLookupBody }, async ({ body }, req, res) => {
+      const lookup = body.email ? { email: body.email } : { id: body.id! };
+      sendSuccess(res, await deps.accounts.find(lookup, actorOf(req).id, requestContext(req)));
+    }),
+  );
+  app.post(
+    '/v1/admin/accounts/:id/suspend',
+    ...admin,
+    validated({ params: AccountParams, body: AccountReasonBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.accounts.suspend(params.id, body.reason, actorOf(req).id, requestContext(req)),
+      );
+    }),
+  );
+  app.post(
+    '/v1/admin/accounts/:id/reinstate',
+    ...admin,
+    validated({ params: AccountParams, body: AccountReinstateBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.accounts.reinstate(params.id, body.reason, actorOf(req).id, requestContext(req)),
+      );
+    }),
+  );
+  app.post(
+    '/v1/admin/accounts/:id/end-sessions',
+    ...admin,
+    validated({ params: AccountParams, body: AccountReasonBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.accounts.endSessions(params.id, body.reason, actorOf(req).id, requestContext(req)),
+      );
     }),
   );
 

@@ -1687,6 +1687,102 @@ describe('Emergency switches (D-129)', () => {
   });
 });
 
+describe('Accounts, for platform admins (3.6)', () => {
+  const find = (token: string, body: Record<string, unknown>) =>
+    request(app).post('/v1/admin/accounts/find').set(bearer(token)).send(body);
+  const act = (token: string, id: string, step: string, body: Record<string, unknown> = {}) =>
+    request(app).post(`/v1/admin/accounts/${id}/${step}`).set(bearer(token)).send(body);
+  const signInAs = async (sub: string) =>
+    post('/v1/auth/oauth/google').send({
+      idToken: await googleIdToken({ sub }),
+      acceptedTermsVersion: TERMS,
+      device: { name: 'Test phone', platform: 'ios' },
+    });
+  const audited = async (userId: bigint, action: string) =>
+    (await shardOf(userId)).auditLog.count({ where: { userId, action } });
+
+  it('finds one person by email or ID; customers can’t; every look is recorded', async () => {
+    const me = await admin();
+    const person = await signUp();
+    const byEmail = await find(me.accessToken, { email: person.user.email.toUpperCase() });
+    expect(byEmail.status).toBe(200);
+    expect(byEmail.body.data).toMatchObject({
+      id: person.user.id,
+      email: person.user.email,
+      role: 'user',
+      status: 'active',
+      sessions: 1,
+      twoStep: false,
+      employeeLogin: false,
+    });
+    expect((await find(me.accessToken, { id: person.user.id })).body.data.id).toBe(person.user.id);
+    expect((await find(me.accessToken, { email: `nobody.${randomUUID()}@example.com` })).status).toBe(404);
+    expect((await find(me.accessToken, { email: person.user.email, id: person.user.id })).status).toBe(400);
+    expect((await find(person.accessToken, { id: me.user.id })).status).toBe(403);
+    expect(await audited(me.userId, 'admin.account_looked_up')).toBe(3);
+  });
+
+  it('suspending signs the person out everywhere at once and keeps them out; reinstating lets them in', async () => {
+    const me = await admin();
+    const sub = randomUUID();
+    const first = await signInAs(sub);
+    expect(first.status).toBe(201);
+    const person = first.body.data as { user: { id: string }; accessToken: string; refreshToken: string };
+    const personId = subOf(person.accessToken);
+
+    expect((await act(me.accessToken, person.user.id, 'suspend')).status).toBe(400);
+    const suspended = await act(me.accessToken, person.user.id, 'suspend', { reason: 'test: card testing' });
+    expect(suspended.status).toBe(200);
+    expect(suspended.body.data).toMatchObject({ status: 'suspended', sessions: 0 });
+
+    // Their access token stops working at once, the session can't be renewed, and they can't sign in.
+    expect((await request(app).get('/v1/auth/me').set(bearer(person.accessToken))).status).toBe(401);
+    expect((await post('/v1/auth/refresh').send({ refreshToken: person.refreshToken })).status).toBe(401);
+    const refused = await signInAs(sub);
+    expect(refused.status).toBe(403);
+    expect(refused.body.error.code).toBe('ACCOUNT_SUSPENDED');
+    expect((await act(me.accessToken, person.user.id, 'suspend', { reason: 'test: again' })).status).toBe(
+      409,
+    );
+    expect(await audited(personId, 'admin.account_suspended')).toBe(1);
+    expect(await audited(me.userId, 'admin.account_suspended')).toBe(1);
+
+    const back = await act(me.accessToken, person.user.id, 'reinstate', { reason: 'test: cleared' });
+    expect(back.status).toBe(200);
+    expect(back.body.data.status).toBe('active');
+    expect((await signInAs(sub)).status).toBe(200);
+    expect(await audited(personId, 'admin.account_reinstated')).toBe(1);
+    expect((await act(me.accessToken, person.user.id, 'reinstate')).status).toBe(409);
+  });
+
+  it('ending sessions signs them out but the account stays; admins and oneself are off limits', async () => {
+    const me = await admin();
+    const other = await admin();
+    const sub = randomUUID();
+    const person = (await signInAs(sub)).body.data as { user: { id: string }; accessToken: string };
+
+    const ended = await act(me.accessToken, person.user.id, 'end-sessions', { reason: 'test: stolen phone' });
+    expect(ended.status).toBe(200);
+    expect(ended.body.data).toMatchObject({ status: 'active', sessions: 0 });
+    expect((await request(app).get('/v1/auth/me').set(bearer(person.accessToken))).status).toBe(401);
+    expect((await signInAs(sub)).status).toBe(200);
+
+    expect((await act(me.accessToken, me.user.id, 'suspend', { reason: 'test: myself' })).status).toBe(400);
+    const admins = await act(me.accessToken, other.user.id, 'suspend', { reason: 'test: another admin' });
+    expect(admins.status).toBe(403);
+    expect(
+      (await act(me.accessToken, other.user.id, 'end-sessions', { reason: 'test: another admin' })).status,
+    ).toBe(403);
+    const customer = await signUp();
+    expect(
+      (await act(customer.accessToken, person.user.id, 'suspend', { reason: 'test: not allowed' })).status,
+    ).toBe(403);
+    expect((await act(me.accessToken, 'AAAAAAAAAAAA', 'suspend', { reason: 'test: nobody' })).status).toBe(
+      404,
+    );
+  });
+});
+
 describe('Two-step sign-in (D-081)', () => {
   /** Signs up (Google) and turns MFA on; returns the secret and recovery codes. */
   async function withMfa(sub = randomUUID()) {
