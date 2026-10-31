@@ -5,6 +5,7 @@ import {
   Flag,
   LayoutDashboard,
   Power,
+  ScrollText,
   ShieldCheck,
   Store,
   UserSearch,
@@ -38,6 +39,7 @@ const SECTIONS: { title: string | null; items: Item[] }[] = [
     title: 'Security',
     items: [
       { href: '/security/switches', label: 'Emergency switches', icon: Power },
+      { href: '/security/audit', label: 'Audit log', icon: ScrollText },
       { href: '/security/access', label: 'Access review', icon: ShieldCheck },
     ],
   },

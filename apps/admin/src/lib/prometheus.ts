@@ -155,6 +155,17 @@ export async function systemTrends(): Promise<SystemTrends | null> {
   return { requests, errors, p95, refused };
 }
 
+/** Security events by kind over the last `hours`, largest first; null when not connected. */
+export async function securityEvents(hours: number): Promise<{ event: string; count: number }[] | null> {
+  if (!env().PROMETHEUS_URL) return null;
+  const rows = await query(`sum by (event) (increase(security_events_total[${Math.round(hours)}h]))`);
+  if (rows === null) return null;
+  return rows
+    .map((r) => ({ event: r.metric.event ?? '?', count: Math.round(Number(r.value[1])) }))
+    .filter((r) => Number.isFinite(r.count) && r.count > 0)
+    .sort((a, b) => b.count - a.count);
+}
+
 /** Grafana's address and its BUKU dashboards (by their fixed ids), or null when not set. */
 export function grafana(): { url: string; dashboards: { title: string; href: string }[] } | null {
   const url = env().GRAFANA_URL;

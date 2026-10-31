@@ -253,6 +253,59 @@ test.describe('Admin app', () => {
     await expect(card).toContainText('Active');
     await expect(card.getByRole('button', { name: 'Suspend (Kamran Customer)' })).toBeVisible();
   });
+
+  test('the audit log: a suspension is on the account’s activity and in the log, with its reason', async ({
+    page,
+  }) => {
+    const email = newEmail();
+    const made = await fetch(`${API}/v1/auth/dev/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, name: 'Ayesha Audit' }),
+    });
+    expect(made.ok).toBe(true);
+
+    await newOperator(page);
+    await page.getByRole('navigation', { name: 'Console' }).getByRole('link', { name: 'Accounts' }).click();
+    await page.getByLabel('Email or account ID').fill(email);
+    await page.getByRole('button', { name: 'Find' }).click();
+    const card = page.getByRole('region', { name: 'Account: Ayesha Audit' });
+    await card.getByRole('button', { name: 'Suspend (Ayesha Audit)' }).click();
+    await card.getByLabel(/Why suspend this account\?/).fill('e2e: audit trail');
+    await card.getByRole('button', { name: 'Suspend', exact: true }).click();
+    await expect(card).toContainText('Suspended');
+
+    // The account's own activity: what was done to it, and by whom.
+    await card.getByRole('button', { name: 'Show their activity' }).click();
+    await expect(card.getByRole('listitem').filter({ hasText: 'suspended this account' })).toContainText(
+      '“e2e: audit trail”',
+    );
+
+    // The log: the same step, as the admin's, under Accounts.
+    await page.getByRole('navigation', { name: 'Console' }).getByRole('link', { name: 'Audit log' }).click();
+    await expect(page.getByRole('heading', { name: 'Audit log', level: 1 })).toBeVisible();
+    await page
+      .getByRole('navigation', { name: 'Kind of step' })
+      .getByRole('link', { name: 'Accounts' })
+      .click();
+    const step = page
+      .getByRole('region', { name: 'Steps' })
+      .getByRole('listitem')
+      .filter({ hasText: 'You suspended an account' })
+      .filter({ hasText: 'Ayesha Audit' });
+    await expect(step).toContainText('“e2e: audit trail”');
+    await expectAccessible(page);
+
+    // Reinstated, to leave the account as it was.
+    await page.getByRole('navigation', { name: 'Console' }).getByRole('link', { name: 'Accounts' }).click();
+    await page.getByLabel('Email or account ID').fill(email);
+    await page.getByRole('button', { name: 'Find' }).click();
+    await page
+      .getByRole('region', { name: 'Account: Ayesha Audit' })
+      .getByRole('button', { name: 'Reinstate (Ayesha Audit)' })
+      .click();
+    await expect(page.getByRole('region', { name: 'Account: Ayesha Audit' })).toContainText('Active');
+  });
 });
 
 /** A new platform admin with two-step sign-in set up, on the overview. */
