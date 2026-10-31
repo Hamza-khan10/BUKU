@@ -172,6 +172,62 @@ export function isForeignKeyViolation(err: unknown): boolean {
   return sqlStateOf(err) === SQLSTATE.FOREIGN_KEY_VIOLATION;
 }
 
+/** The server can't take work yet (starting, recovering, shutting down), or the link to it failed. */
+const NOT_READY_STATES = new Set(['57P01', '57P02', '57P03', '08000', '08001', '08003', '08004', '08006']);
+const NOT_READY_MESSAGE =
+  /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|Connection terminated|starting up|Can't reach database server/i;
+/** The same, as Prisma's driver adapter names it when there's no Postgres error at all. */
+const NOT_READY_KINDS = new Set(['DatabaseNotReachable', 'SocketTimeout', 'ConnectionClosed']);
+
+/**
+ * The database isn't ready yet — still starting or recovering after a restart, failing over, or
+ * out of reach — as opposed to a mistake that waiting won't fix.
+ */
+export function isDatabaseNotReady(err: unknown): boolean {
+  const state = sqlStateOf(err);
+  if (state) return NOT_READY_STATES.has(state);
+  const seen = new Set<unknown>();
+  let text = '';
+  for (let c: unknown = err; typeof c === 'object' && c !== null && !seen.has(c);) {
+    seen.add(c);
+    const e = c as { message?: unknown; code?: unknown; cause?: unknown; meta?: unknown; kind?: unknown };
+    const adapter = (e.meta as { driverAdapterError?: { cause?: { kind?: unknown } } } | undefined)
+      ?.driverAdapterError?.cause;
+    if (typeof adapter?.kind === 'string' && NOT_READY_KINDS.has(adapter.kind)) return true;
+    if (typeof e.kind === 'string' && NOT_READY_KINDS.has(e.kind)) return true;
+    text += ` ${typeof e.message === 'string' ? e.message : ''} ${typeof e.code === 'string' ? e.code : ''}`;
+    c = e.cause;
+  }
+  return NOT_READY_MESSAGE.test(text);
+}
+
+/**
+ * Runs a first step against the database, waiting while the database isn't ready yet: after a
+ * machine restart Postgres can still be recovering when the services start, and one that gave up
+ * then stayed down until someone restarted it. Waits up to `forMs` (two minutes by default), half a
+ * second at first and up to five between tries; any other error, or one past the time, stands.
+ */
+export async function whenDatabaseReady<T>(
+  step: () => Promise<T>,
+  options: {
+    forMs?: number;
+    onWait?: (err: unknown, waitMs: number) => void;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
+): Promise<T> {
+  const deadline = Date.now() + (options.forMs ?? 120_000);
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  for (let wait = 500; ; wait = Math.min(wait * 2, 5_000)) {
+    try {
+      return await step();
+    } catch (err) {
+      if (!isDatabaseNotReady(err) || Date.now() + wait > deadline) throw err;
+      options.onWait?.(err, wait);
+      await sleep(wait);
+    }
+  }
+}
+
 /** Transient concurrency failures that are safe to retry the whole transaction for. */
 export function isRetryableTransactionError(err: unknown): boolean {
   if (isPrismaError(err, 'P2034')) return true;
