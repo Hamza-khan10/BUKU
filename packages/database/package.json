@@ -2,23 +2,19 @@
   "name": "@buku/database",
   "version": "0.1.0",
   "private": true,
-  "description": "Prisma schema, migrations, seed data and the shared database client.",
+  "description": "Database v2: the directory, user and business shards, the catalog, their schemas and migrations, and the data plane.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
-    "generate": "prisma generate && prisma generate --config prisma.directory.config.ts && prisma generate --config prisma.user.config.ts && prisma generate --config prisma.business.config.ts && prisma generate --config prisma.catalog.config.ts",
+    "generate": "prisma generate --config prisma.directory.config.ts && prisma generate --config prisma.user.config.ts && prisma generate --config prisma.business.config.ts && prisma generate --config prisma.catalog.config.ts",
     "prepare:databases": "tsx scripts/prepare-databases.ts",
     "shards:provision": "tsx scripts/provision-shards.ts",
-    "validate": "prisma validate",
-    "migrate:dev": "prisma migrate dev",
-    "migrate:create": "prisma migrate dev --create-only",
-    "migrate:deploy": "prisma migrate deploy && prisma migrate deploy --config prisma.directory.config.ts && prisma migrate deploy --config prisma.catalog.config.ts",
-    "migrate:status": "prisma migrate status",
-    "seed": "tsx prisma/seed.ts && tsx prisma/directory/seed.ts",
-    "seed:v2": "tsx prisma/seed-v2.ts",
-    "studio": "prisma studio"
+    "validate": "prisma validate --config prisma.directory.config.ts && prisma validate --config prisma.user.config.ts && prisma validate --config prisma.business.config.ts && prisma validate --config prisma.catalog.config.ts",
+    "migrate:deploy": "prisma migrate deploy --config prisma.directory.config.ts && prisma migrate deploy --config prisma.catalog.config.ts",
+    "seed": "tsx prisma/directory/seed.ts",
+    "seed:v2": "tsx prisma/seed-v2.ts"
   },
   "dependencies": {
     "@buku/common": "workspace:*",

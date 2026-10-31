@@ -1,7 +1,9 @@
 import {
+  AppError,
   authenticate,
+  ErrorCodes,
   rateLimit,
-  requireAuth,
+  requireActor,
   requireRole,
   sendCreated,
   sendNoContent,
@@ -10,6 +12,7 @@ import {
   type JwtVerifier,
   type RevocationStore,
 } from '@buku/common';
+import type { DataPlane } from '@buku/database';
 import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
 import type { AccountService } from '../account-service.js';
@@ -21,6 +24,7 @@ import {
   ChangePlanBody,
   CheckoutBody,
   AudienceParams,
+  BusinessParams,
   BusinessRequestParams,
   DeclineBody,
   PlanRequestBody,
@@ -44,6 +48,7 @@ import {
 } from './schemas.js';
 
 export interface RouteDeps {
+  plane: DataPlane;
   catalog: CatalogService;
   accounts: AccountService;
   store: StoreService;
@@ -67,6 +72,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     redis: deps.redis,
   });
 
+  /** The business in the URL, by its public ID (DB-042): unknown is "not found". */
+  const businessOf = async (publicId: string) => {
+    const id = await deps.plane.idOfPublic('business', publicId);
+    if (id === null) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+    return id;
+  };
+
   // ── Public and customers ─────────────────────────────────────────────────
   const b = Router();
   // The pricing page: plans on sale, their benefits, limits and features, prices on a channel.
@@ -78,11 +90,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     }),
   );
   b.get('/me', auth, async (req, res) => {
-    sendSuccess(res, await deps.accounts.mine(requireAuth(req).userId));
+    sendSuccess(res, await deps.accounts.mine(requireActor(req).id));
   });
-  // Start my free trial (once per account, whenever I like).
+  // Customers are free (D-101): there is no trial to start (409).
   b.post('/me/trial', auth, writeLimit, async (req, res) => {
-    sendSuccess(res, await deps.accounts.startMyTrial(requireAuth(req).userId, requestContext(req)));
+    requireActor(req);
+    sendSuccess(res, await deps.accounts.startMyTrial());
   });
   // Paying online (Paddle). The customer's own paid plan:
   b.post(
@@ -90,30 +103,36 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ body: CheckoutBody }, async ({ body }, req, res) => {
-      const { userId } = requireAuth(req);
-      sendCreated(res, await deps.store.checkout({ userId }, body.planCode, userId, requestContext(req)));
+      const actor = requireActor(req);
+      sendCreated(
+        res,
+        await deps.store.checkout({ userId: actor.id }, body.planCode, actor, requestContext(req)),
+      );
     }),
   );
   b.post('/me/subscription/cancel', auth, writeLimit, async (req, res) => {
-    const { userId } = requireAuth(req);
-    sendSuccess(res, await deps.store.cancel({ userId }, userId, requestContext(req)));
+    const actor = requireActor(req);
+    sendSuccess(res, await deps.store.cancel({ userId: actor.id }, actor, requestContext(req)));
   });
   b.post('/me/subscription/undo-cancel', auth, writeLimit, async (req, res) => {
-    const { userId } = requireAuth(req);
-    sendSuccess(res, await deps.store.undoCancel({ userId }, userId, requestContext(req)));
+    const actor = requireActor(req);
+    sendSuccess(res, await deps.store.undoCancel({ userId: actor.id }, actor, requestContext(req)));
   });
   b.post(
     '/me/subscription/change',
     auth,
     writeLimit,
     validated({ body: ChangePlanBody }, async ({ body }, req, res) => {
-      const { userId } = requireAuth(req);
-      sendSuccess(res, await deps.store.changePlan({ userId }, body.planCode, userId, requestContext(req)));
+      const actor = requireActor(req);
+      sendSuccess(
+        res,
+        await deps.store.changePlan({ userId: actor.id }, body.planCode, actor, requestContext(req)),
+      );
     }),
   );
   b.get('/me/subscription/portal', auth, async (req, res) => {
-    const { userId } = requireAuth(req);
-    sendSuccess(res, await deps.store.portal({ userId }, userId));
+    const actor = requireActor(req);
+    sendSuccess(res, await deps.store.portal({ userId: actor.id }, actor));
   });
 
   // Paddle's signed notifications (no sign-in: the signature is the authentication).
@@ -127,33 +146,42 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   biz.use(auth);
   biz.get(
     '/',
-    validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.accounts.business(params.id, requireAuth(req).userId));
+    validated({ params: BusinessParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.accounts.business(await businessOf(params.id), requireActor(req)));
     }),
   );
   biz.post(
     '/trial',
     writeLimit,
-    validated({ params: IdParams }, async ({ params }, req, res) => {
+    validated({ params: BusinessParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await deps.accounts.startBusinessTrial(params.id, requireAuth(req).userId, requestContext(req)),
+        await deps.accounts.startBusinessTrial(
+          await businessOf(params.id),
+          requireActor(req),
+          requestContext(req),
+        ),
       );
     }),
   );
   biz.get(
     '/plan-requests',
-    validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.accounts.businessRequests(params.id, requireAuth(req).userId));
+    validated({ params: BusinessParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.accounts.businessRequests(await businessOf(params.id), requireActor(req)));
     }),
   );
   biz.post(
     '/plan-requests',
     writeLimit,
-    validated({ params: IdParams, body: PlanRequestBody }, async ({ params, body }, req, res) => {
+    validated({ params: BusinessParams, body: PlanRequestBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.accounts.requestPlan(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.accounts.requestPlan(
+          await businessOf(params.id),
+          requireActor(req),
+          body,
+          requestContext(req),
+        ),
       );
     }),
   );
@@ -164,9 +192,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.accounts.withdrawRequest(
-          params.id,
+          await businessOf(params.id),
           params.requestId,
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -175,13 +203,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   biz.post(
     '/checkout',
     writeLimit,
-    validated({ params: IdParams, body: CheckoutBody }, async ({ params, body }, req, res) => {
+    validated({ params: BusinessParams, body: CheckoutBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
         await deps.store.checkout(
-          { businessId: params.id },
+          { businessId: await businessOf(params.id) },
           body.planCode,
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -190,33 +218,41 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   biz.post(
     '/subscription/cancel',
     writeLimit,
-    validated({ params: IdParams }, async ({ params }, req, res) => {
+    validated({ params: BusinessParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await deps.store.cancel({ businessId: params.id }, requireAuth(req).userId, requestContext(req)),
+        await deps.store.cancel(
+          { businessId: await businessOf(params.id) },
+          requireActor(req),
+          requestContext(req),
+        ),
       );
     }),
   );
   biz.post(
     '/subscription/undo-cancel',
     writeLimit,
-    validated({ params: IdParams }, async ({ params }, req, res) => {
+    validated({ params: BusinessParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await deps.store.undoCancel({ businessId: params.id }, requireAuth(req).userId, requestContext(req)),
+        await deps.store.undoCancel(
+          { businessId: await businessOf(params.id) },
+          requireActor(req),
+          requestContext(req),
+        ),
       );
     }),
   );
   biz.post(
     '/subscription/change',
     writeLimit,
-    validated({ params: IdParams, body: ChangePlanBody }, async ({ params, body }, req, res) => {
+    validated({ params: BusinessParams, body: ChangePlanBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
         await deps.store.changePlan(
-          { businessId: params.id },
+          { businessId: await businessOf(params.id) },
           body.planCode,
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -224,8 +260,11 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   );
   biz.get(
     '/subscription/portal',
-    validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.store.portal({ businessId: params.id }, requireAuth(req).userId));
+    validated({ params: BusinessParams }, async ({ params }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.store.portal({ businessId: await businessOf(params.id) }, requireActor(req)),
+      );
     }),
   );
   app.use('/v1/businesses/:id/billing', biz);
@@ -233,7 +272,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   // ── Platform admins: the whole catalog is editable at any time ───────────
   const a = Router();
   a.use(auth, requireRole('super_admin'), adminLimit);
-  const admin = (req: Parameters<typeof requireAuth>[0]) => requireAuth(req).userId;
+  const admin = (req: Parameters<typeof requireActor>[0]) => requireActor(req).id;
 
   a.get('/plans', async (_req, res) => {
     sendSuccess(res, await deps.catalog.listPlans());

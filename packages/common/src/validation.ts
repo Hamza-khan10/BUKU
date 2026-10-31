@@ -8,6 +8,7 @@ import {
 } from '@buku/validation';
 import sanitizeHtml from 'sanitize-html';
 import { z } from 'zod';
+import { idFromString, PUBLIC_ID_PATTERN } from './ids.js';
 
 /**
  * Reusable Zod building blocks. Every endpoint validates body, query and
@@ -16,6 +17,26 @@ import { z } from 'zod';
  */
 
 export const zUuid = z.uuid({ message: 'must be a valid UUID' });
+
+/**
+ * Database v2 identifiers in APIs (docs/DATABASE.md DB-042). A row reached only inside its
+ * business (a service, an employee, a ticket) goes by its 64-bit ID as a decimal string, parsed
+ * to a bigint here; anything else is refused before it reaches a query.
+ */
+export const zId = z
+  .string()
+  .regex(/^[1-9][0-9]{0,18}$/, 'must be an ID')
+  .transform((value, ctx) => {
+    const id = idFromString(value);
+    if (id === null) {
+      ctx.addIssue({ code: 'custom', message: 'must be an ID' });
+      return z.NEVER;
+    }
+    return id;
+  });
+
+/** What people share and link to (a person, a business, an appointment): 12 Base62 characters. */
+export const zPublicId = z.string().regex(PUBLIC_ID_PATTERN, 'must be a 12-character public ID');
 
 /** Emails are compared and blind-indexed in lowercase; normalize at the edge. */
 export const zEmail = z

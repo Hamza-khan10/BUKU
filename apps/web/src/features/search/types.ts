@@ -12,7 +12,8 @@ export interface SearchItem {
   rating: { average: number; count: number };
   verified: boolean;
   reliability: { keptPercent: number; basedOn: number } | null;
-  priceFrom: { amount: number; currency: string } | null;
+  /** The lowest active price, in the currency's decimals ("400.00"). */
+  priceFrom: { amount: string; currency: string } | null;
   openNow: boolean;
   queue: { open: boolean; waiting: number } | null;
   logoUrl: string | null;

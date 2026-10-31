@@ -15,3 +15,6 @@ export function requestContext(req: Request): RequestContext {
     requestId: typeof req.id === 'string' ? req.id : null,
   };
 }
+
+/** The signed-in person by internal ID (shared by every service on database v2). */
+export { requireActor as actorOf, type Actor } from '@buku/common';

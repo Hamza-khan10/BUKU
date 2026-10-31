@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import {
   createJwtVerifierFromEnv,
   createRedisClient,
@@ -8,7 +9,7 @@ import {
   runService,
   type ShutdownHook,
 } from '@buku/common';
-import { createDatabaseClient, pingDatabase } from '@buku/database';
+import { DataPlane } from '@buku/database';
 import { buildBillingApp } from './app.js';
 import { Env } from './config.js';
 import { PaddleClient } from './paddle/client.js';
@@ -16,16 +17,24 @@ import { PaddleClient } from './paddle/client.js';
 const env = loadConfig(Env);
 
 // ── Dependencies ──
-const db = createDatabaseClient({
-  url: env.DATABASE_URL,
-  maxConnections: env.DATABASE_POOL_SIZE,
-  applicationName: env.SERVICE_NAME,
+// Database v2 (D3): the catalog on the directory; subscriptions and plan requests on business shards.
+const plane = await DataPlane.start({
+  service: 'billing',
+  databaseUrl: env.DATABASE_URL,
+  ...(env.DATABASE_DIRECTORY_URL && { directoryUrl: env.DATABASE_DIRECTORY_URL }),
+  region: env.BUKU_REGION,
+  instance: `${env.SERVICE_NAME}:${hostname()}:${process.pid}`,
+  poolSize: env.DATABASE_SHARD_POOL_SIZE,
 });
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
 const verifier = await createJwtVerifierFromEnv(env);
 
 // ── Readiness: every dependency must answer before traffic is routed here ──
-const readiness = new Readiness().add('postgres', () => pingDatabase(db)).add('valkey', () => redis.ping());
+const readiness = new Readiness()
+  .add('postgres', async () => {
+    await plane.directory.$queryRaw`SELECT 1`;
+  })
+  .add('valkey', () => redis.ping());
 
 // Online checkout runs only when Paddle is configured (all three keys).
 const paddle =
@@ -51,7 +60,7 @@ const paddle =
 if (!paddle) logger.warn('Paddle is not configured: online checkout is unavailable');
 
 const { app, accounts } = buildBillingApp({
-  db,
+  plane,
   paddle,
   redis,
   verifier,
@@ -65,8 +74,8 @@ const { app, accounts } = buildBillingApp({
   },
 });
 
-// Trials and time-limited grants that ended are marked `expired` (they already stopped
-// counting at their end date; this frees the account for a new plan). Idempotent.
+// Trials and time-limited grants that ended are marked `expired` on every business shard (they
+// already stopped counting at their end date; this frees the business for a new plan). Idempotent.
 const expiry = setInterval(
   () => {
     accounts
@@ -87,7 +96,7 @@ const hooks: ShutdownHook[] = [
       return Promise.resolve();
     },
   },
-  { name: 'postgres', fn: () => db.$disconnect() },
+  { name: 'postgres', fn: () => plane.close() },
   {
     name: 'valkey',
     fn: async () => {

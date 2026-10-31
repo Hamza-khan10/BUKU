@@ -3,7 +3,6 @@ import {
   authenticate,
   ErrorCodes,
   rateLimit,
-  requireAuth,
   requireRole,
   sendNoContent,
   sendSuccess,
@@ -14,7 +13,7 @@ import type { AccessReview } from '../admin/access-review.js';
 import type { MfaService } from '../mfa/mfa-service.js';
 import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
-import { requestContext } from '../http/context.js';
+import { actorOf, requestContext } from '../http/context.js';
 import type { OidcVerifier } from '../identity/oidc.js';
 import type { MemberService } from '../members/member-service.js';
 import type { PasswordAuthService } from '../members/password-auth.js';
@@ -60,6 +59,8 @@ export interface RouteDeps {
   devLoginEnabled: boolean;
   accessReview: AccessReview;
   mfa: MfaService;
+  /** A business's internal ID from the public one in the URL (DB-042); null when there is none. */
+  businessIdOf: (publicId: string) => Promise<bigint | null>;
 }
 
 /**
@@ -154,16 +155,16 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   );
 
   r.post('/logout-all', auth, writeLimit, async (req, res) => {
-    await deps.sessions.endAllSessions(requireAuth(req).userId, 'logged_out_everywhere', requestContext(req));
+    await deps.sessions.endAllSessions(actorOf(req).id, 'logged_out_everywhere', requestContext(req));
     sendNoContent(res);
   });
 
   r.get('/sessions', auth, async (req, res) => {
-    const { userId, sessionId } = requireAuth(req);
-    const sessions = await deps.sessions.list(userId);
+    const { id, sessionId } = actorOf(req);
+    const sessions = await deps.sessions.list(id);
     sendSuccess(
       res,
-      sessions.map((s) => ({ ...s, current: s.id === sessionId })),
+      sessions.map((s) => ({ ...s, current: s.id === sessionId?.toString() })),
     );
   });
 
@@ -173,7 +174,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: SessionIdParams }, async ({ params }, req, res) => {
       const ended = await deps.sessions.endSession(
-        requireAuth(req).userId,
+        actorOf(req).id,
         params.id,
         'revoked_by_user',
         requestContext(req),
@@ -186,7 +187,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
 
   // ── Me ───────────────────────────────────────────────────────────────────
   r.get('/me', auth, async (req, res) => {
-    sendSuccess(res, await deps.users.getMe(requireAuth(req).userId));
+    sendSuccess(res, await deps.users.getMe(actorOf(req).id));
   });
 
   r.patch(
@@ -194,7 +195,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ body: UpdateMeBody }, async ({ body }, req, res) => {
-      sendSuccess(res, await deps.users.updateProfile(requireAuth(req).userId, body, requestContext(req)));
+      sendSuccess(res, await deps.users.updateProfile(actorOf(req).id, body, requestContext(req)));
     }),
   );
 
@@ -203,7 +204,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ body: SetPhoneBody }, async ({ body }, req, res) => {
-      sendSuccess(res, await deps.users.setPhone(requireAuth(req).userId, body, requestContext(req)));
+      sendSuccess(res, await deps.users.setPhone(actorOf(req).id, body, requestContext(req)));
     }),
   );
 
@@ -213,7 +214,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ body: AvatarUploadBody }, async ({ body }, req, res) => {
-      sendSuccess(res, await deps.avatars.requestUpload(requireAuth(req).userId, body), 201);
+      sendSuccess(res, await deps.avatars.requestUpload(actorOf(req).id, body), 201);
     }),
   );
   r.post(
@@ -223,12 +224,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: UploadIdParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await deps.avatars.completeUpload(requireAuth(req).userId, params.uploadId, requestContext(req)),
+        await deps.avatars.completeUpload(actorOf(req).id, params.uploadId, requestContext(req)),
       );
     }),
   );
   r.delete('/me/avatar', auth, writeLimit, async (req, res) => {
-    sendSuccess(res, await deps.avatars.remove(requireAuth(req).userId, requestContext(req)));
+    sendSuccess(res, await deps.avatars.remove(actorOf(req).id, requestContext(req)));
   });
 
   r.post(
@@ -236,7 +237,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ body: PushTokenBody }, async ({ body }, req, res) => {
-      await deps.users.registerPushToken(requireAuth(req).userId, body.token, body.platform);
+      await deps.users.registerPushToken(actorOf(req).id, body.token, body.platform);
       sendNoContent(res);
     }),
   );
@@ -246,7 +247,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ params: PushTokenParams }, async ({ params }, req, res) => {
-      if (!(await deps.users.removePushToken(requireAuth(req).userId, params.token)))
+      if (!(await deps.users.removePushToken(actorOf(req).id, params.token)))
         throw AppError.notFound('Push token');
       sendNoContent(res);
     }),
@@ -258,7 +259,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ body: ChangePasswordBody }, async ({ body }, req, res) => {
-      await deps.passwords.changePassword(requireAuth(req).userId, body, requestContext(req));
+      await deps.passwords.changePassword(actorOf(req).id, body, requestContext(req));
       sendSuccess(res, { signInAgain: true });
     }),
   );
@@ -272,7 +273,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   });
 
   r.get('/me/export', auth, exportLimit, async (req, res) => {
-    const data = await deps.rights.exportData(requireAuth(req).userId, requestContext(req));
+    const data = await deps.rights.exportData(actorOf(req).id, requestContext(req));
     const day = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Disposition', `attachment; filename="buku-data-export-${day}.json"`);
     sendSuccess(res, data);
@@ -283,8 +284,8 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ body: DeleteAccountBody }, async ({ body }, req, res) => {
-      const { userId, sessionId } = requireAuth(req);
-      const result = await deps.rights.requestDeletion(userId, sessionId, body.reason, requestContext(req));
+      const { id, sessionId } = actorOf(req);
+      const result = await deps.rights.requestDeletion(id, sessionId, body.reason, requestContext(req));
       sendSuccess(res, { status: 'scheduled', ...result }, 202);
     }),
   );
@@ -294,11 +295,17 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   // ── A business's team (employee accounts and roles) ──────────────────────
   const team = Router({ mergeParams: true });
   team.use(auth, writeLimit);
+  /** The business in the URL, by its internal ID: unknown is "not found", like no access at all. */
+  const businessOf = async (publicId: string) => {
+    const id = await deps.businessIdOf(publicId);
+    if (id === null) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+    return id;
+  };
 
   team.get(
     '/',
     validated({ params: BusinessParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.members.list(params.businessId, requireAuth(req).userId));
+      sendSuccess(res, await deps.members.list(await businessOf(params.businessId), actorOf(req)));
     }),
   );
 
@@ -306,8 +313,8 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/',
     validated({ params: BusinessParams, body: CreateMemberBody }, async ({ params, body }, req, res) => {
       const result = await deps.members.create(
-        params.businessId,
-        requireAuth(req).userId,
+        await businessOf(params.businessId),
+        actorOf(req),
         body,
         requestContext(req),
       );
@@ -321,9 +328,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.members.update(
-          params.businessId,
+          await businessOf(params.businessId),
           params.memberId,
-          requireAuth(req).userId,
+          actorOf(req),
           body,
           requestContext(req),
         ),
@@ -337,9 +344,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.members.resetPassword(
-          params.businessId,
+          await businessOf(params.businessId),
           params.memberId,
-          requireAuth(req).userId,
+          actorOf(req),
           requestContext(req),
         ),
       );
@@ -350,9 +357,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:memberId',
     validated({ params: MemberParams }, async ({ params }, req, res) => {
       await deps.members.remove(
-        params.businessId,
+        await businessOf(params.businessId),
         params.memberId,
-        requireAuth(req).userId,
+        actorOf(req),
         requestContext(req),
       );
       sendNoContent(res);
@@ -363,7 +370,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
 
   // ── Platform admins: the quarterly access review (D-080) ─────────────────
   app.get('/v1/admin/access-review', auth, requireRole('super_admin'), async (req, res) => {
-    sendSuccess(res, await deps.accessReview.generate(requireAuth(req).userId, requestContext(req)));
+    sendSuccess(res, await deps.accessReview.generate(actorOf(req).id, requestContext(req)));
   });
 
   // ── Two-step sign-in (D-081) ─────────────────────────────────────────────
@@ -385,45 +392,38 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   const mfa = Router();
   mfa.use(auth, mfaLimit);
   mfa.get('/', async (req, res) => {
-    const { userId, role } = requireAuth(req);
-    sendSuccess(res, await deps.mfa.status(userId, role));
+    const { id, role } = actorOf(req);
+    sendSuccess(res, await deps.mfa.status(id, role));
   });
   mfa.post('/setup', async (req, res) => {
-    const { userId } = requireAuth(req);
-    const me = await deps.users.getMe(userId);
-    sendSuccess(res, await deps.mfa.setup(userId, me.email ?? me.name, requestContext(req)));
+    const { id } = actorOf(req);
+    const me = await deps.users.getMe(id);
+    sendSuccess(res, await deps.mfa.setup(id, me.email ?? me.name, requestContext(req)));
   });
   mfa.post(
     '/confirm',
     validated({ body: MfaCodeBody }, async ({ body }, req, res) => {
-      const a = requireAuth(req);
-      sendSuccess(
-        res,
-        await deps.mfa.confirm({ id: a.userId, role: a.role }, a.sessionId, body.code, requestContext(req)),
-      );
+      const a = actorOf(req);
+      sendSuccess(res, await deps.mfa.confirm(a, a.sessionId, body.code, requestContext(req)));
     }),
   );
   mfa.post(
     '/step-up',
     validated({ body: MfaCodeBody }, async ({ body }, req, res) => {
-      const a = requireAuth(req);
-      sendSuccess(
-        res,
-        await deps.mfa.stepUp({ id: a.userId, role: a.role }, a.sessionId, body.code, requestContext(req)),
-      );
+      const a = actorOf(req);
+      sendSuccess(res, await deps.mfa.stepUp(a, a.sessionId, body.code, requestContext(req)));
     }),
   );
   mfa.post(
     '/recovery-codes',
     validated({ body: MfaSecondFactorBody }, async ({ body }, req, res) => {
-      sendSuccess(res, await deps.mfa.newRecoveryCodes(requireAuth(req).userId, body, requestContext(req)));
+      sendSuccess(res, await deps.mfa.newRecoveryCodes(actorOf(req).id, body, requestContext(req)));
     }),
   );
   mfa.delete(
     '/',
     validated({ body: MfaSecondFactorBody }, async ({ body }, req, res) => {
-      const a = requireAuth(req);
-      await deps.mfa.disable({ id: a.userId, role: a.role }, body, requestContext(req));
+      await deps.mfa.disable(actorOf(req), body, requestContext(req));
       sendNoContent(res);
     }),
   );

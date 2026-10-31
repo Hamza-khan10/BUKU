@@ -1,4 +1,4 @@
-import { baseServiceEnv, databaseEnv, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
+import { baseServiceEnv, databaseEnv, databaseV2Env, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
 import { s3Env } from '@buku/media';
 import { type z } from 'zod';
 
@@ -9,7 +9,9 @@ import { type z } from 'zod';
 export const Env = baseServiceEnv.extend({
   ...jwtVerifyEnv.shape,
   ...kafkaEnv.shape,
+  // DATABASE_URL: booking-service's own role, and the default server of the directory (D3).
   ...databaseEnv.shape,
+  ...databaseV2Env.shape,
   ...redisEnv.shape,
   /** Only to link staff photos (stored by business-service); booking-service stores no files. */
   ...s3Env.shape,

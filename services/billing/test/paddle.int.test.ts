@@ -1,46 +1,23 @@
-import { generateKeyPairSync, randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import {
-  createJwtSigner,
-  createJwtVerifier,
-  createLogger,
-  createRedisClient,
-  createRevocationStore,
-  Readiness,
-  type JwtSigner,
-  type Role,
-} from '@buku/common';
-import { createDatabaseClient, type Database } from '@buku/database';
-import express, { type Express } from 'express';
-import type { Redis } from 'ioredis';
+import express from 'express';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { withBilling } from '../../../packages/billing/test/helpers.js';
-import { testEnv } from '../../../packages/database/test/int-env.js';
-import { buildBillingApp } from '../src/app.js';
+import { afterAll, describe, expect, it } from 'vitest';
+import { withBilling } from '../../../packages/database/test/services-world.js';
 import { PaddleClient, type PaddleSubscription } from '../src/paddle/client.js';
 import { signPaddleBody } from '../src/paddle/signature.js';
+import { useBillingHarness, type Person } from './harness.js';
 
 /**
- * Paying with Paddle, end to end, against a FAKE Paddle API (an HTTP server
- * in this test that answers like Paddle and checks the API key) and signed
- * webhooks exactly as Paddle sends them.
+ * Paying with Paddle, end to end, on database v2 (D3g), against a FAKE Paddle API (an HTTP server
+ * in this test that answers like Paddle and checks the API key) and signed webhooks exactly as
+ * Paddle sends them.
  */
 
 const API_KEY = 'pdl_sdbx_apikey_test';
 const SECRET = 'pdl_ntfset_secret_test';
-let app: Express;
-let db: Database;
-let redis: Redis;
-let signer: JwtSigner;
-let admin: Person;
-let fake: ReturnType<typeof fakePaddle>;
-let fakeServer: Server;
-
-const newIp = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
 const pid = (prefix: string) => `${prefix}_${randomBytes(13).toString('hex')}`;
-type Person = Awaited<ReturnType<typeof person>>;
 
 /** What Paddle would do, in memory. */
 function fakePaddle() {
@@ -151,108 +128,53 @@ function deliver(
     notification_id: pid('ntf'),
     data,
   });
-  return request(app)
+  return request(h.app)
     .post('/v1/billing/webhooks/paddle')
     .set('Content-Type', 'application/json')
     .set('Paddle-Signature', signPaddleBody(body, opts.secret ?? SECRET, opts.ts))
     .send(body);
 }
 
-async function person(role: Role = 'user') {
-  const user = await db.user.create({
-    data: { name: `P ${randomUUID().slice(0, 6)}`, emailHash: randomBytes(32).toString('hex'), role },
-  });
-  const { token } = await signer.sign({ sub: user.id, role, sid: randomUUID(), mfa: role === 'super_admin' });
-  return { id: user.id, auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() } };
-}
+const fake = fakePaddle();
+let fakeServer: Server;
 
-async function business(owner: Person) {
-  const suffix = randomUUID().slice(-12);
-  const category = await db.category.create({ data: { name: `Cat ${suffix}`, slug: `cat-${suffix}` } });
-  return db.business.create({
-    data: {
-      ownerId: owner.id,
-      categoryId: category.id,
-      name: `Clinic ${suffix}`,
-      slug: `clinic-${suffix}`,
-      city: 'Lahore',
-      country: 'PK',
-      timezone: 'Asia/Karachi',
-      currency: 'PKR',
-    },
-  });
-}
-
-const post = (path: string, who: Person, body: object = {}) =>
-  request(app).post(path).set(who.auth).send(body);
-const get = (path: string, who: Person) => request(app).get(path).set(who.auth);
-
-/** Sync a plan's web price to (fake) Paddle. */
-async function sync(code: string) {
-  const plan = await db.plan.findUniqueOrThrow({
-    where: { code },
-    include: { prices: { where: { channel: 'web', archivedAt: null } } },
-  });
-  const res = await post(`/v1/admin/billing/prices/${plan.prices[0]!.id}/sync-paddle`, admin);
-  expect(res.status).toBe(200);
-  return res.body.data as { externalPriceId: string; created: boolean };
-}
-
-beforeAll(async () => {
-  fake = fakePaddle();
+const { h, x } = useBillingHarness('billing-paddle-test', () => {
   fakeServer = fake.api.listen(0);
-  await new Promise((r) => fakeServer.once('listening', r));
-  db = createDatabaseClient({
-    url: testEnv.appUrl,
-    applicationName: 'billing-paddle-test',
-    maxConnections: 5,
-  });
-  redis = createRedisClient({ url: testEnv.redisUrl, connectionName: 'billing-paddle-test' });
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const jwt = { issuer: 'https://auth.test', audience: 'buku-api' };
-  signer = await createJwtSigner({
-    ...jwt,
-    keyId: 'k1',
-    privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
-  });
-  const verifier = await createJwtVerifier({
-    ...jwt,
-    keys: [{ keyId: 'k1', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }],
-  });
-  ({ app } = buildBillingApp({
-    db,
-    redis,
-    verifier,
-    revocations: createRevocationStore(redis),
-    paddle: {
-      client: new PaddleClient({
-        apiUrl: `http://127.0.0.1:${(fakeServer.address() as AddressInfo).port}`,
-        apiKey: API_KEY,
-        timeoutMs: 2000,
-      }),
-      config: {
-        environment: 'sandbox',
-        clientToken: 'test_client_token',
-        webhookSecret: SECRET,
-        webhookToleranceSeconds: 300,
-        taxCategory: 'standard',
-      },
+  return {
+    client: new PaddleClient({
+      apiUrl: `http://127.0.0.1:${(fakeServer.address() as AddressInfo).port}`,
+      apiKey: API_KEY,
+      timeoutMs: 2000,
+    }),
+    config: {
+      environment: 'sandbox',
+      clientToken: 'test_client_token',
+      webhookSecret: SECRET,
+      webhookToleranceSeconds: 300,
+      taxCategory: 'standard',
     },
-    http: {
-      service: 'billing-paddle-test',
-      logger: createLogger({ service: 'billing-paddle-test', level: 'silent' }),
-      readiness: new Readiness(),
-      trustProxyHops: 1,
-    },
-  }));
-  admin = await person('super_admin');
+  };
 });
 
 afterAll(async () => {
   await new Promise((r) => fakeServer.close(r));
-  await db.$disconnect();
-  await redis.quit();
 });
+
+const post = (path: string, who: Person, body: object = {}) =>
+  request(h.app).post(path).set(who.auth).send(body);
+const get = (path: string, who: Person) => request(h.app).get(path).set(who.auth);
+const billingOn = <T>(fn: () => Promise<T>) => withBilling(h.world, 'business', fn);
+
+/** Sync a plan's web price to (fake) Paddle. */
+async function sync(code: string) {
+  const plan = await h.world.directory.plan.findUniqueOrThrow({
+    where: { code },
+    include: { prices: { where: { channel: 'web', archivedAt: null } } },
+  });
+  const res = await post(`/v1/admin/billing/prices/${plan.prices[0]!.id}/sync-paddle`, h.admin);
+  expect(res.status).toBe(200);
+  return res.body.data as { externalPriceId: string; created: boolean };
+}
 
 describe('Linking prices to Paddle', () => {
   it('creates the product and the price there once; the price id is stored', async () => {
@@ -266,26 +188,29 @@ describe('Linking prices to Paddle', () => {
     });
     expect((await sync('business_essential')).created).toBe(false);
     expect(
-      (await db.plan.findUniqueOrThrow({ where: { code: 'business_essential' } })).externalProductId,
+      (await h.world.directory.plan.findUniqueOrThrow({ where: { code: 'business_essential' } }))
+        .externalProductId,
     ).toMatch(/^pro_/);
   });
 });
 
 describe('A business pays for Essential', () => {
   it('checkout → Paddle webhook → the business is on Essential; its trial is replaced', async () => {
-    await withBilling(db, 'business', async () => {
-      const owner = await person();
-      const b = await business(owner);
-      await post(`/v1/businesses/${b.id}/billing/trial`, owner);
+    await billingOn(async () => {
+      const b = await x.business();
+      const owner = b.owner;
+      await post(`/v1/businesses/${b.publicId}/billing/trial`, owner);
 
-      const manager = await person();
-      await db.businessMember.create({ data: { businessId: b.id, userId: manager.id, role: 'manager' } });
+      const manager = await x.member(b, 'manager');
       expect(
-        (await post(`/v1/businesses/${b.id}/billing/checkout`, manager, { planCode: 'business_essential' }))
-          .status,
+        (
+          await post(`/v1/businesses/${b.publicId}/billing/checkout`, manager, {
+            planCode: 'business_essential',
+          })
+        ).status,
       ).toBe(403);
 
-      const checkout = await post(`/v1/businesses/${b.id}/billing/checkout`, owner, {
+      const checkout = await post(`/v1/businesses/${b.publicId}/billing/checkout`, owner, {
         planCode: 'business_essential',
       });
       expect(checkout.status).toBe(201);
@@ -298,39 +223,39 @@ describe('A business pays for Essential', () => {
       const txCall = fake.calls.filter((c) => c.path === '/transactions').at(-1)!;
       expect(txCall.body.custom_data).toEqual({
         buku_account_type: 'business',
-        buku_account_id: b.id,
+        buku_account_id: b.publicId,
         buku_plan: 'business_essential',
       });
 
       const sub = fake.pay(checkout.body.data.transactionId);
       expect((await deliver('subscription.created', sub)).status).toBe(200);
-      const billing = (await get(`/v1/businesses/${b.id}/billing`, owner)).body.data;
+      const billing = (await get(`/v1/businesses/${b.publicId}/billing`, owner)).body.data;
       expect(billing).toMatchObject({
         plan: { code: 'business_essential' },
         source: 'subscription',
         subscription: { provider: 'paddle', channel: 'web' },
       });
-      const trial = await db.subscription.findFirstOrThrow({
-        where: { businessId: b.id, provider: 'trial' },
-      });
-      expect(trial.status).toBe('cancelled');
+      expect((await x.subscriptions(b)).find((s) => s.provider === 'trial')!.status).toBe('cancelled');
       expect(
-        (await post(`/v1/businesses/${b.id}/billing/checkout`, owner, { planCode: 'business_essential' }))
-          .status,
+        (
+          await post(`/v1/businesses/${b.publicId}/billing/checkout`, owner, {
+            planCode: 'business_essential',
+          })
+        ).status,
       ).toBe(409);
     });
   });
 
   it('cancel at period end, undo it, switch to Professional (prorated), card portal, then Paddle ends it', async () => {
-    await withBilling(db, 'business', async () => {
-      const owner = await person();
-      const b = await business(owner);
-      const checkout = await post(`/v1/businesses/${b.id}/billing/checkout`, owner, {
+    await billingOn(async () => {
+      const b = await x.business();
+      const owner = b.owner;
+      const checkout = await post(`/v1/businesses/${b.publicId}/billing/checkout`, owner, {
         planCode: 'business_essential',
       });
       const sub = fake.pay(checkout.body.data.transactionId);
       await deliver('subscription.created', sub);
-      const base = `/v1/businesses/${b.id}/billing/subscription`;
+      const base = `/v1/businesses/${b.publicId}/billing/subscription`;
 
       const cancelled = await post(`${base}/cancel`, owner);
       expect(cancelled.body.data).toMatchObject({
@@ -359,7 +284,7 @@ describe('A business pays for Essential', () => {
         updated_at: new Date(Date.now() + 5000).toISOString(),
       };
       await deliver('subscription.canceled', ended);
-      expect((await get(`/v1/businesses/${b.id}/billing`, owner)).body.data).toMatchObject({
+      expect((await get(`/v1/businesses/${b.publicId}/billing`, owner)).body.data).toMatchObject({
         plan: { code: 'business_free' },
         source: 'default',
       });
@@ -369,22 +294,22 @@ describe('A business pays for Essential', () => {
 
 describe('Admins', () => {
   it('end a paid subscription immediately (in Paddle), which takes the plan away at once', async () => {
-    await withBilling(db, 'business', async () => {
-      const owner = await person();
-      const b = await business(owner);
-      const checkout = await post(`/v1/businesses/${b.id}/billing/checkout`, owner, {
+    await billingOn(async () => {
+      const b = await x.business();
+      const owner = b.owner;
+      const checkout = await post(`/v1/businesses/${b.publicId}/billing/checkout`, owner, {
         planCode: 'business_essential',
       });
       await deliver('subscription.created', fake.pay(checkout.body.data.transactionId));
-      const sub = await db.subscription.findFirstOrThrow({ where: { businessId: b.id, provider: 'paddle' } });
-      const ended = await post(`/v1/admin/billing/subscriptions/${sub.id}/end`, admin, {
+      const sub = (await x.subscriptions(b)).find((s) => s.provider === 'paddle')!;
+      const ended = await post(`/v1/admin/billing/subscriptions/${sub.id}/end`, h.admin, {
         reason: 'Chargeback',
       });
       expect(ended.body.data).toMatchObject({ status: 'cancelled' });
       expect(fake.calls.filter((c) => c.path.endsWith('/cancel')).at(-1)!.body).toEqual({
         effective_from: 'immediately',
       });
-      expect((await get(`/v1/businesses/${b.id}/billing`, owner)).body.data.source).toBe('default');
+      expect((await get(`/v1/businesses/${b.publicId}/billing`, owner)).body.data.source).toBe('default');
     });
   });
 });
@@ -392,21 +317,22 @@ describe('Admins', () => {
 describe('Customers', () => {
   it('can’t buy a plan, even with Paddle set up: BUKU is free for them (D-101)', async () => {
     await sync('user_plus');
-    const me = await person();
+    const me = await x.person();
     const before = fake.calls.length;
     const res = await post('/v1/billing/checkout', me, { planCode: 'user_plus' });
     expect([res.status, res.body.error.code]).toEqual([409, 'CONFLICT']);
     expect(fake.calls.slice(before).filter((c) => c.path === '/transactions')).toEqual([]);
-    expect(await db.subscription.count({ where: { userId: me.id } })).toBe(0);
+    // Nothing of theirs is paid for: no subscription to cancel or change.
+    expect((await post('/v1/billing/me/subscription/cancel', me)).status).toBe(404);
   });
 });
 
 describe('Webhooks are verified, processed once, and in order', () => {
   async function paidBusiness() {
     await sync('business_essential');
-    const owner = await person();
-    const b = await business(owner);
-    const checkout = await post(`/v1/businesses/${b.id}/billing/checkout`, owner, {
+    const b = await x.business();
+    const owner = b.owner;
+    const checkout = await post(`/v1/businesses/${b.publicId}/billing/checkout`, owner, {
       planCode: 'business_essential',
     });
     expect(checkout.status).toBe(201);
@@ -414,18 +340,18 @@ describe('Webhooks are verified, processed once, and in order', () => {
   }
 
   it('refuses bad signatures, wrong secrets and old deliveries; duplicates are processed once', async () => {
-    await withBilling(db, 'business', async () => {
+    await billingOn(async () => {
       const { owner, b, sub } = await paidBusiness();
       expect((await deliver('subscription.created', sub, { secret: 'not-the-secret' })).status).toBe(401);
       expect(
         (await deliver('subscription.created', sub, { ts: Math.floor(Date.now() / 1000) - 3600 })).status,
       ).toBe(401);
-      const unsigned = await request(app)
+      const unsigned = await request(h.app)
         .post('/v1/billing/webhooks/paddle')
         .set('Content-Type', 'application/json')
         .send(JSON.stringify({ event_id: 'evt_x', event_type: 'subscription.created', data: sub }));
       expect(unsigned.status).toBe(401);
-      expect(await db.subscription.count({ where: { businessId: b.id } })).toBe(0);
+      expect(await x.subscriptions(b)).toHaveLength(0);
 
       const eventId = pid('evt');
       expect((await deliver('subscription.created', sub, { eventId })).body.data).toEqual({
@@ -434,8 +360,8 @@ describe('Webhooks are verified, processed once, and in order', () => {
       expect((await deliver('subscription.created', sub, { eventId })).body.data).toEqual({
         processed: false,
       });
-      expect(await db.subscription.count({ where: { businessId: b.id } })).toBe(1);
-      expect((await get(`/v1/businesses/${b.id}/billing`, owner)).body.data).toMatchObject({
+      expect(await x.subscriptions(b)).toHaveLength(1);
+      expect((await get(`/v1/businesses/${b.publicId}/billing`, owner)).body.data).toMatchObject({
         plan: { code: 'business_essential' },
         source: 'subscription',
       });
@@ -443,7 +369,7 @@ describe('Webhooks are verified, processed once, and in order', () => {
   });
 
   it('an older update arriving late is ignored', async () => {
-    await withBilling(db, 'business', async () => {
+    await billingOn(async () => {
       const { b, sub } = await paidBusiness();
       await deliver('subscription.created', sub);
       const newer = {
@@ -458,14 +384,13 @@ describe('Webhooks are verified, processed once, and in order', () => {
       };
       await deliver('subscription.updated', newer);
       await deliver('subscription.past_due', older);
-      expect((await db.subscription.findFirstOrThrow({ where: { businessId: b.id } })).status).toBe('active');
+      expect((await x.subscriptions(b))[0]!.status).toBe('active');
     });
   });
 
   it('events BUKU can’t use are acknowledged (so Paddle stops retrying) and change nothing', async () => {
-    await withBilling(db, 'business', async () => {
+    await billingOn(async () => {
       const { owner, b, sub } = await paidBusiness();
-      const before = await db.subscription.count();
       const unknownPrice = { ...sub, id: pid('sub'), items: [{ price: { id: pid('pri') }, quantity: 1 }] };
       const noAccount = { ...sub, id: pid('sub'), custom_data: null };
       const strangers = {
@@ -476,21 +401,28 @@ describe('Webhooks are verified, processed once, and in order', () => {
       for (const s of [unknownPrice, noAccount, strangers])
         expect((await deliver('subscription.created', s)).status).toBe(200);
       expect((await deliver('transaction.completed', { id: pid('txn') })).status).toBe(200);
-      expect(await db.subscription.count()).toBe(before);
-      expect((await get(`/v1/businesses/${b.id}/billing`, owner)).body.data.source).not.toBe('subscription');
+      const ids = [unknownPrice.id, noAccount.id, strangers.id];
+      const recorded = await h.plane.acrossBusinesses((tx) =>
+        tx.subscription.count({ where: { externalSubscriptionId: { in: ids } } }),
+      );
+      expect(recorded.reduce((n, c) => n + c, 0)).toBe(0);
+      expect(await x.subscriptions(b)).toHaveLength(0);
+      expect((await get(`/v1/businesses/${b.publicId}/billing`, owner)).body.data.source).not.toBe(
+        'subscription',
+      );
     });
   });
 });
 
 describe('When Paddle isn’t there', () => {
   it('a Paddle outage gives a clear 502, and nothing is recorded', async () => {
-    await withBilling(db, 'business', async () => {
+    await billingOn(async () => {
       await sync('business_essential');
-      const owner = await person();
-      const b = await business(owner);
+      const b = await x.business();
+      const owner = b.owner;
       fake.setDown(true);
       try {
-        const res = await post(`/v1/businesses/${b.id}/billing/checkout`, owner, {
+        const res = await post(`/v1/businesses/${b.publicId}/billing/checkout`, owner, {
           planCode: 'business_essential',
         });
         expect([res.status, res.body.error.code]).toEqual([502, 'SERVICE_UNAVAILABLE']);
@@ -501,32 +433,7 @@ describe('When Paddle isn’t there', () => {
   });
 
   it('without Paddle configured, checkout says online payments aren’t set up', async () => {
-    const { buildBillingApp: build } = await import('../src/app.js');
-    const { app: plain } = build({
-      db,
-      redis,
-      verifier: await createJwtVerifier({
-        issuer: 'https://auth.test',
-        audience: 'buku-api',
-        keys: [
-          {
-            keyId: 'k1',
-            publicKeyPem: generateKeyPairSync('rsa', { modulusLength: 2048 })
-              .publicKey.export({ type: 'spki', format: 'pem' })
-              .toString(),
-          },
-        ],
-      }),
-      revocations: createRevocationStore(redis),
-      paddle: null,
-      http: {
-        service: 'x',
-        logger: createLogger({ service: 'x', level: 'silent' }),
-        readiness: new Readiness(),
-        trustProxyHops: 1,
-      },
-    });
-    const res = await request(plain)
+    const res = await request(h.build(null))
       .post('/v1/billing/webhooks/paddle')
       .set('Content-Type', 'application/json')
       .send('{}');

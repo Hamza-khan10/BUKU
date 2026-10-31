@@ -9,14 +9,14 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 > green. Nothing in a later phase is allowed to work around a broken brick in an
 > earlier one — we fix the brick.
 
-| Phase | Scope                                                                                          | Status                                |
-| ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------- |
-| 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34   |
-| 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                        |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ⏸ Paused for the database rebuild     |
-| 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | 🚧 In progress (D1, D2 done; D3 next) |
-| 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                               |
-| 5     | Production: deployment, observability, backups, load + security testing                        | Planned                               |
+| Phase | Scope                                                                                          | Status                                           |
+| ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
+| 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ Resumes at 3.5 (database v2 is on `main`)      |
+| 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
+| 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
+| 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
 
 ---
 
@@ -249,9 +249,15 @@ the sales tax/VAT). Checkout created server-side with the BUKU account bound to 
 webhooks verified, processed once and applied in order; cancel at period end and undo; switch
 plan (prorated); card and invoices in Paddle's portal; admins end a paid plan at once; prices
 synced to Paddle in one call. A paid plan replaces a running trial or grant.
-**To go live:** connect a Paddle sandbox account (docs/DEVELOPMENT.md → "Set up Paddle"), sync
-the web prices, then switch billing on per audience. Google Play and App Store purchases come with
-the mobile app (Phase 4).
+**Sandbox connected (D3g.1, 2026-10-18):** the owner's Paddle sandbox account is set up and a real
+sandbox payment went through end to end on database v2 — checkout, payment with the test card,
+Paddle's signed notifications through a webhook-only relay, the shop on Essential, then cancel,
+undo, a switch to Professional and the card portal (docs/DEVELOPMENT.md → "Set up Paddle").
+**Checkout page (D3i, D-121):** the website's `/checkout` opens Paddle's checkout for the payment
+in Paddle's link; only that page may load Paddle. **To go live:** a live Paddle account, BUKU's own
+domain approved, live keys (`PADDLE_ENVIRONMENT=production` and a `live_…` client-side token on
+the website), then switch billing on for businesses. Google Play and App Store purchases come
+with the mobile app (Phase 4).
 
 ### 2.6 Notification service — ✅ done (events, channels, reminders, WhatsApp, suggestions)
 

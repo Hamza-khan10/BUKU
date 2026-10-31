@@ -1025,3 +1025,161 @@ row passes the same rights and row-level security as real traffic, and it checks
 The byte formats it uses convert from v1's exactly (a blind index by truncation, a ciphertext
 without the key), so D3 can move existing data without reading anyone's email. This completes D2;
 D3 moves the services onto v2.
+
+**D-112 · Services move to database v2 together, on an integration branch (D3).** The services read
+each other's data (booking reads businesses, notification reads appointments), so moving them one
+at a time onto `main` would leave the app half on each database and serving stale data. Each
+service's move is its own reviewed pull request into `feat/db-v2-services`, checked by CI and
+CodeQL there; when all of them are on v2 and the whole stack's tests pass, one pull request brings
+it to `main`. `main` and the website keep working on v1 until then. There is no production data,
+so v2 starts from its own seed. APIs show public IDs for people, businesses and appointments and
+row IDs only inside a business (DATABASE.md DB-042).
+
+**D-113 · auth-service is the first service on database v2 (D3b).** Accounts, sessions and
+two-step sign-in live on each person's user shard; teams on the business's shard; the global
+handles keep an email, a Google account, a username in a business or a device to one person on
+every shard. Three choices made it work without a lookup table per request: a refresh token starts
+with the person's ID, so it goes straight to their shard (the stored hash covers the whole token,
+so changing the ID finds nothing); an account's row is written before its handles are claimed, so a
+handle always leads to an account and a race undoes itself; and the sign-in token says when an
+employee is still on a temporary password, because their account and the business are on
+different shards. Exporting or erasing an account reaches every business through auth's
+cross-business role, by new indexes on the person's appointments and queue tickets. Tokens from v1
+are refused; other services follow in D3c onwards.
+
+**D-114 · business-service on database v2 (D3c).** A business lives on its business shard and is
+found by its public ID or its address through global handles, registered row first and handles
+after, like an account (D-113). Where a person works is kept on their own shard: business-service
+writes the owner's entry when they register a business and keeps its name when it changes, while
+auth-service keeps the team's (D3b); the list is only a pointer, every role is checked on the
+business's shard. Kinds of business stay reference data: owners' suggestions are written on the
+directory and reach every shard by replication, usable at once. Admin tools work on one business
+in its own transaction; the review queue, the reports and the lawful export visit every business
+shard through the service's cross-business role, which is fine for low-traffic admin work.
+
+**D-115 · booking-service on database v2 (D3d).** A booking claims the customer's time on their own
+shard first and only then writes the appointment on the business's shard, so one appointment at a
+time across every business stays a database guarantee, and the claim carries the appointment's ID
+so nothing a crash leaves behind is ever lost or stuck. Everything the customer sees of their
+appointments — the claim, their list, how each visit ended — is kept by one idempotent step that
+reads the appointment as it is, run after each change, for each of booking's own events and by a
+sweeper, so a missed step repairs itself. Reliability moves to a small ledger on each person's
+shard, since their history spans every business shard. The business keeps the name a customer
+booked under, so its list can be searched by name without asking every user shard; erasure blanks
+it.
+
+**D-116 · queue-service on database v2 (D3e).** Sessions and tickets live on the business's shard;
+"one queue at a time, anywhere" is kept on the person's own shard as their current or latest
+ticket, claimed there before the business's shard writes it. The row isn't deleted when a ticket
+ends: a new join replaces it once its ticket no longer holds a place — served, left, a no-show, its
+queue closed, or from an earlier day — so a forgotten ticket can never keep someone out of every
+queue, and a join that failed half-way gives way after 2 minutes. How each ticket ended goes into
+the person's reliability ledger (D-115), written after the front desk's change and again from
+queue's own event, so the front desk's label covers appointments and queues alike. Live screens are
+kept by the business's internal ID; viewers still name a business by public ID or slug.
+
+**D-117 · notification-service on database v2 (D3f).** Everything about a person's messages lives
+on their own shard: their inbox and the record of each send, their preferences, their WhatsApp
+connection and the marks that make a timed message go once. A message to several people is
+delivered shard by shard, each recipient's inbox written in the same transaction that records the
+event (or the mark) as handled there, so a redelivery or a second instance adds nothing and a
+failure on one shard never repeats the others. What messages are about is read on the business's
+shard; reminders and review requests read every business shard a page at a time through
+notification's cross-business role, and suggestions start from each person's own shard (their
+visits are in the reliability ledger, their bookings in their own list). A WhatsApp number is a
+global handle, so an incoming message finds its person and a number belongs to one account; a
+closed account lets it go at once. The admin settings are reference data on the directory. Plan
+notices are a business owner's only (customers are free, D-101).
+
+**D-118 · billing-service on database v2 (D3g).** The catalog — plans, prices, the switch per
+audience, running costs and channel fees — is reference data on the directory, edited only by
+billing-service and copied to every business shard, where plan limits are enforced; billing reads
+plans and settings on the directory itself, so its own answers never wait for replication.
+Subscriptions and plan requests live on the business's shard, and one live subscription per
+business is a database rule again, as it was in v1, so two grants approved together, or a store
+payment and a grant, can't both take effect. A Paddle webhook is recorded as handled and applied in
+one transaction on the paying business's shard, found from the public ID we put in `custom_data`.
+Money is kept in minor units. Customers are free (D-101), so there are no customer subscriptions:
+their account page shows their visits, and checkout, trials and grants for people are refused.
+Admin lists visit every business shard; the admin's audit entries go to their own shard.
+
+**D-119 · Paddle's sandbox, connected safely (D3g.1).** The API key has write access to exactly
+what BUKU calls — products, prices, transactions, subscriptions and customer-portal sessions —
+and nothing that reads people's details; it expires and can be rotated. BUKU's plans are taxed as
+SaaS. Paddle's notifications reach a laptop through a tunnel pointed at a relay that forwards only
+the webhook path, never at the gateway, so the development stack (and its password-free sign-in)
+is never on the internet; the tunnel runs only while testing. The payment-link domain is the
+website's (Paddle refuses `localhost`), and until the website has its checkout page (D3i) a local
+test page opens the same payment. Business billing stays off in development unless a test needs it.
+
+**D-120 · search-service on database v2 (D3h).** Search reads only the catalog (DB-041): one row
+per business across every business shard, so finding places is one query however many shards
+there are. The catalog is kept by **refreshing from the shard**, not by applying what events say:
+an event only names a business, and search re-reads that business as it is now and replaces its
+rows. Each write carries a version taken before its read (a time-ordered ID) and holds a lock per
+business, so a late, repeated or out-of-order event can never put older facts over newer ones.
+An hourly sweep refreshes every business anyway: the repair for a lost event, and what fills an
+empty catalog. Each kind of event still has one publisher: booking announces its menu, closures
+and rating (`listings.changed`), queue its settings (`queue.settings.updated`), and business its
+photos and logo (in `businesses.updated`); today's queue (opened, joined, called, closed) takes a
+cheaper path that only touches the queue row. Ranking figures (D-076) are computed on each shard
+through search's cross-business role and copied onto the catalog every ten minutes. In the API,
+businesses are named by their public IDs, a price is a decimal string in the currency's decimals
+(`"3000.00"`), and a category's ID is a decimal string. ads-service now starts on v2 with the
+catalog (it has no routes yet); analytics keeps using ClickHouse only.
+
+**D-121 · The website on database v2, its checkout page, and simulated time without moving
+appointments (D3i).** The website names people, businesses and appointments by their 12-character
+public IDs and everything under a business (services, employees, tickets) by decimal IDs; one
+definition of both forms lives in `@buku/validation`, shared by the services and the website, so
+an address the API would refuse never reaches it. Paddle's default payment link is the website's
+`/checkout`: it only opens Paddle's checkout for the transaction in the link (the price and plan
+were fixed when billing-service made it), and only that page may load Paddle's script and show
+its payment frame, the sandbox's or the live one according to `PADDLE_ENVIRONMENT`. Tests that
+need time to pass (a visit that happened, one about to start) use one development-only helper
+that works through the data plane as the tools' role and then runs booking's own sync for the
+customer's side. Because an appointment's time can never change on its shard (it is the
+partition key), the helper writes the same appointment — same ID, public ID and code — again at
+the new time in one transaction; services still can't move an appointment. Running the browser
+tests on v2 also showed that a service whose ID lease ran out while the directory couldn't be
+reached (for half a minute, under load) never made an ID again until restarted: it now leases a
+new generator by itself, exactly as a restart would, and makes no IDs until it has one (DB-002).
+
+**D-122 · v1's database leaves the stack (D3j).** With every service, the website and every test
+on v2, v1's schema, migrations, seed, client and the helpers only it used are deleted, and nothing
+creates or migrates its databases any more (the server's first database simply stays empty).
+Each service's `DATABASE_URL` names its own role on the directory, where the data plane starts.
+The roles belong to the whole server, so they are made from the directory, and every database
+then grants its own map from nothing; no service ever had more than its map, and now no
+leftover v1 grant can linger either. An administrative connection is a plain one, for raw SQL
+only. The outbox relay, the idempotency ledger and billing's checks keep only their shard
+versions, so there is one way to do each.
+
+**D-123 · Backups and the restore drill in development (D4a).** Every Postgres server archives its
+WAL with pgBackRest into an encrypted repository from the moment it starts (the archive command
+makes the repository's stanza itself on a new server), so point-in-time recovery covers every
+second since the oldest kept full backup. A backup is trusted only once it has been restored: the
+drill restores the latest backup to a scratch server at a chosen moment and checks it against
+counts taken at that moment, and runs on every pull request. The scratch server never archives,
+replicates or runs jobs, so a drill can't write into the live repository or reach the live
+directory. The repository's passphrase lives only in the environment; losing it loses the
+backups, so it is kept in the password manager too.
+
+**D-124 · TLS 1.3 on every database connection (D4b).** Postgres accepts network connections only
+over TLS 1.3: its `pg_hba.conf` has `hostssl` lines and no `host` line, and ships in the image
+(`hba_file`), so even a server whose data directory predates it enforces it. Every client checks
+the server's certificate and that it names the host dialled (`verify-full`). Services and tools
+use libpq's own settings, `PGSSLMODE` and `PGSSLROOTCERT`, and our Prisma clients accept no mode
+but `verify-full` (or `disable`, which the server refuses), so a client that connects without
+checking can't be configured. Prisma's migration engine gets the same checks in its own URL
+words, and reference-data subscriptions use `verify-full` too. Development certificates come from
+a local authority made by `pnpm bootstrap`, git-ignored; production uses the provider's.
+
+**D-125 · People reach data only through break-glass, and the database watches itself (D4c).**
+Nobody keeps a database login. A person who must look runs `pnpm db:break-glass` with a reason.
+It makes a role for that person and that session: read-only unless the change is agreed, across
+businesses, every statement audited, signing in only on the database host's own socket, and
+dropped afterwards. The reason sits on the role, so the audit log says who, why and what. The
+database's health (archiving, backups, slots, copies, partitions, jobs, limits, the registry, roles
+left behind) is one script. People run it, CI runs it, and Prometheus reads it as metrics, so the
+same checks that pass in development are the ones that page in production.

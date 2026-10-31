@@ -1,5 +1,5 @@
-import { logger } from '@buku/common';
-import type { Database, Prisma, Transaction } from '@buku/database';
+import { idFromString, logger } from '@buku/common';
+import type { BusinessTx, DataPlane, UserShard, UserTx } from '@buku/database';
 import type { EventEnvelope } from './envelope.js';
 import type { EventProducer } from './producer.js';
 
@@ -11,49 +11,71 @@ import type { EventProducer } from './producer.js';
  * but no other service ever hears about it (no confirmation SMS, no
  * analytics, no search update).
  *
- * The fix: write the event into `outbox_events` IN THE SAME DATABASE
- * TRANSACTION as the business change. Either both commit or neither does.
- * The relay below then publishes committed-but-unpublished rows to Kafka and
- * marks them published. If it crashes, it resumes where it left off.
+ * The fix: write the event into the shard's `outbox_events` IN THE SAME DATABASE TRANSACTION as
+ * the business change. Either both commit or neither does. The relay below then publishes
+ * committed-but-unpublished rows to Kafka and marks them published. If it crashes, it resumes
+ * where it left off.
  *
- *   await db.$transaction(async (tx) => {
- *     const appt = await tx.appointment.create({ ... });
- *     await enqueueEvent(tx, createEvent({ type: TOPICS.BOOKINGS_CREATED, subject: appt.id, ... }), 'appointment');
+ *   await plane.inBusiness(businessId, async (tx) => {
+ *     const appointment = await tx.appointment.create({ ... });
+ *     await enqueueShardEvent(tx, plane.id(), createEvent({ type: TOPICS.BOOKINGS_CREATED, ... }), 'appointment');
  *   });
  *
- * Delivery is at-least-once (a crash after publishing but before marking
- * the row can publish it twice), which is why consumers dedupe on event.id.
+ * Delivery is at-least-once (a crash after publishing but before marking the row can publish it
+ * twice), which is why consumers dedupe on the event (processOnceOnShard).
  */
 
-export async function enqueueEvent(
-  tx: Transaction,
+/**
+ * On a database v2 shard (D3): the row gets its own snowflake ID, and the aggregate's ID is a v2 ID
+ * too. Written in the shard transaction that makes the change it announces.
+ */
+export async function enqueueShardEvent(
+  tx: UserTx | BusinessTx,
+  id: bigint,
   event: EventEnvelope,
   aggregateType: string,
   options: { partitionKey?: string; headers?: Record<string, string> } = {},
 ): Promise<void> {
-  await tx.outboxEvent.create({
+  const aggregateId = idFromString(event.subject);
+  if (aggregateId === null)
+    throw new Error(`a v2 event's subject must be an ID, not ${JSON.stringify(event.subject)}`);
+  await (tx as UserTx).outboxEvent.create({
     data: {
+      id,
       aggregateType,
-      aggregateId: event.subject,
-      // Only the writing service's relay publishes it (D-092).
+      aggregateId,
       source: event.source,
       topic: event.type,
       partitionKey: options.partitionKey ?? event.subject,
-      payload: event as unknown as Prisma.InputJsonValue,
+      payload: event as unknown as UserShard.Prisma.InputJsonValue,
       ...(options.headers ? { headers: options.headers } : {}),
     },
   });
 }
 
+/** A shard the relay publishes from. */
+interface RelayDatabase {
+  $transaction<T>(
+    fn: (tx: RelayTransaction) => Promise<T>,
+    options?: { timeout?: number; maxWait?: number },
+  ): Promise<T>;
+  $executeRaw(query: TemplateStringsArray, ...values: unknown[]): Promise<number>;
+}
+interface RelayTransaction {
+  $queryRaw<T>(query: TemplateStringsArray, ...values: unknown[]): Promise<T>;
+  $executeRaw(query: TemplateStringsArray, ...values: unknown[]): Promise<number>;
+}
+
 interface OutboxRow {
-  id: string;
+  id: bigint;
   partition_key: string;
   payload: EventEnvelope;
   headers: Record<string, string> | null;
 }
 
 export interface OutboxRelayOptions {
-  db: Database;
+  /** A user or business shard (old days are dropped with their partitions, DB-006). */
+  db: RelayDatabase;
   producer: EventProducer;
   /**
    * The service whose events this relay publishes ("booking-service"): each
@@ -63,8 +85,6 @@ export interface OutboxRelayOptions {
   source: string;
   batchSize?: number;
   pollIntervalMs?: number;
-  /** Published rows older than this are deleted. Default 7 days. */
-  retentionDays?: number;
 }
 
 // Arbitrary constant; all relay instances contend for the same advisory lock.
@@ -74,15 +94,12 @@ export class OutboxRelay {
   private readonly log = logger.child({ module: 'outbox-relay' });
   private running = false;
   private loop: Promise<void> | undefined;
-  private lastPrune = 0;
   private readonly batchSize: number;
   private readonly pollIntervalMs: number;
-  private readonly retentionDays: number;
 
   constructor(private readonly options: OutboxRelayOptions) {
     this.batchSize = options.batchSize ?? 100;
     this.pollIntervalMs = options.pollIntervalMs ?? 500;
-    this.retentionDays = options.retentionDays ?? 7;
   }
 
   /**
@@ -93,7 +110,7 @@ export class OutboxRelay {
    * order even when several replicas run a relay. The others find it taken.
    */
   async runOnce(): Promise<number> {
-    const { db, producer } = this.options;
+    const { producer, db } = this.options;
     return db.$transaction(
       async (tx) => {
         const [lock] = await tx.$queryRaw<
@@ -121,28 +138,18 @@ export class OutboxRelay {
           );
         } catch (err) {
           const message = err instanceof Error ? err.message.slice(0, 1000) : String(err);
-          await tx.$executeRaw`
-            UPDATE outbox_events SET attempts = attempts + 1, last_error = ${message}
-            WHERE id = ANY(${ids}::uuid[])`;
+          await tx.$executeRaw`UPDATE outbox_events SET attempts = attempts + 1, last_error = ${message}
+            WHERE id = ANY(${ids}::bigint[])`;
           this.log.error({ err, count: rows.length }, 'outbox publish failed; will retry');
           return 0;
         }
 
-        await tx.$executeRaw`
-          UPDATE outbox_events SET published_at = now(), attempts = attempts + 1, last_error = NULL
-          WHERE id = ANY(${ids}::uuid[])`;
+        await tx.$executeRaw`UPDATE outbox_events SET published_at = now(), attempts = attempts + 1, last_error = NULL
+          WHERE id = ANY(${ids}::bigint[])`;
         return rows.length;
       },
       { timeout: 45_000, maxWait: 5_000 },
     );
-  }
-
-  /** Delete published rows past retention (they are already in Kafka). */
-  async prune(): Promise<number> {
-    return this.options.db.$executeRaw`
-      DELETE FROM outbox_events
-      WHERE source = ${this.options.source}
-        AND published_at IS NOT NULL AND published_at < now() - make_interval(days => ${this.retentionDays})`;
   }
 
   start(): void {
@@ -155,11 +162,6 @@ export class OutboxRelay {
           const published = await this.runOnce();
           // Drain quickly while there is a backlog; back off when idle.
           idleDelay = published === this.batchSize ? 0 : this.pollIntervalMs;
-          if (Date.now() - this.lastPrune > 60 * 60 * 1000) {
-            this.lastPrune = Date.now();
-            const pruned = await this.prune();
-            if (pruned) this.log.info({ pruned }, 'pruned published outbox rows');
-          }
         } catch (err) {
           this.log.error({ err }, 'outbox relay iteration failed');
           idleDelay = Math.min(Math.max(idleDelay * 2, 1_000), 30_000);
@@ -174,5 +176,59 @@ export class OutboxRelay {
     this.running = false;
     await this.loop;
     this.log.info('outbox relay stopped');
+  }
+}
+
+/**
+ * One relay per shard a service writes events on (user and business shards, D3), started and
+ * stopped together; shards opened later are picked up within a minute.
+ */
+export class ShardOutboxRelays {
+  private readonly log = logger.child({ module: 'outbox-relay' });
+  private readonly relays = new Map<string, OutboxRelay>();
+  private timer: NodeJS.Timeout | undefined;
+
+  constructor(
+    private readonly options: {
+      plane: DataPlane;
+      producer: EventProducer;
+      source: string;
+      families: readonly ('user' | 'business')[];
+      pollIntervalMs?: number;
+    },
+  ) {}
+
+  async start(): Promise<void> {
+    await this.refresh();
+    this.timer = setInterval(
+      () => void this.refresh().catch((err: unknown) => this.log.error({ err }, 'relay refresh failed')),
+      60_000,
+    );
+    this.timer.unref();
+  }
+
+  private async refresh(): Promise<void> {
+    const { plane } = this.options;
+    for (const family of this.options.families) {
+      for (const shard of await plane.router.shards(family)) {
+        const key = `${shard.clusterId}/${shard.databaseName}`;
+        if (this.relays.has(key)) continue;
+        const db = family === 'user' ? plane.users.forShard(shard) : plane.businesses.forShard(shard);
+        const relay = new OutboxRelay({
+          db,
+          producer: this.options.producer,
+          source: this.options.source,
+          ...(this.options.pollIntervalMs !== undefined && { pollIntervalMs: this.options.pollIntervalMs }),
+        });
+        relay.start();
+        this.relays.set(key, relay);
+      }
+    }
+  }
+
+  async stop(): Promise<void> {
+    if (this.timer) clearInterval(this.timer);
+    await Promise.all([...this.relays.values()].map((r) => r.stop()));
+    this.relays.clear();
   }
 }

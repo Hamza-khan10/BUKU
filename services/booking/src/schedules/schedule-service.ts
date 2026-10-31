@@ -1,12 +1,13 @@
-import { AppError, can, ErrorCodes } from '@buku/common';
+import { AppError, can, ErrorCodes, type Actor } from '@buku/common';
 import {
-  businessRoleOf,
-  recordAudit,
-  requireBusinessPermission,
-  type Database,
-  type Transaction,
+  businessRoleOfActor,
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  type BusinessTx,
+  type DataPlane,
 } from '@buku/database';
 import { assertNotSuspended } from '../businesses.js';
+import { announceListing } from '../listing.js';
 import { auditCtx, type RequestContext } from '../http/context.js';
 
 /**
@@ -19,7 +20,7 @@ import { auditCtx, type RequestContext } from '../http/context.js';
  *  • Closures: the whole business, e.g. a public holiday.
  *
  * Employees manage their OWN schedule (`schedule.manage_own`); owners and
- * managers manage everyone's (`schedule.manage_all`).
+ * managers manage everyone's (`schedule.manage_all`). All of it on the business's shard.
  */
 
 export interface TimeRange {
@@ -46,34 +47,37 @@ export interface TimeOffInput {
 const MAX_DAYS_AT_ONCE = 62;
 
 export class ScheduleService {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly plane: DataPlane) {}
 
   // ── Working hours ────────────────────────────────────────────────────────
 
-  async getHours(businessId: string, staffId: string, actorId: string): Promise<WeekDay[]> {
-    await requireBusinessPermission(this.db, businessId, actorId, 'business.view_private');
-    await this.findStaff(businessId, staffId);
-    return this.hoursOf(staffId);
+  async getHours(businessId: bigint, staffId: bigint, actor: Actor): Promise<WeekDay[]> {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.view_private');
+      await findStaff(tx, businessId, staffId);
+      return hoursOf(tx, staffId);
+    });
   }
 
   async setHours(
-    businessId: string,
-    staffId: string,
-    actorId: string,
+    businessId: bigint,
+    staffId: bigint,
+    actor: Actor,
     days: WeekDay[],
     ctx: RequestContext,
   ): Promise<WeekDay[]> {
-    await this.authorizeFor(businessId, staffId, actorId);
     const seen = new Set<number>();
     for (const day of days) {
       if (seen.has(day.dayOfWeek)) throw AppError.badRequest(`Day ${day.dayOfWeek} is listed twice`);
       seen.add(day.dayOfWeek);
       assertNoOverlap(day.ranges, `day ${day.dayOfWeek}`);
     }
-    await this.db.$transaction(async (tx) => {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await authorizeFor(tx, businessId, staffId, actor);
       await tx.availabilityRule.deleteMany({ where: { businessId, staffId } });
       const rows = days.flatMap((d) =>
         d.ranges.map((r) => ({
+          id: this.plane.id(),
           businessId,
           staffId,
           dayOfWeek: d.dayOfWeek,
@@ -82,91 +86,94 @@ export class ScheduleService {
         })),
       );
       if (rows.length) await tx.availabilityRule.createMany({ data: rows });
-      await this.audit(tx, actorId, 'booking.hours_updated', 'staff', staffId, ctx);
+      await this.audit(tx, actor.id, 'booking.hours_updated', 'staff', staffId, ctx);
+      return hoursOf(tx, staffId);
     });
-    return this.hoursOf(staffId);
   }
 
   // ── Time off / extra hours (one employee) ────────────────────────────────
 
-  async listTimeOff(businessId: string, staffId: string, actorId: string) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'business.view_private');
-    await this.findStaff(businessId, staffId);
-    return this.upcoming(businessId, staffId);
+  async listTimeOff(businessId: bigint, staffId: bigint, actor: Actor) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.view_private');
+      await findStaff(tx, businessId, staffId);
+      return upcoming(tx, businessId, staffId);
+    });
   }
 
   async addTimeOff(
-    businessId: string,
-    staffId: string,
-    actorId: string,
+    businessId: bigint,
+    staffId: bigint,
+    actor: Actor,
     input: TimeOffInput,
     ctx: RequestContext,
   ) {
-    await this.authorizeFor(businessId, staffId, actorId);
-    await this.addExceptions(businessId, staffId, input);
-    await this.audit(this.db, actorId, `booking.${input.kind}_added`, 'staff', staffId, ctx);
-    return this.upcoming(businessId, staffId);
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await authorizeFor(tx, businessId, staffId, actor);
+      await this.addExceptions(tx, businessId, staffId, input);
+      await this.audit(tx, actor.id, `booking.${input.kind}_added`, 'staff', staffId, ctx);
+      return upcoming(tx, businessId, staffId);
+    });
   }
 
   async removeTimeOff(
-    businessId: string,
-    staffId: string,
-    entryId: string,
-    actorId: string,
+    businessId: bigint,
+    staffId: bigint,
+    entryId: bigint,
+    actor: Actor,
     ctx: RequestContext,
   ) {
-    await this.authorizeFor(businessId, staffId, actorId);
-    const { count } = await this.db.availabilityException.deleteMany({
-      where: { id: entryId, businessId, staffId },
+    await this.plane.inBusiness(businessId, async (tx) => {
+      await authorizeFor(tx, businessId, staffId, actor);
+      const { count } = await tx.availabilityException.deleteMany({
+        where: { id: entryId, businessId, staffId },
+      });
+      if (count === 0) throw AppError.notFound('Time off');
+      await this.audit(tx, actor.id, 'booking.time_off_removed', 'staff', staffId, ctx);
     });
-    if (count === 0) throw AppError.notFound('Time off');
-    await this.audit(this.db, actorId, 'booking.time_off_removed', 'staff', staffId, ctx);
   }
 
   // ── Business closures (everyone) ─────────────────────────────────────────
 
-  async listClosures(businessId: string, actorId: string) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'business.view_private');
-    return this.upcoming(businessId, null);
-  }
-
-  async addClosure(
-    businessId: string,
-    actorId: string,
-    input: Omit<TimeOffInput, 'kind'>,
-    ctx: RequestContext,
-  ) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'schedule.manage_all');
-    await assertNotSuspended(this.db, businessId);
-    await this.addExceptions(businessId, null, { ...input, kind: 'time_off' });
-    await this.audit(this.db, actorId, 'booking.closure_added', 'business', businessId, ctx);
-    return this.upcoming(businessId, null);
-  }
-
-  async removeClosure(businessId: string, closureId: string, actorId: string, ctx: RequestContext) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'schedule.manage_all');
-    const { count } = await this.db.availabilityException.deleteMany({
-      where: { id: closureId, businessId, staffId: null },
+  async listClosures(businessId: bigint, actor: Actor) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.view_private');
+      return upcoming(tx, businessId, null);
     });
-    if (count === 0) throw AppError.notFound('Closure');
-    await this.audit(this.db, actorId, 'booking.closure_removed', 'business', businessId, ctx);
+  }
+
+  async addClosure(businessId: bigint, actor: Actor, input: Omit<TimeOffInput, 'kind'>, ctx: RequestContext) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'schedule.manage_all');
+      await assertNotSuspended(tx, businessId);
+      await this.addExceptions(tx, businessId, null, { ...input, kind: 'time_off' });
+      await this.audit(tx, actor.id, 'booking.closure_added', 'business', businessId, ctx);
+      await announceListing(tx, this.plane, businessId, 'closures');
+      return upcoming(tx, businessId, null);
+    });
+  }
+
+  async removeClosure(businessId: bigint, closureId: bigint, actor: Actor, ctx: RequestContext) {
+    await this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'schedule.manage_all');
+      const { count } = await tx.availabilityException.deleteMany({
+        where: { id: closureId, businessId, staffId: null },
+      });
+      if (count === 0) throw AppError.notFound('Closure');
+      await this.audit(tx, actor.id, 'booking.closure_removed', 'business', businessId, ctx);
+      await announceListing(tx, this.plane, businessId, 'closures');
+    });
   }
 
   // ── internals ────────────────────────────────────────────────────────────
 
-  private async hoursOf(staffId: string): Promise<WeekDay[]> {
-    const rules = await this.db.availabilityRule.findMany({
-      where: { staffId, isActive: true },
-      orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
-    });
-    const days = new Map<number, TimeRange[]>();
-    for (const r of rules)
-      days.set(r.dayOfWeek, [...(days.get(r.dayOfWeek) ?? []), { start: r.startTime, end: r.endTime }]);
-    return [...days.entries()].map(([dayOfWeek, ranges]) => ({ dayOfWeek, ranges }));
-  }
-
-  private async addExceptions(businessId: string, staffId: string | null, input: TimeOffInput) {
-    const business = await this.db.business.findUniqueOrThrow({
+  private async addExceptions(
+    tx: BusinessTx,
+    businessId: bigint,
+    staffId: bigint | null,
+    input: TimeOffInput,
+  ) {
+    const business = await tx.business.findUniqueOrThrow({
       where: { id: businessId },
       select: { timezone: true },
     });
@@ -188,12 +195,14 @@ export class ScheduleService {
       throw AppError.badRequest('Extra hours need one date with startTime and endTime');
     }
 
-    await this.db.availabilityException.createMany({
+    await tx.availabilityException.createMany({
       data: dates.map((date) => ({
+        id: this.plane.id(),
         businessId,
         staffId,
         exceptionDate: new Date(`${date}T00:00:00Z`),
-        type: input.kind === 'extra_hours' ? ('extra_hours' as const) : ('holiday' as const),
+        // A whole day off is a holiday, part of one a change to the day (the table's rule, D2b).
+        type: input.kind === 'extra_hours' ? 'extra_hours' : partial ? 'modified' : 'holiday',
         startTime: input.startTime ?? null,
         endTime: input.endTime ?? null,
         reason: input.reason ?? null,
@@ -201,59 +210,76 @@ export class ScheduleService {
     });
   }
 
-  private async upcoming(businessId: string, staffId: string | null) {
-    const business = await this.db.business.findUniqueOrThrow({
-      where: { id: businessId },
-      select: { timezone: true },
-    });
-    const rows = await this.db.availabilityException.findMany({
-      where: {
-        businessId,
-        staffId,
-        exceptionDate: { gte: new Date(`${todayIn(business.timezone)}T00:00:00Z`) },
-      },
-      orderBy: [{ exceptionDate: 'asc' }, { startTime: 'asc' }],
-    });
-    return rows.map((r) => ({
-      id: r.id,
-      date: r.exceptionDate.toISOString().slice(0, 10),
-      kind: r.type === 'extra_hours' ? 'extra_hours' : 'time_off',
-      startTime: r.startTime,
-      endTime: r.endTime,
-      reason: r.reason,
-    }));
-  }
-
-  /** Managers and owners: anyone's schedule. Everyone else: only their own. */
-  private async authorizeFor(businessId: string, staffId: string, actorId: string) {
-    const role = await businessRoleOf(this.db, businessId, actorId);
-    if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
-    const staff = await this.findStaff(businessId, staffId);
-    await assertNotSuspended(this.db, businessId);
-    if (can(role, 'schedule.manage_all')) return staff;
-    if (can(role, 'schedule.manage_own') && staff.userId === actorId) return staff;
-    throw AppError.forbidden('You can only change your own schedule');
-  }
-
-  private async findStaff(businessId: string, staffId: string) {
-    const staff = await this.db.staff.findFirst({
-      where: { id: staffId, businessId },
-      select: { id: true, userId: true },
-    });
-    if (!staff) throw AppError.notFound('Staff member');
-    return staff;
-  }
-
   private audit(
-    db: Database | Transaction,
-    userId: string,
+    tx: BusinessTx,
+    userId: bigint,
     action: string,
     resourceType: string,
-    resourceId: string,
+    resourceId: bigint,
     ctx: RequestContext,
   ) {
-    return recordAudit(db, { userId, action, resourceType, resourceId, ...auditCtx(ctx) });
+    return recordShardAudit(tx, this.plane.id(), {
+      userId,
+      action,
+      resourceType,
+      resourceId,
+      ...auditCtx(ctx),
+    });
   }
+}
+
+async function hoursOf(tx: BusinessTx, staffId: bigint): Promise<WeekDay[]> {
+  const rules = await tx.availabilityRule.findMany({
+    where: { staffId, isActive: true },
+    orderBy: [{ dayOfWeek: 'asc' }, { startTime: 'asc' }],
+  });
+  const days = new Map<number, TimeRange[]>();
+  for (const r of rules)
+    days.set(r.dayOfWeek, [...(days.get(r.dayOfWeek) ?? []), { start: r.startTime, end: r.endTime }]);
+  return [...days.entries()].map(([dayOfWeek, ranges]) => ({ dayOfWeek, ranges }));
+}
+
+async function upcoming(tx: BusinessTx, businessId: bigint, staffId: bigint | null) {
+  const business = await tx.business.findUniqueOrThrow({
+    where: { id: businessId },
+    select: { timezone: true },
+  });
+  const rows = await tx.availabilityException.findMany({
+    where: {
+      businessId,
+      staffId,
+      exceptionDate: { gte: new Date(`${todayIn(business.timezone)}T00:00:00Z`) },
+    },
+    orderBy: [{ exceptionDate: 'asc' }, { startTime: 'asc' }],
+  });
+  return rows.map((r) => ({
+    id: r.id.toString(),
+    date: r.exceptionDate.toISOString().slice(0, 10),
+    kind: r.type === 'extra_hours' ? 'extra_hours' : 'time_off',
+    startTime: r.startTime,
+    endTime: r.endTime,
+    reason: r.reason,
+  }));
+}
+
+/** Managers and owners: anyone's schedule. Everyone else: only their own. */
+async function authorizeFor(tx: BusinessTx, businessId: bigint, staffId: bigint, actor: Actor) {
+  const role = await businessRoleOfActor(tx, businessId, actor);
+  if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+  const staff = await findStaff(tx, businessId, staffId);
+  await assertNotSuspended(tx, businessId);
+  if (can(role, 'schedule.manage_all')) return staff;
+  if (can(role, 'schedule.manage_own') && staff.userId === actor.id) return staff;
+  throw AppError.forbidden('You can only change your own schedule');
+}
+
+async function findStaff(tx: BusinessTx, businessId: bigint, staffId: bigint) {
+  const staff = await tx.staff.findFirst({
+    where: { id: staffId, businessId },
+    select: { id: true, userId: true },
+  });
+  if (!staff) throw AppError.notFound('Staff member');
+  return staff;
 }
 
 function assertNoOverlap(ranges: TimeRange[], where: string) {

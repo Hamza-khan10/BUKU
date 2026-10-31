@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
-import { sql } from './db';
+import { closeBusiness } from './db';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible, watchForProblems } from './helpers';
 import { png } from './pictures';
@@ -32,8 +32,7 @@ test.describe('Adding a business', () => {
   });
 
   test.afterAll(() => {
-    for (const id of made)
-      sql(`UPDATE businesses SET deleted_at = now() WHERE id = '${id}' AND deleted_at IS NULL`);
+    for (const id of made) closeBusiness(id);
   });
 
   test('an owner adds their business, its hours and a first service; it goes live, not verified', async ({
@@ -73,8 +72,8 @@ test.describe('Adding a business', () => {
     await page.getByRole('checkbox', { name: /business terms/ }).click();
     await page.getByRole('button', { name: 'Put my business on BUKU' }).click();
 
-    await expect(page).toHaveURL(/\/business\/[0-9a-f-]{36}\/setup$/, { timeout: 20_000 });
-    const id = /\/business\/([0-9a-f-]{36})\//.exec(page.url())![1]!;
+    await expect(page).toHaveURL(/\/business\/[0-9A-Za-z]{12}\/setup$/, { timeout: 20_000 });
+    const id = /\/business\/([0-9A-Za-z]{12})\//.exec(page.url())![1]!;
     made.push(id);
 
     // Opening hours: the usual week to start from, Sunday closed.
@@ -157,8 +156,8 @@ test.describe('Adding a business', () => {
     await page.getByLabel('Or paste it from a map').fill('31.5204, 74.3587');
     await page.getByRole('checkbox', { name: /business terms/ }).click();
     await page.getByRole('button', { name: 'Put my business on BUKU' }).click();
-    await expect(page).toHaveURL(/\/business\/[0-9a-f-]{36}\/setup$/, { timeout: 20_000 });
-    made.push(/\/business\/([0-9a-f-]{36})\//.exec(page.url())![1]!);
+    await expect(page).toHaveURL(/\/business\/[0-9A-Za-z]{12}\/setup$/, { timeout: 20_000 });
+    made.push(/\/business\/([0-9A-Za-z]{12})\//.exec(page.url())![1]!);
     await page.goto(page.url().replace(/\/setup$/, ''));
     await expect(page.getByText(`${kind} · Lahore`)).toBeVisible();
     expect(problems).toEqual([]);

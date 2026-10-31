@@ -3,6 +3,7 @@ import type { ShardInfo, ShardRouter } from './directory.js';
 import { PrismaClient as BusinessShardPrismaClient } from './generated/business/client.js';
 import { PrismaClient as CatalogPrismaClient } from './generated/catalog/client.js';
 import { PrismaClient as UserShardPrismaClient } from './generated/user/client.js';
+import { tlsOptions } from './tls.js';
 
 /**
  * Connections to shard databases (docs/DATABASE.md DB-010…DB-012). A shard's address is its
@@ -54,6 +55,8 @@ export function createUserShardClient(options: {
     application_name: options.applicationName,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
+    // TLS 1.3, the server's certificate and name checked (DB-020; tls.ts).
+    ssl: tlsOptions(),
   });
   return new UserShardPrismaClient({ adapter });
 }
@@ -74,6 +77,8 @@ export function createBusinessShardClient(options: {
     application_name: options.applicationName,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
+    // TLS 1.3, the server's certificate and name checked (DB-020; tls.ts).
+    ssl: tlsOptions(),
   });
   return new BusinessShardPrismaClient({ adapter });
 }
@@ -153,6 +158,8 @@ export function createCatalogClient(options: {
     application_name: options.applicationName,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
+    // TLS 1.3, the server's certificate and name checked (DB-020; tls.ts).
+    ssl: tlsOptions(),
   });
   return new CatalogPrismaClient({ adapter });
 }

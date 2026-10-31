@@ -11,7 +11,17 @@ import {
   type Database,
   type DirectoryClient,
 } from '../src/index.js';
-import { applyShardAccess } from '../src/apply-access.js';
+import { directoryAccessStatements } from '../src/access-sql.js';
+import { applyShardAccess, applyStatements } from '../src/apply-access.js';
+import { DataPlane } from '../src/data-plane.js';
+// Events are @buku/kafka's; tested here, where a shard is at hand.
+import {
+  createEvent,
+  enqueueShardEvent,
+  OutboxRelay,
+  processOnceOnShard,
+  type EventProducer,
+} from '../../kafka/src/index.js';
 import { dropDatabase, provisionShards, waitForReferenceCopy } from '../src/provision.js';
 import { asService, ensureServiceRoles, passwords } from './service-roles.js';
 import { testEnv } from './int-env.js';
@@ -33,6 +43,7 @@ let directory: DirectoryClient;
 let server: Database; // the admin, on the cluster's `postgres` database
 let app: BusinessShardClient; // a service-like role: row-level security applies
 let owner: Database; // the schema owner: not subject to it
+let placer: DirectoryClient; // places new businesses, as a service does (registry.place)
 
 beforeAll(async () => {
   directory = createDirectoryClient({
@@ -88,6 +99,10 @@ beforeAll(async () => {
     url: shardUrl(info, testEnv.migrator, env),
     applicationName: 'business-shard-int-test',
   });
+  placer = createDirectoryClient({
+    url: testEnv.directoryAppUrl,
+    applicationName: 'business-shard-int-test',
+  });
 });
 
 afterAll(async () => {
@@ -95,6 +110,7 @@ afterAll(async () => {
   await owner?.$disconnect();
   await server?.$disconnect();
   await directory?.$disconnect();
+  await placer?.$disconnect();
 });
 
 type Tx = Parameters<Parameters<BusinessShardClient['$transaction']>[0]>[0];
@@ -112,6 +128,7 @@ const code = () =>
 /** A business with one service (30 minutes + 10 of clean-up), two employees and a chair. */
 async function aBusiness(name: string) {
   const id = ids.next();
+  await placer.$queryRaw`SELECT shard_no FROM registry.place('business', ${id}::bigint)`;
   return asBusiness(id, async (tx) => {
     await tx.business.create({
       data: {
@@ -446,21 +463,43 @@ describe('the rest of a business’s day', () => {
 
   it('a business’s rating and count follow its visible reviews; its place follows lat/lng', async () => {
     const b = await aBusiness('rated');
-    const review = (rating: number) =>
-      asBusiness(b.id, (tx) =>
+    let hour = 9;
+    const review = async (rating: number) => {
+      const visit = await book(b, day(12, hour++), { status: 'completed' });
+      return asBusiness(b.id, (tx) =>
         tx.review.create({
           data: {
             id: ids.next(),
-            appointmentId: ids.next(),
-            appointmentStartAt: day(12, 9),
+            appointmentId: visit.id,
+            appointmentStartAt: visit.startAt,
             businessId: b.id,
-            userId: 1n,
+            userId: visit.userId,
             overallRating: rating,
           },
         }),
       );
+    };
     await review(5);
     const two = await review(2);
+    // A review is of a real visit: its appointment, here, by the same customer (D3d).
+    const visit = await book(b, day(12, hour++), { status: 'completed' });
+    const wrong = (data: Record<string, unknown>) =>
+      asBusiness(b.id, (tx) =>
+        tx.review.create({
+          data: {
+            id: ids.next(),
+            appointmentId: visit.id,
+            appointmentStartAt: visit.startAt,
+            businessId: b.id,
+            userId: visit.userId,
+            overallRating: 1,
+            ...data,
+          },
+        }),
+      );
+    await expect(wrong({ appointmentId: ids.next() })).rejects.toThrow(/does not match its appointment/);
+    await expect(wrong({ userId: visit.userId + 1n })).rejects.toThrow(/does not match its appointment/);
+    await expect(wrong({ appointmentStartAt: day(13, 9) })).rejects.toThrow(/does not match its appointment/);
     let biz = await asBusiness(b.id, (tx) => tx.business.findUniqueOrThrow({ where: { id: b.id } }));
     expect([biz.reviewCount, biz.avgRating.toString()]).toEqual([2, '3.5']);
     await asBusiness(b.id, (tx) =>
@@ -660,5 +699,134 @@ describe('each service’s rights on a business shard (D2d)', () => {
     } finally {
       await analytics.$disconnect();
     }
+  });
+});
+
+describe('a service’s data plane on business shards (D3a)', () => {
+  const planeFor = (service: 'notification' | 'analytics') => {
+    const url = new URL(testEnv.cluster);
+    url.username = `buku_svc_${service}`;
+    url.password = encodeURIComponent(passwords[service]);
+    url.pathname = '/buku_test';
+    return DataPlane.start({
+      service,
+      databaseUrl: url.toString(),
+      directoryUrl: (() => {
+        const d = new URL(url.toString());
+        d.pathname = '/buku_directory_test';
+        return d.toString();
+      })(),
+      instance: `plane-test-${service}`,
+      env,
+    });
+  };
+  beforeAll(async () => {
+    await ensureServiceRoles();
+    await applyStatements(
+      testEnv.adminUrl('buku_directory_test'),
+      directoryAccessStatements('buku_directory_test', passwords),
+    );
+    await applyShardAccess(testEnv.adminUrl(SHARD), 'business', passwords);
+  });
+
+  it('scopes work to one business, or visits every shard through the cross-business role', async () => {
+    const a = await aBusiness('plane-one');
+    const c = await aBusiness('plane-two');
+    await book(a, day(22, 9));
+    await book(c, day(22, 9));
+    await book(c, day(22, 11));
+    const plane = await planeFor('notification');
+    try {
+      expect(await plane.inBusiness(a.id, (tx) => tx.appointment.count())).toBe(1);
+      expect(await plane.inBusiness(c.id, (tx) => tx.appointment.count())).toBe(2);
+      const all = await plane.acrossBusinesses((tx) =>
+        tx.appointment.count({ where: { businessId: { in: [a.id, c.id] } } }),
+      );
+      expect(all.reduce((n, x) => n + x, 0)).toBe(3);
+      const id = plane.id();
+      expect(plane.id() > id).toBe(true);
+    } finally {
+      await plane.close();
+    }
+    // A service with no cross-business role can't sweep.
+    const analytics = await planeFor('analytics').catch((err: unknown) => err);
+    if (analytics instanceof DataPlane) {
+      try {
+        await expect(analytics.acrossBusinesses(() => Promise.resolve(0))).rejects.toThrow(
+          /no cross-business role/,
+        );
+      } finally {
+        await analytics.close();
+      }
+    }
+  });
+
+  it('an event written with its change is published from the shard, and handled once', async () => {
+    const b = await aBusiness('plane-events');
+    const published: string[] = [];
+    const producer = {
+      publishMany: (messages: { event: { id: string } }[]) => {
+        for (const m of messages) published.push(m.event.id);
+        return Promise.resolve();
+      },
+    } as unknown as EventProducer;
+    const eventId = ids.next();
+    const event = createEvent({
+      id: eventId.toString(),
+      type: 'bookings.created',
+      source: 'buku-app-service',
+      subject: b.id.toString(),
+      data: { test: true },
+    });
+    await asBusiness(b.id, (tx) => enqueueShardEvent(tx, ids.next(), event, 'business'));
+    const relay = new OutboxRelay({ db: app, producer, source: 'buku-app-service' });
+    expect(await relay.runOnce()).toBe(1);
+    expect(published).toEqual([eventId.toString()]);
+    expect(await relay.runOnce()).toBe(0);
+    // A consumer handles it once, even if it comes again days later.
+    const first = await app.$transaction((tx) => processOnceOnShard(tx, 'plane-test', event));
+    const again = await app.$transaction((tx) => processOnceOnShard(tx, 'plane-test', event));
+    expect([first, again]).toEqual([true, false]);
+  });
+
+  it('an event goes out only if its change commits; a handler that fails leaves it to be handled again', async () => {
+    const b = await aBusiness('plane-rollback');
+    const published: string[] = [];
+    const producer = {
+      publishMany: (messages: { event: { id: string } }[]) => {
+        for (const m of messages) published.push(m.event.id);
+        return Promise.resolve();
+      },
+    } as unknown as EventProducer;
+    const event = (id: bigint) =>
+      createEvent({
+        id: id.toString(),
+        type: 'bookings.created',
+        source: 'buku-app-service',
+        subject: b.id.toString(),
+        data: { test: true },
+      });
+    const kept = event(ids.next());
+    const dropped = event(ids.next());
+    await asBusiness(b.id, (tx) => enqueueShardEvent(tx, ids.next(), kept, 'business'));
+    await expect(
+      asBusiness(b.id, async (tx) => {
+        await enqueueShardEvent(tx, ids.next(), dropped, 'business');
+        throw new Error('the change failed');
+      }),
+    ).rejects.toThrow('the change failed');
+    const relay = new OutboxRelay({ db: app, producer, source: 'buku-app-service' });
+    while ((await relay.runOnce()) > 0);
+    expect(published).toContain(kept.id);
+    expect(published).not.toContain(dropped.id);
+
+    // The mark that it was handled is written with the handler's work: if that fails, so does the mark.
+    await expect(
+      app.$transaction(async (tx) => {
+        await processOnceOnShard(tx, 'plane-test', kept);
+        throw new Error('the side effect failed');
+      }),
+    ).rejects.toThrow('the side effect failed');
+    expect(await app.$transaction((tx) => processOnceOnShard(tx, 'plane-test', kept))).toBe(true);
   });
 });

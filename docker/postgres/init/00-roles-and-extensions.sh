@@ -70,11 +70,9 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-S
   ALTER DATABASE "$POSTGRES_DB" OWNER TO buku_migrator;
   REVOKE ALL ON DATABASE "$POSTGRES_DB" FROM PUBLIC;
   GRANT CONNECT, TEMPORARY ON DATABASE "$POSTGRES_DB" TO buku_migrator, buku_app;
-
-  -- Integration tests get their own database so they can never touch dev data.
-  CREATE DATABASE buku_test OWNER buku_migrator;
-  REVOKE ALL ON DATABASE buku_test FROM PUBLIC;
-  GRANT CONNECT, TEMPORARY ON DATABASE buku_test TO buku_migrator, buku_app;
 SQL
 
-echo "BUKU: roles (buku_migrator, buku_app), extensions and buku_test database initialised."
+# The databases themselves (the directory, the catalog, their test twins) are made by
+# packages/database/scripts/prepare-databases.ts (`pnpm db:prepare`, compose's db-prepare), and the
+# shards from the registry; the server's first database stays empty (v1 left the stack in D3j).
+echo "BUKU: roles (buku_migrator, buku_app) and extensions initialised."

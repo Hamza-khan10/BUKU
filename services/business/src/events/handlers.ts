@@ -1,4 +1,4 @@
-import { logger } from '@buku/common';
+import { logger, zId } from '@buku/common';
 import { TOPICS, type EventHandler, type Topic } from '@buku/kafka';
 import { z } from 'zod';
 import type { PictureService } from '../media/picture-service.js';
@@ -10,7 +10,8 @@ import type { PictureService } from '../media/picture-service.js';
 
 export const CONSUMED_TOPICS: Topic[] = [TOPICS.BUSINESSES_MEMBER_REMOVED];
 
-const MemberRemoved = z.object({ businessId: z.uuid(), userId: z.uuid() });
+/** Internal IDs, as decimal strings (events carry internal IDs, DB-042). */
+const MemberRemoved = z.object({ businessId: zId, userId: zId });
 
 export function businessEventHandler(deps: { pictures: PictureService }): EventHandler {
   return async (event) => {
@@ -19,7 +20,11 @@ export function businessEventHandler(deps: { pictures: PictureService }): EventH
         // A malformed payload throws: retried, then parked in the dead-letter topic.
         const { businessId, userId } = MemberRemoved.parse(event.data);
         const removed = await deps.pictures.removePhotosOfMember(businessId, userId);
-        if (removed > 0) logger.info({ eventId: event.id, businessId, removed }, 'employee photo removed');
+        if (removed > 0)
+          logger.info(
+            { eventId: event.id, businessId: businessId.toString(), removed },
+            'employee photo removed',
+          );
         return;
       }
       default:

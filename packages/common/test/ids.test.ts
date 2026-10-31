@@ -9,6 +9,8 @@ import {
   regionOfId,
   uuidv7,
   uuidv7Timestamp,
+  zId,
+  zPublicId,
   zUuid,
 } from '../src/index.js';
 
@@ -136,5 +138,21 @@ describe('public IDs (DB-001)', () => {
     const values = [...counts.values()];
     expect(Math.min(...values)).toBeGreaterThan(3550);
     expect(Math.max(...values)).toBeLessThan(4200);
+  });
+});
+
+describe('IDs in APIs (DB-042)', () => {
+  it('zId takes a 64-bit decimal string and gives a bigint; nothing else gets through', () => {
+    expect(zId.parse('104636050680315904')).toBe(104636050680315904n);
+    for (const bad of ['', '0', '-5', '01', '1e9', '9223372036854775808', "1' OR 1=1", 'abc', '12 34']) {
+      expect(zId.safeParse(bad).success, bad).toBe(false);
+    }
+  });
+
+  it('zPublicId takes exactly 12 Base62 characters', () => {
+    expect(zPublicId.parse('Ab3dEf6hIj9k')).toBe('Ab3dEf6hIj9k');
+    for (const bad of ['Ab3dEf6hIj9', 'Ab3dEf6hIj9k1', 'Ab3dEf6hIj9-', '../../etc/pw']) {
+      expect(zPublicId.safeParse(bad).success, bad).toBe(false);
+    }
   });
 });

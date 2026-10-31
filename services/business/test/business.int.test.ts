@@ -8,17 +8,23 @@ import {
   createRedisClient,
   createRevocationStore,
   parseKeyring,
+  publicId,
   Readiness,
   type JwtSigner,
   type Role,
 } from '@buku/common';
-import { createDatabaseClient, type Database } from '@buku/database';
+import { createDirectoryClient, DataPlane, type BusinessTx, type DirectoryClient } from '@buku/database';
 import type { Express } from 'express';
 import type { Redis } from 'ioredis';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { testEnv } from '../../../packages/database/test/int-env.js';
-import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
+import {
+  givePlan,
+  SERVICES_DIRECTORY,
+  servicesWorld,
+  withBusinessBilling,
+} from '../../../packages/database/test/services-world.js';
 import { buildBusinessApp } from '../src/app.js';
 import { createS3Storage, MediaLinks, PictureUploads, type ObjectStorage } from '@buku/media';
 import sharp from 'sharp';
@@ -26,27 +32,60 @@ import { createEvent, TOPICS } from '@buku/kafka';
 import { businessEventHandler } from '../src/events/handlers.js';
 import type { PictureService } from '../src/media/picture-service.js';
 
+/**
+ * business-service against database v2 (D3c): its own role on the services' test world (a
+ * directory, a user shard and a business shard; packages/database/test/services-world.ts).
+ * People and team members are written as auth-service will have written them, through a second
+ * data plane signed in as buku_app (the tools' and tests' role); BUKU's own kinds of business on
+ * the directory as its owner.
+ */
+
 let app: Express;
 let pictures: PictureService;
 let storage: ObjectStorage;
-let db: Database;
+/** business-service's own way into database v2. */
+let plane: DataPlane;
+/** Fixtures and checks, as buku_app. */
+let world: DataPlane;
+/** The directory as its owner: BUKU's own kinds of business. */
+let curator: DirectoryClient;
 let redis: Redis;
 let signer: JwtSigner;
+/** One of BUKU's own kinds of business (reference data). */
 let categoryId: string;
 
 const newIp = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
-const hex64 = () => randomBytes(32).toString('hex');
 
-/** A user in the DB plus a valid access token for them. */
+/** A person on a user shard (as auth-service makes them) plus a valid access token. */
 async function person(role: Role = 'user') {
-  const user = await db.user.create({
-    data: { name: `U ${randomUUID().slice(0, 6)}`, emailHash: hex64(), role },
+  const id = world.id();
+  const db = await world.placeUser(id);
+  await db.user.create({
+    data: { id, publicId: publicId(), name: `U ${randomUUID().slice(0, 6)}`, role },
   });
-  const { token } = await signer.sign({ sub: user.id, role, sid: randomUUID(), mfa: role === 'super_admin' });
-  return { id: user.id, auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() } };
+  const { token } = await signer.sign({
+    sub: id.toString(),
+    role,
+    sid: world.id().toString(),
+    mfa: role === 'super_admin',
+  });
+  return { id, auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() } };
 }
 
 type Person = Awaited<ReturnType<typeof person>>;
+
+/** The internal ID behind a business's public one. */
+const idOf = async (businessPublicId: string) => (await world.idOfPublic('business', businessPublicId))!;
+/** Work inside one business, as buku_app (row-level security applies, DB-020). */
+const inBusiness = async <T>(businessPublicId: string, work: (tx: BusinessTx) => Promise<T>) =>
+  world.inBusiness(await idOf(businessPublicId), work);
+/** A team member, as auth-service adds them (D3b). */
+const addMember = async (businessPublicId: string, userId: bigint, role: string, status = 'active') => {
+  const businessId = await idOf(businessPublicId);
+  return world.inBusiness(businessId, (tx) =>
+    tx.businessMember.create({ data: { id: world.id(), businessId, userId, role, status } }),
+  );
+};
 
 const validBusiness = (overrides: Record<string, unknown> = {}) => ({
   name: `Fade Masters ${randomUUID().slice(0, 4)}`,
@@ -75,7 +114,21 @@ async function createBusiness(
 }
 
 beforeAll(async () => {
-  db = createDatabaseClient({ url: testEnv.appUrl, applicationName: 'business-int-test', maxConnections: 5 });
+  plane = await DataPlane.start({
+    service: 'business',
+    databaseUrl: servicesWorld.urlFor('business'),
+    directoryUrl: servicesWorld.urlFor('business', SERVICES_DIRECTORY),
+    env: servicesWorld.env,
+    instance: `business-int-test:${process.pid}`,
+  });
+  world = await DataPlane.start({
+    service: 'business',
+    databaseUrl: servicesWorld.appUrl(),
+    directoryUrl: servicesWorld.appUrl(SERVICES_DIRECTORY),
+    env: servicesWorld.env,
+    instance: `business-int-fixtures:${process.pid}`,
+  });
+  curator = createDirectoryClient({ url: servicesWorld.ownerUrl(), applicationName: 'business-int-test' });
   redis = createRedisClient({ url: testEnv.redisUrl, connectionName: 'business-int-test' });
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const jwt = { issuer: 'https://auth.test', audience: 'buku-api' };
@@ -88,10 +141,12 @@ beforeAll(async () => {
     ...jwt,
     keys: [{ keyId: 'k1', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }],
   });
-  const suffix = randomUUID().slice(0, 8);
-  categoryId = (
-    await db.category.create({ data: { name: `Barbershop ${suffix}`, slug: `barbershop-${suffix}` } })
-  ).id;
+  // A kind of business that isn't regulated (health businesses need a licence; tested below).
+  const barber = await curator.category.findFirstOrThrow({
+    where: { depth: 1, isActive: true, pending: false, parent: { slug: { not: 'health-medical' } } },
+    orderBy: { id: 'asc' },
+  });
+  categoryId = barber.id.toString();
 
   storage = createS3Storage({
     endpoint: testEnv.s3.endpoint,
@@ -102,7 +157,7 @@ beforeAll(async () => {
     forcePathStyle: true,
   });
   ({ app, pictures } = buildBusinessApp({
-    db,
+    plane,
     redis,
     verifier,
     revocations: createRevocationStore(redis),
@@ -121,7 +176,10 @@ beforeAll(async () => {
     },
     http: {
       service: 'business-test',
-      logger: createLogger({ service: 'business-test', level: 'silent' }),
+      logger: createLogger({
+        service: 'business-test',
+        level: process.env.TEST_LOG_LEVEL ?? 'silent',
+      }),
       readiness: new Readiness(),
       trustProxyHops: 1,
     },
@@ -129,8 +187,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.$disconnect();
-  await redis.quit();
+  await plane?.close();
+  await world?.close();
+  await curator?.$disconnect();
+  await redis?.quit();
 });
 
 describe('Registering a business', () => {
@@ -148,16 +208,26 @@ describe('Registering a business', () => {
       address: { country: 'PK', city: 'Lahore' },
     });
     expect(res.body.data.slug).toMatch(/^fade-masters-lahore/);
-    const id = res.body.data.id as string;
-    expect((await db.outboxEvent.findMany({ where: { aggregateId: id } })).map((e) => e.topic)).toEqual([
-      'businesses.created',
-    ]);
-    expect(await db.auditLog.count({ where: { resourceId: id, action: 'business.created' } })).toBe(1);
-    // location + full-text columns are maintained by the DB trigger
-    const [row] = await db.$queryRaw<
-      { has_location: boolean }[]
-    >`SELECT location IS NOT NULL AS has_location FROM businesses WHERE id = ${id}::uuid`;
-    expect(row!.has_location).toBe(true);
+    expect(res.body.data.id).toMatch(/^[0-9A-Za-z]{12}$/); // its public ID (DB-042)
+    const id = await idOf(res.body.data.id as string);
+    await world.inBusiness(id, async (tx) => {
+      expect((await tx.outboxEvent.findMany({ where: { aggregateId: id } })).map((e) => e.topic)).toEqual([
+        'businesses.created',
+      ]);
+      expect(await tx.auditLog.count({ where: { resourceId: id, action: 'business.created' } })).toBe(1);
+      // the location column is maintained by the DB trigger
+      const [row] = await tx.$queryRaw<
+        { has_location: boolean }[]
+      >`SELECT location IS NOT NULL AS has_location FROM businesses WHERE id = ${id}`;
+      expect(row!.has_location).toBe(true);
+    });
+    // Found again by its address and its public ID on every shard (global handles, DB-018).
+    expect(await world.handles.find('business.slug', Buffer.from(res.body.data.slug as string))).toBe(id);
+    // And in the owner's own list of their businesses, on their shard (DB-014).
+    const list = await (
+      await world.user(owner.id)
+    ).userBusinessRole.findMany({ where: { userId: owner.id } });
+    expect(list).toEqual([expect.objectContaining({ businessId: id, role: 'owner', status: 'active' })]);
   });
 
   it('gives each business a unique URL even with the same name and city', async () => {
@@ -183,7 +253,8 @@ describe('Registering a business', () => {
     ['plain-http website', { website: 'http://phish.example' }],
     ['javascript: website', { website: 'javascript:alert(1)' }],
     ['latitude out of range', { lat: 123 }],
-    ['unknown category', { categoryId: randomUUID() }],
+    ['unknown category', { categoryId: '999999999' }],
+    ['category as a UUID', { categoryId: randomUUID() }],
     ['privileged field', { status: 'verified' }],
   ])('rejects %s', async (_label, bad) => {
     const res = await request(app)
@@ -277,13 +348,9 @@ describe('Managing a business (roles)', () => {
       await person(),
       await person(),
     ];
-    await db.businessMember.createMany({
-      data: [
-        { businessId: b.id, userId: manager.id, role: 'manager' },
-        { businessId: b.id, userId: frontDesk.id, role: 'front_desk' },
-        { businessId: b.id, userId: staff.id, role: 'staff' },
-      ],
-    });
+    await addMember(b.id, manager.id, 'manager');
+    await addMember(b.id, frontDesk.id, 'front_desk');
+    await addMember(b.id, staff.id, 'staff');
     const edit = (who: { auth: Record<string, string> }) =>
       request(app).patch(`/v1/businesses/${b.id}`).set(who.auth).send({ description: 'Updated' });
     expect((await edit(owner)).status).toBe(200);
@@ -302,11 +369,11 @@ describe('Managing a business (roles)', () => {
   it('a disabled member loses access immediately', async () => {
     const b = await createBusiness(await person());
     const manager = await person();
-    const m = await db.businessMember.create({
-      data: { businessId: b.id, userId: manager.id, role: 'manager' },
-    });
+    const m = await addMember(b.id, manager.id, 'manager');
     expect((await request(app).get(`/v1/businesses/${b.id}/manage`).set(manager.auth)).status).toBe(200);
-    await db.businessMember.update({ where: { id: m.id }, data: { status: 'disabled' } });
+    await inBusiness(b.id, (tx) =>
+      tx.businessMember.update({ where: { id: m.id }, data: { status: 'disabled' } }),
+    );
     expect((await request(app).get(`/v1/businesses/${b.id}/manage`).set(manager.auth)).status).toBe(404);
   });
 
@@ -314,7 +381,20 @@ describe('Managing a business (roles)', () => {
     const me = await person();
     const own = await createBusiness(me);
     const other = await createBusiness(await person());
-    await db.businessMember.create({ data: { businessId: other.id, userId: me.id, role: 'front_desk' } });
+    await addMember(other.id, me.id, 'front_desk');
+    // auth-service keeps a member's own list (D3b); here, as it would.
+    await (
+      await world.user(me.id)
+    ).userBusinessRole.create({
+      data: {
+        userId: me.id,
+        businessId: await idOf(other.id),
+        role: 'front_desk',
+        status: 'active',
+        businessName: 'Other',
+        version: world.id(),
+      },
+    });
     const res = await request(app).get('/v1/businesses/mine').set(me.auth);
     const roles = Object.fromEntries(
       (res.body.data as { id: string; myRole: string }[]).map((b) => [b.id, b.myRole]),
@@ -322,13 +402,46 @@ describe('Managing a business (roles)', () => {
     expect(roles).toEqual({ [own.id]: 'owner', [other.id]: 'front_desk' });
   });
 
+  it('a member still on a temporary password has no access until they choose their own (D-034)', async () => {
+    const b = await createBusiness(await person());
+    const manager = await person();
+    await addMember(b.id, manager.id, 'manager');
+    const { token } = await signer.sign({ sub: manager.id.toString(), role: 'user', pwc: true });
+    const temporary = { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() };
+    expect((await request(app).get(`/v1/businesses/${b.id}/manage`).set(temporary)).status).toBe(404);
+    expect((await request(app).get(`/v1/businesses/${b.id}/manage`).set(manager.auth)).status).toBe(200);
+  });
+
+  it('a renamed business is renamed in its owner’s and team’s own lists', async () => {
+    const owner = await person();
+    const b = await createBusiness(owner);
+    const renamed = await request(app)
+      .patch(`/v1/businesses/${b.id}`)
+      .set(owner.auth)
+      .send({ name: 'Fade Masters Gulberg' });
+    expect(renamed.status).toBe(200);
+    const list = await (
+      await world.user(owner.id)
+    ).userBusinessRole.findFirstOrThrow({
+      where: { userId: owner.id, businessId: await idOf(b.id) },
+    });
+    expect(list.businessName).toBe('Fade Masters Gulberg');
+  });
+
+  it('the business in the URL is its public ID; anything else is refused before any lookup', async () => {
+    const owner = await person();
+    const b = await createBusiness(owner);
+    const internal = (await idOf(b.id)).toString();
+    expect((await request(app).get(`/v1/businesses/${internal}/manage`).set(owner.auth)).status).toBe(400);
+    expect((await request(app).get(`/v1/businesses/${publicId()}/manage`).set(owner.auth)).status).toBe(404);
+  });
+
   it('changing name or address of a VERIFIED business sends it back to review', async () => {
     const owner = await person();
     const b = await createBusiness(owner);
-    await db.business.update({
-      where: { id: b.id },
-      data: { status: 'verified', verified: true, verifiedAt: new Date() },
-    });
+    await inBusiness(b.id, (tx) =>
+      tx.business.updateMany({ data: { status: 'verified', verifiedAt: new Date() } }),
+    );
 
     const cosmetic = await request(app)
       .patch(`/v1/businesses/${b.id}`)
@@ -341,10 +454,12 @@ describe('Managing a business (roles)', () => {
       .set(owner.auth)
       .send({ name: 'Totally Different Clinic' });
     expect(identity.body.data).toMatchObject({ status: 'pending', verification: { status: 'not_verified' } });
-    const events = await db.outboxEvent.findMany({
-      where: { aggregateId: b.id, topic: 'businesses.updated' },
-      orderBy: { createdAt: 'asc' },
-    });
+    const events = await inBusiness(b.id, async (tx) =>
+      tx.outboxEvent.findMany({
+        where: { aggregateId: await idOf(b.id), topic: 'businesses.updated' },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      }),
+    );
     expect(
       (events.at(-1)!.payload as { data: { reverificationRequired: boolean } }).data.reverificationRequired,
     ).toBe(true);
@@ -429,9 +544,12 @@ describe('Platform admin moderation', () => {
     expect((await request(app).post(`/v1/admin/businesses/${b.id}/verify`).set(admin.auth)).status).toBe(200);
     const pub = await request(app).get(`/v1/businesses/${b.slug}`);
     expect(pub.body.data.verification.status).toBe('verified');
-    expect((await db.outboxEvent.findMany({ where: { aggregateId: b.id } })).map((e) => e.topic)).toContain(
-      'businesses.verified',
-    );
+    const id = await idOf(b.id);
+    expect(
+      (await world.inBusiness(id, (tx) => tx.outboxEvent.findMany({ where: { aggregateId: id } }))).map(
+        (e) => e.topic,
+      ),
+    ).toContain('businesses.verified');
 
     // Can't verify twice (state machine).
     const again = await request(app).post(`/v1/admin/businesses/${b.id}/verify`).set(admin.auth);
@@ -588,17 +706,22 @@ describe('Legal details (KYB)', () => {
     const res = await request(app).put(`/v1/businesses/${b.id}/legal-profile`).set(owner.auth).send(input);
     expect(res.status).toBe(200);
     expect(res.body.data.registrationNumber).toBe('••••5678');
-    const row = await db.businessLegalProfile.findUniqueOrThrow({ where: { businessId: b.id } });
-    expect(row.registrationNumberEncrypted).toMatch(/^enc:1:/);
-    expect(JSON.stringify(row)).not.toContain('0123456');
-    expect(JSON.stringify(row)).not.toContain('ayesha@example.com');
+    const businessId = await idOf(b.id);
+    const row = await world.inBusiness(businessId, (tx) =>
+      tx.businessLegalProfile.findUniqueOrThrow({ where: { businessId } }),
+    );
+    expect(row.registrationNumberHash).toHaveLength(16);
+    for (const stored of [row.registrationNumberEnc, row.responsibleEmailEnc!]) {
+      expect(Buffer.from(stored).includes('0123456')).toBe(false);
+      expect(Buffer.from(stored).includes('ayesha@example.com')).toBe(false);
+    }
   });
 
   it('only the owner may see or change legal details', async () => {
     const owner = await person();
     const b = await createBusiness(owner);
     const manager = await person();
-    await db.businessMember.create({ data: { businessId: b.id, userId: manager.id, role: 'manager' } });
+    await addMember(b.id, manager.id, 'manager');
     expect(
       (await request(app).put(`/v1/businesses/${b.id}/legal-profile`).set(manager.auth).send(legalProfile()))
         .status,
@@ -629,8 +752,11 @@ describe('Legal details (KYB)', () => {
     expect(review.body.data.legal.sameRegistrationElsewhere).toEqual([
       expect.objectContaining({ businessId: a.id, sameOwner: false }),
     ]);
+    const businessId = await idOf(b.id);
     expect(
-      await db.auditLog.count({ where: { action: 'admin.legal_profile_viewed', resourceId: b.id } }),
+      await world.inBusiness(businessId, (tx) =>
+        tx.auditLog.count({ where: { action: 'admin.legal_profile_viewed', resourceId: businessId } }),
+      ),
     ).toBe(1);
   });
 
@@ -674,7 +800,9 @@ describe('Documents (private)', () => {
     const { documentId, done } = await uploadDocument(owner, b.id, html);
     expect(done.status).toBe(400);
     expect(done.body.error.code).toBe('FILE_TYPE_NOT_ALLOWED');
-    expect(await db.businessDocument.count({ where: { id: documentId } })).toBe(0);
+    expect(
+      await inBusiness(b.id, (tx) => tx.businessDocument.count({ where: { id: BigInt(documentId) } })),
+    ).toBe(0);
     const row = `businesses/${b.id}/documents/${documentId}`;
     expect(
       await fetch(`${testEnv.s3.endpoint}/${testEnv.s3.documentsBucket}/${row}`).then((r) => r.status),
@@ -710,7 +838,7 @@ describe('Documents (private)', () => {
     const owner = await person();
     const b = await createBusiness(owner);
     const manager = await person();
-    await db.businessMember.create({ data: { businessId: b.id, userId: manager.id, role: 'manager' } });
+    await addMember(b.id, manager.id, 'manager');
     expect(
       (
         await request(app)
@@ -753,16 +881,11 @@ describe('Documents (private)', () => {
   it('health businesses also need an approved medical licence', async () => {
     const admin = await person('super_admin');
     const owner = await person();
-    const suffix = randomUUID().slice(0, 6);
-    const health = await db.category.upsert({
-      where: { slug: 'health-medical' },
-      update: {},
-      create: { name: 'Health & Medical', slug: 'health-medical' },
+    // One of BUKU's own health kinds (the reference data has them under 'health-medical').
+    const health = await curator.category.findFirstOrThrow({
+      where: { isActive: true, parent: { slug: 'health-medical' } },
     });
-    const dental = await db.category.create({
-      data: { name: `Dental ${suffix}`, slug: `dental-${suffix}`, parentId: health.id, depth: 1 },
-    });
-    const b = await createBusiness(owner, { categoryId: dental.id });
+    const b = await createBusiness(owner, { categoryId: health.id.toString() });
     await makeVerifiable(owner, b.id, admin, 'business_license');
     const blocked = await request(app).post(`/v1/admin/businesses/${b.id}/verify`).set(admin.auth);
     expect(blocked.body.error.details.missing).toEqual(['medical_license']);
@@ -824,17 +947,24 @@ async function uploadPicture(
 
 const keyOf = (url: string) => decodeURIComponent(new URL(url).pathname.split('/').slice(2).join('/'));
 
+/** What each businesses.updated event said changed, oldest first. */
+const updates = async (businessPublicId: string) =>
+  (
+    await inBusiness(businessPublicId, async (tx) =>
+      tx.outboxEvent.findMany({
+        where: { aggregateId: await idOf(businessPublicId), topic: 'businesses.updated' },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      }),
+    )
+  ).map((e) => (e.payload as { data: { changedFields: string[] } }).data.changedFields.join(','));
+
 describe('Pictures: gallery', () => {
   it('manager uploads; first photo is the cover; links work; staff cannot upload', async () => {
     const owner = await person();
     const b = await createBusiness(owner);
     const [manager, staff] = [await person(), await person()];
-    await db.businessMember.createMany({
-      data: [
-        { businessId: b.id, userId: manager.id, role: 'manager' },
-        { businessId: b.id, userId: staff.id, role: 'staff' },
-      ],
-    });
+    await addMember(b.id, manager.id, 'manager');
+    await addMember(b.id, staff.id, 'staff');
     const base = `/v1/businesses/${b.id}/photos`;
     expect((await uploadPicture(staff, base, await picture())).req.status).toBe(403);
 
@@ -853,6 +983,8 @@ describe('Pictures: gallery', () => {
     const after = await request(app).delete(`${base}/${photos[0]!.id}`).set(owner.auth);
     expect(after.body.data).toEqual([expect.objectContaining({ id: photos[1]!.id, isPrimary: true })]);
     expect(await storage.head(testEnv.s3.mediaBucket, keyOf(photos[0]!.url))).toBeNull();
+    // Search shows the cover (D3h): two uploads and a deletion, each announced.
+    expect(await updates(b.id)).toEqual(['photos', 'photos', 'photos']);
   });
 
   it('strips GPS and camera data, turns the photo upright, and never publishes the original', async () => {
@@ -952,6 +1084,7 @@ describe('Pictures: logo', () => {
 
     expect((await request(app).delete(base).set(owner.auth)).status).toBe(204);
     expect((await request(app).get(`/v1/businesses/${b.slug}`)).body.data.logoUrl).toBeNull();
+    expect(await updates(b.id)).toEqual(['logo', 'logo', 'logo']);
   });
 });
 
@@ -960,10 +1093,12 @@ describe('Pictures: employee photos', () => {
     const owner = await person();
     const b = await createBusiness(owner);
     const employee = await person();
-    await db.businessMember.create({ data: { businessId: b.id, userId: employee.id, role: 'staff' } });
-    const staff = await db.staff.create({
-      data: { businessId: b.id, userId: employee.id, displayName: 'Ali Raza' },
-    });
+    await addMember(b.id, employee.id, 'staff');
+    // The employee's bookable profile, as booking-service keeps it.
+    const businessId = await idOf(b.id);
+    const staff = await world.inBusiness(businessId, (tx) =>
+      tx.staff.create({ data: { id: world.id(), businessId, userId: employee.id, displayName: 'Ali Raza' } }),
+    );
     return { owner, b, employee, staff, base: `/v1/businesses/${b.id}/staff/${staff.id}/photo` };
   }
 
@@ -977,11 +1112,15 @@ describe('Pictures: employee photos', () => {
     });
     expect(done.status).toBe(200);
     const team = (await request(app).get(`/v1/businesses/${b.slug}`)).body.data.team;
-    expect(team).toEqual([{ id: staff.id, displayName: 'Ali Raza', photoUrl: expect.any(String) }]);
+    expect(team).toEqual([
+      { id: staff.id.toString(), displayName: 'Ali Raza', photoUrl: expect.any(String) },
+    ]);
     const meta = await sharp(Buffer.from(await (await fetch(team[0].photoUrl)).arrayBuffer())).metadata();
     expect(meta.exif).toBeUndefined();
 
-    const row = await db.staffPhoto.findFirstOrThrow({ where: { staffId: staff.id } });
+    const row = await inBusiness(b.id, (tx) =>
+      tx.staffPhoto.findFirstOrThrow({ where: { staffId: staff.id } }),
+    );
     expect(row.consentConfirmedById).toBe(owner.id);
   });
 
@@ -989,7 +1128,7 @@ describe('Pictures: employee photos', () => {
     const { owner, b, employee, base } = await teamWithEmployee();
     await uploadPicture(owner, base, await picture(), { consentConfirmed: true });
     const colleague = await person();
-    await db.businessMember.create({ data: { businessId: b.id, userId: colleague.id, role: 'staff' } });
+    await addMember(b.id, colleague.id, 'staff');
 
     expect((await request(app).delete(base).set(colleague.auth)).status).toBe(403);
     expect(
@@ -1022,17 +1161,19 @@ describe('Pictures: employee photos', () => {
     const key = keyOf(done.body.data.photoUrl);
 
     const handle = businessEventHandler({ pictures });
+    const businessId = (await idOf(b.id)).toString();
     const event = createEvent({
       type: TOPICS.BUSINESSES_MEMBER_REMOVED,
       source: 'auth-service',
-      subject: b.id,
-      data: { businessId: b.id, userId: employee.id, memberId: randomUUID() },
+      subject: businessId,
+      // Events carry internal IDs (DB-042).
+      data: { businessId, userId: employee.id.toString(), memberId: world.id().toString() },
     });
     const ctx = { topic: event.type, partition: 0, offset: '0', key: null, attempt: 1 };
     await handle(event, ctx);
     await handle(event, ctx); // redelivery is harmless
 
-    expect(await db.staffPhoto.count({ where: { staffId: staff.id } })).toBe(0);
+    expect(await inBusiness(b.id, (tx) => tx.staffPhoto.count({ where: { staffId: staff.id } }))).toBe(0);
     expect(await storage.head(testEnv.s3.mediaBucket, key)).toBeNull();
   });
 });
@@ -1075,7 +1216,9 @@ describe('Lawful per-country export', () => {
       (x) => x.id === b.id,
     )!;
     expect(row.legal.registrationType).toBe('Trade licence');
-    const audit = await db.auditLog.findFirstOrThrow({
+    const audit = await (
+      await world.user(admin.id)
+    ).auditLog.findFirstOrThrow({
       where: { action: 'admin.business_export' },
       orderBy: { createdAt: 'desc' },
     });
@@ -1085,20 +1228,24 @@ describe('Lawful per-country export', () => {
 
 describe('Plans (billing on)', () => {
   it('Starter: 5 gallery photos and no staff photos; Essential lifts both', async () => {
-    await withBilling(db, 'business', async () => {
+    await withBusinessBilling(world, async () => {
       const owner = await person();
       const b = await createBusiness(owner);
-      await db.businessPhoto.createMany({
-        data: Array.from({ length: 5 }, (_, i) => ({
-          businessId: b.id,
-          storageKey: `businesses/${b.id}/photos/test-${i}-${randomUUID()}.webp`,
-          contentType: 'image/webp',
-          sizeBytes: 1000,
-          uploadedAt: new Date(),
-          isPrimary: i === 0,
-          sortOrder: i,
-        })),
-      });
+      const businessId = await idOf(b.id);
+      await world.inBusiness(businessId, (tx) =>
+        tx.businessPhoto.createMany({
+          data: Array.from({ length: 5 }, (_, i) => ({
+            id: world.id(),
+            businessId,
+            storageKey: `businesses/${b.id}/photos/test-${i}-${randomUUID()}.webp`,
+            contentType: 'image/webp',
+            sizeBytes: 1000,
+            uploadedAt: new Date(),
+            isPrimary: i === 0,
+            sortOrder: i,
+          })),
+        }),
+      );
       const photo = { contentType: 'image/jpeg', sizeBytes: 1000 };
       const over = await request(app)
         .post(`/v1/businesses/${b.id}/photos/uploads`)
@@ -1109,14 +1256,16 @@ describe('Plans (billing on)', () => {
         'PLAN_LIMIT_REACHED',
         { limit: 'photos', max: 5, used: 5, plan: 'business_free' },
       ]);
-      const staff = await db.staff.create({ data: { businessId: b.id, displayName: 'Ali' } });
+      const staff = await world.inBusiness(businessId, (tx) =>
+        tx.staff.create({ data: { id: world.id(), businessId, displayName: 'Ali' } }),
+      );
       const staffPhoto = await request(app)
         .post(`/v1/businesses/${b.id}/staff/${staff.id}/photo/uploads`)
         .set(owner.auth)
         .send({ ...photo, consentConfirmed: true });
       expect([staffPhoto.status, staffPhoto.body.error.code]).toEqual([403, 'PLAN_FEATURE_UNAVAILABLE']);
 
-      await givePlan(db, { businessId: b.id }, 'business_essential');
+      await givePlan(world, businessId, 'business_essential');
       expect(
         (await request(app).post(`/v1/businesses/${b.id}/photos/uploads`).set(owner.auth).send(photo)).status,
       ).toBe(201);
@@ -1137,9 +1286,12 @@ describe('Kinds of business that owners add (D-098)', () => {
   let groupId: string;
 
   beforeAll(async () => {
+    // One of BUKU's own groups, as BUKU adds them on the directory.
     groupId = (
-      await db.category.create({ data: { name: `Grooming ${run}`, slug: `grooming-${run}`, depth: 0 } })
-    ).id;
+      await curator.category.create({
+        data: { id: world.id(), name: `Grooming ${run}`, slug: `grooming-${run}`, depth: 0 },
+      })
+    ).id.toString();
   });
 
   const suggest = (who: Person, name: string, parentId = groupId) =>
@@ -1153,15 +1305,23 @@ describe('Kinds of business that owners add (D-098)', () => {
       existing: false,
       category: { name: `Tattoo studio ${run}`, parentId: groupId, pending: true },
     });
-    const row = await db.category.findUniqueOrThrow({ where: { id: res.body.data.category.id } });
-    expect([row.depth, row.suggestedById, row.nameKey]).toEqual([1, owner.id, `tattoostudio${run}`]);
-    const audit = await db.auditLog.findFirst({
-      where: { action: 'category.suggested', resourceId: row.id },
+    const row = await curator.category.findUniqueOrThrow({
+      where: { id: BigInt(res.body.data.category.id) },
     });
+    expect([row.depth, row.suggestedById, row.nameKey]).toEqual([1, owner.id, `tattoostudio${run}`]);
+    // What they did, with the rest of their account.
+    const audit = await (
+      await world.user(owner.id)
+    ).auditLog.findFirst({ where: { action: 'category.suggested', resourceId: row.id } });
     expect(audit?.userId).toBe(owner.id);
 
-    const business = await createBusiness(owner, { categoryId: row.id });
-    expect((await db.business.findUniqueOrThrow({ where: { id: business.id } })).categoryId).toBe(row.id);
+    // Usable at once, before the shards' copies have it (the directory is checked).
+    const business = await createBusiness(owner, { categoryId: row.id.toString() });
+    expect(
+      await inBusiness(business.id, (tx) => tx.business.findFirstOrThrow({ select: { categoryId: true } })),
+    ).toEqual({
+      categoryId: row.id,
+    });
   });
 
   it('a name that means the same as one on BUKU gives back that one, never a copy', async () => {
@@ -1175,7 +1335,7 @@ describe('Kinds of business that owners add (D-098)', () => {
         category: { id: first.body.data.category.id },
       });
     }
-    expect(await db.category.count({ where: { nameKey: `hennaart${run}` } })).toBe(1);
+    expect(await curator.category.count({ where: { nameKey: `hennaart${run}` } })).toBe(1);
   });
 
   it('two owners adding the same kind at the same moment make one category', async () => {
@@ -1201,13 +1361,14 @@ describe('Kinds of business that owners add (D-098)', () => {
       const res = await suggest(owner, bad);
       expect(res.status, bad).toBe(400);
     }
-    expect(await db.category.count({ where: { suggestedById: owner.id } })).toBe(0);
+    expect(await curator.category.count({ where: { suggestedById: owner.id } })).toBe(0);
   });
 
   it('only under one of BUKU’s own groups, a few at a time, and never by employee accounts', async () => {
     const owner = await person();
     const child = (await suggest(owner, `Wig Studio ${run}`)).body.data.category.id as string;
     expect((await suggest(owner, `Under a kind ${run}`, child)).status).toBe(400); // not a group
+    expect((await suggest(owner, `Nowhere ${run}`, '999999999')).status).toBe(400);
     expect((await suggest(owner, `Nowhere ${run}`, randomUUID())).status).toBe(400);
     await suggest(owner, `Brow Bar ${run}`);
     await suggest(owner, `Lash Lounge ${run}`);
@@ -1217,18 +1378,19 @@ describe('Kinds of business that owners add (D-098)', () => {
   });
 
   it('a kind BUKU switched off is not brought back by adding it again', async () => {
-    const off = await db.category.create({
+    const off = await curator.category.create({
       data: {
+        id: world.id(),
         name: `Fortune Teller ${run}`,
         slug: `fortune-teller-${run}`,
         nameKey: `fortuneteller${run}`,
         isActive: false,
-        parentId: groupId,
+        parentId: BigInt(groupId),
         depth: 1,
       },
     });
     const res = await suggest(await person(), `fortune  TELLER ${run}`);
     expect([res.status, res.body.error.code]).toEqual([409, 'CATEGORY_UNAVAILABLE']);
-    expect(await db.category.count({ where: { nameKey: off.nameKey } })).toBe(1);
+    expect(await curator.category.count({ where: { nameKey: off.nameKey } })).toBe(1);
   });
 });

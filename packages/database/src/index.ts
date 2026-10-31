@@ -1,15 +1,15 @@
 import { logger } from '@buku/common';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { Prisma, PrismaClient } from './generated/prisma/client.js';
+import { PrismaClient } from './generated/directory/client.js';
+import { tlsOptions } from './tls.js';
 
-import { softDeleteUsers } from './soft-delete.js';
+/**
+ * Database v2 (docs/DATABASE.md): the directory, user and business shards, and the catalog, reached
+ * through the data plane. v1's single `buku` database left the stack in D3j; nothing here reads it.
+ */
 
-export * from './generated/prisma/client.js';
-export { softDeleteUsers };
-export { recordAudit, type AuditEntry } from './audit.js';
-export { businessRoleOf, requireBusinessPermission } from './authz.js';
-export { showUpCounts, showUpLabels, type ShowUpCounts } from './reputation.js';
-export { applyRetention, RETENTION, type RetentionResult } from './retention.js';
+export { showUpCountsOf, showUpLabelsOf, type PersonShowUpCounts } from './reliability.js';
+export { cliUrl, tlsOptions, type TlsOptions } from './tls.js';
 export {
   createDirectoryClient,
   Directory,
@@ -20,6 +20,19 @@ export {
   type DirectoryClient,
   type ShardInfo,
 } from './directory.js';
+export {
+  businessRoleOfActor,
+  businessRoleOnShard,
+  DataPlane,
+  employeeLoginKey,
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  sameServer,
+  type BusinessTx,
+  type DataPlaneOptions,
+  type ShardAuditEntry,
+  type UserTx,
+} from './data-plane.js';
 export {
   BusinessShard,
   Catalog,
@@ -39,11 +52,9 @@ export {
 } from './shards.js';
 
 /**
- * Shared database client factory.
- *
- * Services connect as `buku_app` (data-only role). The pool is per process:
- * size it so that (replicas × pool size) stays well under Postgres
- * max_connections; put PgBouncer in front before scaling out further.
+ * A plain connection for administrative SQL — provisioning databases, applying rights, setting up
+ * tests — on any database of the cluster (`$queryRaw`, `$executeRaw…`, `$transaction`). It has no
+ * models of its own: services reach data through the data plane, never through this.
  */
 export interface CreateDatabaseOptions {
   url: string;
@@ -51,8 +62,6 @@ export interface CreateDatabaseOptions {
   maxConnections?: number;
   /** Shows up in pg_stat_activity: invaluable when debugging connection leaks. */
   applicationName: string;
-  /** Log every query at debug level (development only). */
-  logQueries?: boolean;
 }
 
 export function createDatabaseClient(options: CreateDatabaseOptions) {
@@ -62,35 +71,23 @@ export function createDatabaseClient(options: CreateDatabaseOptions) {
     application_name: options.applicationName,
     connectionTimeoutMillis: 5_000,
     idleTimeoutMillis: 30_000,
+    // TLS 1.3, the server's certificate and name checked (DB-020; tls.ts).
+    ssl: tlsOptions(),
   });
-
   const log = logger.child({ module: 'database' });
   const client = new PrismaClient({
     adapter,
     log: [
       { level: 'warn', emit: 'event' },
       { level: 'error', emit: 'event' },
-      ...(options.logQueries ? [{ level: 'query' as const, emit: 'event' as const }] : []),
     ],
   });
   client.$on('warn', (e) => log.warn({ target: e.target }, e.message));
   client.$on('error', (e) => log.error({ target: e.target }, e.message));
-  if (options.logQueries) {
-    // Log the SQL shape and timing only — never bound parameter values (PII).
-    client.$on('query', (e) => log.debug({ durationMs: e.duration }, e.query));
-  }
-
-  return client.$extends(softDeleteUsers);
+  return client;
 }
 
 export type Database = ReturnType<typeof createDatabaseClient>;
-/** The client inside `db.$transaction(async (tx) => ...)`. */
-export type Transaction = Parameters<Parameters<Database['$transaction']>[0]>[0];
-
-/** Readiness probe. */
-export async function pingDatabase(db: Database): Promise<void> {
-  await db.$queryRaw`SELECT 1`;
-}
 
 // ── Error classification ────────────────────────────────────────────────────
 // Postgres SQLSTATE codes we handle deliberately. Everything else is a 500.
@@ -105,6 +102,12 @@ const SQLSTATE = {
 } as const;
 
 const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/;
+
+/** A Prisma request error with this code (P2002 …), from whichever generated client threw it. */
+const isPrismaError = (err: unknown, code: string) =>
+  err instanceof Error &&
+  err.name === 'PrismaClientKnownRequestError' &&
+  (err as { code?: unknown }).code === code;
 const PRISMA_CODE_PATTERN = /^P\d{4}$/; // e.g. P2039 — also 5 chars, must not be mistaken for a SQLSTATE
 
 interface PgErrorFields {
@@ -155,7 +158,7 @@ export function constraintNameOf(err: unknown): string | undefined {
 }
 
 export function isUniqueViolation(err: unknown): boolean {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return true;
+  if (isPrismaError(err, 'P2002')) return true;
   return sqlStateOf(err) === SQLSTATE.UNIQUE_VIOLATION;
 }
 
@@ -165,48 +168,13 @@ export function isExclusionViolation(err: unknown): boolean {
 }
 
 export function isForeignKeyViolation(err: unknown): boolean {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2003') return true;
+  if (isPrismaError(err, 'P2003')) return true;
   return sqlStateOf(err) === SQLSTATE.FOREIGN_KEY_VIOLATION;
 }
 
 /** Transient concurrency failures that are safe to retry the whole transaction for. */
 export function isRetryableTransactionError(err: unknown): boolean {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2034') return true;
+  if (isPrismaError(err, 'P2034')) return true;
   const state = sqlStateOf(err);
   return state === SQLSTATE.SERIALIZATION_FAILURE || state === SQLSTATE.DEADLOCK;
-}
-
-/**
- * Creates the monthly partitions of the partitioned tables (audit_logs,
- * notifications, ad_events) for the next `monthsAhead` months. Idempotent.
- * Run on a schedule (monthly) — the migration pre-creates 12 months.
- */
-export async function ensurePartitions(db: Database, monthsAhead = 3): Promise<void> {
-  await db.$executeRaw`SELECT ensure_monthly_partitions(${monthsAhead}::int)`;
-}
-
-/**
- * The scheduled partition job: create months ahead (one replica at a time),
- * and report rows that fell into the catch-all DEFAULT partitions — those mean
- * a month was missing, and they block creating that month later.
- */
-export async function maintainPartitions(
-  db: Database,
-  monthsAhead = 6,
-): Promise<{ ran: boolean; strayRows: Record<string, number> }> {
-  return db.$transaction(async (tx) => {
-    const [lock] = await tx.$queryRaw<
-      { locked: boolean }[]
-    >`SELECT pg_try_advisory_xact_lock(271_828_182) AS locked`;
-    if (!lock?.locked) return { ran: false, strayRows: {} };
-    await tx.$executeRaw`SELECT ensure_monthly_partitions(${monthsAhead}::int)`;
-    const rows = await tx.$queryRaw<{ table: string; n: bigint }[]>`
-      SELECT 'audit_logs' AS "table", count(*) AS n FROM partitions.audit_logs_default
-      UNION ALL SELECT 'notifications', count(*) FROM partitions.notifications_default
-      UNION ALL SELECT 'ad_events', count(*) FROM partitions.ad_events_default`;
-    return {
-      ran: true,
-      strayRows: Object.fromEntries(rows.filter((r) => r.n > 0n).map((r) => [r.table, Number(r.n)])),
-    };
-  });
 }

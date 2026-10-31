@@ -1,18 +1,21 @@
 import { AppError } from '@buku/common';
-import type { Database } from '@buku/database';
+import type { CatalogClient } from '@buku/database';
 
 /**
  * The category tree (active categories only), cached briefly: it changes
  * rarely and every search with a category needs it (a category includes its
  * sub-categories: "Beauty & hair" finds barbershops and nail salons).
+ *
+ * Database v2 (D3h): read from the catalog's copy of the kinds of business (reference data,
+ * replicated from the directory, DB-015). IDs are decimal (DB-042).
  */
 
 export interface CategoryNode {
-  id: string;
+  id: bigint;
   slug: string;
   name: string;
   icon: string | null;
-  parentId: string | null;
+  parentId: bigint | null;
   /** Added by an owner, not reviewed yet (D-098): not in the public list. */
   pending: boolean;
   children: CategoryNode[];
@@ -23,15 +26,15 @@ const CACHE_MS = 60_000;
 export class Categories {
   private cache: { at: number; roots: CategoryNode[]; bySlug: Map<string, CategoryNode> } | null = null;
 
-  constructor(private readonly db: Database) {}
+  constructor(private readonly catalog: CatalogClient) {}
 
   private async load() {
     if (this.cache && Date.now() - this.cache.at < CACHE_MS) return this.cache;
-    const rows = await this.db.category.findMany({
+    const rows = await this.catalog.category.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     });
-    const byId = new Map<string, CategoryNode>(
+    const byId = new Map<bigint, CategoryNode>(
       rows.map((r) => [
         r.id,
         {
@@ -86,8 +89,8 @@ export class Categories {
   }
 
   /** The category and everything under it. */
-  async idsWithin(slug: string): Promise<string[]> {
-    const ids: string[] = [];
+  async idsWithin(slug: string): Promise<bigint[]> {
+    const ids: bigint[] = [];
     const walk = (n: CategoryNode) => {
       ids.push(n.id);
       n.children.forEach(walk);

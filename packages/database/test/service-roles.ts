@@ -1,5 +1,5 @@
 import { type SERVICES, type ServiceName } from '../src/access.js';
-import { accessStatements, crossBusinessRoleStatements } from '../src/access-sql.js';
+import { crossBusinessRoleStatements, roleStatements } from '../src/access-sql.js';
 import { applyStatements } from '../src/apply-access.js';
 import { createDatabaseClient, type Database } from '../src/index.js';
 import { testEnv } from './int-env.js';
@@ -11,8 +11,9 @@ import { testEnv } from './int-env.js';
 let made: Promise<void> | undefined;
 export const passwords = testEnv.servicePasswords as Record<ServiceName, string>;
 export function ensureServiceRoles(): Promise<void> {
-  made ??= applyStatements(testEnv.adminUrl('buku_test'), [
-    ...accessStatements('buku_test', passwords),
+  // Roles belong to the whole server: made from any of its databases.
+  made ??= applyStatements(testEnv.adminUrl('postgres'), [
+    ...roleStatements(passwords),
     ...crossBusinessRoleStatements(passwords),
   ]);
   return made;

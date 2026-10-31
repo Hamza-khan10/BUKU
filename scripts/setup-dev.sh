@@ -71,6 +71,7 @@ set_if_empty POSTGRES_SUPERUSER_PASSWORD "$(hex 24)"
 set_if_empty BUKU_MIGRATOR_PASSWORD      "$(hex 24)"
 set_if_empty BUKU_APP_PASSWORD           "$(hex 24)"
 set_if_empty BUKU_REPLICATOR_PASSWORD    "$(hex 24)"
+set_if_empty BUKU_BACKUP_CIPHER_PASS     "$(hex 32)"
 set_if_empty BUKU_DB_CLUSTER_LOCAL_1     "postgresql://localhost:$(get_value POSTGRES_HOST_PORT | grep . || echo 5432)"
 set_if_empty BUKU_DB_PASSWORD_AUTH         "$(hex 24)"
 set_if_empty BUKU_DB_PASSWORD_BOOKING      "$(hex 24)"
@@ -119,6 +120,16 @@ if [[ -z "$(get_value JWT_PRIVATE_KEY)" ]]; then
   set_if_empty JWT_KEY_ID      "dev-$(date +%Y%m%d)"
 fi
 chmod 600 .env
+
+# TLS for Postgres (DB-020): a development authority and the server's certificate (kept if present),
+# and the settings every tool on this machine connects with. The authority's path follows the repo.
+bash scripts/dev-certs.sh
+set_if_empty PGSSLMODE verify-full
+if [[ "$(get_value PGSSLROOTCERT)" != "$PWD/secrets/postgres-ca/ca.crt" ]]; then
+  sed -i '/^PGSSLROOTCERT=/d' .env
+  set_if_empty PGSSLROOTCERT "$PWD/secrets/postgres-ca/ca.crt"
+fi
+ok "Postgres TLS certificates in secrets/ (git-ignored)"
 
 # The web servers' settings, sharing the gateway keys — created only now that the keys exist:
 # the website's (apps/web/.env.local, D-084) and the admin app's (apps/admin/.env.local, D-091).

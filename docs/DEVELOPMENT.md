@@ -27,24 +27,32 @@ password `buku-dev-password-2026`.
 
 ## Everyday commands
 
-| Command                                         | What it does                                                          |
-| ----------------------------------------------- | --------------------------------------------------------------------- |
-| `pnpm dev` / `pnpm dev:down`                    | Start / stop the stack (data kept in Docker volumes)                  |
-| `pnpm dev:wipe`                                 | Stop and **delete all local data** (fresh DB + seed on next start)    |
-| `pnpm dev:tools`                                | Also start Kibana (:5601), Kafka UI (:8080), Redis Insight (:5540)    |
-| `pnpm dev:logs`                                 | Follow logs of all containers                                         |
-| `pnpm test` / `pnpm test:watch`                 | Unit tests                                                            |
-| `pnpm test:int`                                 | Integration tests against the running stack (uses the `buku_test` DB) |
-| `pnpm typecheck` · `pnpm lint` · `pnpm format`  | Code quality                                                          |
-| `pnpm verify`                                   | Stack and quality checks (45)                                         |
-| `pnpm web`                                      | The website on http://localhost:3000 (hot reload; needs the stack)    |
-| `pnpm web:e2e`                                  | Browser tests: desktop + phone, WCAG 2.2 AA, CSP, clean text, session |
-| `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route) |
-| `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)            |
-| `pnpm db:studio`                                | Browse the database in Prisma Studio                                  |
-| `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent) |
-| `pnpm db:shards`                                | Make every registered shard a migrated database (idempotent)          |
-| `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)       |
+| Command                                         | What it does                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------- |
+| `pnpm dev` / `pnpm dev:down`                    | Start / stop the stack (data kept in Docker volumes)                      |
+| `pnpm dev:wipe`                                 | Stop and **delete all local data** (fresh DB + seed on next start)        |
+| `pnpm dev:tools`                                | Also start Kibana (:5601), Kafka UI (:8080), Redis Insight (:5540)        |
+| `pnpm dev:logs`                                 | Follow logs of all containers                                             |
+| `pnpm test` / `pnpm test:watch`                 | Unit tests                                                                |
+| `pnpm test:int`                                 | Integration tests against the running stack (in their own test databases) |
+| `pnpm typecheck` · `pnpm lint` · `pnpm format`  | Code quality                                                              |
+| `pnpm verify`                                   | Stack and quality checks (code, health, database, security, gateway)      |
+| `pnpm web`                                      | The website on http://localhost:3000 (hot reload; needs the stack)        |
+| `pnpm web:e2e`                                  | Browser tests: desktop + phone, WCAG 2.2 AA, CSP, clean text, session     |
+| `pnpm acceptance`                               | Phase 2 acceptance through the gateway (journeys, races, every route)     |
+| `pnpm admin:role --email … --role … --reason …` | Grant/remove platform admin (audited; ends their sessions)                |
+| `pnpm db:prepare`                               | Create the directory databases and admin-only extensions (idempotent)     |
+| `pnpm db:shards`                                | Make every registered shard a migrated database (idempotent)              |
+| `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)           |
+| `pnpm db:backup [full\|diff\|incr]`             | A pgBackRest backup of the dev cluster (encrypted repository)             |
+| `pnpm db:restore-drill`                         | Restore the latest backup at a point in time to a scratch server; check   |
+| `pnpm db:health`                                | The database's health checks (✔ ok, ! warning, ✘ critical)                |
+| `pnpm db:break-glass --reason "…" [--db …]`     | A person's read-only, audited session on one database (dropped after)     |
+
+Postgres accepts network connections only over TLS 1.3 (DB-020). `pnpm bootstrap` makes the
+development certificates in `secrets/` (git-ignored) and writes `PGSSLMODE=verify-full` and
+`PGSSLROOTCERT` into `.env`, so psql, Prisma's CLI and the tests check the server's certificate.
+From a shell, load them first: `set -a; . ./.env; set +a; psql -h localhost -U buku_app buku_directory`.
 
 Services hot-reload: edit anything under `packages/*/src` or `services/*/src` and the affected
 containers restart within a second. After changing `package.json`/`pnpm-lock.yaml`, run
@@ -54,14 +62,31 @@ containers restart within a second. After changing `package.json`/`pnpm-lock.yam
 
 ### Change the database schema
 
-1. Edit `packages/database/prisma/schema.prisma`.
-2. `pnpm db:migrate:dev --name <what_changed>` → creates `prisma/migrations/<ts>_<name>/migration.sql`
-   and applies it. **Read the generated SQL.**
-3. Need something Prisma can't express (CHECK, EXCLUDE, trigger, partial index)? Create with
-   `pnpm --filter @buku/database migrate:create --name <x>`, append the SQL by hand, then apply.
-4. `pnpm db:generate` (the dev containers use the client generated on your machine).
-5. Add/adjust integration tests in `packages/database/test`.
-   CI fails if `schema.prisma` and the migrations disagree.
+Database v2 has four schemas, each with its own Prisma config in `packages/database`: the
+directory (`prisma.directory.config.ts`), user shards (`prisma.user.config.ts`), business shards
+(`prisma.business.config.ts`) and the catalog (`prisma.catalog.config.ts`).
+
+1. Edit the schema (`prisma/<directory|user|business|catalog>/schema.prisma`).
+2. Create the migration with that schema's config, e.g.
+   `pnpm --filter @buku/database exec prisma migrate dev --config prisma.business.config.ts --create-only --name <what_changed>`
+   (against a scratch database: `DATABASE_SHARD_MIGRATION_URL` for shards). **Read the generated
+   SQL**; add by hand what Prisma can't express (CHECK, EXCLUDE, triggers, partial indexes, rights).
+3. Apply it: `pnpm db:migrate:deploy` (directory and catalog) or `pnpm db:shards` (every shard in
+   the registry), then `pnpm db:generate` (the dev containers use the clients generated on your
+   machine) and, if a service needs new rights, `src/access.ts` + `docker compose -f docker-compose.dev.yml run --rm --no-deps db-access`.
+4. Add/adjust integration tests in `packages/database/test`. CI fails if any schema and its
+   migrations disagree.
+
+### Integration tests of a service on database v2
+
+Every service tests against a world of its own (D3): the directory
+`buku_directory_services_test` with one user shard and one business shard, rebuilt by the
+integration tests' global setup with every service's rights applied as in production
+(`packages/database/test/services-world.ts`). A service's tests start a `DataPlane` as the
+service's own role (`servicesWorld.urlFor('auth')`), and a second one as `buku_app` for fixtures
+and checks. The same file offers `withBusinessBilling`, `givePlan`, and `servicesWorld.ownerUrl()`
+for reference data BUKU curates (kinds of business). After pulling, run `pnpm db:prepare` once so
+that directory exists.
 
 ### Change reference data (kinds of business, plans, currencies…)
 
@@ -224,6 +249,14 @@ request APIs, no `next lint`). The browser never holds a token: it calls `/api/v
 server, which adds the session (D-085). Browser tests need Chromium once:
 `pnpm --filter @buku/web exec playwright install chromium`.
 
+**Simulated time.** A test can't wait a day for a visit to happen, so the acceptance run and a
+few browser tests move one with `services/booking/scripts/dev-world.ts` — the only step that
+touches the database directly. It works on the business's own shard as `buku_app` (row-level
+security still applies) and then brings the customer's side up to date with booking's own sync;
+it refuses any database not on this machine. By hand:
+`pnpm exec tsx services/booking/scripts/dev-world.ts visit-happened <businessPublicId> <appointmentPublicId>`
+(also `move-visit`, `visit-status`, `close-business`, `signed-in-ago`, …).
+
 ### Deploy the website on Vercel
 
 One Vercel project, connected to this repository, with these settings:
@@ -301,21 +334,57 @@ yet (the Google routes answer the same, never an error page).
 ### Set up Paddle (online payments, sandbox)
 
 Billing works without Paddle (checkout answers "online payments aren't set up"). To try real
-checkouts:
+checkouts against Paddle's sandbox (test cards, no real money) — tested end to end in D3g.1:
 
-1. Create a free account at **sandbox-vendors.paddle.com** (sandbox = test cards, no real money).
-2. _Developer tools → Authentication_: create an **API key** and copy the **client-side token**.
-3. _Developer tools → Notifications_: add a destination for `subscription.*` events pointing at
-   `https://<public address>/v1/billing/webhooks/paddle`, and copy its **secret key**. Locally,
-   expose the gateway with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8000`).
-4. Put the three values in `.env` (`PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, `PADDLE_WEBHOOK_SECRET`;
-   all three or none) and restart billing: `docker compose -f docker-compose.dev.yml up -d billing-service`.
-5. As a super admin, link each web price: `POST /v1/admin/billing/prices/:id/sync-paddle` (creates
-   the product and price in Paddle). Repeat after every price change.
-6. Switch billing on: `PUT /v1/admin/billing/settings/user { "enabled": true }` (and `business`).
-7. Pay with Paddle's test card `4242 4242 4242 4242`, any future date, any CVC.
+1. **Account:** a free account at **sandbox-vendors.paddle.com**. Skip its "create your catalog"
+   step: BUKU creates its own products and prices (step 6), linked to its records.
+2. **API key** (_Developer tools → Authentication → API keys → New_): tick **Write** on exactly
+   five permissions — **Customer portal sessions, Prices, Products, Subscriptions, Transactions** —
+   and nothing else (no customers, addresses or payment methods: a leaked key can't read people's
+   details). Set an expiry (90 days) and mark it rotatable. Paddle shows it once.
+3. **Client-side token** (_same page → Client-side tokens_): public by design (the browser uses it).
+4. **`.env`** (never in the repo or a chat): `PADDLE_API_KEY=pdl_sdbx_apikey_…`,
+   `PADDLE_CLIENT_TOKEN=test_…`, `PADDLE_TAX_CATEGORY=saas` (BUKU sells hosted software; use
+   `standard` if Paddle hasn't allowed SaaS on the account). The three keys go in together or not
+   at all: billing-service refuses to start with only some of them.
+5. **Notifications** need a public HTTPS address. Never tunnel the gateway itself — that would put
+   the whole development stack on the internet, including the development sign-in, which needs no
+   password. Run the relay, which forwards only `POST /v1/billing/webhooks/paddle`, and point the
+   tunnel at it:
+
+   ```bash
+   pnpm exec tsx scripts/paddle-webhook-relay.ts                          # 127.0.0.1:8099
+   cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8099         # prints https://….trycloudflare.com
+   ```
+
+   Use an official `cloudflared` release, checked against its published SHA-256. Then in
+   _Developer tools → Notifications → New destination_: URL `https://<tunnel>/v1/billing/webhooks/paddle`,
+   usage "platform and simulation", events **all `subscription.*`** (nothing else). Copy its
+   **secret key** (`pdl_ntfset_…`, not the destination's `ntfset_…` ID) into
+   `PADDLE_WEBHOOK_SECRET`, and restart billing:
+   `docker compose -f docker-compose.dev.yml up -d --no-deps --force-recreate billing-service`.
+   A quick tunnel's address changes each time it starts: update the destination when it does.
+
+6. **Link the prices** (as a super admin): `POST /v1/admin/billing/prices/:id/sync-paddle` for each
+   business plan's web price (creates the product with the tax category, and the price). Repeat
+   after every price change.
+7. **Checkout domain:** _Checkout → Website approval_: add the website's domain
+   (`https://thebuku.vercel.app`); then _Checkout settings → Default payment link_:
+   `https://thebuku.vercel.app/checkout` (Paddle refuses `localhost`). That is the website's
+   checkout page (D3i); locally, put `PADDLE_CLIENT_TOKEN=test_…` and `PADDLE_ENVIRONMENT=sandbox`
+   in `apps/web/.env.local` and open
+   `http://localhost:3000/checkout?_ptxn=<transactionId from the checkout response>`.
+8. **Switch billing on for businesses** while testing: `PUT /v1/admin/billing/settings/business
+{ "enabled": true }` (customers are free and can't be charged, D-101). Pay with the test card
+   `4242 4242 4242 4242`, any future expiry, CVC `100`. Then try cancel, undo, a plan change and
+   the card portal (`/v1/businesses/:id/billing/subscription/…`).
+9. **Afterwards:** stop the tunnel and the relay, and switch business billing off
+   again (otherwise every demo shop is held to the Starter plan's limits).
 
 Never put the API key or webhook secret in the web or mobile app — only the client-side token.
+For going live: a live Paddle account, BUKU's own domain approved (Paddle may not accept a
+`vercel.app` address for live payments) and live keys (`PADDLE_ENVIRONMENT=production` and a
+`live_…` client-side token for the website).
 
 ### Set up WhatsApp (Meta WhatsApp Cloud API)
 
@@ -330,9 +399,10 @@ written to the log in development (`WHATSAPP_PROVIDER=log`).
    `whatsapp_business_messaging` and `whatsapp_business_management`, and generate a **permanent
    token** (never the 24-hour test token).
 4. _App settings → Basic_: copy the **App secret**. Choose a long random **verify token**.
-5. _WhatsApp → Configuration → Webhook_: URL `https://<public address>/v1/webhooks/whatsapp`
-   (locally: `cloudflared tunnel --url http://localhost:8000`), the verify token, and subscribe to
-   **messages**.
+5. _WhatsApp → Configuration → Webhook_: URL `https://<public address>/v1/webhooks/whatsapp`, the
+   verify token, and subscribe to **messages**. Locally, don't tunnel the whole gateway (it would
+   expose the development sign-in); a relay that forwards only the WhatsApp webhook, like Paddle's
+   (step 5 above), is still to be written.
 6. In `.env`: `WHATSAPP_PROVIDER=meta`, `WHATSAPP_BUSINESS_NUMBER=+…`, `WHATSAPP_PHONE_NUMBER_ID`,
    `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`; then
    `docker compose -f docker-compose.dev.yml up -d notification-service`.

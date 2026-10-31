@@ -22,7 +22,7 @@ export interface BlindIndexer {
    * Its first 16 bytes (database v2, DB-008): collision-free at any number of people we'll ever
    * have, and a v1 hash becomes this by keeping its first 32 hex characters.
    */
-  digest16(context: string, normalizedValue: string): Buffer;
+  digest16(context: string, normalizedValue: string): Buffer<ArrayBuffer>;
 }
 
 export function createBlindIndexer(key: Buffer): BlindIndexer {

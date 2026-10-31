@@ -2,17 +2,17 @@ import {
   AppError,
   authenticate,
   rateLimit,
-  requireAuth,
+  requireActor,
   requireRole,
   sendCreated,
   sendSuccess,
   validated,
+  ErrorCodes,
   type JwtVerifier,
   type RevocationStore,
 } from '@buku/common';
 import { Router, type Express } from 'express';
-import type { Database } from '@buku/database';
-import { requireBusinessPermission } from '@buku/database';
+import { requireBusinessPermissionOnShard, type DataPlane } from '@buku/database';
 import type { Redis } from 'ioredis';
 import type { AdminService } from '../businesses/admin-service.js';
 import type { BusinessService } from '../businesses/business-service.js';
@@ -40,6 +40,7 @@ import {
   ReviewDocumentBody,
   IdOrSlugParams,
   IdParams,
+  RowIdParams,
   ReasonBody,
   ReportBody,
   ReportListQuery,
@@ -55,7 +56,7 @@ export interface RouteDeps {
   documents: DocumentService;
   pictures: PictureService;
   admin: AdminService;
-  db: Database;
+  plane: DataPlane;
   verifier: JwtVerifier;
   revocations: RevocationStore;
   redis: Redis;
@@ -99,6 +100,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   // ── Owner & team ─────────────────────────────────────────────────────────
   const r = Router();
 
+  /** The business in the URL, by its public ID (DB-042): unknown is "not found". */
+  const businessOf = async (publicId: string) => {
+    const id = await deps.plane.idOfPublic('business', publicId);
+    if (id === null) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+    return id;
+  };
+
   /**
    * What the team sees of its business: like the public profile, the logo as a link and the
    * gallery, never the storage key behind them (links depend on storage settings).
@@ -109,7 +117,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   }: B) => {
     const [logoUrl, photos] = await Promise.all([
       deps.pictures.logoUrl(logoStorageKey),
-      deps.pictures.listPhotos(business.id),
+      deps.pictures.listPhotos(await businessOf(business.id)),
     ]);
     return { ...business, logoUrl, photos };
   };
@@ -119,10 +127,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     createLimit,
     validated({ body: CreateBusinessBody }, async ({ body }, req, res) => {
-      const { userId, role } = requireAuth(req);
+      const actor = requireActor(req);
       // Employee accounts (platform role `staff`) exist only inside the business that made them.
-      if (role === 'staff') throw AppError.forbidden('Employee accounts cannot register a business');
-      sendCreated(res, await withPictures(await deps.businesses.create(userId, body, requestContext(req))));
+      if (actor.role === 'staff') throw AppError.forbidden('Employee accounts cannot register a business');
+      sendCreated(res, await withPictures(await deps.businesses.create(actor, body, requestContext(req))));
     }),
   );
 
@@ -132,16 +140,16 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     suggestLimit,
     validated({ body: CategorySuggestionBody }, async ({ body }, req, res) => {
-      const { userId, role } = requireAuth(req);
-      if (role === 'staff') throw AppError.forbidden('Employee accounts cannot add kinds of business');
-      const result = await deps.categories.suggest(userId, body, requestContext(req));
+      const actor = requireActor(req);
+      if (actor.role === 'staff') throw AppError.forbidden('Employee accounts cannot add kinds of business');
+      const result = await deps.categories.suggest(actor, body, requestContext(req));
       if (result.existing) sendSuccess(res, result);
       else sendCreated(res, result);
     }),
   );
 
   r.get('/mine', auth, readLimit, async (req, res) => {
-    const mine = await deps.businesses.listMine(requireAuth(req).userId);
+    const mine = await deps.businesses.listMine(requireActor(req));
     sendSuccess(res, await Promise.all(mine.map(withPictures)));
   });
 
@@ -152,7 +160,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await withPictures(await deps.businesses.getManaged(params.id, requireAuth(req).userId)),
+        await withPictures(await deps.businesses.getManaged(await businessOf(params.id), requireActor(req))),
       );
     }),
   );
@@ -165,7 +173,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await withPictures(
-          await deps.businesses.update(params.id, requireAuth(req).userId, body, requestContext(req)),
+          await deps.businesses.update(
+            await businessOf(params.id),
+            requireActor(req),
+            body,
+            requestContext(req),
+          ),
         ),
       );
     }),
@@ -179,7 +192,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await withPictures(
-          await deps.businesses.setHours(params.id, requireAuth(req).userId, body.hours, requestContext(req)),
+          await deps.businesses.setHours(
+            await businessOf(params.id),
+            requireActor(req),
+            body.hours,
+            requestContext(req),
+          ),
         ),
       );
     }),
@@ -192,7 +210,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: ReportBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.businesses.report(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.businesses.report(
+          await businessOf(params.id),
+          requireActor(req),
+          body,
+          requestContext(req),
+        ),
       );
     }),
   );
@@ -209,8 +232,15 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/verification',
     auth,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      await requireBusinessPermission(deps.db, params.id, requireAuth(req).userId, 'business.view_private');
-      sendSuccess(res, await verificationChecklist(deps.db, params.id));
+      const id = await businessOf(params.id);
+      const actor = requireActor(req);
+      sendSuccess(
+        res,
+        await deps.plane.inBusiness(id, async (tx) => {
+          await requireBusinessPermissionOnShard(tx, id, actor, 'business.view_private');
+          return verificationChecklist(tx, deps.plane.directory, id);
+        }),
+      );
     }),
   );
 
@@ -218,7 +248,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/legal-profile',
     auth,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.legal.getOwn(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.legal.getOwn(await businessOf(params.id), requireActor(req)));
     }),
   );
   r.put(
@@ -228,7 +258,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: LegalProfileBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.legal.upsert(params.id, requireAuth(req).userId, body, requestContext(req)),
+        await deps.legal.upsert(await businessOf(params.id), requireActor(req), body, requestContext(req)),
       );
     }),
   );
@@ -241,8 +271,8 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendCreated(
         res,
         await deps.documents.requestDocumentUpload(
-          params.id,
-          requireAuth(req).userId,
+          await businessOf(params.id),
+          requireActor(req),
           body,
           requestContext(req),
         ),
@@ -257,9 +287,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.documents.completeDocumentUpload(
-          params.id,
+          await businessOf(params.id),
           params.documentId,
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -269,7 +299,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/documents',
     auth,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.documents.listDocuments(params.id, requireAuth(req).userId));
+      sendSuccess(res, await deps.documents.listDocuments(await businessOf(params.id), requireActor(req)));
     }),
   );
   r.delete(
@@ -278,9 +308,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: DocumentParams }, async ({ params }, req, res) => {
       await deps.documents.deleteDocument(
-        params.id,
+        await businessOf(params.id),
         params.documentId,
-        requireAuth(req).userId,
+        requireActor(req),
         requestContext(req),
       );
       res.status(204).end();
@@ -293,7 +323,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     uploadLimit,
     validated({ params: IdParams, body: PhotoUploadBody }, async ({ params, body }, req, res) => {
-      sendCreated(res, await deps.pictures.requestPhotoUpload(params.id, requireAuth(req).userId, body));
+      sendCreated(
+        res,
+        await deps.pictures.requestPhotoUpload(await businessOf(params.id), requireActor(req), body),
+      );
     }),
   );
   r.post(
@@ -304,9 +337,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.pictures.completePhotoUpload(
-          params.id,
+          await businessOf(params.id),
           params.uploadId,
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -319,7 +352,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: PhotoParams }, async ({ params }, req, res) => {
       sendSuccess(
         res,
-        await deps.pictures.setPrimaryPhoto(params.id, params.photoId, requireAuth(req).userId),
+        await deps.pictures.setPrimaryPhoto(await businessOf(params.id), params.photoId, requireActor(req)),
       );
     }),
   );
@@ -331,9 +364,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.pictures.deletePhoto(
-          params.id,
+          await businessOf(params.id),
           params.photoId,
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -345,7 +378,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     uploadLimit,
     validated({ params: IdParams, body: PictureUploadBody }, async ({ params, body }, req, res) => {
-      sendCreated(res, await deps.pictures.requestLogoUpload(params.id, requireAuth(req).userId, body));
+      sendCreated(
+        res,
+        await deps.pictures.requestLogoUpload(await businessOf(params.id), requireActor(req), body),
+      );
     }),
   );
   r.post(
@@ -356,9 +392,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.pictures.completeLogoUpload(
-          params.id,
+          await businessOf(params.id),
           params.uploadId,
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -369,7 +405,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     auth,
     writeLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      await deps.pictures.deleteLogo(params.id, requireAuth(req).userId, requestContext(req));
+      await deps.pictures.deleteLogo(await businessOf(params.id), requireActor(req), requestContext(req));
       res.status(204).end();
     }),
   );
@@ -381,7 +417,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: StaffParams, body: StaffPhotoUploadBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
-        await deps.pictures.requestStaffPhotoUpload(params.id, params.staffId, requireAuth(req).userId, body),
+        await deps.pictures.requestStaffPhotoUpload(
+          await businessOf(params.id),
+          params.staffId,
+          requireActor(req),
+          body,
+        ),
       );
     }),
   );
@@ -393,10 +434,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       sendSuccess(
         res,
         await deps.pictures.completeStaffPhotoUpload(
-          params.id,
+          await businessOf(params.id),
           params.staffId,
           params.uploadId,
-          requireAuth(req).userId,
+          requireActor(req),
           requestContext(req),
         ),
       );
@@ -408,9 +449,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     writeLimit,
     validated({ params: StaffParams }, async ({ params }, req, res) => {
       await deps.pictures.deleteStaffPhoto(
-        params.id,
+        await businessOf(params.id),
         params.staffId,
-        requireAuth(req).userId,
+        requireActor(req),
         requestContext(req),
       );
       res.status(204).end();
@@ -421,11 +462,11 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   r.get(
     '/:idOrSlug',
     validated({ params: IdOrSlugParams }, async ({ params }, _req, res) => {
-      const { logoStorageKey, ...business } = await deps.businesses.getPublic(params.idOrSlug);
+      const { logoStorageKey, internalId, ...business } = await deps.businesses.getPublic(params.idOrSlug);
       const [logoUrl, photos, team] = await Promise.all([
         deps.pictures.logoUrl(logoStorageKey),
-        deps.pictures.listPhotos(business.id),
-        deps.pictures.team(business.id),
+        deps.pictures.listPhotos(internalId),
+        deps.pictures.team(internalId),
       ]);
       res.setHeader('Cache-Control', 'public, max-age=60');
       sendSuccess(res, { ...business, logoUrl, photos, team });
@@ -448,7 +489,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   admin.post(
     '/businesses/:id/verify',
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.admin.verify(params.id, requireAuth(req).userId, requestContext(req)));
+      sendSuccess(
+        res,
+        await deps.admin.verify(await businessOf(params.id), requireActor(req).id, requestContext(req)),
+      );
     }),
   );
   admin.post(
@@ -456,7 +500,12 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: ReasonBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.admin.reject(params.id, requireAuth(req).userId, body.reason, requestContext(req)),
+        await deps.admin.reject(
+          await businessOf(params.id),
+          requireActor(req).id,
+          body.reason,
+          requestContext(req),
+        ),
       );
     }),
   );
@@ -465,37 +514,46 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     validated({ params: IdParams, body: ReasonBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.admin.suspend(params.id, requireAuth(req).userId, body.reason, requestContext(req)),
+        await deps.admin.suspend(
+          await businessOf(params.id),
+          requireActor(req).id,
+          body.reason,
+          requestContext(req),
+        ),
       );
     }),
   );
   admin.post(
     '/businesses/:id/reinstate',
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      sendSuccess(res, await deps.admin.reinstate(params.id, requireAuth(req).userId, requestContext(req)));
+      sendSuccess(
+        res,
+        await deps.admin.reinstate(await businessOf(params.id), requireActor(req).id, requestContext(req)),
+      );
     }),
   );
   admin.get(
     '/businesses/:id/review',
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      const { userId } = requireAuth(req);
+      const adminId = requireActor(req).id;
+      const id = await businessOf(params.id);
       const ctx = requestContext(req);
       const [checklist, legal, documents] = await Promise.all([
-        verificationChecklist(deps.db, params.id),
-        deps.legal.getForAdmin(params.id, userId, ctx),
-        deps.documents.documentsForAdmin(params.id, userId, ctx),
+        deps.plane.inBusiness(id, (tx) => verificationChecklist(tx, deps.plane.directory, id)),
+        deps.legal.getForAdmin(id, adminId, ctx),
+        deps.documents.documentsForAdmin(id, adminId, ctx),
       ]);
       sendSuccess(res, { checklist, legal, documents });
     }),
   );
   admin.post(
     '/business-documents/:id/review',
-    validated({ params: IdParams, body: ReviewDocumentBody }, async ({ params, body }, req, res) => {
+    validated({ params: RowIdParams, body: ReviewDocumentBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
         await deps.documents.reviewDocument(
           params.id,
-          requireAuth(req).userId,
+          requireActor(req).id,
           body.decision,
           body.note,
           requestContext(req),
@@ -510,7 +568,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       const data = await deps.admin.exportCountry(
         body.country,
         { reference: body.reference, legalBasis: body.legalBasis },
-        requireAuth(req).userId,
+        requireActor(req).id,
         requestContext(req),
       );
       res.setHeader(
@@ -529,10 +587,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   );
   admin.post(
     '/business-reports/:id/resolve',
-    validated({ params: IdParams, body: ResolveReportBody }, async ({ params, body }, req, res) => {
+    validated({ params: RowIdParams, body: ResolveReportBody }, async ({ params, body }, req, res) => {
       sendSuccess(
         res,
-        await deps.admin.resolveReport(params.id, requireAuth(req).userId, body.status, requestContext(req)),
+        await deps.admin.resolveReport(params.id, requireActor(req).id, body.status, requestContext(req)),
       );
     }),
   );

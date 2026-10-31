@@ -18,8 +18,25 @@ RUN apt-get update \
       postgresql-17-partman \
       postgresql-17-cron \
       postgresql-17-pgaudit \
+      pgbackrest \
  && rm -rf /var/lib/apt/lists/*
+
+# Backups (docs/DATABASE.md DB-030): pgBackRest, its settings, and the archive command that pushes
+# every WAL file to the repository. Its directories belong to the server's own user.
+COPY pgbackrest/pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
+COPY --chmod=0755 pgbackrest/archive-push.sh /usr/local/bin/pgbackrest-archive-push
+RUN install -d -o postgres -g postgres -m 0750 /var/lib/pgbackrest /var/spool/pgbackrest \
+ && install -d -o postgres -g postgres -m 0770 /var/log/pgbackrest /tmp/pgbackrest \
+ && chmod 0644 /etc/pgbackrest/pgbackrest.conf
 
 # Our own init script creates the roles and installs every extension into an
 # `extensions` schema (keeps Prisma's `public` schema clean).
 COPY init/ /docker-entrypoint-initdb.d/
+
+# TLS (docs/DATABASE.md DB-020): who may connect and how (network: TLS only), and an entrypoint that
+# installs the server's certificate from its read-only mount before the official one runs.
+COPY tls/pg_hba.conf /etc/postgresql/pg_hba.conf
+COPY --chmod=0755 tls/entrypoint.sh /usr/local/bin/buku-entrypoint
+RUN chmod 0644 /etc/postgresql/pg_hba.conf
+ENTRYPOINT ["buku-entrypoint"]
+CMD ["postgres"]

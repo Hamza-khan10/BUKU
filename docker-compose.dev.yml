@@ -57,6 +57,8 @@ networks:
 
 volumes:
   postgres-data:
+  # The backup repository (pgBackRest, DB-030): WAL and backups, encrypted.
+  pgbackrest-repo:
   valkey-data:
   kafka-data:
   kafka-access-state:
@@ -94,6 +96,7 @@ x-node-hardening: &node-hardening
 
 # Source is mounted READ-ONLY for hot reload; dependencies stay in the image.
 x-shared-src: &shared-src # used by db-migrate
+  - ./secrets/postgres-ca:/run/buku-ca:ro
   - ./packages/common/src:/app/packages/common/src:ro
   - ./packages/validation/src:/app/packages/validation/src:ro
   - ./packages/database/src:/app/packages/database/src:ro
@@ -102,7 +105,14 @@ x-shared-src: &shared-src # used by db-migrate
   - ./packages/database/prisma.catalog.config.ts:/app/packages/database/prisma.catalog.config.ts:ro
   - ./packages/kafka/src:/app/packages/kafka/src:ro
 
+# Every client of Postgres connects over TLS 1.3 and checks the server's certificate and name
+# (DB-020; packages/database/src/tls.ts), trusting the development authority mounted at /run/buku-ca.
+x-db-tls-env: &db-tls-env
+  PGSSLMODE: verify-full
+  PGSSLROOTCERT: /run/buku-ca/ca.crt
+
 x-service-env: &service-env
+  <<: *db-tls-env
   NODE_ENV: development
   LOG_LEVEL: ${LOG_LEVEL:-info}
   LOG_PRETTY: 'true'
@@ -114,8 +124,12 @@ x-service-env: &service-env
   JWT_KEY_ID: ${JWT_KEY_ID:?run pnpm bootstrap}
   JWT_ISSUER: ${JWT_ISSUER:-https://auth.buku.local}
   JWT_AUDIENCE: ${JWT_AUDIENCE:-buku-api}
-  DATABASE_URL: postgresql://buku_app:${BUKU_APP_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku
+  DATABASE_URL: postgresql://buku_app:${BUKU_APP_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku_directory
   DATABASE_POOL_SIZE: '5'
+  # Database v2: DATABASE_URL is the service's own role on the directory (v1's `buku` database
+  # left the stack in D3j); shards are reached through the cluster addresses the registry names,
+  # and the catalog defaults to the same server.
+  BUKU_DB_CLUSTER_LOCAL_1: postgresql://postgres:5432
 
 # Object storage: for services that store files (business, auth) or link to them (search).
 x-s3-env: &s3-env
@@ -170,6 +184,8 @@ services:
       POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C.UTF-8 --data-checksums'
       BUKU_MIGRATOR_PASSWORD: ${BUKU_MIGRATOR_PASSWORD:?run pnpm bootstrap}
       BUKU_APP_PASSWORD: ${BUKU_APP_PASSWORD:?run pnpm bootstrap}
+      # The backup repository's passphrase (pgBackRest reads it from here, never from a file).
+      PGBACKREST_REPO1_CIPHER_PASS: ${BUKU_BACKUP_CIPHER_PASS:?run pnpm bootstrap}
     command: >
       postgres
         -c shared_buffers=256MB
@@ -191,7 +207,20 @@ services:
         -c max_worker_processes=32
         -c pgaudit.log=ddl,role
         -c pgaudit.log_parameter=off
-    volumes: [postgres-data:/var/lib/postgresql/data]
+        -c log_line_prefix='%m [%p] %q%u@%d '
+        -c archive_mode=on
+        -c archive_command='pgbackrest-archive-push %p'
+        -c archive_timeout=60
+        -c ssl=on
+        -c ssl_cert_file=/var/lib/postgresql/tls/server.crt
+        -c ssl_key_file=/var/lib/postgresql/tls/server.key
+        -c ssl_min_protocol_version=TLSv1.3
+        -c hba_file=/etc/postgresql/pg_hba.conf
+    # TLS (DB-020): the server's certificate and key, made by `pnpm bootstrap` (scripts/dev-certs.sh).
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - pgbackrest-repo:/var/lib/pgbackrest
+      - ./secrets/postgres:/run/buku-tls:ro
     ports: ['127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U buku_admin -d buku -q']
@@ -446,11 +475,13 @@ services:
     working_dir: /app/packages/database
     command: ['/app/node_modules/.bin/tsx', 'scripts/prepare-databases.ts']
     environment:
+      <<: *db-tls-env
       NODE_ENV: development
       DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/postgres
       # The role reference data is copied with (DB-015).
       BUKU_REPLICATOR_PASSWORD: ${BUKU_REPLICATOR_PASSWORD:?run pnpm bootstrap}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -462,26 +493,21 @@ services:
     <<: [*oneshot, *node-image, *node-hardening]
     networks: [migrate]
     working_dir: /app/packages/database
-    # The main database, then the directory (the shard registry, docs/DATABASE.md §6); each seeded.
+    # The directory (the shard registry, docs/DATABASE.md §6) and the catalog; the directory seeded.
+    # The shards are migrated by db-shards, from the registry.
     command:
       - sh
       - -c
       - >-
-        node_modules/.bin/prisma migrate deploy &&
         node_modules/.bin/prisma migrate deploy --config prisma.directory.config.ts &&
         node_modules/.bin/prisma migrate deploy --config prisma.catalog.config.ts &&
-        /app/node_modules/.bin/tsx prisma/seed.ts &&
         /app/node_modules/.bin/tsx prisma/directory/seed.ts
     environment:
+      <<: *db-tls-env
       NODE_ENV: development
-      # Migrations run as the schema owner; the seed also uses PII keys to
-      # encrypt demo users' contact details exactly like the real app will.
-      DATABASE_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku
+      # Migrations run as the schema owner.
       DATABASE_DIRECTORY_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_directory
       DATABASE_CATALOG_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_catalog
-      PII_ENCRYPTION_KEYS: ${PII_ENCRYPTION_KEYS:?run pnpm bootstrap}
-      PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
-      PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY:?run pnpm bootstrap}
     volumes: *shared-src
     depends_on:
       db-prepare: { condition: service_completed_successfully }
@@ -500,6 +526,7 @@ services:
         '/app/node_modules/.bin/tsx scripts/provision-shards.ts && /app/node_modules/.bin/tsx prisma/seed-v2.ts',
       ]
     environment:
+      <<: *db-tls-env
       NODE_ENV: development
       DATABASE_DIRECTORY_MIGRATION_URL: postgresql://buku_migrator:${BUKU_MIGRATOR_PASSWORD}@postgres:5432/buku_directory
       # The seed signs in as the tools' role, so it passes the same rights and policies as traffic.
@@ -515,9 +542,10 @@ services:
       BUKU_DB_CLUSTER_LOCAL_1: postgresql://postgres:5432
       # Reference data is copied to business shards and the catalog (DB-015). The servers reach
       # the directory as localhost (one server); the replicator signs in with this.
-      BUKU_REFERENCE_SOURCE: host=localhost port=5432 dbname=buku_directory
+      BUKU_REFERENCE_SOURCE: host=localhost port=5432 dbname=buku_directory sslmode=verify-full sslrootcert=/var/lib/postgresql/tls/ca.crt
       BUKU_REPLICATOR_PASSWORD: ${BUKU_REPLICATOR_PASSWORD:?run pnpm bootstrap}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -536,8 +564,9 @@ services:
     working_dir: /app/packages/database
     command: ['/app/node_modules/.bin/tsx', 'scripts/apply-access.ts']
     environment:
+      <<: *db-tls-env
       NODE_ENV: development
-      DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku_directory
       # The same roles' rights in the directory (read the registry, lease ID generators, place rows).
       DATABASE_DIRECTORY_ADMIN_URL: postgresql://buku_admin:${POSTGRES_SUPERUSER_PASSWORD:?run pnpm bootstrap}@postgres:5432/buku_directory
       # …the catalog, and every shard in the registry (reached through its cluster's address).
@@ -553,6 +582,7 @@ services:
       BUKU_DB_PASSWORD_ADS: ${BUKU_DB_PASSWORD_ADS:?run pnpm bootstrap}
       BUKU_DB_PASSWORD_ANALYTICS: ${BUKU_DB_PASSWORD_ANALYTICS:?run pnpm bootstrap}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -601,7 +631,7 @@ services:
     environment:
       <<: [*service-env, *s3-env]
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
-      DATABASE_URL: postgresql://buku_svc_auth:${BUKU_DB_PASSWORD_AUTH:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_URL: postgresql://buku_svc_auth:${BUKU_DB_PASSWORD_AUTH:?run pnpm bootstrap}@postgres:5432/buku_directory
       SERVICE_NAME: auth-service
       KAFKA_SASL_USERNAME: buku-auth
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_AUTH:?run pnpm bootstrap}
@@ -617,6 +647,7 @@ services:
       PII_ENCRYPTION_ACTIVE_KEY_ID: ${PII_ENCRYPTION_ACTIVE_KEY_ID:-k1}
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -648,13 +679,14 @@ services:
     environment:
       <<: [*service-env, *s3-env]
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
-      DATABASE_URL: postgresql://buku_svc_booking:${BUKU_DB_PASSWORD_BOOKING:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_URL: postgresql://buku_svc_booking:${BUKU_DB_PASSWORD_BOOKING:?run pnpm bootstrap}@postgres:5432/buku_directory
       SERVICE_NAME: booking-service
       KAFKA_SASL_USERNAME: buku-booking
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_BOOKING:?run pnpm bootstrap}
       PORT: '3002'
       REDIS_URL: redis://buku-booking:${VALKEY_PASSWORD_BOOKING:?run pnpm bootstrap}@valkey:6379/0
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -685,13 +717,14 @@ services:
     environment:
       <<: *service-env
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
-      DATABASE_URL: postgresql://buku_svc_queue:${BUKU_DB_PASSWORD_QUEUE:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_URL: postgresql://buku_svc_queue:${BUKU_DB_PASSWORD_QUEUE:?run pnpm bootstrap}@postgres:5432/buku_directory
       SERVICE_NAME: queue-service
       KAFKA_SASL_USERNAME: buku-queue
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_QUEUE:?run pnpm bootstrap}
       PORT: '3003'
       REDIS_URL: redis://buku-queue:${VALKEY_PASSWORD_QUEUE:?run pnpm bootstrap}@valkey:6379/0
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -721,7 +754,7 @@ services:
     environment:
       <<: *service-env
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
-      DATABASE_URL: postgresql://buku_svc_notification:${BUKU_DB_PASSWORD_NOTIFICATION:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_URL: postgresql://buku_svc_notification:${BUKU_DB_PASSWORD_NOTIFICATION:?run pnpm bootstrap}@postgres:5432/buku_directory
       SERVICE_NAME: notification-service
       KAFKA_SASL_USERNAME: buku-notification
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_NOTIFICATION:?run pnpm bootstrap}
@@ -749,6 +782,7 @@ services:
       WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
       WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -778,7 +812,7 @@ services:
     environment:
       <<: [*service-env, *s3-env]
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
-      DATABASE_URL: postgresql://buku_svc_business:${BUKU_DB_PASSWORD_BUSINESS:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_URL: postgresql://buku_svc_business:${BUKU_DB_PASSWORD_BUSINESS:?run pnpm bootstrap}@postgres:5432/buku_directory
       SERVICE_NAME: business-service
       KAFKA_SASL_USERNAME: buku-business
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_BUSINESS:?run pnpm bootstrap}
@@ -791,6 +825,7 @@ services:
       PII_BLIND_INDEX_KEY: ${PII_BLIND_INDEX_KEY}
       S3_BUCKET_DOCUMENTS: buku-documents-dev
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -822,7 +857,7 @@ services:
     environment:
       <<: *service-env
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
-      DATABASE_URL: postgresql://buku_svc_billing:${BUKU_DB_PASSWORD_BILLING:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_URL: postgresql://buku_svc_billing:${BUKU_DB_PASSWORD_BILLING:?run pnpm bootstrap}@postgres:5432/buku_directory
       SERVICE_NAME: billing-service
       PORT: '3009'
       REDIS_URL: redis://buku-billing:${VALKEY_PASSWORD_BILLING:?run pnpm bootstrap}@valkey:6379/0
@@ -831,7 +866,10 @@ services:
       PADDLE_API_KEY: ${PADDLE_API_KEY:-}
       PADDLE_CLIENT_TOKEN: ${PADDLE_CLIENT_TOKEN:-}
       PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
+      # Paddle's tax category for BUKU's plans: `saas` once Paddle allows it on the account (D3g.1).
+      PADDLE_TAX_CATEGORY: ${PADDLE_TAX_CATEGORY:-standard}
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -860,7 +898,7 @@ services:
     environment:
       <<: [*service-env, *s3-env]
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
-      DATABASE_URL: postgresql://buku_svc_search:${BUKU_DB_PASSWORD_SEARCH:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_URL: postgresql://buku_svc_search:${BUKU_DB_PASSWORD_SEARCH:?run pnpm bootstrap}@postgres:5432/buku_directory
       SERVICE_NAME: search-service
       KAFKA_SASL_USERNAME: buku-search
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_SEARCH:?run pnpm bootstrap}
@@ -869,6 +907,7 @@ services:
       # reserved for later and refused until built.
       SEARCH_ENGINE: postgres
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -898,7 +937,7 @@ services:
     environment:
       <<: *service-env
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
-      DATABASE_URL: postgresql://buku_svc_ads:${BUKU_DB_PASSWORD_ADS:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_URL: postgresql://buku_svc_ads:${BUKU_DB_PASSWORD_ADS:?run pnpm bootstrap}@postgres:5432/buku_directory
       SERVICE_NAME: ads-service
       KAFKA_SASL_USERNAME: buku-ads
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_ADS:?run pnpm bootstrap}
@@ -906,6 +945,7 @@ services:
       REDIS_URL: redis://buku-ads:${VALKEY_PASSWORD_ADS:?run pnpm bootstrap}@valkey:6379/0
       AD_ATTRIBUTION_WINDOW_DAYS: '7'
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro
@@ -935,7 +975,7 @@ services:
     environment:
       <<: *service-env
       # Its own database role (D-092): only what packages/database/src/access.ts allows.
-      DATABASE_URL: postgresql://buku_svc_analytics:${BUKU_DB_PASSWORD_ANALYTICS:?run pnpm bootstrap}@postgres:5432/buku
+      DATABASE_URL: postgresql://buku_svc_analytics:${BUKU_DB_PASSWORD_ANALYTICS:?run pnpm bootstrap}@postgres:5432/buku_directory
       SERVICE_NAME: analytics-service
       KAFKA_SASL_USERNAME: buku-analytics
       KAFKA_SASL_PASSWORD: ${KAFKA_PASSWORD_ANALYTICS:?run pnpm bootstrap}
@@ -945,6 +985,7 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DATABASE: buku_analytics
     volumes:
+      - ./secrets/postgres-ca:/run/buku-ca:ro
       - ./packages/common/src:/app/packages/common/src:ro
       - ./packages/validation/src:/app/packages/validation/src:ro
       - ./packages/database/src:/app/packages/database/src:ro

@@ -3,19 +3,21 @@ import {
   AppError,
   authenticate,
   rateLimit,
-  requireAuth,
+  requireActor,
   requireRole,
   type BlindIndexer,
   sendNoContent,
   sendSuccess,
   validated,
   zBody,
+  zId,
   zPagination,
-  zUuid,
+  zPublicId,
   type JwtVerifier,
   type RevocationStore,
   recordSecurityEvent,
 } from '@buku/common';
+import type { DataPlane } from '@buku/database';
 import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
 import { z } from 'zod';
@@ -27,6 +29,7 @@ import { WHATSAPP_TEMPLATES } from '../whatsapp/templates.js';
 import type { WhatsAppService } from '../whatsapp/whatsapp-service.js';
 
 export interface RouteDeps {
+  plane: DataPlane;
   inbox: InboxService;
   settings: NotificationSettings;
   whatsapp: WhatsAppService;
@@ -44,7 +47,8 @@ const ListQuery = zPagination.extend({
     .transform((v) => v === 'true')
     .optional(),
 });
-const IdParams = z.object({ id: zUuid });
+/** A message goes by its decimal ID (DB-042). */
+const IdParams = z.object({ id: zId });
 const PrefsBody = zBody({
   pushBookingConfirmation: z.boolean().optional(),
   pushReminders: z.boolean().optional(),
@@ -60,7 +64,8 @@ const PrefsBody = zBody({
 }).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');
 
 const UnsubscribeQuery = z.object({
-  u: zUuid,
+  /** The person, by their public ID (DB-042). */
+  u: zPublicId,
   p: z.enum(UNSUBSCRIBABLE),
   s: z.string().regex(/^[0-9a-f]{64}$/),
 });
@@ -144,8 +149,9 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   // One-click (RFC 8058) from the mail app, or the button above.
   app.post('/v1/notifications/unsubscribe', unsubLimit, async (req, res) => {
     const q = unsubscribeParams(req.query);
-    if (!q) throw AppError.badRequest('This unsubscribe link is not valid');
-    await deps.inbox.unsubscribe(q.u, q.p);
+    const userId = q && (await deps.plane.idOfPublic('user', q.u));
+    if (!q || userId === null) throw AppError.badRequest('This unsubscribe link is not valid');
+    await deps.inbox.unsubscribe(userId, q.p);
     res.type('html').send(page('Done', `<p>You won’t get ${escapeHtml(PREF_WORDS[q.p])} any more.</p>`));
   });
 
@@ -155,21 +161,21 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   r.get(
     '/',
     validated({ query: ListQuery }, async ({ query }, req, res) => {
-      const { items, meta } = await deps.inbox.list(requireAuth(req).userId, query);
+      const { items, meta } = await deps.inbox.list(requireActor(req).id, query);
       sendSuccess(res, items, 200, meta);
     }),
   );
   r.get('/unread-count', async (req, res) => {
-    sendSuccess(res, { unread: await deps.inbox.unreadCount(requireAuth(req).userId) });
+    sendSuccess(res, { unread: await deps.inbox.unreadCount(requireActor(req).id) });
   });
   r.post('/read-all', writeLimit, async (req, res) => {
-    sendSuccess(res, { marked: await deps.inbox.markAllRead(requireAuth(req).userId) });
+    sendSuccess(res, { marked: await deps.inbox.markAllRead(requireActor(req).id) });
   });
   r.post(
     '/:id/read',
     writeLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      await deps.inbox.markRead(requireAuth(req).userId, params.id);
+      await deps.inbox.markRead(requireActor(req).id, params.id);
       sendNoContent(res);
     }),
   );
@@ -177,7 +183,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id',
     writeLimit,
     validated({ params: IdParams }, async ({ params }, req, res) => {
-      await deps.inbox.remove(requireAuth(req).userId, params.id);
+      await deps.inbox.remove(requireActor(req).id, params.id);
       sendNoContent(res);
     }),
   );
@@ -191,13 +197,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     redis: deps.redis,
   });
   app.get('/v1/users/me/whatsapp', auth, async (req, res) => {
-    sendSuccess(res, await deps.whatsapp.status(requireAuth(req).userId));
+    sendSuccess(res, await deps.whatsapp.status(requireActor(req).id));
   });
   app.post('/v1/users/me/whatsapp/link', auth, linkLimit, async (req, res) => {
-    sendSuccess(res, await deps.whatsapp.startLink(requireAuth(req).userId));
+    sendSuccess(res, await deps.whatsapp.startLink(requireActor(req).id));
   });
   app.delete('/v1/users/me/whatsapp', auth, writeLimit, async (req, res) => {
-    await deps.whatsapp.disconnect(requireAuth(req).userId, requestContext(req));
+    await deps.whatsapp.disconnect(requireActor(req).id, requestContext(req));
     sendNoContent(res);
   });
 
@@ -237,7 +243,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   a.put(
     '/settings',
     validated({ body: SettingsBody }, async ({ body }, req, res) => {
-      sendSuccess(res, await deps.settings.update(body, requireAuth(req).userId, requestContext(req)));
+      sendSuccess(res, await deps.settings.update(body, requireActor(req).id, requestContext(req)));
     }),
   );
   a.get('/whatsapp/usage', async (_req, res) => {
@@ -258,14 +264,14 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   app.use('/v1/admin/notifications', a);
 
   app.get('/v1/users/me/notification-prefs', auth, async (req, res) => {
-    sendSuccess(res, await deps.inbox.preferences(requireAuth(req).userId));
+    sendSuccess(res, await deps.inbox.preferences(requireActor(req).id));
   });
   app.put(
     '/v1/users/me/notification-prefs',
     auth,
     writeLimit,
     validated({ body: PrefsBody }, async ({ body }, req, res) => {
-      sendSuccess(res, await deps.inbox.updatePreferences(requireAuth(req).userId, body));
+      sendSuccess(res, await deps.inbox.updatePreferences(requireActor(req).id, body));
     }),
   );
 }

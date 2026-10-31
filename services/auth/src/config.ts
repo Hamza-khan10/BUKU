@@ -1,4 +1,13 @@
-import { baseServiceEnv, databaseEnv, envBool, envPem, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
+import {
+  baseServiceEnv,
+  databaseEnv,
+  databaseV2Env,
+  envBool,
+  envPem,
+  jwtVerifyEnv,
+  kafkaEnv,
+  redisEnv,
+} from '@buku/common';
 import { s3Env } from '@buku/media';
 import { z } from 'zod';
 
@@ -20,7 +29,9 @@ export const Env = baseServiceEnv
   .extend({
     ...jwtVerifyEnv.shape,
     ...kafkaEnv.shape,
+    // DATABASE_URL: auth-service's own role, and the default server of the directory (D3).
     ...databaseEnv.shape,
+    ...databaseV2Env.shape,
     ...redisEnv.shape,
     ...s3Env.shape,
     /** Signing key — auth-service is the ONLY service that receives it. */

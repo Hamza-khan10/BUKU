@@ -57,6 +57,18 @@ test.describe('Notifications', () => {
 
     await message.click();
     await expect(page).toHaveURL((url) => url.pathname === `/appointments/${booked.id}`);
+    // Opening it marks it read in the background, alongside going to the booking.
+    await expect
+      .poll(
+        async () =>
+          (
+            (await (
+              await page.request.get('/api/v1/notifications/unread-count', { headers: ours })
+            ).json()) as { data: { unread: number } }
+          ).data.unread,
+        { timeout: 15_000 },
+      )
+      .toBe(0);
     await page.goto('/account/notifications');
     await expect(page.getByText('All read.')).toBeVisible();
     await expect(page.getByRole('link', { name: /Booking confirmed/ })).not.toContainText('(unread)');

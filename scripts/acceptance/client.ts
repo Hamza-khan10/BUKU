@@ -4,7 +4,6 @@
  * (500/minute overall, 20/minute for sign-in) and waits politely when told
  * to slow down, so a run never fails because of its own speed.
  */
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -98,36 +97,6 @@ export async function signIn(
   }
   const d = data<{ accessToken: string; user: { id: string } }>(r);
   return { id: d.user.id, token: d.accessToken, email };
-}
-
-/**
- * Simulated time: acceptance can't wait a day for a reminder, so a few steps
- * move an appointment in the development database (as the app role, never
- * as an admin). Everything else goes through the public API.
- */
-export function sql(statement: string): string {
-  const password = process.env.BUKU_APP_PASSWORD;
-  if (!password) throw new Error('BUKU_APP_PASSWORD missing (run from the repo root with .env)');
-  return execFileSync(
-    'docker',
-    [
-      'exec',
-      '-e',
-      `PGPASSWORD=${password}`,
-      'buku-postgres-1',
-      'psql',
-      '-h',
-      'localhost',
-      '-U',
-      'buku_app',
-      '-d',
-      'buku',
-      '-Atq',
-      '-c',
-      statement,
-    ],
-    { encoding: 'utf8' },
-  ).trim();
 }
 
 /** Poll until `check` returns something truthy, or fail after `ms`. */

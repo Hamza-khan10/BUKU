@@ -8,13 +8,16 @@
  *   pnpm admin:role --email someone@example.com --role super_admin --reason "Ticket OPS-12: on-call admin"
  *   pnpm admin:role --email someone@example.com --role user --reason "Q4 access review: left the team"
  *
- * Needs DATABASE_URL (or BUKU_APP_PASSWORD for the local stack), REDIS_URL (or
- * VALKEY_PASSWORD) and PII_BLIND_INDEX_KEY. Refuses to remove the last admin.
+ * Database v2 (D3): the person is found by their email's global handle, changed on their own shard,
+ * and the last-admin check counts every shard. Needs DATABASE_URL (auth-service's role; or
+ * BUKU_APP_PASSWORD for the local stack), DATABASE_DIRECTORY_URL when the directory isn't on the
+ * same server, the cluster settings the registry names (BUKU_DB_CLUSTER_LOCAL_1 locally),
+ * REDIS_URL (or VALKEY_PASSWORD) and PII_BLIND_INDEX_KEY. Refuses to remove the last admin.
  */
-import { userInfo } from 'node:os';
+import { hostname, userInfo } from 'node:os';
 import { parseArgs } from 'node:util';
 import { createBlindIndexer, createRedisClient, createRevocationStore, normalizeEmail } from '@buku/common';
-import { createDatabaseClient, recordAudit } from '@buku/database';
+import { DataPlane, recordShardAudit } from '@buku/database';
 
 const ROLES = ['user', 'business_owner', 'super_admin'] as const;
 type Role = (typeof ROLES)[number];
@@ -37,27 +40,44 @@ async function main() {
     env.REDIS_URL ?? `redis://:${encodeURIComponent(env.VALKEY_PASSWORD ?? '')}@localhost:6379/0`;
   if (!env.PII_BLIND_INDEX_KEY) throw new Error('PII_BLIND_INDEX_KEY is required');
 
-  const db = createDatabaseClient({ url: databaseUrl, applicationName: 'admin-set-role', maxConnections: 1 });
+  const plane = await DataPlane.start({
+    service: 'auth',
+    databaseUrl,
+    ...(env.DATABASE_DIRECTORY_URL && { directoryUrl: env.DATABASE_DIRECTORY_URL }),
+    instance: `admin-set-role:${hostname()}:${process.pid}`,
+    poolSize: 1,
+  });
   const redis = createRedisClient({ url: redisUrl, connectionName: 'admin-set-role' });
   try {
     const indexer = createBlindIndexer(Buffer.from(env.PII_BLIND_INDEX_KEY, 'base64'));
-    const user = await db.user.findUnique({
-      where: { emailHash: indexer.hash('users.email', normalizeEmail(values.email)) },
-      select: { id: true, name: true, role: true },
-    });
-    if (!user) throw new Error('No account with that email');
+    const userId = await plane.handles.find(
+      'user.email',
+      indexer.digest16('users.email', normalizeEmail(values.email)),
+    );
+    const db = userId === null ? null : await plane.user(userId);
+    const user =
+      userId === null
+        ? null
+        : await db!.user.findFirst({
+            where: { id: userId, deletedAt: null },
+            select: { id: true, name: true, role: true },
+          });
+    if (!db || !user) throw new Error('No account with that email');
     if (user.role === role) {
       console.log(`${user.name} is already ${role}; nothing changed.`);
       return;
     }
     if (user.role === 'super_admin') {
-      const admins = await db.user.count({ where: { role: 'super_admin', status: 'active' } });
-      if (admins <= 1) throw new Error('Refusing to remove the last platform admin');
+      const admins = await plane.acrossUsers((shard) =>
+        shard.user.count({ where: { role: 'super_admin', status: 'active', deletedAt: null } }),
+      );
+      if (admins.reduce((n, x) => n + x, 0) <= 1)
+        throw new Error('Refusing to remove the last platform admin');
     }
     const operator = env.SUDO_USER ?? userInfo().username;
     await db.$transaction(async (tx) => {
       await tx.user.update({ where: { id: user.id }, data: { role } });
-      await recordAudit(tx, {
+      await recordShardAudit(tx, plane.id(), {
         action: 'user.role_changed',
         resourceType: 'user',
         resourceId: user.id,
@@ -70,10 +90,10 @@ async function main() {
         },
       });
     });
-    await createRevocationStore(redis).revokeAllForUser(user.id, 'role_changed');
+    await createRevocationStore(redis).revokeAllForUser(user.id.toString(), 'role_changed');
     console.log(`✔ ${user.name}: ${user.role} → ${role} (audited; open sessions ended)`);
   } finally {
-    await db.$disconnect();
+    await plane.close();
     await redis.quit();
   }
 }

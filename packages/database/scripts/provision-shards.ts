@@ -7,8 +7,8 @@
  *   BUKU_REPLICATOR_PASSWORD=… BUKU_DB_CLUSTER_LOCAL_1=postgresql://host:5432 tsx scripts/provision-shards.ts
  *
  * Business shards and the catalog get a copy of the reference data (DB-015), subscribed to the
- * directory as the database servers reach it: BUKU_REFERENCE_SOURCE ("host=… port=… dbname=…";
- * default the directory on localhost:5432, i.e. one server).
+ * directory as the database servers reach it: BUKU_REFERENCE_SOURCE ("host=… port=… dbname=…
+ * sslmode=verify-full sslrootcert=…"; default the directory on localhost:5432 over TLS, one server).
  *
  * On the host (`pnpm db:shards`) everything comes from the repo-root .env.
  */
@@ -16,7 +16,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadEnv } from 'dotenv';
 import { createDatabaseClient } from '../src/index.js';
-import { ensureReferenceCopy, provisionShards } from '../src/provision.js';
+import { ensureReferenceCopy, localReferenceSource, provisionShards } from '../src/provision.js';
 
 const rootEnv = resolve(import.meta.dirname, '../../../.env');
 if (!process.env.DATABASE_DIRECTORY_MIGRATION_URL && existsSync(rootEnv))
@@ -49,7 +49,7 @@ const asAdmin = (database: string) => {
 const reference = {
   conninfo:
     process.env.BUKU_REFERENCE_SOURCE ??
-    `host=localhost port=5432 dbname=${decodeURIComponent(directoryHost.pathname.slice(1))}`,
+    localReferenceSource(decodeURIComponent(directoryHost.pathname.slice(1))),
   replicator: { user: 'buku_replicator', password: required('BUKU_REPLICATOR_PASSWORD') },
   publisherUrl: asAdmin(decodeURIComponent(directoryHost.pathname.slice(1))),
 };

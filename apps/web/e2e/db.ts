@@ -1,107 +1,76 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /**
- * Simulated time on the development stack, the way the acceptance tests do it
- * (scripts/acceptance/client.ts): a test can't wait for a visit to happen, so
- * a step moves it in the development database — as the app's own role, never
- * an admin. Unavailable (no stack, no .env) → null, and the test skips.
+ * Simulated time on the development stack, the way the acceptance run does it: a test can't wait
+ * for a visit to happen, so a step moves it — on the business's own shard, as the tools' role
+ * (never an admin), with the customer's side kept in step by booking's own sync
+ * (services/booking/scripts/dev-world.ts, database v2). Unavailable (no stack, no .env) → null,
+ * and the test skips.
  */
 
-function appPassword(): string | null {
-  if (process.env.BUKU_APP_PASSWORD) return process.env.BUKU_APP_PASSWORD;
+const ROOT = fileURLToPath(new URL('../../..', import.meta.url));
+const PUBLIC_ID = /^[0-9A-Za-z]{12}$/;
+
+function devWorld(command: string, ...args: string[]): unknown {
   try {
-    const env = readFileSync(new URL('../../../.env', import.meta.url), 'utf8');
-    return (
-      /^BUKU_APP_PASSWORD=(.+)$/m
-        .exec(env)?.[1]
-        ?.trim()
-        .replace(/^["']|["']$/g, '') ?? null
+    const out = execFileSync(
+      `${ROOT}node_modules/.bin/tsx`,
+      [`${ROOT}services/booking/scripts/dev-world.ts`, command, ...args],
+      { cwd: ROOT, encoding: 'utf8', env: { ...process.env, LOG_LEVEL: 'warn' } },
     );
+    return JSON.parse(out.trim().split('\n').at(-1)!) as unknown;
   } catch {
     return null;
   }
 }
 
-export function sql(statement: string): string | null {
-  const password = appPassword();
-  if (!password) return null;
-  try {
-    return execFileSync(
-      'docker',
-      [
-        'exec',
-        '-e',
-        `PGPASSWORD=${password}`,
-        'buku-postgres-1',
-        'psql',
-        '-h',
-        'localhost',
-        '-U',
-        'buku_app',
-        '-d',
-        'buku',
-        '-Atq',
-        '-c',
-        statement,
-      ],
-      { encoding: 'utf8' },
-    ).trim();
-  } catch {
-    return null;
-  }
-}
+const publicId = (value: string, what: string) => {
+  if (!PUBLIC_ID.test(value)) throw new Error(`not ${what} (a public ID)`);
+  return value;
+};
 
-export const canSimulateTime = () => sql('SELECT 1') === '1';
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const canSimulateTime = () => devWorld('ping') === true;
 
 /**
- * The visit happened `days` ago and the business marked it completed (what
- * the front desk does after a visit). Tries a few days in case the person was
- * busy then.
+ * The visit happened `days` ago and the business marked it completed (what the front desk does
+ * after a visit). Tries a few days in case the person was busy then.
  */
-export function visitHappened(appointmentId: string, days = 5): boolean {
-  if (!UUID.test(appointmentId)) throw new Error('not an appointment id');
-  for (let d = days; d < days + 10; d++) {
-    const done = sql(
-      `UPDATE appointments SET status = 'completed', version = version + 1,
-         start_at = start_at - interval '${d} days', end_at = end_at - interval '${d} days',
-         blocked_until = blocked_until - interval '${d} days'
-       WHERE id = '${appointmentId}' RETURNING id`,
-    );
-    if (done === appointmentId) return true;
-  }
-  return false;
-}
+export const visitHappened = (businessId: string, appointmentId: string, days = 5) =>
+  devWorld(
+    'visit-happened',
+    publicId(businessId, 'a business'),
+    publicId(appointmentId, 'an appointment'),
+    String(days),
+  ) === true;
+
+/** The visit starts `minutes` from now (negative: started that long ago), ending `endsIn` from now. */
+export const moveVisit = (businessId: string, appointmentId: string, minutes: number, endsIn: number) =>
+  devWorld(
+    'move-visit',
+    publicId(businessId, 'a business'),
+    publicId(appointmentId, 'an appointment'),
+    String(minutes),
+    String(endsIn),
+  ) === true;
+
+/** An appointment's status, straight from the business's shard. */
+export const appointmentStatus = (businessId: string, appointmentId: string) =>
+  devWorld('visit-status', publicId(businessId, 'a business'), publicId(appointmentId, 'an appointment')) as
+    string | null;
+
+/** A business a test made is closed when the test is done. */
+export const closeBusiness = (businessId: string) =>
+  devWorld('close-business', publicId(businessId, 'a business')) === true;
 
 /** Give an account a picture link, as a sign-in provider would. */
-export function pictureFromProvider(userId: string, url: string): boolean {
-  if (!UUID.test(userId)) throw new Error('not a user id');
-  if (!/^https?:\/\/[\w.:-]+\/[\w./-]*$/.test(url)) throw new Error('not a plain picture link');
-  return sql(`UPDATE users SET avatar_url = '${url}' WHERE id = '${userId}' RETURNING 1`) === '1';
-}
-
-/** An appointment's status, straight from the database. */
-export function appointmentStatus(appointmentId: string): string | null {
-  if (!UUID.test(appointmentId)) throw new Error('not an appointment id');
-  return sql(`SELECT status FROM appointments WHERE id = '${appointmentId}'`);
-}
+export const pictureFromProvider = (userId: string, url: string) =>
+  devWorld('provider-picture', publicId(userId, 'an account'), url) === true;
 
 /** Every session of this account started `minutes` ago (as if signed in long before). */
-export function signedInAgo(userId: string, minutes: number): boolean {
-  if (!UUID.test(userId)) throw new Error('not a user id');
-  if (!Number.isInteger(minutes) || minutes < 1) throw new Error('not a number of minutes');
-  return (
-    sql(
-      `WITH moved AS (UPDATE refresh_tokens SET created_at = created_at - interval '${minutes} minutes'
-         WHERE user_id = '${userId}' RETURNING 1) SELECT count(*) > 0 FROM moved`,
-    ) === 't'
-  );
-}
+export const signedInAgo = (userId: string, minutes: number) =>
+  devWorld('signed-in-ago', publicId(userId, 'an account'), String(minutes)) === true;
 
 /** Has this account asked to be deleted? */
-export function deletionRequested(userId: string): boolean {
-  if (!UUID.test(userId)) throw new Error('not a user id');
-  return sql(`SELECT deleted_at IS NOT NULL FROM users WHERE id = '${userId}'`) === 't';
-}
+export const deletionRequested = (userId: string) =>
+  devWorld('deletion-requested', publicId(userId, 'an account')) === true;

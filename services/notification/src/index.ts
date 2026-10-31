@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import {
   createBlindIndexer,
   createFieldCipher,
@@ -12,7 +13,7 @@ import {
   type ShutdownHook,
   tcpPing,
 } from '@buku/common';
-import { applyRetention, createDatabaseClient, maintainPartitions, pingDatabase } from '@buku/database';
+import { DataPlane } from '@buku/database';
 import {
   consumerGroupId,
   createKafka,
@@ -32,10 +33,15 @@ import { LogWhatsAppSender, MetaWhatsAppSender } from './whatsapp/sender.js';
 const env = loadConfig(Env);
 
 // ── Dependencies ──
-const db = createDatabaseClient({
-  url: env.DATABASE_URL,
-  maxConnections: env.DATABASE_POOL_SIZE,
-  applicationName: env.SERVICE_NAME,
+// Database v2 (D3): people's inboxes, marks and connections on their user shards; what messages
+// are about on business shards; the admin settings on the directory.
+const plane = await DataPlane.start({
+  service: 'notification',
+  databaseUrl: env.DATABASE_URL,
+  ...(env.DATABASE_DIRECTORY_URL && { directoryUrl: env.DATABASE_DIRECTORY_URL }),
+  region: env.BUKU_REGION,
+  instance: `${env.SERVICE_NAME}:${hostname()}:${process.pid}`,
+  poolSize: env.DATABASE_SHARD_POOL_SIZE,
 });
 const redis = createRedisClient({ url: env.REDIS_URL, connectionName: env.SERVICE_NAME });
 const kafka = createKafka(kafkaConnectionFromEnv(env.SERVICE_NAME, process.env));
@@ -66,7 +72,9 @@ logger.info({ push: push.name, whatsapp: whatsapp.name }, 'senders');
 
 // ── Readiness: every dependency must answer before traffic is routed here ──
 const readiness = new Readiness()
-  .add('postgres', () => pingDatabase(db))
+  .add('postgres', async () => {
+    await plane.directory.$queryRaw`SELECT 1`;
+  })
   .add('valkey', () => redis.ping())
   .add('smtp', () => tcpPing(env.SMTP_HOST, env.SMTP_PORT))
   .add('kafka', () =>
@@ -74,7 +82,7 @@ const readiness = new Readiness()
   );
 
 const { app, notifier, scheduler, suggestions, handler } = buildNotificationApp({
-  db,
+  plane,
   redis,
   verifier,
   revocations: createRevocationStore(redis),
@@ -102,7 +110,7 @@ const { app, notifier, scheduler, suggestions, handler } = buildNotificationApp(
   },
 });
 
-// Booking and queue events → inbox and push.
+// Booking, review and queue events → inbox and push; a closed account's WhatsApp number let go.
 const consumer = await startConsumer({
   kafka,
   groupId: consumerGroupId(env.SERVICE_NAME),
@@ -144,23 +152,11 @@ const suggest = every(30, 'suggestions', async () => {
   if (r && r.usual + r.comeBack + r.firstBooking) logger.info(r, 'suggestions sent');
 });
 const marks = every(24 * 60, 'purge-marks', () => scheduler.purgeMarks());
-// Monthly partitions (inbox, audit log, ad events) months ahead; rows in the catch-all are a red flag.
-const partitionJob = async () => {
-  const r = await maintainPartitions(db);
-  if (Object.keys(r.strayRows).length)
-    logger.warn({ strayRows: r.strayRows }, 'rows in DEFAULT partitions: a month was missing');
-};
-await partitionJob();
-const partitions = every(24 * 60, 'partitions', partitionJob);
-// The retention schedule (D-080): expired months and rows removed, each run audited.
-const retention = every(24 * 60, 'retention', async () => {
-  const r = await applyRetention(db);
-  if (r.ran) logger.info(r, 'retention applied');
-});
+// Partitions and retention on v2's shards are pg_partman's, run by pg_cron (DB-019): nothing here.
 
 // Hooks run in REVERSE order on shutdown: stop producing before closing stores.
 const hooks: ShutdownHook[] = [
-  { name: 'postgres', fn: () => db.$disconnect() },
+  { name: 'postgres', fn: () => plane.close() },
   {
     name: 'valkey',
     fn: async () => {
@@ -172,8 +168,7 @@ const hooks: ShutdownHook[] = [
   {
     name: 'jobs',
     fn: () => {
-      for (const t of [receipts, partitions, retention, reminders, rebook, plans, suggest, marks])
-        clearInterval(t);
+      for (const t of [receipts, reminders, rebook, plans, suggest, marks]) clearInterval(t);
       email.close();
       return Promise.resolve();
     },

@@ -1,9 +1,7 @@
 import 'server-only';
+import { isIdOrSlug } from '@buku/validation';
 import { findPublic, getPublic } from '@/lib/api/public';
 import type { BusinessProfile, QueueState, Review, ReviewsMeta, ServiceMenu, StaffMember } from './types';
-
-/** A business address part: its slug or id. Anything else can't be a business. */
-const ID_OR_SLUG = /^[a-z0-9-]{1,200}$/;
 
 export const REVIEWS_PAGE = 6;
 
@@ -25,7 +23,7 @@ async function section<T>(load: Promise<T>): Promise<Section<T>> {
  * fails shows its own "couldn't load" message instead of breaking the page.
  */
 export async function loadBusinessPage(idOrSlug: string) {
-  if (!ID_OR_SLUG.test(idOrSlug)) return null;
+  if (!isIdOrSlug(idOrSlug)) return null; // its slug or public ID: nothing else is a business
   const profile = await findPublic<BusinessProfile>(`/v1/businesses/${idOrSlug}`, { revalidate: 60 });
   if (!profile) return null;
   const slug = profile.data.slug;
@@ -52,7 +50,7 @@ export async function loadBusinessPage(idOrSlug: string) {
  * to book (the page says so).
  */
 export async function loadBookingPage(idOrSlug: string) {
-  if (!ID_OR_SLUG.test(idOrSlug)) return null;
+  if (!isIdOrSlug(idOrSlug)) return null; // its slug or public ID: nothing else is a business
   const profile = await findPublic<BusinessProfile>(`/v1/businesses/${idOrSlug}`, { revalidate: 60 });
   if (!profile) return null;
   const slug = profile.data.slug;

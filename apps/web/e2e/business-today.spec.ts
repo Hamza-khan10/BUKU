@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Browser, Page } from '@playwright/test';
 import { bookThroughSite, freeTimes, type Bookable } from './booking-helpers';
-import { sql } from './db';
+import { canSimulateTime, closeBusiness, moveVisit } from './db';
 import { expect, test, visitorAddress } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
 
@@ -117,11 +117,11 @@ async function customerBooks(browser: Browser, baseURL: string, place: Bookable)
 test.describe('The front desk’s day', () => {
   test.beforeAll(async () => {
     test.skip(!(await apiAvailable()), 'the API stack is not running');
-    test.skip(sql('SELECT 1') === null, 'the development database is not reachable');
+    test.skip(!canSimulateTime(), 'the development database is not reachable');
   });
 
   test.afterAll(() => {
-    for (const id of made) sql(`UPDATE businesses SET deleted_at = now() WHERE id = '${id}'`);
+    for (const id of made) closeBusiness(id);
   });
 
   test('check in by code, mark done, record a no-show, find and cancel a booking', async ({
@@ -136,13 +136,8 @@ test.describe('The front desk’s day', () => {
     const [arriving, missed, later] = await customerBooks(browser, baseURL!, place);
     // Simulated time: one visit started 5 minutes ago, one 50 minutes ago (and ended); the time each
     // holds its person for moves with it.
-    const move = (statement: string) => expect(sql(statement), statement).not.toBeNull();
-    move(
-      `UPDATE appointments SET start_at = now() - interval '5 minutes', end_at = now() + interval '25 minutes', blocked_until = now() + interval '25 minutes' WHERE id = '${arriving!.id}'`,
-    );
-    move(
-      `UPDATE appointments SET start_at = now() - interval '50 minutes', end_at = now() - interval '20 minutes', blocked_until = now() - interval '20 minutes' WHERE id = '${missed!.id}'`,
-    );
+    expect(moveVisit(place.id, arriving!.id, -5, 25)).toBe(true);
+    expect(moveVisit(place.id, missed!.id, -50, -20)).toBe(true);
 
     await page.goto(`/business/${place.id}`);
     const today = page.getByRole('region', { name: 'Today' });

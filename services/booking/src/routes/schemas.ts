@@ -1,16 +1,20 @@
-import { zBody, zPagination, zSafeText, zTimeOfDay, zUuid } from '@buku/common';
+import { zBody, zId, zPagination, zPublicId, zSafeText, zTimeOfDay } from '@buku/common';
 import { z } from 'zod';
 
-/** Request contracts for booking-service (source for docs/API_REFERENCE.md). */
+/**
+ * Request contracts for booking-service (source for docs/API_REFERENCE.md). IDs (DB-042): a business
+ * and an appointment by their public IDs; a business's own rows (services, categories, staff, time
+ * off, closures, shifts, reviews) by decimal IDs; a linked account by its public ID.
+ */
 
-export const IdParams = z.object({ id: zUuid });
-/** Public pages use the business's id or its slug. */
+export const IdParams = z.object({ id: zPublicId });
+/** Public pages use the business's public ID or its slug. */
 export const IdOrSlugParams = z.object({ idOrSlug: z.string().min(1).max(200) });
-export const CategoryParams = z.object({ id: zUuid, categoryId: zUuid });
-export const ServiceParams = z.object({ id: zUuid, serviceId: zUuid });
-export const StaffParams = z.object({ id: zUuid, staffId: zUuid });
-export const TimeOffParams = z.object({ id: zUuid, staffId: zUuid, entryId: zUuid });
-export const ClosureParams = z.object({ id: zUuid, closureId: zUuid });
+export const CategoryParams = z.object({ id: zPublicId, categoryId: zId });
+export const ServiceParams = z.object({ id: zPublicId, serviceId: zId });
+export const StaffParams = z.object({ id: zPublicId, staffId: zId });
+export const TimeOffParams = z.object({ id: zPublicId, staffId: zId, entryId: zId });
+export const ClosureParams = z.object({ id: zPublicId, closureId: zId });
 
 const atLeastOne = (b: Record<string, unknown>) => Object.values(b).some((v) => v !== undefined);
 
@@ -25,14 +29,14 @@ export const UpdateCategoryBody = CategoryBody.partial().refine(atLeastOne, 'at 
 const serviceFields = {
   name: zSafeText({ kind: 'title', min: 1, max: 200 }),
   description: zSafeText({ kind: 'text', max: 2000 }).nullable().optional(),
-  categoryId: zUuid.nullable().optional(),
+  categoryId: zId.nullable().optional(),
   durationMinutes: z.number().int().min(5).max(1440),
   /** Clean-up time after the service, not shown to customers. */
   bufferMinutes: z.number().int().min(0).max(240).optional(),
   /** In the business's currency, at most 2 decimals. */
   price: z.number().min(0).max(10_000_000).multipleOf(0.01),
   sortOrder: z.number().int().min(0).max(1000).optional(),
-  staffIds: z.array(zUuid).max(200).optional(),
+  staffIds: z.array(zId).max(200).optional(),
 };
 export const ServiceBody = zBody(serviceFields);
 export const UpdateServiceBody = zBody({ ...serviceFields, isActive: z.boolean() })
@@ -48,8 +52,9 @@ const staffFields = {
     .array(zSafeText({ kind: 'title', min: 1, max: 60 }))
     .max(20)
     .optional(),
-  userId: zUuid.nullable().optional(),
-  serviceIds: z.array(zUuid).max(500).optional(),
+  /** The account's public ID. */
+  userId: zPublicId.nullable().optional(),
+  serviceIds: z.array(zId).max(500).optional(),
 };
 export const StaffBody = zBody(staffFields);
 export const UpdateStaffBody = zBody({ ...staffFields, isActive: z.boolean() })
@@ -105,17 +110,18 @@ export const BookingSettingsBody = zBody({
 // ── Availability and appointments ──────────────────────────────────────────
 
 export const AvailabilityQuery = z.object({
-  serviceId: zUuid,
+  serviceId: zId,
   date: zDate,
   days: z.coerce.number().int().min(1).max(14).default(1),
-  staffId: zUuid.optional(),
+  staffId: zId.optional(),
 });
 
 export const BookBody = zBody({
-  businessId: zUuid,
-  serviceId: zUuid,
+  /** The business's public ID. */
+  businessId: zPublicId,
+  serviceId: zId,
   /** Leave out for "anyone available". */
-  staffId: zUuid.optional(),
+  staffId: zId.optional(),
   /** A start time offered by the availability endpoint, with its UTC offset. */
   startAt: z.iso.datetime({ offset: true }),
   notes: zSafeText({ kind: 'text', max: 500 }).optional(),
@@ -125,8 +131,8 @@ export const MyAppointmentsQuery = zPagination.extend({
   scope: z.enum(['upcoming', 'past']).default('upcoming'),
 });
 
-export const AppointmentParams = z.object({ id: zUuid });
-export const BusinessAppointmentParams = z.object({ id: zUuid, appointmentId: zUuid });
+export const AppointmentParams = z.object({ id: zPublicId });
+export const BusinessAppointmentParams = z.object({ id: zPublicId, appointmentId: zPublicId });
 
 export const CancelBody = zBody({
   reasonCode: z.enum([
@@ -144,12 +150,12 @@ export const CancelBody = zBody({
 
 export const RescheduleBody = zBody({
   startAt: z.iso.datetime({ offset: true }),
-  staffId: zUuid.optional(),
+  staffId: zId.optional(),
 });
 
 export const BusinessAppointmentsQuery = z.object({
   date: zDate.optional(),
-  staffId: zUuid.optional(),
+  staffId: zId.optional(),
   status: z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'no_show', 'rescheduled']).optional(),
   /** A booking code ("BK-7KQ2MX") or part of a customer's name. */
   q: zSafeText({ kind: 'line', min: 1, max: 100 }).optional(),
@@ -170,8 +176,8 @@ export const CheckInByCodeBody = zBody({
 });
 
 export const ClockInBody = zBody({ note: zSafeText({ kind: 'line', max: 300 }).optional() });
-export const AttendanceQuery = z.object({ date: zDate.optional(), staffId: zUuid.optional() });
-export const ShiftParams = z.object({ id: zUuid, shiftId: zUuid });
+export const AttendanceQuery = z.object({ date: zDate.optional(), staffId: zId.optional() });
+export const ShiftParams = z.object({ id: zPublicId, shiftId: zId });
 export const CorrectShiftBody = zBody({
   checkInAt: z.iso.datetime({ offset: true }).optional(),
   checkOutAt: z.iso.datetime({ offset: true }).optional(),
@@ -197,8 +203,8 @@ export const BusinessReviewsQuery = zPagination.extend({
     .transform((v) => v === 'true')
     .optional(),
 });
-export const ReviewParams = z.object({ id: zUuid, reviewId: zUuid });
-export const AdminReviewParams = z.object({ reviewId: zUuid });
+export const ReviewParams = z.object({ id: zPublicId, reviewId: zId });
+export const AdminReviewParams = z.object({ reviewId: zId });
 export const ReviewResponseBody = zBody({ text: zSafeText({ kind: 'text', min: 2, max: 1000 }) });
 export const ReportReviewBody = zBody({
   reason: z.enum(['offensive', 'fake', 'not_a_customer', 'personal_info', 'other']),

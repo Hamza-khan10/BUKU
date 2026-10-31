@@ -1,7 +1,6 @@
 /**
- * The development data both seeds build (prisma/seed.ts for v1, prisma/seed-v2.ts for database
- * v2): Pakistani cities, what each kind of business offers, the businesses, names. Deterministic:
- * the same world every time.
+ * The development data the seed builds (prisma/seed-v2.ts): Pakistani cities, what each kind of
+ * business offers, the businesses, names. Deterministic: the same world every time.
  */
 
 /** Seeded randomness (mulberry32): the same sequence for the same seed. */

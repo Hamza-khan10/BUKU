@@ -20,24 +20,45 @@ export interface CspOptions {
   storageOrigin?: string | undefined;
   /** Any further exact origins pictures may load from (e.g. a sign-in provider's). */
   imageOrigins?: readonly string[] | undefined;
+  /**
+   * The checkout page only: Paddle.js (the merchant of record's checkout, D-119) may load, style
+   * itself, talk to Paddle and show its payment frame — the sandbox's or the live one, never both.
+   */
+  payments?: 'sandbox' | 'production' | undefined;
 }
 
-export function buildCsp({ nonce, dev, mediaOrigin, storageOrigin, imageOrigins = [] }: CspOptions): string {
+/** Paddle.js itself, then the sandbox's own assets (its styles come from there); the payment frame. */
+const PADDLE_CDN = {
+  sandbox: 'https://cdn.paddle.com https://sandbox-cdn.paddle.com',
+  production: 'https://cdn.paddle.com',
+};
+const PADDLE_CHECKOUT = { sandbox: 'https://sandbox-buy.paddle.com', production: 'https://buy.paddle.com' };
+
+export function buildCsp({
+  nonce,
+  dev,
+  mediaOrigin,
+  storageOrigin,
+  imageOrigins = [],
+  payments,
+}: CspOptions): string {
   const media = mediaOrigin ? ` ${mediaOrigin}` : '';
   const storage = storageOrigin ? ` ${storageOrigin}` : '';
   const pictures = storageOrigin && storageOrigin !== mediaOrigin ? `${media}${storage}` : media || storage;
   const extra = imageOrigins.map((o) => ` ${o}`).join('');
+  // Paddle's script still needs this response's nonce: with 'strict-dynamic' a host alone admits nothing.
+  const paddle = payments ? ` ${PADDLE_CDN[payments]}` : '';
   const directives: Record<string, string> = {
     'default-src': "'self'",
-    'script-src': `'self' 'nonce-${nonce}' 'strict-dynamic'${dev ? " 'unsafe-eval'" : ''}`,
-    'style-src': "'self' 'unsafe-inline'",
-    'img-src': `'self' data: blob:${pictures}${extra}`,
+    'script-src': `'self' 'nonce-${nonce}' 'strict-dynamic'${paddle}${dev ? " 'unsafe-eval'" : ''}`,
+    'style-src': `'self' 'unsafe-inline'${paddle}`,
+    'img-src': `'self' data: blob:${pictures}${extra}${paddle}`,
     'media-src': `'self'${media}`,
-    'font-src': "'self'",
-    'connect-src': `'self'${storage}${dev ? ' ws: wss:' : ''}`,
+    'font-src': `'self'${paddle}`,
+    'connect-src': `'self'${storage}${payments ? ' https://*.paddle.com' : ''}${dev ? ' ws: wss:' : ''}`,
     'worker-src': "'self' blob:",
     'manifest-src': "'self'",
-    'frame-src': "'none'",
+    'frame-src': payments ? PADDLE_CHECKOUT[payments] : "'none'",
     'object-src': "'none'",
     'base-uri': "'none'",
     'form-action': "'self'",

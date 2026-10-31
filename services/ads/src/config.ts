@@ -1,4 +1,4 @@
-import { baseServiceEnv, databaseEnv, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
+import { baseServiceEnv, databaseEnv, databaseV2Env, jwtVerifyEnv, kafkaEnv, redisEnv } from '@buku/common';
 import { z } from 'zod';
 
 /**
@@ -8,7 +8,9 @@ import { z } from 'zod';
 export const Env = baseServiceEnv.extend({
   ...jwtVerifyEnv.shape,
   ...kafkaEnv.shape,
+  // DATABASE_URL: ads-service's own role, and the default server of the directory and catalog (D3).
   ...databaseEnv.shape,
+  ...databaseV2Env.shape,
   ...redisEnv.shape,
   AD_ATTRIBUTION_WINDOW_DAYS: z.coerce.number().int().min(1).max(30).default(7),
 });

@@ -9,6 +9,7 @@ import { buildCsp, newNonce, originOnly } from '@/lib/security/csp';
  *  • a request id that follows the request into the API's logs;
  *  • personal areas send signed-out visitors to sign in first, and back after.
  *    (A convenience only: the API refuses anyone without a valid session.)
+ *  • the checkout page alone may load Paddle's checkout (D-119).
  */
 
 const PERSONAL = ['/account', '/appointments', '/queue', '/business', '/welcome'];
@@ -30,6 +31,12 @@ export function proxy(request: NextRequest) {
     dev: process.env.NODE_ENV === 'development',
     mediaOrigin: originOnly(process.env.MEDIA_ORIGIN),
     storageOrigin: originOnly(process.env.STORAGE_ORIGIN),
+    payments:
+      pathname === '/checkout'
+        ? process.env.PADDLE_ENVIRONMENT === 'production'
+          ? 'production'
+          : 'sandbox'
+        : undefined,
   });
   const requestId = requestIdFrom(request.headers.get(REQUEST_ID_HEADER));
 

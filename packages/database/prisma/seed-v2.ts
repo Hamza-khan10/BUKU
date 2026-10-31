@@ -1,7 +1,7 @@
 /**
- * Development data for database v2 (docs/DATABASE.md §15, D2e): the same world as the v1 seed
- * (prisma/seed.ts: 4 cities, 20 businesses, 71 people, 200 appointments, reviews, queues), written
- * the way the services will write it (D3):
+ * Development data for database v2 (docs/DATABASE.md §15, D2e): 4 cities, 20 businesses, 71
+ * people, 200 appointments, reviews and queues (the world v1's seed built, before v1 left the
+ * stack in D3j), written the way the services write it (D3):
  *
  *  • IDs from a leased generator (DB-002); every person and business placed by the registry
  *    (registry.place, DB-011) on the shard that holds its ID;
@@ -414,8 +414,9 @@ async function main(): Promise<void> {
     const live = status === 'pending' || status === 'confirmed';
     const userDb = await users.forId(customer.id);
     if (live) {
+      // The claim's ID is its appointment's (D3d): a lapsed one is settled from the appointment.
       await userDb.userTimeReservation.create({
-        data: { id: ids.next(), userId: customer.id, businessId: biz.id, appointmentId: id, startAt, endAt },
+        data: { id, userId: customer.id, businessId: biz.id, appointmentId: id, startAt, endAt },
       });
     }
     await (
@@ -437,6 +438,8 @@ async function main(): Promise<void> {
           publicId: pid,
           code,
           status,
+          // The name the customer booked under: what the business's list shows and searches (D3d).
+          customerName: customer.name,
           paymentStatus: status === 'completed' ? 'paid' : 'unpaid',
           ...(status === 'cancelled' && {
             cancelledAt: new Date(startAt.getTime() - 86_400_000),
@@ -488,6 +491,19 @@ async function main(): Promise<void> {
         serviceName: service.name,
       },
     });
+    // How the visit ended, for the customer's reliability, on their own shard (D-078, D3d).
+    if (status === 'completed' || status === 'no_show') {
+      await userDb.userVisitOutcome.create({
+        data: {
+          userId: customer.id,
+          refId: id,
+          businessId: biz.id,
+          happenedAt: startAt,
+          kind: status === 'completed' ? 'visit' : 'no_show',
+          source: 'appointment',
+        },
+      });
+    }
     const booked = {
       id,
       startAt,
@@ -546,7 +562,8 @@ async function main(): Promise<void> {
     const entries = int(8, 20);
     const served = isToday ? Math.floor(entries / 2) : entries - 2;
     const sessionId = ids.next();
-    const active: { userId: bigint; ticketId: bigint; createdAt: Date }[] = [];
+    const active: { userId: bigint; ticketId: bigint; sessionDate: Date }[] = [];
+    const outcomes: { userId: bigint; refId: bigint; happenedAt: Date; kind: string }[] = [];
     await (
       await shops.forId(biz.id)
     ).$transaction(async (tx) => {
@@ -575,7 +592,7 @@ async function main(): Promise<void> {
         if (used.has(userId) || rand() < 0.2) userId = null; // walk-ins
         if (userId) used.add(userId);
         const id = ids.next();
-        if (userId && status === 'waiting') active.push({ userId, ticketId: id, createdAt: sessionDate });
+        if (userId && status === 'waiting') active.push({ userId, ticketId: id, sessionDate });
         return {
           id,
           sessionDate,
@@ -595,7 +612,27 @@ async function main(): Promise<void> {
         };
       });
       await tx.queueTicket.createMany({ data: tickets });
+      outcomes.push(
+        ...tickets.flatMap((t) =>
+          t.userId && (t.status === 'completed' || t.status === 'no_show')
+            ? [
+                {
+                  userId: t.userId,
+                  refId: t.id,
+                  happenedAt: t.joinedAt,
+                  kind: t.status === 'completed' ? 'visit' : 'no_show',
+                },
+              ]
+            : [],
+        ),
+      );
     });
+    // How each ticket ended, for the person's reliability, on their own shard (D-078, D3e).
+    for (const o of outcomes) {
+      await (
+        await users.forId(o.userId)
+      ).userVisitOutcome.create({ data: { ...o, businessId: biz.id, source: 'queue' } });
+    }
     // One queue at a time per person (DB-014): today's waiting customers, on their shards.
     for (const a of active) {
       await (
@@ -604,7 +641,7 @@ async function main(): Promise<void> {
         data: {
           userId: a.userId,
           ticketId: a.ticketId,
-          ticketCreatedAt: a.createdAt,
+          ticketSessionDate: a.sessionDate,
           businessId: biz.id,
           sessionId,
         },

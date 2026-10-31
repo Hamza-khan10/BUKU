@@ -1,30 +1,27 @@
-import type { Database, Transaction } from '@buku/database';
+import type { UserTx } from '@buku/database';
+import type { EventEnvelope } from './envelope.js';
 
 /**
- * Run `fn` at most once per (consumer, eventId), atomically with its DB writes.
+ * Handle an event at most once per consumer, atomically with the handler's own writes.
  *
- * Kafka delivers at-least-once, and Paddle retries webhooks, so the same event
- * WILL arrive twice sometimes. The ledger row and the side effects commit in
- * one transaction: if the row already exists, `fn` is skipped.
+ * Kafka delivers at-least-once, and Paddle retries webhooks, so the same event WILL arrive twice
+ * sometimes. The ledger row and the side effects commit in one transaction: when the row is
+ * already there, the caller skips the work. For side effects outside the database (sending a
+ * message), claim the event first; a crash after claiming but before sending can then lose that
+ * one message, which for notifications is preferable to duplicates.
  *
- * For side effects outside the database (sending an SMS), call this first to
- * claim the event; a crash after claiming but before sending can then lose
- * that one message, which for notifications is preferable to duplicates.
- *
- * Returns true if `fn` ran, false if the event was a duplicate.
+ * On a database v2 shard (D3), the ledger is partitioned by the event's own time (DB-019), so a
+ * redelivery on another day is still caught. Runs inside the caller's transaction on the shard the
+ * side effect lands on; false when the event was already handled.
  */
-export async function processOnce(
-  db: Database,
+export async function processOnceOnShard(
+  tx: Pick<UserTx, '$executeRaw'>,
   consumer: string,
-  eventId: string,
-  fn: (tx: Transaction) => Promise<void>,
+  event: Pick<EventEnvelope, 'id' | 'occurredAt'>,
 ): Promise<boolean> {
-  return db.$transaction(async (tx) => {
-    const inserted = await tx.$executeRaw`
-      INSERT INTO processed_events (consumer, event_id) VALUES (${consumer}, ${eventId})
-      ON CONFLICT DO NOTHING`;
-    if (inserted === 0) return false;
-    await fn(tx);
-    return true;
-  });
+  const inserted = await tx.$executeRaw`
+    INSERT INTO processed_events (consumer, event_id, occurred_at)
+    VALUES (${consumer}, ${event.id}, ${new Date(event.occurredAt)})
+    ON CONFLICT DO NOTHING`;
+  return inserted > 0;
 }

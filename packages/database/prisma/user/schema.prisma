@@ -90,6 +90,7 @@ model User {
   timeReservations  UserTimeReservation[]
   activeTicket      UserActiveTicket?
   businessRoles     UserBusinessRole[]
+  visitOutcomes     UserVisitOutcome[]
 
   @@unique([managedByBusinessId, username])
   @@map("users")
@@ -330,15 +331,16 @@ model UserTimeReservation {
   @@map("user_time_reservations")
 }
 
-/// The one queue a person is waiting in (one at a time, across every business).
+/// A person's current or latest queue ticket: one queue at a time, across every business. A new
+/// join replaces it once that ticket is no longer live (D3e).
 model UserActiveTicket {
-  userId          BigInt   @id @map("user_id")
-  ticketId        BigInt   @map("ticket_id")
-  /// The ticket's partition key on the business shard, to find it directly.
-  ticketCreatedAt DateTime @map("ticket_created_at") @db.Timestamptz(6)
-  businessId      BigInt   @map("business_id")
-  sessionId       BigInt   @map("session_id")
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  userId            BigInt   @id @map("user_id")
+  ticketId          BigInt   @map("ticket_id")
+  /// The ticket's session date: its partition key on the business shard, to find it directly.
+  ticketSessionDate DateTime @map("ticket_session_date") @db.Date
+  businessId        BigInt   @map("business_id")
+  sessionId         BigInt   @map("session_id")
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -351,9 +353,9 @@ model UserBusinessRole {
   businessId   BigInt   @map("business_id")
   version      BigInt
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  /// owner | manager | staff
+  /// owner | manager | front_desk | staff
   role         String   @db.VarChar(20)
-  /// invited | active | removed
+  /// active | disabled
   status       String   @db.VarChar(20)
   businessName String   @map("business_name") @db.VarChar(200)
 
@@ -361,6 +363,28 @@ model UserBusinessRole {
 
   @@id([userId, businessId])
   @@map("user_business_roles")
+}
+
+/// How reliably a person shows up (D-035, D-078): one row per appointment or queue ticket that
+/// ended in a visit, a no-show or a late cancellation, at any business. Kept 13 months.
+model UserVisitOutcome {
+  userId     BigInt   @map("user_id")
+  /// The appointment or queue ticket (on a business shard).
+  refId      BigInt   @map("ref_id")
+  businessId BigInt   @map("business_id")
+  /// The visit's time; for a late cancellation, when it was cancelled.
+  happenedAt DateTime @map("happened_at") @db.Timestamptz(6)
+  /// visit | no_show | late_cancel
+  kind       String   @db.VarChar(12)
+  /// appointment | queue
+  source     String   @db.VarChar(12)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, refId])
+  @@index([userId, happenedAt])
+  @@index([happenedAt], type: Brin, map: "user_visit_outcomes_happened_at_brin")
+  @@map("user_visit_outcomes")
 }
 
 // ═════════════════════════════ ON EVERY SHARD ═════════════════════════════

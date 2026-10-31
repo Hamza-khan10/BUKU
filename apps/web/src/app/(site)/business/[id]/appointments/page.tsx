@@ -1,3 +1,4 @@
+import { isDecimalId } from '@buku/validation';
 import type { Metadata } from 'next';
 import { Appointments } from '@/features/manage/components/appointments';
 import type { VisitQuery, VisitStatus } from '@/features/manage/visits';
@@ -12,7 +13,6 @@ const STATUSES = new Set<VisitStatus>([
   'no_show',
   'rescheduled',
 ]);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Only well-formed choices from the address reach the API; anything else is ignored. */
 function parse(params: Record<string, string | string[] | undefined>): VisitQuery {
@@ -23,7 +23,7 @@ function parse(params: Record<string, string | string[] | undefined>): VisitQuer
   const q = one('q')?.trim().slice(0, 100);
   return {
     date: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : undefined,
-    staffId: staffId && UUID.test(staffId) ? staffId : undefined,
+    staffId: staffId && isDecimalId(staffId) ? staffId : undefined,
     status: status && STATUSES.has(status) ? status : undefined,
     q: q || undefined,
   };

@@ -39,6 +39,17 @@ const schema = z
         ),
     ),
     GOOGLE_CLIENT_SECRET: optional(z.string().min(10).max(200)),
+    /**
+     * Paddle's client-side token for the checkout page (D-119): it can only open checkouts, so it
+     * is public by design, yet it lives with the settings, never in the code. Without it the page
+     * says payments aren't available. "test_…" for the sandbox, "live_…" for real payments.
+     */
+    PADDLE_CLIENT_TOKEN: optional(
+      z
+        .string()
+        .regex(/^(test|live)_[a-z0-9]{10,64}$/, 'must be a Paddle client-side token (test_… or live_…)'),
+    ),
+    PADDLE_ENVIRONMENT: z.enum(['sandbox', 'production']).default('sandbox'),
     /** Development sign-in (any email, no Google). Refused in production. */
     DEV_SIGN_IN: z
       .enum(['true', 'false'])
@@ -54,6 +65,16 @@ const schema = z
     }
     if (live && !env.APP_URL.startsWith('https://')) {
       ctx.addIssue({ code: 'custom', path: ['APP_URL'], message: 'must be https in production' });
+    }
+    if (
+      env.PADDLE_CLIENT_TOKEN &&
+      env.PADDLE_CLIENT_TOKEN.startsWith('live_') !== (env.PADDLE_ENVIRONMENT === 'production')
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['PADDLE_CLIENT_TOKEN'],
+        message: 'a live_ token goes with PADDLE_ENVIRONMENT=production, a test_ token with sandbox',
+      });
     }
     if (Boolean(env.GOOGLE_CLIENT_ID) !== Boolean(env.GOOGLE_CLIENT_SECRET)) {
       ctx.addIssue({

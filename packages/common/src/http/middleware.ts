@@ -3,6 +3,7 @@ import { type z } from 'zod';
 import { AppError, ErrorCodes, HttpStatus, isAppError } from '../errors.js';
 import { recordSecurityEvent } from './metrics.js';
 import { logger as rootLogger } from '../logger.js';
+import { idFromString } from '../ids.js';
 import { errorResponse } from '../response.js';
 import type { JwtVerifier, Role, VerifiedAccessToken } from '../security/jwt.js';
 
@@ -16,6 +17,8 @@ export interface AuthContext {
   expiresAt: number;
   /** The session passed a second factor (D-081). */
   mfa: boolean;
+  /** Still on a business-issued temporary password (D-034): no business access yet. */
+  mustChangePassword: boolean;
 }
 
 declare global {
@@ -128,6 +131,7 @@ export function authenticate(options: AuthenticateOptions): RequestHandler {
       tokenId: claims.jti,
       expiresAt: claims.exp,
       mfa: claims.mfa === true,
+      mustChangePassword: claims.pwc === true,
       ...(claims.sid ? { sessionId: claims.sid } : {}),
     };
     next();
@@ -160,6 +164,31 @@ export function requireRole(...roles: Role[]): RequestHandler {
 export function requireAuth(req: Request): AuthContext {
   if (!req.auth) throw AppError.unauthorized();
   return req.auth;
+}
+
+/** The signed-in person by their internal ID (database v2, DB-042), and what their token says. */
+export interface Actor {
+  id: bigint;
+  role: Role;
+  /** The session (its refresh-token family). */
+  sessionId: bigint | undefined;
+  mfa: boolean;
+  /** Still on a business-issued temporary password: no business access yet (D-034). */
+  mustChangePassword: boolean;
+}
+
+/** `requireAuth` with database v2 IDs: a token whose subject isn't an ID (a v1 token) is refused. */
+export function requireActor(req: Request): Actor {
+  const auth = requireAuth(req);
+  const id = idFromString(auth.userId);
+  if (id === null) throw AppError.unauthorized('Invalid access token', ErrorCodes.TOKEN_INVALID);
+  return {
+    id,
+    role: auth.role,
+    sessionId: auth.sessionId === undefined ? undefined : (idFromString(auth.sessionId) ?? undefined),
+    mfa: auth.mfa,
+    mustChangePassword: auth.mustChangePassword,
+  };
 }
 
 // ── Errors ─────────────────────────────────────────────────────────────────

@@ -1,10 +1,11 @@
-import { AppError, can, ErrorCodes } from '@buku/common';
+import { AppError, can, ErrorCodes, type Actor } from '@buku/common';
 import {
-  businessRoleOf,
+  businessRoleOfActor,
   isUniqueViolation,
-  recordAudit,
-  requireBusinessPermission,
-  type Database,
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  type BusinessTx,
+  type DataPlane,
 } from '@buku/database';
 import { addDays, startOfDay, wallClock } from '../availability/time.js';
 import { auditCtx, type RequestContext } from '../http/context.js';
@@ -14,173 +15,192 @@ import { auditCtx, type RequestContext } from '../http/context.js';
  * themselves; owner, manager and front desk can clock anyone (the shared
  * front-desk tablet). Managers correct mistakes (audited). At most one open
  * shift per person — the database guarantees it even if two devices clock in
- * at the same moment. Attendance doesn't change bookable times (those come
- * from working hours); it records who actually worked and who is in now.
+ * at the same moment (the open shift is kept by a trigger, keyed by the employee). Attendance
+ * doesn't change bookable times (those come from working hours); it records who actually worked
+ * and who is in now. Shifts are partitioned by when they started (DB-006).
  */
 
 const MAX_SHIFT_MS = 24 * 3_600_000;
 
-export class AttendanceService {
-  constructor(private readonly db: Database) {}
+type ShiftRow = {
+  id: bigint;
+  staffId: bigint;
+  startedAt: Date;
+  endedAt: Date | null;
+  note: string | null;
+};
 
-  async clockIn(businessId: string, staffId: string, actorId: string, note: string | undefined) {
-    await this.authorize(businessId, staffId, actorId);
+export class AttendanceService {
+  constructor(private readonly plane: DataPlane) {}
+
+  async clockIn(businessId: bigint, staffId: bigint, actor: Actor, note: string | undefined) {
     try {
-      const shift = await this.db.staffAttendance.create({
-        data: { businessId, staffId, checkInAt: new Date(), recordedById: actorId, note: note ?? null },
+      return await this.plane.inBusiness(businessId, async (tx) => {
+        await authorize(tx, businessId, staffId, actor);
+        const shift = await tx.staffShift.create({
+          data: {
+            id: this.plane.id(),
+            businessId,
+            staffId,
+            startedAt: new Date(),
+            recordedById: actor.id,
+            note: note ?? null,
+          },
+        });
+        return shiftView(shift);
       });
-      return shiftView(shift);
     } catch (err) {
       if (isUniqueViolation(err)) throw AppError.conflict('Already clocked in');
       throw err;
     }
   }
 
-  async clockOut(businessId: string, staffId: string, actorId: string) {
-    await this.authorize(businessId, staffId, actorId);
-    const open = await this.db.staffAttendance.findFirst({
-      where: { staffId, businessId, checkOutAt: null },
+  async clockOut(businessId: bigint, staffId: bigint, actor: Actor) {
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await authorize(tx, businessId, staffId, actor);
+      const open = await tx.staffOpenShift.findUnique({
+        where: { staffId_businessId: { staffId, businessId } },
+      });
+      if (!open) throw AppError.conflict('Not clocked in');
+      const now = new Date();
+      if (now.getTime() - open.startedAt.getTime() > MAX_SHIFT_MS) {
+        throw AppError.conflict(
+          'This shift has been open for more than 24 hours; ask a manager to correct it',
+        );
+      }
+      const shift = await tx.staffShift.update({
+        where: { id_startedAt: { id: open.shiftId, startedAt: open.startedAt } },
+        data: { endedAt: now, recordedById: actor.id },
+      });
+      return shiftView(shift);
     });
-    if (!open) throw AppError.conflict('Not clocked in');
-    const now = new Date();
-    if (now.getTime() - open.checkInAt.getTime() > MAX_SHIFT_MS) {
-      throw AppError.conflict('This shift has been open for more than 24 hours; ask a manager to correct it');
-    }
-    const shift = await this.db.staffAttendance.update({
-      where: { id: open.id },
-      data: { checkOutAt: now, recordedById: actorId },
-    });
-    return shiftView(shift);
   }
 
   /** Shifts that started on a local date (default today). Employees without `attendance.manage` see their own. */
   async list(
-    businessId: string,
-    actorId: string,
-    query: { date?: string | undefined; staffId?: string | undefined },
+    businessId: bigint,
+    actor: Actor,
+    query: { date?: string | undefined; staffId?: bigint | undefined },
   ) {
-    const role = await businessRoleOf(this.db, businessId, actorId);
-    if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
-    const { timezone } = await this.db.business.findUniqueOrThrow({
-      where: { id: businessId },
-      select: { timezone: true },
+    return this.plane.inBusiness(businessId, async (tx) => {
+      const role = await businessRoleOfActor(tx, businessId, actor);
+      if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+      const { timezone } = await tx.business.findUniqueOrThrow({
+        where: { id: businessId },
+        select: { timezone: true },
+      });
+      const date = query.date ?? wallClock(new Date(), timezone).date;
+      const own = can(role, 'attendance.manage')
+        ? undefined
+        : (await tx.staff.findMany({ where: { businessId, userId: actor.id }, select: { id: true } })).map(
+            (s) => s.id,
+          );
+      const shifts = await tx.staffShift.findMany({
+        where: {
+          businessId,
+          startedAt: { gte: startOfDay(date, timezone), lt: startOfDay(addDays(date, 1), timezone) },
+          ...(query.staffId && { staffId: query.staffId }),
+          ...(own && { staffId: { in: own } }),
+        },
+        include: { staff: { select: { displayName: true } } },
+        orderBy: { startedAt: 'asc' },
+      });
+      return {
+        date,
+        timezone,
+        items: shifts.map((s) => ({ ...shiftView(s), displayName: s.staff.displayName })),
+      };
     });
-    const date = query.date ?? wallClock(new Date(), timezone).date;
-    const own = can(role, 'attendance.manage')
-      ? undefined
-      : (await this.db.staff.findMany({ where: { businessId, userId: actorId }, select: { id: true } })).map(
-          (s) => s.id,
-        );
-    const shifts = await this.db.staffAttendance.findMany({
-      where: {
-        businessId,
-        checkInAt: { gte: startOfDay(date, timezone), lt: startOfDay(addDays(date, 1), timezone) },
-        ...(query.staffId && { staffId: query.staffId }),
-        ...(own && { staffId: { in: own } }),
-      },
-      include: { staff: { select: { displayName: true } } },
-      orderBy: { checkInAt: 'asc' },
-    });
-    return {
-      date,
-      timezone,
-      items: shifts.map((s) => ({ ...shiftView(s), displayName: s.staff.displayName })),
-    };
   }
 
-  /** Who is in right now (for the front desk, and for the live queue in 2.4). */
-  async present(businessId: string, actorId: string) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'business.view_private');
-    const open = await this.db.staffAttendance.findMany({
-      where: { businessId, checkOutAt: null },
-      include: { staff: { select: { displayName: true } } },
-      orderBy: { checkInAt: 'asc' },
+  /** Who is in right now (for the front desk, and for the live queue). */
+  async present(businessId: bigint, actor: Actor) {
+    const open = await this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.view_private');
+      return tx.staffOpenShift.findMany({
+        where: { businessId },
+        include: { staff: { select: { displayName: true } } },
+        orderBy: { startedAt: 'asc' },
+      });
     });
     return open.map((s) => ({
-      staffId: s.staffId,
+      staffId: s.staffId.toString(),
       displayName: s.staff.displayName,
-      since: s.checkInAt.toISOString(),
+      since: s.startedAt.toISOString(),
     }));
   }
 
   /** A manager fixes a forgotten or wrong clock-in/out. Audited with the old and new times. */
   async correct(
-    businessId: string,
-    shiftId: string,
-    actorId: string,
+    businessId: bigint,
+    shiftId: bigint,
+    actor: Actor,
     changes: { checkInAt?: string | undefined; checkOutAt?: string | undefined; note?: string | undefined },
     ctx: RequestContext,
   ) {
-    await requireBusinessPermission(this.db, businessId, actorId, 'schedule.manage_all');
-    const shift = await this.db.staffAttendance.findFirst({ where: { id: shiftId, businessId } });
-    if (!shift) throw AppError.notFound('Shift');
-    const checkInAt = changes.checkInAt ? new Date(changes.checkInAt) : shift.checkInAt;
-    const checkOutAt = changes.checkOutAt ? new Date(changes.checkOutAt) : shift.checkOutAt;
-    if (checkOutAt && checkOutAt <= checkInAt) throw AppError.badRequest('Clock-out must be after clock-in');
-    if (checkOutAt && checkOutAt.getTime() - checkInAt.getTime() > MAX_SHIFT_MS) {
-      throw AppError.badRequest('A shift can be at most 24 hours');
-    }
-    if (checkInAt > new Date() || (checkOutAt && checkOutAt > new Date())) {
-      throw AppError.badRequest('Times can’t be in the future');
-    }
-    const updated = await this.db.$transaction(async (tx) => {
-      const updated = await tx.staffAttendance.update({
-        where: { id: shiftId },
+    return this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'schedule.manage_all');
+      const shift = await tx.staffShift.findFirst({ where: { id: shiftId, businessId } });
+      if (!shift) throw AppError.notFound('Shift');
+      const startedAt = changes.checkInAt ? new Date(changes.checkInAt) : shift.startedAt;
+      const endedAt = changes.checkOutAt ? new Date(changes.checkOutAt) : shift.endedAt;
+      if (endedAt && endedAt <= startedAt) throw AppError.badRequest('Clock-out must be after clock-in');
+      if (endedAt && endedAt.getTime() - startedAt.getTime() > MAX_SHIFT_MS) {
+        throw AppError.badRequest('A shift can be at most 24 hours');
+      }
+      if (startedAt > new Date() || (endedAt && endedAt > new Date())) {
+        throw AppError.badRequest('Times can’t be in the future');
+      }
+      const updated = await tx.staffShift.update({
+        where: { id_startedAt: { id: shiftId, startedAt: shift.startedAt } },
         data: {
-          checkInAt,
-          checkOutAt,
-          recordedById: actorId,
+          startedAt,
+          endedAt,
+          recordedById: actor.id,
           ...(changes.note !== undefined && { note: changes.note }),
         },
       });
-      await recordAudit(tx, {
-        userId: actorId,
+      await recordShardAudit(tx, this.plane.id(), {
+        userId: actor.id,
         action: 'booking.attendance_corrected',
         resourceType: 'staff_attendance',
         resourceId: shiftId,
         oldValues: {
-          checkInAt: shift.checkInAt.toISOString(),
-          checkOutAt: shift.checkOutAt?.toISOString() ?? null,
+          checkInAt: shift.startedAt.toISOString(),
+          checkOutAt: shift.endedAt?.toISOString() ?? null,
         },
-        newValues: { checkInAt: checkInAt.toISOString(), checkOutAt: checkOutAt?.toISOString() ?? null },
+        newValues: { checkInAt: startedAt.toISOString(), checkOutAt: endedAt?.toISOString() ?? null },
         ...auditCtx(ctx),
       });
-      return updated;
+      return shiftView(updated);
     });
-    return shiftView(updated);
-  }
-
-  /** Clock yourself, or anyone if you run the front desk (or manage the business). */
-  private async authorize(businessId: string, staffId: string, actorId: string) {
-    const role = await businessRoleOf(this.db, businessId, actorId);
-    if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
-    const staff = await this.db.staff.findFirst({
-      where: { id: staffId, businessId },
-      select: { userId: true, isActive: true },
-    });
-    if (!staff) throw AppError.notFound('Staff member');
-    if (!can(role, 'attendance.manage') && staff.userId !== actorId) {
-      throw AppError.forbidden('You can only clock yourself in and out');
-    }
-    if (!staff.isActive) throw AppError.conflict('This staff profile is inactive');
   }
 }
 
-function shiftView(s: {
-  id: string;
-  staffId: string;
-  checkInAt: Date;
-  checkOutAt: Date | null;
-  note: string | null;
-}) {
+/** Clock yourself, or anyone if you run the front desk (or manage the business). */
+async function authorize(tx: BusinessTx, businessId: bigint, staffId: bigint, actor: Actor) {
+  const role = await businessRoleOfActor(tx, businessId, actor);
+  if (!role) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+  const staff = await tx.staff.findFirst({
+    where: { id: staffId, businessId },
+    select: { userId: true, isActive: true },
+  });
+  if (!staff) throw AppError.notFound('Staff member');
+  if (!can(role, 'attendance.manage') && staff.userId !== actor.id) {
+    throw AppError.forbidden('You can only clock yourself in and out');
+  }
+  if (!staff.isActive) throw AppError.conflict('This staff profile is inactive');
+}
+
+function shiftView(s: ShiftRow) {
   return {
-    id: s.id,
-    staffId: s.staffId,
-    checkInAt: s.checkInAt.toISOString(),
-    checkOutAt: s.checkOutAt?.toISOString() ?? null,
-    open: s.checkOutAt === null,
+    id: s.id.toString(),
+    staffId: s.staffId.toString(),
+    checkInAt: s.startedAt.toISOString(),
+    checkOutAt: s.endedAt?.toISOString() ?? null,
+    open: s.endedAt === null,
     /** Minutes worked (so far, if still open). */
-    minutes: Math.round(((s.checkOutAt ?? new Date()).getTime() - s.checkInAt.getTime()) / 60_000),
+    minutes: Math.round(((s.endedAt ?? new Date()).getTime() - s.startedAt.getTime()) / 60_000),
     note: s.note,
   };
 }

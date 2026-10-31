@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from 'lucide-react';
 import { describe, expect, it } from 'vitest';
@@ -6,14 +6,19 @@ import { categoryIcon } from '../src/features/categories/icons';
 
 /** Every category slug the migrations ship (the groups and kinds inserted with INSERT … VALUES). */
 function shippedSlugs(): string[] {
-  const dir = join(import.meta.dirname, '../../../packages/database/prisma/migrations');
-  const sql = readdirSync(dir)
-    .filter((m) => m.endsWith('_categories'))
-    .map((m) => readFileSync(join(dir, m, 'migration.sql'), 'utf8'))
-    .join('\n');
-  const groups = [...sql.matchAll(/^\s*\(gen_random_uuid\(\), '[^']+', '([a-z0-9-]+)'/gm)].map((m) => m[1]!);
-  const kinds = [...sql.matchAll(/^\s*\('[a-z0-9-]+', '[^']+', '([a-z0-9-]+)'/gm)].map((m) => m[1]!);
-  return [...groups, ...kinds];
+  // The kinds of business BUKU ships: reference data on the directory (DB-015), in its migration.
+  const sql = readFileSync(
+    join(
+      import.meta.dirname,
+      '../../../packages/database/prisma/directory/migrations/20261017130000_reference/migration.sql',
+    ),
+    'utf8',
+  );
+  const block = sql.slice(sql.indexOf('INSERT INTO "reference"."categories"'));
+  const rows = block.slice(0, block.indexOf(';'));
+  return [
+    ...rows.matchAll(/^\s*\(\d+, (?:NULL|\d+), \d, \d+, (?:true|false), (?:true|false), '([a-z0-9-]+)'/gm),
+  ].map((m) => m[1]!);
 }
 
 describe('category icons', () => {

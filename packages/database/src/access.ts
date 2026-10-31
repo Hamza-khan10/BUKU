@@ -1,15 +1,15 @@
 /**
- * What each service may do in the database (D-092): every service signs in as
- * its own role (buku_svc_<name>) and gets exactly this — the tables it owns,
- * the ones it reads (some only column by column), the few cross-service writes
- * its job needs (column by column), and the database functions it runs. A
- * service that is taken over can't read another's secrets or change another's
- * data. Nothing else is granted: a new table is usable by no service until it
- * is added here (a test checks every table has an owner).
+ * What each service may do in database v2 (D-092): every service signs in as its own role
+ * (buku_svc_<name>) and gets exactly what these maps give it, per kind of database — the
+ * directory, user shards, business shards and the catalog (docs/DATABASE.md DB-010, DB-015,
+ * DB-041): the tables it owns, the ones it reads (some only column by column), the few
+ * cross-service writes its job needs, and the database functions it runs. A service that is taken
+ * over can't read another's secrets or change another's data. Nothing else is granted: a new table
+ * is usable by no service until it is added here (tests check every table has an owner).
  *
- * Applied by scripts/apply-access.ts. The outbox is shared but row-limited:
- * each service sees only the events it wrote (row-level security, migration
- * 20261007100000).
+ * Applied by scripts/apply-access.ts to the directory, the catalog and every shard in the registry.
+ * The outbox is shared but row-limited: each service sees only the events it wrote (row-level
+ * security). Tables outside `public` are written schema-qualified ('reference.plans').
  */
 
 export const SERVICES = [
@@ -48,218 +48,6 @@ export interface Access {
   partitions?: readonly string[];
 }
 
-/** What any other service may read about a person: never credentials, contact hashes or lock state. */
-const PERSON = [
-  'id',
-  'name',
-  'role',
-  'status',
-  'timezone',
-  'locale',
-  'deleted_at',
-  'created_at',
-  'updated_at',
-  'managed_by_business_id',
-  'must_change_password',
-] as const;
-
-/** Plans and settings, for "is this allowed on their plan" (@buku/billing). */
-const PLAN_READS: Reads = { billing_settings: '*', subscriptions: '*', plans: '*' };
-
-export const ACCESS: Readonly<Record<ServiceName, Access>> = {
-  auth: {
-    owns: [
-      'users',
-      'oauth_accounts',
-      'refresh_tokens',
-      'push_tokens',
-      'user_mfa',
-      'business_members',
-      'outbox_events',
-    ],
-    reads: {
-      ...PLAN_READS,
-      audit_logs: '*', // a person's own security log, in "download my data"
-      businesses: '*',
-      appointments: '*',
-      queue_entries: '*',
-      queue_sessions: '*',
-      reviews: '*',
-      favourites: '*',
-      notifications: '*',
-      notification_preferences: '*',
-      whatsapp_contacts: '*',
-      services: '*',
-      staff: '*',
-    },
-    // A new account starts with the default notification settings.
-    inserts: ['audit_logs', 'notification_preferences'],
-    // Deleting an account: the words people wrote are removed, the records stay (D-043).
-    updates: { reviews: ['comment'], appointments: ['notes'], queue_entries: ['notes'] },
-    deletes: [
-      'favourites',
-      'notifications',
-      'notification_marks',
-      'notification_preferences',
-      'whatsapp_contacts',
-    ],
-    // A review changing refreshes its business's rating (the trigger calls it; it runs as its owner).
-    executes: ['recalc_business_rating(uuid)'],
-  },
-  booking: {
-    owns: [
-      'services',
-      'service_categories',
-      'staff',
-      'staff_services',
-      'availability_rules',
-      'availability_exceptions',
-      'booking_settings',
-      'appointments',
-      'appointment_status_history',
-      'staff_attendance',
-      'reviews',
-      'resources',
-      'outbox_events',
-    ],
-    reads: {
-      ...PLAN_READS,
-      users: PERSON,
-      businesses: '*',
-      business_hours: '*',
-      business_members: '*',
-      business_search_stats: '*',
-      staff_photos: '*',
-      queue_entries: '*',
-      categories: '*',
-    },
-    inserts: ['audit_logs'],
-    // A review changing refreshes its business's rating (the trigger calls it; it runs as its owner).
-    executes: ['recalc_business_rating(uuid)'],
-  },
-  queue: {
-    owns: ['queue_settings', 'queue_sessions', 'queue_entries', 'outbox_events'],
-    reads: {
-      ...PLAN_READS,
-      users: PERSON,
-      businesses: '*',
-      business_hours: '*',
-      business_members: '*',
-      staff: '*',
-      staff_attendance: '*',
-      appointments: '*',
-    },
-    inserts: ['audit_logs'],
-  },
-  notification: {
-    owns: [
-      'notifications',
-      'notification_marks',
-      'notification_preferences',
-      'notification_settings',
-      'whatsapp_contacts',
-      'processed_events',
-    ],
-    reads: {
-      ...PLAN_READS,
-      // Emails go to a verified address: the encrypted email and when it was verified.
-      users: [...PERSON, 'email_encrypted', 'email_verified_at'],
-      push_tokens: '*',
-      appointments: '*',
-      businesses: '*',
-      business_hours: '*',
-      business_members: '*',
-      booking_settings: '*',
-      services: '*',
-      staff: '*',
-      staff_services: '*',
-      reviews: '*',
-      queue_entries: '*',
-      queue_sessions: '*',
-      favourites: '*',
-      categories: '*',
-    },
-    inserts: ['audit_logs'],
-    updates: { push_tokens: ['is_active', 'last_seen_at'] },
-    // Retention and partition upkeep (D-080): fixed periods, run, never shortened.
-    executes: [
-      'delete_expired_rows(integer)',
-      'drop_expired_partitions()',
-      'ensure_monthly_partitions(integer, integer)',
-    ],
-    partitions: ['audit_logs_default', 'notifications_default', 'ad_events_default'],
-  },
-  business: {
-    owns: [
-      'businesses',
-      'business_hours',
-      'business_photos',
-      'business_documents',
-      'business_legal_profiles',
-      'business_reports',
-      'staff_photos',
-      'favourites',
-      'outbox_events',
-    ],
-    reads: {
-      ...PLAN_READS,
-      users: PERSON,
-      business_members: '*',
-      business_search_stats: '*', // reliability on the business's page (D-077)
-      staff: '*',
-      services: '*',
-      categories: '*',
-      reviews: '*',
-      appointments: '*',
-      queue_entries: '*',
-    },
-    // Owners add the kind of business BUKU doesn't list yet (D-098): added to, never changed.
-    inserts: ['audit_logs', 'categories'],
-  },
-  billing: {
-    owns: [
-      'plans',
-      'plan_prices',
-      'billing_settings',
-      'subscriptions',
-      'plan_requests',
-      'billing_cost_items',
-      'billing_channel_fees',
-      'payments',
-      'processed_events',
-    ],
-    reads: {
-      users: PERSON,
-      businesses: '*',
-      business_members: '*',
-      business_photos: '*',
-      services: '*',
-      staff: '*',
-      appointments: '*',
-      queue_entries: '*',
-    },
-    inserts: ['audit_logs'],
-  },
-  search: {
-    owns: ['business_search_stats'],
-    reads: {
-      businesses: '*',
-      categories: '*',
-      services: '*',
-      business_hours: '*',
-      business_photos: '*',
-      availability_exceptions: '*',
-      queue_settings: '*',
-      queue_sessions: '*',
-      queue_entries: '*',
-      appointments: '*',
-      reviews: '*',
-    },
-  },
-  ads: { owns: ['business_ads', 'ad_events'], reads: { businesses: '*' } },
-  analytics: { owns: [] },
-};
-
 /**
  * What every service may do in the DIRECTORY database (docs/DATABASE.md §6): read where people and
  * businesses live, lease an ID generator, place a new row, and find, claim or release handles
@@ -291,25 +79,6 @@ export const DIRECTORY_ACCESS = {
     'lookup.find(text, bytea)',
   ],
 } as const;
-
-/**
- * Tables no service changes at run time: filled by migrations and seeds, only ever added to
- * (categories: owners' suggestions, D-098; audit_logs), or kept for features not built yet.
- */
-export const NOT_WRITTEN_AT_RUN_TIME = [
-  'categories', // added to by business (inserts), changed by no one
-  'webhooks',
-  'webhook_deliveries',
-  'ai_receptionist_configs',
-  'ai_call_logs',
-  'audit_logs', // appended to by everyone (inserts), changed by no one
-] as const;
-
-// ═══════════════════════════════ DATABASE v2 (D2d) ═══════════════════════════════
-// The same rule as above, per kind of database (docs/DATABASE.md DB-010, DB-015, DB-041): each
-// service gets exactly what it needs on user shards, business shards and the catalog, and the
-// few reference tables it edits on the directory. Applied by scripts/apply-access.ts to every
-// shard in the registry. Tables outside `public` are written schema-qualified ('reference.plans').
 
 /** What any service may read about a person on a user shard: never credentials, hashes or locks. */
 const SHARD_PERSON = [
@@ -366,6 +135,10 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
       whatsapp_contacts: '*',
       user_appointments: '*',
       user_active_tickets: '*',
+      // Only what erasing them needs: a DELETE reads the columns it filters on.
+      notification_marks: ['user_id'],
+      user_time_reservations: ['user_id'],
+      user_visit_outcomes: ['user_id'],
     },
     // A new account starts with the default notification settings.
     inserts: ['audit_logs', 'notification_preferences'],
@@ -379,19 +152,22 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
       'user_appointments',
       'user_time_reservations',
       'user_active_tickets',
+      'user_visit_outcomes',
     ],
   },
   booking: {
-    // Claims the person's time before writing the appointment (DB-014), and keeps their list.
-    owns: ['user_time_reservations', 'user_appointments', ...PUBLISHES, ...CONSUMES],
+    // Claims the person's time before writing the appointment (DB-014), keeps their list, and
+    // records how each visit ended for their reliability (D-078, D3d).
+    owns: ['user_time_reservations', 'user_appointments', 'user_visit_outcomes', ...PUBLISHES, ...CONSUMES],
     reads: { users: SHARD_PERSON },
     inserts: ['audit_logs'],
   },
   queue: {
-    // One queue at a time, across every business (DB-014).
+    // One queue at a time, across every business (DB-014); how each ticket ended goes into the
+    // person's reliability, which the front desk sees as a label (D-078, D3e).
     owns: ['user_active_tickets', ...PUBLISHES, ...CONSUMES],
-    reads: { users: SHARD_PERSON },
-    inserts: ['audit_logs'],
+    reads: { users: SHARD_PERSON, user_visit_outcomes: '*' },
+    inserts: ['audit_logs', 'user_visit_outcomes'],
   },
   notification: {
     owns: [
@@ -415,16 +191,28 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
       favourites: '*',
       user_appointments: '*',
       user_business_roles: '*',
+      // Suggestions and "what's coming up" (D-075, D3f): where people go, and their place in line.
+      user_visit_outcomes: '*',
+      user_active_tickets: '*',
     },
     inserts: ['audit_logs'],
     updates: { push_tokens: ['is_active', 'last_seen_at'] },
   },
   business: {
     owns: ['favourites', ...PUBLISHES, ...CONSUMES],
-    reads: { users: SHARD_PERSON },
+    // An owner's own view of their businesses (DB-014, D3c): written when they register one, its
+    // name kept when it changes; members' rows are auth-service's (D3b).
+    reads: { users: SHARD_PERSON, user_business_roles: '*' },
+    inserts: ['audit_logs', 'user_business_roles'],
+    updates: { user_business_roles: ['business_name', 'version', 'updated_at'] },
+    deletes: ['user_business_roles'],
+  },
+  billing: {
+    owns: [...CONSUMES],
+    // A customer's account page counts their visits (shown only: customers are free, D-101).
+    reads: { users: SHARD_PERSON, user_appointments: '*', user_visit_outcomes: '*' },
     inserts: ['audit_logs'],
   },
-  billing: { owns: [...CONSUMES], reads: { users: SHARD_PERSON }, inserts: ['audit_logs'] },
   search: { owns: [] },
   ads: { owns: [] },
   analytics: { owns: [] },
@@ -438,10 +226,12 @@ export const USER_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
 export const BUSINESS_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
   auth: {
     owns: ['business_members', ...PUBLISHES, ...CONSUMES],
-    // "Download my data" and erasing an account touch what the person did at businesses.
+    // "Download my data" and erasing an account touch what the person did at businesses (their
+    // appointments found through the index, D3b); team logins follow the business's plan.
     reads: {
       ...REFERENCE_READS,
       businesses: '*',
+      appointment_index: '*',
       appointments: '*',
       queue_tickets: '*',
       queue_sessions: '*',
@@ -451,8 +241,9 @@ export const BUSINESS_SHARD_ACCESS: Readonly<Record<ServiceName, Access>> = {
       subscriptions: '*',
     },
     inserts: ['audit_logs'],
-    // Deleting an account: the words people wrote are removed, the records stay (D-043).
-    updates: { reviews: ['comment'], appointments: ['notes'], queue_tickets: ['notes'] },
+    // Deleting an account: the words people wrote and the name they booked under are removed,
+    // the records stay (D-043).
+    updates: { reviews: ['comment'], appointments: ['notes', 'customer_name'], queue_tickets: ['notes'] },
   },
   booking: {
     owns: [
@@ -647,7 +438,7 @@ export const DIRECTORY_REFERENCE_ACCESS: Readonly<Partial<Record<ServiceName, Ac
  * a job that says so sees every business, for that one transaction.
  */
 export const CROSS_BUSINESS: Readonly<Partial<Record<ServiceName, string>>> = {
-  auth: 'erasing an account touches every business the person used',
+  auth: 'exporting or erasing an account touches every business the person used',
   booking: 'sweeping appointments nobody confirmed or attended, across businesses',
   queue: 'closing yesterday’s queues everywhere',
   notification: 'reminders and suggestions for every business’s appointments',

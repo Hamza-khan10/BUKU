@@ -1,11 +1,14 @@
 import { customerShowUp } from '@buku/common';
-import { showUpCounts, type Database } from '@buku/database';
+import { showUpCountsOf, type DataPlane } from '@buku/database';
+
+/** Customer reliability (D-035, D-078) is kept on each person's shard: `@buku/database` reliability. */
+export { showUpCountsOf as showUpCounts, showUpLabelsOf as showUpLabels } from '@buku/database';
 
 const YEAR_MS = 365 * 86_400_000;
 
 /** The customer's own view: the figure, what it's made of, and how to keep it high. */
-export async function myReliability(db: Database, userId: string, now = new Date()) {
-  const c = (await showUpCounts(db, [userId], now)).get(userId)!;
+export async function myReliability(plane: DataPlane, userId: bigint, now = new Date()) {
+  const c = (await showUpCountsOf(plane, [userId], now)).get(userId)!;
   const s = customerShowUp(c);
   return {
     ...s,

@@ -3,23 +3,20 @@ import {
   AppError,
   ErrorCodes,
   generateSecureToken,
+  idFromString,
   type FieldCipher,
   type Role,
   recordSecurityEvent,
 } from '@buku/common';
-import { recordAudit, type Database } from '@buku/database';
+import { recordShardAudit, type DataPlane } from '@buku/database';
 import type { Redis } from 'ioredis';
+import { auditCtx, auditPerson } from '../audit.js';
 import type { RequestContext } from '../http/context.js';
-import {
-  auditCtx,
-  type DeviceInfo,
-  type SessionService,
-  type SessionTokens,
-} from '../sessions/session-service.js';
+import type { DeviceInfo, SessionService, SessionTokens, SessionUser } from '../sessions/session-service.js';
 import { matchingStep, newRecoveryCodes, newSecret, normalizeRecoveryCode, otpauthUri } from './totp.js';
 
 /**
- * Two-step sign-in with an authenticator app (D-081).
+ * Two-step sign-in with an authenticator app (D-081), kept on the person's own shard.
  *
  *  • SET UP: a new secret (QR code), confirmed by entering a code; ten
  *    single-use recovery codes are shown once.
@@ -29,7 +26,7 @@ import { matchingStep, newRecoveryCodes, newSecret, normalizeRecoveryCode, otpau
  *    tries lock it for 15 minutes.
  *  • Platform admins must have it: admin routes refuse sessions without it,
  *    and they can't switch it off.
- *  • Everything is audited; the secret is encrypted, recovery codes hashed.
+ *  • Everything is audited; the secret is encrypted, recovery codes hashed (SHA-256, 32 bytes).
  */
 
 export const MFA_SECRET_CONTEXT = 'users.mfa_secret';
@@ -46,12 +43,13 @@ export interface MfaChallenge {
   expiresAt: string;
 }
 
-const sha256 = (s: string) => createHash('sha256').update(s).digest('hex');
+const sha256 = (s: string) => createHash('sha256').update(s).digest();
+const challengeKey = (token: string) => `mfa:challenge:${sha256(token).toString('hex')}`;
 
 export class MfaService {
   constructor(
     private readonly deps: {
-      db: Database;
+      plane: DataPlane;
       redis: Redis;
       cipher: FieldCipher;
       sessions: SessionService;
@@ -62,19 +60,18 @@ export class MfaService {
 
   /** A session, or — for someone with MFA — a challenge to answer first. */
   async beginSession(
-    user: { id: string; role: Role },
+    user: SessionUser,
     device: DeviceInfo,
     ctx: RequestContext,
   ): Promise<SessionTokens | MfaChallenge> {
-    const mfa = await this.deps.db.userMfa.findUnique({
-      where: { userId: user.id },
-      select: { confirmedAt: true },
-    });
+    const mfa = await (
+      await this.deps.plane.user(user.id)
+    ).userMfa.findUnique({ where: { userId: user.id }, select: { confirmedAt: true } });
     if (!mfa?.confirmedAt) return this.deps.sessions.start(user, device, ctx);
     const token = generateSecureToken();
     await this.deps.redis.set(
-      `mfa:challenge:${sha256(token)}`,
-      JSON.stringify({ userId: user.id, device }),
+      challengeKey(token),
+      JSON.stringify({ userId: user.id.toString(), device }),
       'EX',
       CHALLENGE_SECONDS,
     );
@@ -90,25 +87,35 @@ export class MfaService {
     input: { mfaToken: string; code?: string | undefined; recoveryCode?: string | undefined },
     ctx: RequestContext,
   ) {
-    const key = `mfa:challenge:${sha256(input.mfaToken)}`;
+    const expired = () => AppError.unauthorized('This sign-in has expired; please sign in again');
+    const key = challengeKey(input.mfaToken);
     const raw = await this.deps.redis.get(key);
-    if (!raw) throw AppError.unauthorized('This sign-in has expired; please sign in again');
-    const { userId, device } = JSON.parse(raw) as { userId: string; device: DeviceInfo };
-    const user = await this.deps.db.user.findUnique({
+    if (!raw) throw expired();
+    const challenge = JSON.parse(raw) as { userId: string; device: DeviceInfo };
+    const userId = idFromString(challenge.userId);
+    if (userId === null) throw expired();
+    const user = await (
+      await this.deps.plane.user(userId)
+    ).user.findUnique({
       where: { id: userId },
-      select: { id: true, role: true, status: true },
+      select: { id: true, role: true, status: true, deletedAt: true, mustChangePassword: true },
     });
-    if (!user || user.status !== 'active')
-      throw AppError.unauthorized('This sign-in has expired; please sign in again');
+    if (!user || user.deletedAt || user.status !== 'active') throw expired();
 
     await this.checkSecondFactor(user.id, input, ctx);
     await this.deps.redis.del(key); // one use
-    const session = await this.deps.sessions.start(user, device, ctx, undefined, { mfa: true });
-    await recordAudit(this.deps.db, {
+    const session = await this.deps.sessions.start(
+      { id: user.id, role: user.role as Role, mustChangePassword: user.mustChangePassword },
+      challenge.device,
+      ctx,
+      undefined,
+      { mfa: true },
+    );
+    await auditPerson(this.deps.plane, user.id, {
       userId: user.id,
       action: 'auth.mfa_verified',
       resourceType: 'session',
-      resourceId: session.sessionId,
+      resourceId: BigInt(session.sessionId),
       ...auditCtx(ctx),
     });
     return { userId: user.id, session };
@@ -116,32 +123,33 @@ export class MfaService {
 
   // ── The signed-in person ──────────────────────────────────────────────────
 
-  async status(userId: string, role: Role) {
-    const m = await this.deps.db.userMfa.findUnique({ where: { userId } });
+  async status(userId: bigint, role: Role) {
+    const m = await (await this.deps.plane.user(userId)).userMfa.findUnique({ where: { userId } });
     return {
       enabled: Boolean(m?.confirmedAt),
       since: m?.confirmedAt?.toISOString() ?? null,
-      recoveryCodesLeft: m?.confirmedAt ? m.recoveryCodeHashes.length : 0,
+      recoveryCodesLeft: m?.confirmedAt ? m.recoveryHashes.length : 0,
       /** Platform admins must use it. */
       required: role === 'super_admin',
     };
   }
 
   /** Start (or restart) setting up an app. Refused while one is already in use: turn it off first. */
-  async setup(userId: string, accountLabel: string, ctx: RequestContext) {
-    const current = await this.deps.db.userMfa.findUnique({ where: { userId } });
+  async setup(userId: bigint, accountLabel: string, ctx: RequestContext) {
+    const db = await this.deps.plane.user(userId);
+    const current = await db.userMfa.findUnique({ where: { userId } });
     if (current?.confirmedAt) {
       throw AppError.conflict('Two-step sign-in is already on; turn it off first to switch apps');
     }
     const secret = newSecret();
     const data = {
-      secretEncrypted: this.deps.cipher.encrypt(secret, MFA_SECRET_CONTEXT),
+      secretEnc: this.deps.cipher.encryptBytes(secret, MFA_SECRET_CONTEXT),
       confirmedAt: null,
       lastUsedStep: null,
-      recoveryCodeHashes: [],
+      recoveryHashes: [],
     };
-    await this.deps.db.userMfa.upsert({ where: { userId }, create: { userId, ...data }, update: data });
-    await recordAudit(this.deps.db, {
+    await db.userMfa.upsert({ where: { userId }, create: { userId, ...data }, update: data });
+    await auditPerson(this.deps.plane, userId, {
       userId,
       action: 'mfa.setup_started',
       resourceType: 'user',
@@ -155,29 +163,25 @@ export class MfaService {
    * Prove the app works: turns MFA on, returns the recovery codes (shown once), and marks
    * the current session as having passed MFA (a fresh access token).
    */
-  async confirm(
-    user: { id: string; role: Role },
-    sessionId: string | undefined,
-    code: string,
-    ctx: RequestContext,
-  ) {
-    const m = await this.deps.db.userMfa.findUnique({ where: { userId: user.id } });
+  async confirm(user: SessionUser, sessionId: bigint | undefined, code: string, ctx: RequestContext) {
+    const db = await this.deps.plane.user(user.id);
+    const m = await db.userMfa.findUnique({ where: { userId: user.id } });
     if (!m) throw AppError.notFound('Two-step sign-in setup');
     if (m.confirmedAt) throw AppError.conflict('Two-step sign-in is already on');
     await this.assertNotLocked(user.id);
-    const step = matchingStep(this.deps.cipher.decrypt(m.secretEncrypted, MFA_SECRET_CONTEXT), code);
+    const step = matchingStep(this.deps.cipher.decryptBytes(m.secretEnc, MFA_SECRET_CONTEXT), code);
     if (step === null) return this.fail(user.id, ctx);
     const codes = newRecoveryCodes();
-    await this.deps.db.$transaction(async (tx) => {
+    await db.$transaction(async (tx) => {
       await tx.userMfa.update({
         where: { userId: user.id },
         data: {
           confirmedAt: new Date(),
           lastUsedStep: step,
-          recoveryCodeHashes: codes.map((c) => sha256(normalizeRecoveryCode(c))),
+          recoveryHashes: codes.map((c) => sha256(normalizeRecoveryCode(c))),
         },
       });
-      await recordAudit(tx, {
+      await recordShardAudit(tx, this.deps.plane.id(), {
         userId: user.id,
         action: 'mfa.enabled',
         resourceType: 'user',
@@ -190,15 +194,10 @@ export class MfaService {
   }
 
   /** Re-check a code during a session (e.g. an admin whose session predates MFA). */
-  async stepUp(
-    user: { id: string; role: Role },
-    sessionId: string | undefined,
-    code: string,
-    ctx: RequestContext,
-  ) {
+  async stepUp(user: SessionUser, sessionId: bigint | undefined, code: string, ctx: RequestContext) {
     if (!sessionId) throw AppError.unauthorized();
     await this.checkSecondFactor(user.id, { code }, ctx);
-    await recordAudit(this.deps.db, {
+    await auditPerson(this.deps.plane, user.id, {
       userId: user.id,
       action: 'auth.mfa_step_up',
       resourceType: 'session',
@@ -209,14 +208,16 @@ export class MfaService {
   }
 
   /** New recovery codes (the old ones stop working), with a current code or a recovery code. */
-  async newRecoveryCodes(userId: string, proof: SecondFactor, ctx: RequestContext) {
+  async newRecoveryCodes(userId: bigint, proof: SecondFactor, ctx: RequestContext) {
     await this.checkSecondFactor(userId, proof, ctx);
     const codes = newRecoveryCodes();
-    await this.deps.db.userMfa.update({
+    await (
+      await this.deps.plane.user(userId)
+    ).userMfa.update({
       where: { userId },
-      data: { recoveryCodeHashes: codes.map((c) => sha256(normalizeRecoveryCode(c))) },
+      data: { recoveryHashes: codes.map((c) => sha256(normalizeRecoveryCode(c))) },
     });
-    await recordAudit(this.deps.db, {
+    await auditPerson(this.deps.plane, userId, {
       userId,
       action: 'mfa.recovery_codes_replaced',
       resourceType: 'user',
@@ -230,14 +231,16 @@ export class MfaService {
    * Turn it off, with a current code — or a recovery code, for someone who lost
    * the phone with the app (then they can set up a new one). Platform admins can't.
    */
-  async disable(user: { id: string; role: Role }, proof: SecondFactor, ctx: RequestContext) {
+  async disable(user: SessionUser, proof: SecondFactor, ctx: RequestContext) {
     if (user.role === 'super_admin') {
       throw AppError.forbidden('Platform admins must keep two-step sign-in on');
     }
     await this.checkSecondFactor(user.id, proof, ctx);
-    await this.deps.db.$transaction(async (tx) => {
+    await (
+      await this.deps.plane.user(user.id)
+    ).$transaction(async (tx) => {
       await tx.userMfa.delete({ where: { userId: user.id } });
-      await recordAudit(tx, {
+      await recordShardAudit(tx, this.deps.plane.id(), {
         userId: user.id,
         action: 'mfa.disabled',
         resourceType: 'user',
@@ -250,26 +253,27 @@ export class MfaService {
   // ── internals ─────────────────────────────────────────────────────────────
 
   /** A valid, unused code — or a recovery code (used up). Failures count towards a lock. */
-  private async checkSecondFactor(userId: string, input: SecondFactor, ctx: RequestContext): Promise<void> {
+  private async checkSecondFactor(userId: bigint, input: SecondFactor, ctx: RequestContext): Promise<void> {
     await this.assertNotLocked(userId);
-    const m = await this.deps.db.userMfa.findUnique({ where: { userId } });
+    const db = await this.deps.plane.user(userId);
+    const m = await db.userMfa.findUnique({ where: { userId } });
     if (!m?.confirmedAt) throw AppError.badRequest('Two-step sign-in is not on');
 
     if (input.recoveryCode) {
       const hash = sha256(normalizeRecoveryCode(input.recoveryCode));
-      const match = m.recoveryCodeHashes.find((h) => timingSafeEqual(Buffer.from(h), Buffer.from(hash)));
+      const match = m.recoveryHashes.find((h) => h.length === hash.length && timingSafeEqual(h, hash));
       if (!match) return this.fail(userId, ctx);
       // Remove it atomically: of two simultaneous uses, only one finds it still there.
-      const used = await this.deps.db.$executeRaw`
-        UPDATE user_mfa SET recovery_code_hashes = array_remove(recovery_code_hashes, ${match}::char(64))
-        WHERE user_id = ${userId}::uuid AND ${match}::char(64) = ANY(recovery_code_hashes)`;
+      const used = await db.$executeRaw`
+        UPDATE user_mfa SET recovery_hashes = array_remove(recovery_hashes, ${Buffer.from(match)}::bytea)
+        WHERE user_id = ${userId} AND ${Buffer.from(match)}::bytea = ANY(recovery_hashes)`;
       if (used === 0) return this.fail(userId, ctx);
-      await recordAudit(this.deps.db, {
+      await auditPerson(this.deps.plane, userId, {
         userId,
         action: 'mfa.recovery_code_used',
         resourceType: 'user',
         resourceId: userId,
-        newValues: { left: m.recoveryCodeHashes.length - 1 },
+        newValues: { left: m.recoveryHashes.length - 1 },
         ...auditCtx(ctx),
       });
       await this.deps.redis.del(`mfa:fail:${userId}`);
@@ -277,18 +281,18 @@ export class MfaService {
     }
 
     const step = input.code
-      ? matchingStep(this.deps.cipher.decrypt(m.secretEncrypted, MFA_SECRET_CONTEXT), input.code)
+      ? matchingStep(this.deps.cipher.decryptBytes(m.secretEnc, MFA_SECRET_CONTEXT), input.code)
       : null;
     if (step === null) return this.fail(userId, ctx);
     // A code works once: only a step later than the last accepted one (atomic).
-    const accepted = await this.deps.db.$executeRaw`
+    const accepted = await db.$executeRaw`
       UPDATE user_mfa SET last_used_step = ${step}
-      WHERE user_id = ${userId}::uuid AND (last_used_step IS NULL OR last_used_step < ${step})`;
+      WHERE user_id = ${userId} AND (last_used_step IS NULL OR last_used_step < ${step})`;
     if (accepted === 0) return this.fail(userId, ctx);
     await this.deps.redis.del(`mfa:fail:${userId}`);
   }
 
-  private async assertNotLocked(userId: string) {
+  private async assertNotLocked(userId: bigint) {
     const failures = Number((await this.deps.redis.get(`mfa:fail:${userId}`)) ?? 0);
     if (failures >= MAX_FAILURES) {
       recordSecurityEvent('mfa_locked');
@@ -296,11 +300,11 @@ export class MfaService {
     }
   }
 
-  private async fail(userId: string, ctx: RequestContext): Promise<never> {
+  private async fail(userId: bigint, ctx: RequestContext): Promise<never> {
     const key = `mfa:fail:${userId}`;
     const n = await this.deps.redis.incr(key);
     if (n === 1) await this.deps.redis.expire(key, LOCK_SECONDS);
-    await recordAudit(this.deps.db, {
+    await auditPerson(this.deps.plane, userId, {
       userId,
       action: 'auth.mfa_failed',
       resourceType: 'user',

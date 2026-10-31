@@ -7,7 +7,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # …and the database v2 integration branch, whose slices merge there first (D3, D-112).
+    branches: [main, feat/db-v2-services]
   schedule:
     - cron: '23 4 * * 1' # Mondays: new queries also check unchanged code
 

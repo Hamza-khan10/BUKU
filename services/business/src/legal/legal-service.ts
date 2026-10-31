@@ -3,16 +3,17 @@ import {
   ErrorCodes,
   normalizeEmail,
   normalizePhone,
+  type Actor,
   type BlindIndexer,
   type FieldCipher,
 } from '@buku/common';
 import {
-  recordAudit,
-  requireBusinessPermission,
-  type BusinessLegalProfile,
-  type Database,
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  type BusinessShard,
+  type DataPlane,
 } from '@buku/database';
-import { createEvent, enqueueEvent, TOPICS } from '@buku/kafka';
+import { createEvent, enqueueShardEvent, TOPICS } from '@buku/kafka';
 import { auditCtx, type RequestContext } from '../http/context.js';
 
 /**
@@ -22,6 +23,8 @@ import { auditCtx, type RequestContext } from '../http/context.js';
  * Country-flexible by design: registration schemes differ everywhere, so the
  * registration TYPE is free text ("NTN", "SECP company", "Companies House",
  * "EIN", "Trade licence", ...) and the number is validated only for sanity.
+ * Identifiers are encrypted bytes; the registration number also has a 16-byte blind index
+ * (DB-008), so admins see when another business registered with the same one.
  */
 
 const CTX = {
@@ -42,6 +45,8 @@ export interface LegalProfileInput {
   responsiblePerson: { name: string; role: string; email?: string | undefined; phone?: string | undefined };
 }
 
+type Profile = BusinessShard.BusinessLegalProfile;
+
 /** Same number typed with/without spaces or dashes must produce the same fingerprint. */
 const normalizeIdentifier = (v: string) =>
   v
@@ -53,65 +58,68 @@ const mask = (v: string) => (v.length <= 4 ? '••••' : `••••${v.s
 
 export class LegalService {
   constructor(
-    private readonly db: Database,
+    private readonly plane: DataPlane,
     private readonly cipher: FieldCipher,
     private readonly indexer: BlindIndexer,
   ) {}
 
   /** Owner view: identifiers MASKED (enough to recognise, useless if the screen is seen). */
-  async getOwn(businessId: string, userId: string) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.legal');
-    const profile = await this.db.businessLegalProfile.findUnique({ where: { businessId } });
+  async getOwn(businessId: bigint, actor: Actor) {
+    const profile = await this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.legal');
+      return tx.businessLegalProfile.findUnique({ where: { businessId } });
+    });
     return profile ? this.maskedView(profile) : null;
   }
 
-  async upsert(businessId: string, userId: string, input: LegalProfileInput, ctx: RequestContext) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.legal');
-    const business = await this.db.business.findFirst({
-      where: { id: businessId, deletedAt: null },
-      select: { status: true },
-    });
-    if (!business) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
-    if (business.status === 'suspended') {
-      throw new AppError('This business is suspended; contact support', ErrorCodes.BUSINESS_SUSPENDED, 403);
-    }
-
+  async upsert(businessId: bigint, actor: Actor, input: LegalProfileInput, ctx: RequestContext) {
+    const { plane, cipher, indexer } = this;
     const regNumber = normalizeIdentifier(input.registrationNumber);
     const data = {
       legalName: input.legalName,
       registrationCountry: input.registrationCountry,
       registrationType: input.registrationType,
-      registrationNumberEncrypted: this.cipher.encrypt(regNumber, CTX.registrationNumber),
-      registrationNumberHash: this.indexer.hash(
+      registrationNumberEnc: cipher.encryptBytes(regNumber, CTX.registrationNumber),
+      registrationNumberHash: indexer.digest16(
         CTX.registrationIndex,
         `${input.registrationCountry}|${normalizeIdentifier(input.registrationType)}|${regNumber}`,
       ),
-      taxIdEncrypted: input.taxId ? this.cipher.encrypt(normalizeIdentifier(input.taxId), CTX.taxId) : null,
+      taxIdEnc: input.taxId ? cipher.encryptBytes(normalizeIdentifier(input.taxId), CTX.taxId) : null,
       registeredAddress: input.registeredAddress,
       responsibleName: input.responsiblePerson.name,
       responsibleRole: input.responsiblePerson.role,
-      responsibleEmailEncrypted: input.responsiblePerson.email
-        ? this.cipher.encrypt(normalizeEmail(input.responsiblePerson.email), CTX.email)
+      responsibleEmailEnc: input.responsiblePerson.email
+        ? cipher.encryptBytes(normalizeEmail(input.responsiblePerson.email), CTX.email)
         : null,
-      responsiblePhoneEncrypted: input.responsiblePerson.phone
-        ? this.cipher.encrypt(normalizePhone(input.responsiblePerson.phone), CTX.phone)
+      responsiblePhoneEnc: input.responsiblePerson.phone
+        ? cipher.encryptBytes(normalizePhone(input.responsiblePerson.phone), CTX.phone)
         : null,
     };
 
-    const existing = await this.db.businessLegalProfile.findUnique({ where: { businessId } });
-    // Who the business legally IS changed → a verified business goes back to review (D-046).
-    const identityChanged =
-      !existing ||
-      existing.legalName !== data.legalName ||
-      existing.registrationNumberHash !== data.registrationNumberHash ||
-      existing.registrationCountry !== data.registrationCountry;
-    const reverify =
-      existing !== null &&
-      identityChanged &&
-      (business.status === 'verified' || business.status === 'rejected');
+    const { saved, reverify } = await plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.legal');
+      const business = await tx.business.findFirst({
+        where: { id: businessId, deletedAt: null },
+        select: { status: true },
+      });
+      if (!business) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+      if (business.status === 'suspended') {
+        throw new AppError('This business is suspended; contact support', ErrorCodes.BUSINESS_SUSPENDED, 403);
+      }
 
-    const saved = await this.db.$transaction(async (tx) => {
-      const row = await tx.businessLegalProfile.upsert({
+      const existing = await tx.businessLegalProfile.findUnique({ where: { businessId } });
+      // Who the business legally IS changed → a verified business goes back to review (D-046).
+      const identityChanged =
+        !existing ||
+        existing.legalName !== data.legalName ||
+        !Buffer.from(existing.registrationNumberHash).equals(data.registrationNumberHash) ||
+        existing.registrationCountry !== data.registrationCountry;
+      const reverify =
+        existing !== null &&
+        identityChanged &&
+        (business.status === 'verified' || business.status === 'rejected');
+
+      const saved = await tx.businessLegalProfile.upsert({
         where: { businessId },
         create: { businessId, ...data },
         update: data,
@@ -119,89 +127,99 @@ export class LegalService {
       if (reverify) {
         await tx.business.update({
           where: { id: businessId },
-          data: { status: 'pending', verified: false, verifiedAt: null, rejectionReason: null },
+          data: { status: 'pending', verifiedAt: null, rejectionReason: null },
         });
       }
-      await enqueueEvent(
+      await enqueueShardEvent(
         tx,
+        plane.id(),
         createEvent({
           type: TOPICS.BUSINESSES_UPDATED,
           source: 'business-service',
-          subject: businessId,
+          subject: businessId.toString(),
           // No identifiers in events: only that the legal profile changed.
-          data: { businessId, changedFields: ['legalProfile'], reverificationRequired: reverify },
+          data: {
+            businessId: businessId.toString(),
+            changedFields: ['legalProfile'],
+            reverificationRequired: reverify,
+          },
           ...(ctx.requestId && { correlationId: ctx.requestId }),
         }),
         'business',
       );
-      await recordAudit(tx, {
-        userId,
+      await recordShardAudit(tx, plane.id(), {
+        userId: actor.id,
         action: existing ? 'business.legal_profile_updated' : 'business.legal_profile_submitted',
         resourceType: 'business',
         resourceId: businessId,
         newValues: { reverificationRequired: reverify },
         ...auditCtx(ctx),
       });
-      return row;
+      return { saved, reverify };
     });
     return { ...this.maskedView(saved), reverificationRequired: reverify };
   }
 
   /**
-   * Admin review view: fully decrypted, plus a fraud signal — other businesses
-   * (owned by someone else) registered with the same number. Viewing is audited.
+   * Admin review view: fully decrypted, plus a fraud signal — other businesses, in every shard,
+   * registered with the same number (owned by the same person or not). Viewing is audited.
    */
-  async getForAdmin(businessId: string, adminId: string, ctx: RequestContext) {
-    const profile = await this.db.businessLegalProfile.findUnique({
-      where: { businessId },
-      include: { business: { select: { ownerId: true } } },
+  async getForAdmin(businessId: bigint, adminId: bigint, ctx: RequestContext) {
+    const { plane } = this;
+    const found = await plane.inBusiness(businessId, async (tx) => {
+      const profile = await tx.businessLegalProfile.findUnique({
+        where: { businessId },
+        include: { business: { select: { ownerUserId: true } } },
+      });
+      if (profile) {
+        await recordShardAudit(tx, plane.id(), {
+          userId: adminId,
+          action: 'admin.legal_profile_viewed',
+          resourceType: 'business',
+          resourceId: businessId,
+          ...auditCtx(ctx),
+        });
+      }
+      return profile;
     });
-    if (!profile) return null;
-    const sharing = await this.db.businessLegalProfile.findMany({
-      where: { registrationNumberHash: profile.registrationNumberHash, businessId: { not: businessId } },
-      select: { business: { select: { id: true, name: true, ownerId: true, status: true } } },
-    });
-    await recordAudit(this.db, {
-      userId: adminId,
-      action: 'admin.legal_profile_viewed',
-      resourceType: 'business',
-      resourceId: businessId,
-      ...auditCtx(ctx),
-    });
+    if (!found) return null;
+    const sharing = await plane.acrossBusinesses((tx) =>
+      tx.businessLegalProfile.findMany({
+        where: { registrationNumberHash: found.registrationNumberHash, businessId: { not: businessId } },
+        select: { business: { select: { publicId: true, name: true, ownerUserId: true, status: true } } },
+      }),
+    );
     return {
-      ...this.decrypted(profile),
-      sameRegistrationElsewhere: sharing.map((s) => ({
-        businessId: s.business.id,
+      ...this.decrypted(found),
+      sameRegistrationElsewhere: sharing.flat().map((s) => ({
+        businessId: s.business.publicId,
         name: s.business.name,
         status: s.business.status,
-        sameOwner: s.business.ownerId === profile.business.ownerId,
+        sameOwner: s.business.ownerUserId === found.business.ownerUserId,
       })),
     };
   }
 
-  decrypted(p: BusinessLegalProfile) {
+  decrypted(p: Profile) {
+    const { cipher } = this;
     return {
       legalName: p.legalName,
       registrationCountry: p.registrationCountry,
       registrationType: p.registrationType,
-      registrationNumber: this.cipher.decrypt(p.registrationNumberEncrypted, CTX.registrationNumber),
-      taxId: p.taxIdEncrypted ? this.cipher.decrypt(p.taxIdEncrypted, CTX.taxId) : null,
+      registrationNumber: cipher.decryptBytes(p.registrationNumberEnc, CTX.registrationNumber),
+      taxId: p.taxIdEnc ? cipher.decryptBytes(p.taxIdEnc, CTX.taxId) : null,
       registeredAddress: p.registeredAddress,
       responsiblePerson: {
         name: p.responsibleName,
         role: p.responsibleRole,
-        email: p.responsibleEmailEncrypted
-          ? this.cipher.decrypt(p.responsibleEmailEncrypted, CTX.email)
-          : null,
-        phone: p.responsiblePhoneEncrypted
-          ? this.cipher.decrypt(p.responsiblePhoneEncrypted, CTX.phone)
-          : null,
+        email: p.responsibleEmailEnc ? cipher.decryptBytes(p.responsibleEmailEnc, CTX.email) : null,
+        phone: p.responsiblePhoneEnc ? cipher.decryptBytes(p.responsiblePhoneEnc, CTX.phone) : null,
       },
       updatedAt: p.updatedAt.toISOString(),
     };
   }
 
-  private maskedView(p: BusinessLegalProfile) {
+  private maskedView(p: Profile) {
     const full = this.decrypted(p);
     return {
       ...full,

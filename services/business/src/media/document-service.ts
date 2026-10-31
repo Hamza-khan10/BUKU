@@ -1,5 +1,10 @@
-import { AppError, ErrorCodes, uuidv7 } from '@buku/common';
-import { recordAudit, requireBusinessPermission, type Database, type DocumentType } from '@buku/database';
+import { AppError, ErrorCodes, type Actor } from '@buku/common';
+import {
+  recordShardAudit,
+  requireBusinessPermissionOnShard,
+  type BusinessTx,
+  type DataPlane,
+} from '@buku/database';
 import { auditCtx, type RequestContext } from '../http/context.js';
 import {
   matchesSignature,
@@ -20,7 +25,8 @@ import {
  *                  file signature). Anything wrong is deleted and refused.
  *
  * Owner only ('business.legal'); viewed by admins through 5-minute links.
- * Documents are kept exactly as uploaded: they are evidence.
+ * Documents are kept exactly as uploaded: they are evidence. Stored under the business's public
+ * ID (DB-042), on its shard.
  */
 
 const UPLOAD_LINK_SECONDS = 10 * 60;
@@ -29,13 +35,27 @@ const MAX_DOCUMENTS = 20;
 /** Unfinished uploads older than this don't count toward limits. */
 const STALE_UPLOAD_MS = 60 * 60 * 1000;
 
+export type DocumentType =
+  'business_license' | 'medical_license' | 'id_proof' | 'address_proof' | 'tax_certificate' | 'other';
+
 export interface DocumentSettings {
   documentsBucket: string;
 }
 
+interface DocumentRow {
+  id: bigint;
+  type: string;
+  status: string;
+  contentType: string;
+  sizeBytes: number;
+  reviewNote: string | null;
+  createdAt: Date;
+  reviewedAt: Date | null;
+}
+
 export class DocumentService {
   constructor(
-    private readonly db: Database,
+    private readonly plane: DataPlane,
     private readonly storage: ObjectStorage,
     private readonly settings: DocumentSettings,
   ) {}
@@ -43,28 +63,39 @@ export class DocumentService {
   // ── Documents ────────────────────────────────────────────────────────────
 
   async requestDocumentUpload(
-    businessId: string,
-    userId: string,
+    businessId: bigint,
+    actor: Actor,
     input: { type: DocumentType; contentType: AllowedContentType; sizeBytes: number },
     ctx: RequestContext,
   ) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.legal');
-    await this.assertNotSuspended(businessId);
+    const { plane } = this;
     if (input.sizeBytes > MAX_DOCUMENT_BYTES) throw tooLarge(MAX_DOCUMENT_BYTES);
-    const count = await this.db.businessDocument.count({ where: { businessId, ...liveUploads() } });
-    if (count >= MAX_DOCUMENTS) throw limit(`A business can have at most ${MAX_DOCUMENTS} documents`);
-
-    const id = uuidv7();
-    const storageKey = `businesses/${businessId}/documents/${id}`;
-    await this.db.businessDocument.create({
-      data: {
-        id,
-        businessId,
-        type: input.type,
-        storageKey,
-        contentType: input.contentType,
-        sizeBytes: input.sizeBytes,
-      },
+    const { id, storageKey } = await plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.legal');
+      const business = await assertNotSuspended(tx, businessId);
+      const count = await tx.businessDocument.count({ where: { businessId, ...liveUploads() } });
+      if (count >= MAX_DOCUMENTS) throw limit(`A business can have at most ${MAX_DOCUMENTS} documents`);
+      const id = plane.id();
+      const storageKey = `businesses/${business.publicId}/documents/${id}`;
+      await tx.businessDocument.create({
+        data: {
+          id,
+          businessId,
+          type: input.type,
+          storageKey,
+          contentType: input.contentType,
+          sizeBytes: input.sizeBytes,
+        },
+      });
+      await recordShardAudit(tx, plane.id(), {
+        userId: actor.id,
+        action: 'business.document_upload_requested',
+        resourceType: 'business_document',
+        resourceId: id,
+        newValues: { type: input.type },
+        ...auditCtx(ctx),
+      });
+      return { id, storageKey };
     });
     const url = await this.storage.presignPut(
       this.settings.documentsBucket,
@@ -73,88 +104,96 @@ export class DocumentService {
       input.sizeBytes,
       UPLOAD_LINK_SECONDS,
     );
-    await recordAudit(this.db, {
-      userId,
-      action: 'business.document_upload_requested',
-      resourceType: 'business_document',
-      resourceId: id,
-      newValues: { type: input.type },
-      ...auditCtx(ctx),
-    });
-    return { documentId: id, upload: uploadInstructions(url, input.contentType, input.sizeBytes) };
+    return { documentId: id.toString(), upload: uploadInstructions(url, input.contentType, input.sizeBytes) };
   }
 
-  async completeDocumentUpload(businessId: string, documentId: string, userId: string, ctx: RequestContext) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.legal');
-    const doc = await this.db.businessDocument.findFirst({ where: { id: documentId, businessId } });
+  async completeDocumentUpload(businessId: bigint, documentId: bigint, actor: Actor, ctx: RequestContext) {
+    const { plane } = this;
+    const doc = await plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.legal');
+      return tx.businessDocument.findFirst({ where: { id: documentId, businessId } });
+    });
     if (!doc) throw AppError.notFound('Document');
-    if (doc.status !== 'awaiting_upload') return this.documentView(doc);
+    if (doc.status !== 'awaiting_upload') return documentView(doc);
     await this.inspect(
       this.settings.documentsBucket,
       doc.storageKey,
       doc.contentType as AllowedContentType,
       doc.sizeBytes,
       async () => {
-        await this.db.businessDocument.delete({ where: { id: doc.id } });
+        await plane.inBusiness(businessId, (tx) => tx.businessDocument.deleteMany({ where: { id: doc.id } }));
       },
     );
-    const saved = await this.db.businessDocument.update({
-      where: { id: doc.id },
-      data: { uploadedAt: new Date(), status: 'pending' },
+    const saved = await plane.inBusiness(businessId, async (tx) => {
+      const saved = await tx.businessDocument.update({
+        where: { id: doc.id },
+        data: { uploadedAt: new Date(), status: 'pending' },
+      });
+      await recordShardAudit(tx, plane.id(), {
+        userId: actor.id,
+        action: 'business.document_uploaded',
+        resourceType: 'business_document',
+        resourceId: doc.id,
+        ...auditCtx(ctx),
+      });
+      return saved;
     });
-    await recordAudit(this.db, {
-      userId,
-      action: 'business.document_uploaded',
-      resourceType: 'business_document',
-      resourceId: doc.id,
-      ...auditCtx(ctx),
-    });
-    return this.documentView(saved);
+    return documentView(saved);
   }
 
-  async listDocuments(businessId: string, userId: string) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.legal');
-    const docs = await this.db.businessDocument.findMany({
-      where: { businessId, status: { not: 'awaiting_upload' } },
-      orderBy: { createdAt: 'desc' },
+  async listDocuments(businessId: bigint, actor: Actor) {
+    const docs = await this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.legal');
+      return tx.businessDocument.findMany({
+        where: { businessId, status: { not: 'awaiting_upload' } },
+        orderBy: { createdAt: 'desc' },
+      });
     });
-    return docs.map((d) => this.documentView(d));
+    return docs.map(documentView);
   }
 
   /** Approved documents are part of the verification record and can't be removed. */
-  async deleteDocument(businessId: string, documentId: string, userId: string, ctx: RequestContext) {
-    await requireBusinessPermission(this.db, businessId, userId, 'business.legal');
-    const doc = await this.db.businessDocument.findFirst({ where: { id: documentId, businessId } });
+  async deleteDocument(businessId: bigint, documentId: bigint, actor: Actor, ctx: RequestContext) {
+    const { plane } = this;
+    const doc = await plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'business.legal');
+      return tx.businessDocument.findFirst({ where: { id: documentId, businessId } });
+    });
     if (!doc) throw AppError.notFound('Document');
     if (doc.status === 'approved')
       throw AppError.conflict('Approved documents are kept as part of verification');
     await this.storage.delete(this.settings.documentsBucket, doc.storageKey);
-    await this.db.businessDocument.delete({ where: { id: doc.id } });
-    await recordAudit(this.db, {
-      userId,
-      action: 'business.document_deleted',
-      resourceType: 'business_document',
-      resourceId: doc.id,
-      ...auditCtx(ctx),
+    await plane.inBusiness(businessId, async (tx) => {
+      await tx.businessDocument.deleteMany({ where: { id: doc.id } });
+      await recordShardAudit(tx, plane.id(), {
+        userId: actor.id,
+        action: 'business.document_deleted',
+        resourceType: 'business_document',
+        resourceId: doc.id,
+        ...auditCtx(ctx),
+      });
     });
   }
 
   /** Admin: documents with 5-minute view links. Access is audited. */
-  async documentsForAdmin(businessId: string, adminId: string, ctx: RequestContext) {
-    const docs = await this.db.businessDocument.findMany({
-      where: { businessId, status: { not: 'awaiting_upload' } },
-      orderBy: { createdAt: 'desc' },
-    });
-    await recordAudit(this.db, {
-      userId: adminId,
-      action: 'admin.documents_viewed',
-      resourceType: 'business',
-      resourceId: businessId,
-      ...auditCtx(ctx),
+  async documentsForAdmin(businessId: bigint, adminId: bigint, ctx: RequestContext) {
+    const { plane } = this;
+    const docs = await plane.inBusiness(businessId, async (tx) => {
+      await recordShardAudit(tx, plane.id(), {
+        userId: adminId,
+        action: 'admin.documents_viewed',
+        resourceType: 'business',
+        resourceId: businessId,
+        ...auditCtx(ctx),
+      });
+      return tx.businessDocument.findMany({
+        where: { businessId, status: { not: 'awaiting_upload' } },
+        orderBy: { createdAt: 'desc' },
+      });
     });
     return Promise.all(
       docs.map(async (d) => ({
-        ...this.documentView(d),
+        ...documentView(d),
         viewUrl: await this.storage.presignGet(
           this.settings.documentsBucket,
           d.storageKey,
@@ -165,26 +204,36 @@ export class DocumentService {
     );
   }
 
+  /**
+   * An admin's decision on a document, found by its ID in whichever business shard holds it (an
+   * admin tool: a visit to each shard is fine). Audited with the business.
+   */
   async reviewDocument(
-    documentId: string,
-    adminId: string,
+    documentId: bigint,
+    adminId: bigint,
     decision: 'approved' | 'rejected',
     note: string | undefined,
     ctx: RequestContext,
   ) {
-    const { count } = await this.db.businessDocument.updateMany({
-      where: { id: documentId, status: { in: ['pending', 'approved', 'rejected'] } },
-      data: { status: decision, reviewedById: adminId, reviewedAt: new Date(), reviewNote: note ?? null },
+    const { plane } = this;
+    const reviewed = await plane.acrossBusinesses(async (tx) => {
+      const { count } = await tx.businessDocument.updateMany({
+        where: { id: documentId, status: { in: ['pending', 'approved', 'rejected'] } },
+        data: { status: decision, reviewedById: adminId, reviewedAt: new Date(), reviewNote: note ?? null },
+      });
+      if (count > 0) {
+        await recordShardAudit(tx, plane.id(), {
+          userId: adminId,
+          action: `admin.document_${decision}`,
+          resourceType: 'business_document',
+          resourceId: documentId,
+          ...auditCtx(ctx),
+        });
+      }
+      return count;
     });
-    if (count === 0) throw AppError.notFound('Uploaded document');
-    await recordAudit(this.db, {
-      userId: adminId,
-      action: `admin.document_${decision}`,
-      resourceType: 'business_document',
-      resourceId: documentId,
-      ...auditCtx(ctx),
-    });
-    return { id: documentId, status: decision };
+    if (reviewed.every((n) => n === 0)) throw AppError.notFound('Uploaded document');
+    return { id: documentId.toString(), status: decision };
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -217,44 +266,35 @@ export class DocumentService {
       throw new AppError(`The file is not a valid ${contentType}`, ErrorCodes.FILE_TYPE_NOT_ALLOWED, 400);
     }
   }
+}
 
-  private async assertNotSuspended(businessId: string) {
-    const b = await this.db.business.findFirst({
-      where: { id: businessId, deletedAt: null },
-      select: { status: true },
-    });
-    if (b?.status === 'suspended')
-      throw new AppError('This business is suspended; contact support', ErrorCodes.BUSINESS_SUSPENDED, 403);
-  }
+/** The business, unless it is suspended (then nothing may be added to it). */
+async function assertNotSuspended(tx: BusinessTx, businessId: bigint) {
+  const b = await tx.business.findFirst({
+    where: { id: businessId, deletedAt: null },
+    select: { status: true, publicId: true },
+  });
+  if (!b) throw AppError.notFound('Business', ErrorCodes.BUSINESS_NOT_FOUND);
+  if (b.status === 'suspended')
+    throw new AppError('This business is suspended; contact support', ErrorCodes.BUSINESS_SUSPENDED, 403);
+  return b;
+}
 
-  private documentView(d: {
-    id: string;
-    type: DocumentType;
-    status: string;
-    contentType: string;
-    sizeBytes: number;
-    reviewNote: string | null;
-    createdAt: Date;
-    reviewedAt: Date | null;
-  }) {
-    return {
-      id: d.id,
-      type: d.type,
-      status: d.status,
-      contentType: d.contentType,
-      sizeBytes: d.sizeBytes,
-      reviewNote: d.reviewNote,
-      uploadedAt: d.createdAt.toISOString(),
-      reviewedAt: d.reviewedAt?.toISOString() ?? null,
-    };
-  }
+function documentView(d: DocumentRow) {
+  return {
+    id: d.id.toString(),
+    type: d.type as DocumentType,
+    status: d.status,
+    contentType: d.contentType,
+    sizeBytes: d.sizeBytes,
+    reviewNote: d.reviewNote,
+    uploadedAt: d.createdAt.toISOString(),
+    reviewedAt: d.reviewedAt?.toISOString() ?? null,
+  };
 }
 
 const liveUploads = () => ({
-  OR: [
-    { status: { not: 'awaiting_upload' as const } },
-    { createdAt: { gt: new Date(Date.now() - STALE_UPLOAD_MS) } },
-  ],
+  OR: [{ status: { not: 'awaiting_upload' } }, { createdAt: { gt: new Date(Date.now() - STALE_UPLOAD_MS) } }],
 });
 
 function uploadInstructions(url: string, contentType: string, sizeBytes: number) {

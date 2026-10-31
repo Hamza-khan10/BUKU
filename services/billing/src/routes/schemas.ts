@@ -1,4 +1,4 @@
-import { zBody, zPagination, zSafeText, zUuid } from '@buku/common';
+import { zBody, zId, zPagination, zPublicId, zSafeText } from '@buku/common';
 import { z } from 'zod';
 
 /** Request contracts for billing-service (source for docs/API_REFERENCE.md). */
@@ -20,7 +20,9 @@ export const PricingQuery = z.object({
   currency: zCurrency.default('USD'),
 });
 
-export const IdParams = z.object({ id: zUuid });
+/** IDs (DB-042): a business by its public ID; prices, costs, subscriptions and requests by decimal IDs. */
+export const BusinessParams = z.object({ id: zPublicId });
+export const IdParams = z.object({ id: zId });
 export const CodeParams = z.object({ code: zPlanCode });
 export const AudienceParams = z.object({ audience: zAudience });
 export const ChannelParams = z.object({ channel: zChannel });
@@ -90,13 +92,19 @@ export const FeeBody = zBody({
 export const EconomicsBody = zBody({
   taxPercent: z.number().min(0).max(100).optional(),
   /** "What if": subscribers per price id (others use the real count). */
-  subscribers: z.record(zUuid, z.number().int().min(0).max(100_000_000)).optional(),
+  subscribers: z
+    .record(
+      z.string().regex(/^[1-9][0-9]{0,18}$/, 'must be a price ID'),
+      z.number().int().min(0).max(100_000_000),
+    )
+    .optional(),
 });
 
 export const GrantBody = zBody({
   planCode: zPlanCode,
-  userId: zUuid.optional(),
-  businessId: zUuid.optional(),
+  /** Customers are free (D-101): a grant to a person is refused. */
+  userId: zPublicId.optional(),
+  businessId: zPublicId.optional(),
   /** Until when (ISO date-time); leave out for open-ended. */
   until: z.iso.datetime({ offset: true }).optional(),
   note: zSafeText({ kind: 'text', min: 3, max: 300 }),
@@ -111,7 +119,7 @@ export const SubscriptionsQuery = zPagination.extend({
   status: z.enum(['active', 'trialing', 'past_due', 'paused', 'cancelled']).optional(),
 });
 
-export const BusinessRequestParams = z.object({ id: zUuid, requestId: zUuid });
+export const BusinessRequestParams = z.object({ id: zPublicId, requestId: zId });
 
 export const PlanRequestBody = zBody({
   planCode: zPlanCode,

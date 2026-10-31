@@ -1,15 +1,18 @@
-import { zBody, zSafeText, zUuid } from '@buku/common';
+import { zBody, zId, zPublicId, zSafeText } from '@buku/common';
 import { z } from 'zod';
 
-/** Request contracts for queue-service (source for docs/API_REFERENCE.md). */
+/**
+ * Request contracts for queue-service (source for docs/API_REFERENCE.md). IDs (DB-042): a business
+ * by its public ID (public pages also by its slug); a ticket by its decimal ID.
+ */
 
 export const IdOrSlugParams = z.object({ idOrSlug: z.string().min(1).max(200) });
-export const IdParams = z.object({ id: zUuid });
-export const EntryParams = z.object({ id: zUuid, entryId: zUuid });
-export const TicketParams = z.object({ id: zUuid });
+export const IdParams = z.object({ id: zPublicId });
+export const EntryParams = z.object({ id: zPublicId, entryId: zId });
+export const TicketParams = z.object({ id: zId });
 
 export const JoinBody = zBody({
-  businessId: zUuid,
+  businessId: zPublicId,
   /** The phone's position, for the distance rule (D-038). */
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),

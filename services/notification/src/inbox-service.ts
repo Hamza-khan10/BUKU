@@ -1,9 +1,10 @@
 import { AppError } from '@buku/common';
-import type { Database } from '@buku/database';
+import type { DataPlane } from '@buku/database';
 
 /**
  * A person's inbox (every message also lands here, whatever their push
- * settings) and their notification preferences. Only ever their own.
+ * settings) and their notification preferences. Only ever their own, on their own shard (D3f).
+ * A message goes by its decimal ID (DB-042).
  */
 
 export interface PreferencesInput {
@@ -29,27 +30,27 @@ export const UNSUBSCRIBABLE = [
 export type UnsubscribablePref = (typeof UNSUBSCRIBABLE)[number];
 
 /** Inbox rows only (push/WhatsApp rows are delivery records, not shown). */
-const inbox = (userId: string) => ({ userId, channel: 'in_app' as const });
+const inbox = (userId: bigint) => ({ userId, channel: 'in_app' });
 
 export class InboxService {
-  constructor(private readonly db: Database) {}
+  constructor(private readonly plane: DataPlane) {}
 
-  async list(userId: string, query: { unread?: boolean | undefined; page: number; limit: number }) {
+  async list(userId: bigint, query: { unread?: boolean | undefined; page: number; limit: number }) {
+    const db = await this.plane.user(userId);
     const where = { ...inbox(userId), ...(query.unread && { readAt: null }) };
-    const [rows, total, unread] = await Promise.all([
-      this.db.notification.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip: (query.page - 1) * query.limit,
-        take: query.limit,
-        select: { id: true, type: true, title: true, body: true, data: true, readAt: true, createdAt: true },
-      }),
-      this.db.notification.count({ where }),
-      this.unreadCount(userId),
-    ]);
+    const rows = await db.notification.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (query.page - 1) * query.limit,
+      take: query.limit,
+      select: { id: true, type: true, title: true, body: true, data: true, readAt: true, createdAt: true },
+    });
+    const total = await db.notification.count({ where });
+    const unread = await this.unreadCount(userId);
     return {
       items: rows.map((r) => ({
         ...r,
+        id: r.id.toString(),
         readAt: r.readAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString(),
       })),
@@ -63,36 +64,43 @@ export class InboxService {
     };
   }
 
-  unreadCount(userId: string): Promise<number> {
-    return this.db.notification.count({ where: { ...inbox(userId), readAt: null } });
+  async unreadCount(userId: bigint): Promise<number> {
+    return (await this.plane.user(userId)).notification.count({ where: { ...inbox(userId), readAt: null } });
   }
 
-  async markRead(userId: string, id: string): Promise<void> {
-    const { count } = await this.db.notification.updateMany({
+  async markRead(userId: bigint, id: bigint): Promise<void> {
+    const db = await this.plane.user(userId);
+    const { count } = await db.notification.updateMany({
       where: { ...inbox(userId), id },
       data: { readAt: new Date(), status: 'read' },
     });
-    // Someone else's id looks exactly like a missing one.
-    if (count === 0 && !(await this.db.notification.count({ where: { ...inbox(userId), id } }))) {
+    // Someone else's ID looks exactly like a missing one.
+    if (count === 0 && !(await db.notification.count({ where: { ...inbox(userId), id } }))) {
       throw AppError.notFound('Notification');
     }
   }
 
-  async markAllRead(userId: string): Promise<number> {
-    const { count } = await this.db.notification.updateMany({
+  async markAllRead(userId: bigint): Promise<number> {
+    const { count } = await (
+      await this.plane.user(userId)
+    ).notification.updateMany({
       where: { ...inbox(userId), readAt: null },
       data: { readAt: new Date(), status: 'read' },
     });
     return count;
   }
 
-  async remove(userId: string, id: string): Promise<void> {
-    const { count } = await this.db.notification.deleteMany({ where: { ...inbox(userId), id } });
+  async remove(userId: bigint, id: bigint): Promise<void> {
+    const { count } = await (
+      await this.plane.user(userId)
+    ).notification.deleteMany({ where: { ...inbox(userId), id } });
     if (count === 0) throw AppError.notFound('Notification');
   }
 
-  async preferences(userId: string) {
-    const row = await this.db.notificationPreference.upsert({
+  async preferences(userId: bigint) {
+    const row = await (
+      await this.plane.user(userId)
+    ).notificationPreference.upsert({
       where: { userId },
       create: { userId },
       update: {},
@@ -101,26 +109,29 @@ export class InboxService {
   }
 
   /** From the signed link in an email: switch off exactly that kind of email. */
-  async unsubscribe(userId: string, pref: UnsubscribablePref): Promise<void> {
+  async unsubscribe(userId: bigint, pref: UnsubscribablePref): Promise<void> {
     await this.updatePreferences(userId, { [pref]: false });
   }
 
   /** Suggestions and marketing need explicit opt-in; the moment of consent is recorded (and cleared on opt-out). */
-  async updatePreferences(userId: string, input: PreferencesInput) {
+  async updatePreferences(userId: bigint, input: PreferencesInput) {
+    const db = await this.plane.user(userId);
     const data = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
-    const current = await this.db.notificationPreference.findUnique({ where: { userId } });
-    const consent = {
-      ...(input.marketingEmails !== undefined && {
-        marketingConsentAt: input.marketingEmails ? (current?.marketingConsentAt ?? new Date()) : null,
-      }),
-      ...(input.suggestions !== undefined && {
-        suggestionsConsentAt: input.suggestions ? (current?.suggestionsConsentAt ?? new Date()) : null,
-      }),
-    };
-    const row = await this.db.notificationPreference.upsert({
-      where: { userId },
-      create: { userId, ...data, ...consent },
-      update: { ...data, ...consent },
+    const row = await db.$transaction(async (tx) => {
+      const current = await tx.notificationPreference.findUnique({ where: { userId } });
+      const consent = {
+        ...(input.marketingEmails !== undefined && {
+          marketingConsentAt: input.marketingEmails ? (current?.marketingConsentAt ?? new Date()) : null,
+        }),
+        ...(input.suggestions !== undefined && {
+          suggestionsConsentAt: input.suggestions ? (current?.suggestionsConsentAt ?? new Date()) : null,
+        }),
+      };
+      return tx.notificationPreference.upsert({
+        where: { userId },
+        create: { userId, ...data, ...consent },
+        update: { ...data, ...consent },
+      });
     });
     return prefView(row);
   }

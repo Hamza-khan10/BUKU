@@ -96,7 +96,7 @@ jobs:
         run: docker compose -f docker-compose.dev.yml run --rm s3-init
       - name: Create the directory databases and admin-only extensions
         run: pnpm db:prepare
-      - name: Apply migrations to fresh databases (main and directory)
+      - name: Apply migrations to fresh databases (the directory and the catalog)
         run: pnpm db:migrate:deploy
       - name: Register the development shards, then make each one a migrated database
         run: |
@@ -104,10 +104,22 @@ jobs:
           pnpm db:shards
       - name: Seed database v2 the way the services will (fails on any broken rule)
         run: pnpm db:seed:v2
+      - name: Backups — a full backup, then the restore drill to a point in time (DB-030, DB-034)
+        run: |
+          pnpm db:backup full
+          pnpm db:restore-drill
+      - name: Database health, and a break-glass session that is read-only and audited (D4c)
+        run: |
+          pnpm db:health
+          read=$(pnpm db:break-glass --reason "CI: the break-glass path" -- -tAc "SELECT 'ci-break-glass'")
+          grep -q ci-break-glass <<<"$read"
+          audit=$(docker compose -f docker-compose.dev.yml logs --no-log-prefix postgres)
+          grep -q "human_.*AUDIT: SESSION.*ci-break-glass" <<<"$audit"
+          refused=$(pnpm db:break-glass --reason "CI: a refused write" -- -c "UPDATE registry.regions SET name = name" 2>&1 || true)
+          grep -q "read-only transaction" <<<"$refused"
       - name: Fail if a schema and its migrations disagree
         working-directory: packages/database
         run: |
-          pnpm exec prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
           pnpm exec prisma migrate diff --config prisma.directory.config.ts --from-config-datasource \
             --to-schema prisma/directory/schema.prisma --exit-code
           pnpm exec prisma migrate diff --config prisma.user.config.ts --from-config-datasource \
@@ -129,6 +141,9 @@ jobs:
       # The production build, served locally; tests that need the API stack skip themselves.
       APP_URL: http://localhost:3000
       API_URL: http://localhost:8000
+      # A placeholder in a real token's shape, so /checkout is tested: the tests replace Paddle.js
+      # with a stand-in, and this token opens nothing anywhere.
+      PADDLE_CLIENT_TOKEN: test_ci00000000000000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0

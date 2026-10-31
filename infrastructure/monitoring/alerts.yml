@@ -101,3 +101,31 @@ groups:
         annotations:
           summary: '{{ $labels.service }}: many refused or not-found requests (someone probing ids?)'
           runbook: docs/compliance/runbooks.md#suspicious-sign-in
+
+  # The database's own health (docs/DATABASE.md §14, D4c): scripts/db/health.sh --prometheus, run
+  # every few minutes on the database host and read through node_exporter's textfile collector.
+  - name: database
+    rules:
+      - alert: DatabaseCheckCritical
+        expr: buku_db_check_status == 2
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: 'Database check {{ $labels.check }} is critical'
+          runbook: docs/compliance/runbooks.md#database
+
+      - alert: DatabaseCheckWarning
+        expr: buku_db_check_status == 1
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: 'Database check {{ $labels.check }} has warned for 30 minutes'
+          runbook: docs/compliance/runbooks.md#database
+
+      - alert: DatabaseChecksNotRunning
+        expr: time() - buku_db_checks_last_run_timestamp_seconds > 900 or absent(buku_db_checks_last_run_timestamp_seconds)
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "The database health checks haven't run for 15 minutes: nothing is watching backups, slots or partitions"
+          runbook: docs/compliance/runbooks.md#database

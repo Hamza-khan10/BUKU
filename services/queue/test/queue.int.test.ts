@@ -1,123 +1,48 @@
-import { generateKeyPairSync, randomBytes, randomInt, randomUUID } from 'node:crypto';
-import {
-  createJwtSigner,
-  createJwtVerifier,
-  createLogger,
-  createRedisClient,
-  createRevocationStore,
-  Readiness,
-  type JwtSigner,
-  type Role,
-} from '@buku/common';
-import { createDatabaseClient, type Database } from '@buku/database';
-import type { Express } from 'express';
-import type { Redis } from 'ioredis';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { testEnv } from '../../../packages/database/test/int-env.js';
-import { givePlan, withBilling } from '../../../packages/billing/test/helpers.js';
-import { createEvent, TOPICS } from '@buku/kafka';
-import { buildQueueApp } from '../src/app.js';
+import { describe, expect, it } from 'vitest';
+import { createEvent, TOPICS, type EventEnvelope } from '@buku/kafka';
+import { givePlan, withBilling } from '../../../packages/database/test/services-world.js';
 import { queueEventHandler } from '../src/events/handlers.js';
-import type { QueueService } from '../src/queue-service.js';
+import { useQueueHarness, type Person, type Shop, type ShopOptions } from './harness.js';
 
-/** The virtual queue against the real database (incl. PostGIS distances and the one-ticket rule). */
+/**
+ * The virtual queue on database v2 (D3e): sessions and tickets on the business's shard, each
+ * person's one ticket on their own shard, PostGIS distances, and the one-ticket rule.
+ */
 
-let app: Express;
-let queueService: QueueService;
-let db: Database;
-let redis: Redis;
-let subscriber: Redis;
-let signer: JwtSigner;
+const h = useQueueHarness();
+const app = () => h.queue.app;
 
-// A shop in Gulberg, Lahore; a customer 1.3 km away; someone in Karachi.
-const SHOP = { lat: 31.5204, lng: 74.3587 };
+// A customer 1.3 km from the shop; someone in Karachi.
 const NEAR = { lat: 31.531, lng: 74.364 };
 const KARACHI = { lat: 24.8607, lng: 67.0011 };
 
-const newIp = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(1, 255)}`;
-type Person = Awaited<ReturnType<typeof person>>;
-
-async function person(role: Role = 'user', name = `Customer ${randomUUID().slice(0, 6)}`) {
-  const user = await db.user.create({ data: { name, emailHash: randomBytes(32).toString('hex'), role } });
-  const { token } = await signer.sign({ sub: user.id, role, sid: randomUUID(), mfa: role === 'super_admin' });
-  return { id: user.id, name, auth: { Authorization: `Bearer ${token}`, 'X-Forwarded-For': newIp() } };
+/** A shop with today's queue opened by its owner (unless `open: false`). */
+async function shop(opts: ShopOptions & { open?: boolean } = {}) {
+  const s = await h.shop(opts);
+  if (opts.open !== false)
+    expect((await request(app()).post(`${s.base}/open`).set(s.owner.auth)).status).toBe(200);
+  return s;
 }
-
-async function shop(opts: { settings?: Record<string, unknown>; location?: boolean; open?: boolean } = {}) {
-  const owner = await person();
-  const suffix = randomUUID().slice(-12);
-  const category = await db.category.create({ data: { name: `Cat ${suffix}`, slug: `cat-${suffix}` } });
-  const b = await db.business.create({
-    data: {
-      ownerId: owner.id,
-      categoryId: category.id,
-      name: `Passport Office ${suffix}`,
-      slug: `passport-${suffix}`,
-      city: 'Lahore',
-      country: 'PK',
-      timezone: 'Asia/Karachi',
-      currency: 'PKR',
-      ...(opts.location !== false && SHOP),
-    },
-  });
-  if (opts.settings) await db.queueSettings.create({ data: { businessId: b.id, ...opts.settings } });
-  const base = `/v1/businesses/${b.id}/queue`;
-  if (opts.open !== false) expect((await request(app).post(`${base}/open`).set(owner.auth)).status).toBe(200);
-  const member = async (role: 'manager' | 'front_desk' | 'staff') => {
-    const p = await person();
-    await db.businessMember.create({ data: { businessId: b.id, userId: p.id, role } });
-    return p;
-  };
-  return { owner, b, base, member };
-}
-type Shop = Awaited<ReturnType<typeof shop>>;
-
+const person = (...args: Parameters<typeof h.person>) => h.person(...args);
 const join = (who: Person, s: Shop, where = NEAR) =>
-  request(app)
+  request(app())
     .post('/v1/queue/join')
     .set(who.auth)
-    .send({ businessId: s.b.id, ...where });
+    .send({ businessId: s.b.publicId, ...where });
 const desk = (s: Shop, path: string, body: object = {}) =>
-  request(app).post(`${s.base}${path}`).set(s.owner.auth).send(body);
-const events = (entryId: string) =>
-  db.outboxEvent.findMany({ where: { aggregateId: entryId }, orderBy: { createdAt: 'asc' } });
-
-beforeAll(async () => {
-  db = createDatabaseClient({ url: testEnv.appUrl, applicationName: 'queue-int-test', maxConnections: 10 });
-  redis = createRedisClient({ url: testEnv.redisUrl, connectionName: 'queue-int-test' });
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const jwt = { issuer: 'https://auth.test', audience: 'buku-api' };
-  signer = await createJwtSigner({
-    ...jwt,
-    keyId: 'k1',
-    privateKeyPem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  request(app()).post(`${s.base}${path}`).set(s.owner.auth).send(body);
+const myRow = async (p: Person) =>
+  (await h.shardOf(p)).userActiveTicket.findUnique({ where: { userId: p.id } });
+const bigints = (_: string, v: unknown) => (typeof v === 'bigint' ? v.toString() : v);
+const handle = (event: EventEnvelope) =>
+  queueEventHandler({ queue: h.queue.queue })(event, {
+    topic: event.type,
+    partition: 0,
+    offset: '0',
+    key: null,
+    attempt: 1,
   });
-  const verifier = await createJwtVerifier({
-    ...jwt,
-    keys: [{ keyId: 'k1', publicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }).toString() }],
-  });
-  subscriber = createRedisClient({ url: testEnv.redisUrl, connectionName: 'queue-int-test-live' });
-  ({ app, queue: queueService } = buildQueueApp({
-    db,
-    redis,
-    subscriber,
-    verifier,
-    revocations: createRevocationStore(redis),
-    http: {
-      service: 'queue-test',
-      logger: createLogger({ service: 'queue-test', level: 'silent' }),
-      readiness: new Readiness(),
-      trustProxyHops: 1,
-    },
-  }));
-});
-
-afterAll(async () => {
-  await db.$disconnect();
-  await redis.quit();
-  await subscriber.quit();
-});
 
 describe('Joining', () => {
   it('a nearby customer gets a ticket (A-001), with position and estimated wait', async () => {
@@ -134,7 +59,7 @@ describe('Joining', () => {
     const second = await join(await person(), s);
     expect(second.body.data).toMatchObject({ ticket: 'A-002', ahead: 1, estimatedWaitMinutes: 5 });
 
-    const pub = await request(app).get(`/v1/queue/public/${s.b.slug}`);
+    const pub = await request(app()).get(`/v1/queue/public/${s.b.slug}`);
     expect(pub.body.data).toMatchObject({
       status: 'open',
       waiting: 2,
@@ -163,10 +88,10 @@ describe('Joining', () => {
     expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
     expect(results.find((r) => r.status === 409)!.body.error.code).toBe('QUEUE_ALREADY_JOINED');
 
-    const mine = await request(app).get('/v1/queue/my-ticket').set(me.auth);
-    const left = await request(app).post(`/v1/queue/tickets/${mine.body.data.id}/leave`).set(me.auth);
+    const mine = await request(app()).get('/v1/queue/my-ticket').set(me.auth);
+    const left = await request(app()).post(`/v1/queue/tickets/${mine.body.data.id}/leave`).set(me.auth);
     expect(left.body.data.status).toBe('left');
-    const other = mine.body.data.business.id === a.b.id ? b : a;
+    const other = mine.body.data.business.id === a.b.publicId ? b : a;
     expect((await join(me, other)).status).toBe(201);
   });
 
@@ -188,7 +113,10 @@ describe('Joining', () => {
     expect((await desk(s, '/walk-ins', { name: 'Uncle Rashid', priority: true })).status).toBe(201);
     await desk(s, '/resume');
     expect((await join(await person(), s)).status).toBe(201);
-    expect((await join(await person(), s)).body.error.code).toBe('QUEUE_FULL');
+    const refused = await person();
+    expect((await join(refused, s)).body.error.code).toBe('QUEUE_FULL');
+    // The claim on the person's own shard is given back: they can join elsewhere straight away.
+    expect(await myRow(refused)).toBeNull();
   });
 
   it('employee accounts can’t join; a ticket is only visible to its owner', async () => {
@@ -198,12 +126,12 @@ describe('Joining', () => {
     const t = await join(me, s);
     expect(
       (
-        await request(app)
+        await request(app())
           .get(`/v1/queue/tickets/${t.body.data.id}`)
           .set((await person()).auth)
       ).status,
     ).toBe(404);
-    expect((await request(app).get(`/v1/queue/tickets/${t.body.data.id}`).set(me.auth)).status).toBe(200);
+    expect((await request(app()).get(`/v1/queue/tickets/${t.body.data.id}`).set(me.auth)).status).toBe(200);
   });
 });
 
@@ -224,11 +152,11 @@ describe('Serving the line', () => {
     expect((await desk(s, `/entries/${a.body.data.id}/serve`)).body.data.status).toBe('serving');
     const done = await desk(s, `/entries/${a.body.data.id}/complete`);
     expect(done.body.data.status).toBe('completed');
-    const board = await request(app).get(s.base).set(s.owner.auth);
+    const board = await request(app()).get(s.base).set(s.owner.auth);
     expect(board.body.data.session).toMatchObject({ totalServed: 1, lastCalled: a.body.data.ticket });
     expect(board.body.data.called.map((e: { name: string }) => e.name)).toEqual(['Elder']);
     expect(board.body.data.waiting.map((e: { ticket: string }) => e.ticket)).toEqual([b.body.data.ticket]);
-    expect((await events(a.body.data.id)).map((e) => e.topic)).toEqual([
+    expect((await h.events(s, a.body.data.id)).map((e) => e.topic)).toEqual([
       'queue.entry.joined',
       'queue.position.updated',
       'queue.entry.called',
@@ -260,14 +188,14 @@ describe('Serving the line', () => {
     for (const p of people) tickets.push((await join(p, s)).body.data.id as string);
     const last = tickets.at(-1)!; // 11 ahead: no alert yet
     const alertsFor = async (id: string) =>
-      (await events(id))
+      (await h.events(s, id))
         .filter((e) => e.topic === 'queue.position.updated')
         .map((e) => (e.payload as { data: { ahead: number } }).data.ahead);
     expect(await alertsFor(last)).toEqual([]);
     for (let i = 0; i < 11; i++) await desk(s, '/call-next');
     expect(await alertsFor(last)).toEqual([10, 5, 4, 3, 2, 1, 0]);
     // Events carry the ticket and ids, never names.
-    expect(JSON.stringify(await events(last))).not.toContain(people.at(-1)!.name);
+    expect(JSON.stringify(await h.events(s, last), bigints)).not.toContain(people.at(-1)!.name);
   });
 
   it('closing an account gives up its place in line (the people behind move up), once', async () => {
@@ -278,23 +206,26 @@ describe('Serving the line', () => {
     const next = await join(behind, s);
     expect(next.body.data.ahead).toBe(1);
 
-    const handle = queueEventHandler({ queue: queueService });
     const event = createEvent({
       type: TOPICS.USERS_DELETED,
       source: 'auth-service',
-      subject: leaving.id,
-      data: { userId: leaving.id, purgeAfter: new Date(Date.now() + 30 * 86_400_000).toISOString() },
+      subject: leaving.id.toString(),
+      data: {
+        userId: leaving.id.toString(),
+        purgeAfter: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+      },
     });
-    const ctx = { topic: event.type, partition: 0, offset: '0', key: null, attempt: 1 };
-    await handle(event, ctx);
-    await handle(event, ctx); // delivered twice: nothing more happens
+    await handle(event);
+    await handle(event); // delivered twice: nothing more happens
 
-    const gone = await db.queueEntry.findUniqueOrThrow({ where: { id: t.body.data.id } });
+    const gone = await h.inShop(s, (tx) =>
+      tx.queueTicket.findFirstOrThrow({ where: { id: BigInt(t.body.data.id) } }),
+    );
     expect([gone.status, gone.leftAt]).toEqual(['left', expect.any(Date)]);
-    const left = (await events(t.body.data.id)).filter((e) => e.topic === 'queue.entry.left');
+    const left = (await h.events(s, t.body.data.id)).filter((e) => e.topic === 'queue.entry.left');
     expect(left).toHaveLength(1);
     expect((left[0]!.payload as { data: { reason: string } }).data.reason).toBe('account_closed');
-    const mine = await request(app).get(`/v1/queue/tickets/${next.body.data.id}`).set(behind.auth);
+    const mine = await request(app()).get(`/v1/queue/tickets/${next.body.data.id}`).set(behind.auth);
     expect(mine.body.data.ahead).toBe(0);
   });
 
@@ -303,11 +234,113 @@ describe('Serving the line', () => {
     const me = await person();
     const t = await join(me, s);
     await desk(s, '/close');
-    const mine = await request(app).get(`/v1/queue/tickets/${t.body.data.id}`).set(me.auth);
+    const mine = await request(app()).get(`/v1/queue/tickets/${t.body.data.id}`).set(me.auth);
     expect(mine.body.data.status).toBe('left');
-    const left = (await events(t.body.data.id)).find((e) => e.topic === 'queue.entry.left');
+    const left = (await h.events(s, t.body.data.id)).find((e) => e.topic === 'queue.entry.left');
     expect((left!.payload as { data: { reason: string } }).data.reason).toBe('queue_closed');
     expect((await join(await person(), s)).body.error.code).toBe('QUEUE_CLOSED');
+  });
+});
+
+describe('One queue at a time, kept on the person’s own shard (D3e)', () => {
+  it('a finished ticket stays readable and frees the person; a new join replaces it', async () => {
+    const [a, b] = [await shop(), await shop()];
+    const me = await person();
+    const t = await join(me, a);
+    expect(await myRow(me)).toMatchObject({ ticketId: BigInt(t.body.data.id), businessId: a.b.id });
+    await desk(a, '/call-next');
+    await desk(a, `/entries/${t.body.data.id}/serve`);
+    await desk(a, `/entries/${t.body.data.id}/complete`);
+
+    expect((await request(app()).get('/v1/queue/my-ticket').set(me.auth)).body.data).toBeNull();
+    const finished = await request(app()).get(`/v1/queue/tickets/${t.body.data.id}`).set(me.auth);
+    expect(finished.body.data).toMatchObject({
+      status: 'completed',
+      business: { id: a.b.publicId, name: a.b.name, slug: a.b.slug },
+    });
+
+    const next = await join(me, b);
+    expect(next.status).toBe(201);
+    expect(await myRow(me)).toMatchObject({ ticketId: BigInt(next.body.data.id), businessId: b.b.id });
+    // Only the current or latest ticket is the person's to see.
+    expect((await request(app()).get(`/v1/queue/tickets/${t.body.data.id}`).set(me.auth)).status).toBe(404);
+  });
+
+  it('a claim whose join never happened blocks for 2 minutes, then gives way', async () => {
+    const s = await shop();
+    const me = await person();
+    const session = await h.inShop(s, (tx) =>
+      tx.queueSession.findFirstOrThrow({ where: { businessId: s.b.id } }),
+    );
+    const db = await h.shardOf(me);
+    await db.userActiveTicket.create({
+      data: {
+        userId: me.id,
+        ticketId: h.world.id(),
+        ticketSessionDate: session.sessionDate,
+        businessId: s.b.id,
+        sessionId: session.id,
+      },
+    });
+    // Maybe still being written (a join sent twice): the second one waits its turn.
+    expect((await join(me, s)).body.error.code).toBe('QUEUE_ALREADY_JOINED');
+    await db.userActiveTicket.update({
+      where: { userId: me.id },
+      data: { createdAt: new Date(Date.now() - 3 * 60_000) },
+    });
+    expect((await join(me, s)).status).toBe(201);
+  });
+
+  it('someone still being served when the queue closed can join another queue', async () => {
+    const [a, b] = [await shop(), await shop()];
+    const me = await person();
+    const t = await join(me, a);
+    await desk(a, '/call-next');
+    await desk(a, `/entries/${t.body.data.id}/serve`);
+    expect((await join(me, b)).body.error.code).toBe('QUEUE_ALREADY_JOINED');
+    await desk(a, '/close');
+    expect((await join(me, b)).status).toBe(201);
+  });
+
+  it('how a ticket ended goes into the person’s reliability, once — walk-ins and leaving record nothing', async () => {
+    const s = await shop({ settings: { gracePeriodSeconds: 0 } });
+    const [served, absent, leaving] = [await person(), await person(), await person()];
+    const st = await join(served, s);
+    const ab = await join(absent, s);
+    const lv = await join(leaving, s);
+    const walkIn = await desk(s, '/walk-ins', { name: 'Uncle Rashid' });
+    await desk(s, '/call-next');
+    await desk(s, `/entries/${st.body.data.id}/serve`);
+    await desk(s, `/entries/${st.body.data.id}/complete`);
+    await desk(s, '/call-next');
+    await desk(s, `/entries/${ab.body.data.id}/no-show`);
+    await request(app()).post(`/v1/queue/tickets/${lv.body.data.id}/leave`).set(leaving.auth);
+    await desk(s, '/call-next');
+    await desk(s, `/entries/${walkIn.body.data.id}/serve`);
+    await desk(s, `/entries/${walkIn.body.data.id}/complete`);
+
+    const outcomes = async (p: Person) =>
+      (await h.shardOf(p)).userVisitOutcome.findMany({ where: { userId: p.id } });
+    expect(await outcomes(served)).toEqual([
+      expect.objectContaining({
+        refId: BigInt(st.body.data.id),
+        businessId: s.b.id,
+        kind: 'visit',
+        source: 'queue',
+      }),
+    ]);
+    expect(await outcomes(absent)).toEqual([
+      expect.objectContaining({ refId: BigInt(ab.body.data.id), kind: 'no_show', source: 'queue' }),
+    ]);
+    expect(await outcomes(leaving)).toEqual([]);
+
+    // The event repairs a lost step, and changes nothing the second time.
+    await (await h.shardOf(served)).userVisitOutcome.deleteMany({ where: { userId: served.id } });
+    const [completed] = (await h.events(s, st.body.data.id)).filter(
+      (e) => e.topic === 'queue.entry.completed',
+    );
+    for (let i = 0; i < 2; i++) await handle(completed!.payload as unknown as EventEnvelope);
+    expect(await outcomes(served)).toHaveLength(1);
   });
 });
 
@@ -316,8 +349,8 @@ describe('Front desk access and settings', () => {
     const s = await shop();
     await join(await person('user', 'Ayesha Khan'), s);
     const staff = await s.member('staff');
-    expect((await request(app).post(`${s.base}/call-next`).set(staff.auth)).status).toBe(403);
-    const board = await request(app).get(s.base).set(staff.auth);
+    expect((await request(app()).post(`${s.base}/call-next`).set(staff.auth)).status).toBe(403);
+    const board = await request(app()).get(s.base).set(staff.auth);
     expect(board.body.data.waiting[0]).toMatchObject({
       name: 'Ayesha Khan',
       walkIn: false,
@@ -328,14 +361,14 @@ describe('Front desk access and settings', () => {
     expect(JSON.stringify(board.body.data)).not.toMatch(/email|phone|avatar|noShows/i);
     expect(
       (
-        await request(app)
+        await request(app())
           .post(`${s.base}/call-next`)
           .set((await s.member('front_desk')).auth)
       ).status,
     ).toBe(200);
     expect(
       (
-        await request(app)
+        await request(app())
           .get(s.base)
           .set((await person()).auth)
       ).status,
@@ -344,7 +377,7 @@ describe('Front desk access and settings', () => {
 
   it('settings: defaults, owner/manager changes within limits, applied from the next opening', async () => {
     const s = await shop({ open: false });
-    const get = await request(app).get(`${s.base}/settings`).set(s.owner.auth);
+    const get = await request(app()).get(`${s.base}/settings`).set(s.owner.auth);
     expect(get.body.data).toEqual({
       remoteJoinRadiusMeters: 5000,
       maxQueueSize: 200,
@@ -352,17 +385,24 @@ describe('Front desk access and settings', () => {
       ticketPrefix: 'A',
       avgServiceSeconds: 300,
     });
-    const put = await request(app)
+    const put = await request(app())
       .put(`${s.base}/settings`)
       .set(s.owner.auth)
       .send({ ticketPrefix: 'p', remoteJoinRadiusMeters: 2000 });
     expect(put.body.data).toMatchObject({ ticketPrefix: 'P', remoteJoinRadiusMeters: 2000 });
+    // Search lists businesses that run a queue (D3h): the change is announced.
+    const announced = await h.inShop(s, (tx) =>
+      tx.outboxEvent.findMany({ where: { aggregateId: s.b.id, topic: 'queue.settings.updated' } }),
+    );
+    expect(announced.map((e) => e.payload)).toEqual([
+      expect.objectContaining({ data: { businessId: s.b.id.toString() } }),
+    ]);
     for (const bad of [{ ticketPrefix: 'A1' }, { remoteJoinRadiusMeters: 10 }, {}]) {
-      expect((await request(app).put(`${s.base}/settings`).set(s.owner.auth).send(bad)).status).toBe(400);
+      expect((await request(app()).put(`${s.base}/settings`).set(s.owner.auth).send(bad)).status).toBe(400);
     }
     expect(
       (
-        await request(app)
+        await request(app())
           .put(`${s.base}/settings`)
           .set((await s.member('front_desk')).auth)
           .send({ maxQueueSize: 5 })
@@ -375,17 +415,17 @@ describe('Front desk access and settings', () => {
 
 describe('Plans (billing on)', () => {
   it('the virtual queue needs a plan that includes it (Starter doesn’t)', async () => {
-    await withBilling(db, 'business', async () => {
+    await withBilling(h.world, 'business', async () => {
       const s = await shop({ open: false });
       const refused = await desk(s, '/open');
       expect([refused.status, refused.body.error.code]).toEqual([403, 'PLAN_FEATURE_UNAVAILABLE']);
-      await givePlan(db, { businessId: s.b.id }, 'business_essential');
+      await givePlan(h.world, s.b.id, 'business_essential');
       expect((await desk(s, '/open')).status).toBe(200);
     });
   });
 
   it('customers join queues for free and as often as they like (D-101), one queue at a time', async () => {
-    await withBilling(db, 'user', async () => {
+    await withBilling(h.world, 'user', async () => {
       const [s, other] = [await shop(), await shop()];
       const me = await person();
       for (let visit = 0; visit < 3; visit++) {

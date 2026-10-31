@@ -6,12 +6,14 @@ compromised service. Every decision below has a number (DB-…) and a reason. Wh
 and the code disagree, this document is the plan and the code is the state; the build phases at
 the end say what is done.
 
-Status: **design approved by the owner's brief (2026-10-16). D1 and D2 are built (§15): the
-directory, the shard registry, ID generators and the router; global lookups; user and business
-shards provisioned from the registry; reference data copied by replication; the search catalog;
-each service's rights everywhere; and the development data placed across shards the way the
-services will. D3 (moving the services onto v2) is next.** Website work pauses until D1–D3 are
-done (DB-000).
+Status (2026-10-31): **D1, D2, D3 and D4 are built (§15).** v2 has the directory, the shard
+registry, ID generators and the router; global lookups; user and business shards provisioned from
+the registry; reference data copied by replication; the search catalog; each service's rights
+everywhere; and its own development data (D2e). Every service runs on v2 through the data plane,
+the website and every test run on it too, and v1's `buku` database has left the stack (D3j). D4
+made it safe to run: backups with point-in-time recovery and a restore drill (D4a), TLS 1.3 on
+every connection (D4b), break-glass access for people and health checks with alerts (D4c).
+Database v2 is on `main` (2026-10-31); website work resumes (DB-000), and D5 proves it at scale.
 
 ---
 
@@ -150,6 +152,32 @@ generator is far beyond need.
 **Not chosen:** keeping UUIDv7 (twice the size, awkward ranges); a central sequence per table
 (a single point of failure, and block allocation adds complexity for nothing the snowflake doesn't
 already give).
+
+### DB-042 · What APIs show: public IDs for what people share, row IDs only inside a business
+
+**Decision:**
+
+- **People, businesses and appointments** appear in URLs, API responses and receipts by their
+  **public ID** (12 Base62 characters, DB-001), never their internal ID. A business is also
+  reached by its slug. Each is found again through a global handle (DB-018) or, for an
+  appointment, through its business or the person's own list.
+- **Rows that only exist inside a business** (its services, team, resources, hours, photos,
+  documents, queue tickets) appear by their **64-bit ID as a decimal string**, always under their
+  business (`/businesses/<public id>/services/<id>`), behind authorization and row-level
+  security.
+- **A person's sign-in token** carries their own internal ID (as a decimal string) in `sub`,
+  plus whether they must still change a temporary password (D-034), which lives on their shard
+  and is checked by services without another lookup.
+- **Events** between services carry internal IDs (an internal channel).
+- Validation: `zPublicId` and `zId` in `@buku/common` (a decimal string becomes a bigint, anything
+  else is refused before it reaches a query); JSON never carries a 64-bit number (it would lose
+  precision).
+
+**Why:** public IDs are random, so the things people share and link to can't be counted or
+guessed (DB-001). A row inside a business is only ever reached by someone already allowed into
+that business, so its snowflake reveals nothing they can't see, and giving every child row a
+second, random ID would cost an index per table for no protection. Snowflakes do show when a row
+was made, which is visible on the page anyway.
 
 ---
 
@@ -362,7 +390,7 @@ ID gives the shard (DB-011).
 | `user.email`, `user.phone`  | the 16-byte keyed blind index (DB-008), never the address or number |
 | `user.google`, `user.apple` | the blind index of the account's subject                            |
 | `user.public_id`            | the 12 characters                                                   |
-| `user.employee_login`       | the business's ID (8 bytes) + the username (D-034)                  |
+| `user.employee_login`       | the business's ID (8 bytes, big-endian) + the username (D-034)      |
 | `user.whatsapp`             | the blind index of the linked number                                |
 | `user.push_token`           | the blind index of the device's token (a device is one person's)    |
 | `business.public_id`        | the 12 characters                                                   |
@@ -689,7 +717,7 @@ erDiagram
   user_active_tickets {
     bigint user_id PK
     bigint ticket_id
-    timestamptz ticket_created_at
+    date ticket_session_date
     bigint business_id
     bigint session_id
   }
@@ -1035,8 +1063,8 @@ Built in D2c (`buku_catalog`, `prisma/catalog`): `catalog.businesses` (with v1's
 name A, kind and its group B, active services B, description C, city D, and its map point, both
 kept by triggers; GIN, trigram and GiST indexes), `catalog.services`, `hours`, `closures`,
 `queues` (today's), `ads` (those that may run), and a reference copy (DB-015). Every row carries
-the `version` of the newest event applied, so a late event never overwrites a newer one. The
-search service fills it from the business shards' events in D3.
+the `version` of the newest read applied, so a late event never overwrites a newer one. The
+search service keeps it from the business shards' events (D3h, D-120).
 
 **Why not Elasticsearch now?** It is the next step if one Postgres catalog stops being enough
 (tens of millions of businesses, or heavy relevance tuning). Until then a catalog of a few
@@ -1051,7 +1079,8 @@ million rows is fast in Postgres, exact, and has one less system to run.
   in the BUKU Postgres image.
 - **Connection pooling:** PgBouncer in transaction mode per cluster; Prisma connects through it.
 - **Monitoring:** replication lag, WAL archive lag, backup age, bloat, slow queries, connection
-  saturation, partition coverage (a missing future partition is an alert).
+  saturation, partition coverage (a missing future partition is an alert). The database's own
+  checks are `pnpm db:health` (`scripts/db/health.sh`, D4c), read by Prometheus as metrics.
 - **Migrations:** expand → migrate → contract; every shard migrated by the same migration, tracked
   per shard; large indexes `CONCURRENTLY`.
 - **Databases and admin-only extensions** (the directory, the catalog, `pg_cron`, `pgaudit`,
@@ -1071,8 +1100,8 @@ million rows is fast in Postgres, exact, and has one less system to run.
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **D1 Foundation** ✅  | Postgres image with the extensions; directory schema (registry, generators, settings, currencies); the ID generator (`@buku/ids`: TypeScript and `buku_id()` in SQL) and public IDs; the shard router in `@buku/database` (one shard per family locally) | unit and integration tests for IDs (uniqueness under concurrency, ordering, region bits), allocation (limit reached → next shard, limit changed), routing |
 | **D2 Schema v2** ✅   | the new baseline: every table rebuilt per §5–§10 (bigint keys, public IDs, bytea hashes, money in minor units, partitions, every index, constraints, the new user-side tables), RLS policies, grants per service; a new seed. In five slices, below      | migrations apply on an empty database; the seed loads; constraint tests (double booking, overlaps, one queue) pass                                        |
-| **D3 Services**       | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
-| **D4 Safety**         | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
+| **D3 Services** ✅    | every service on v2 (auth, business, booking, queue, search, notification, billing, ads, analytics) through the router; the API keeps returning public IDs, so the website changes little                                                                | all unit, integration, acceptance and website tests pass                                                                                                  |
+| **D4 Safety** ✅      | pgBackRest in development (archive, backups, a restore script), TLS in development, pgaudit, partition maintenance jobs, monitoring queries; the restore drill as a script                                                                               | a restore to a point in time is demonstrated and tested in CI                                                                                             |
 | **D5 Proof at scale** | a synthetic data set (10M people, 1M businesses, 200M appointments) on a test cluster; the slow-query review                                                                                                                                             | the targets in §3 met for the main queries                                                                                                                |
 
 Website work resumes after D3.
@@ -1237,3 +1266,449 @@ website and services unchanged until D3 moves each service over; nothing is migr
 
 **D2 is complete.** v1's `buku` database still serves the website and services unchanged; D3 moves
 each service onto v2 through the router, then retires v1.
+
+**D3, in slices** (on the integration branch `feat/db-v2-services`, D-112). Services read each
+other's data, so moving them one by one straight onto `main` would leave the running app half on
+v1 and half on v2. Each slice is its own pull request into the integration branch, with CI and
+CodeQL; when every service is on v2 and the stack's tests pass, one pull request brings it to
+`main`, and the website resumes. There is no production data, so nothing is copied from v1: v2
+starts from its own seed (D2e).
+
+| Slice                          | What                                                                                                                                                                                                                                                |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D3a** Foundation             | API identifiers (DB-042); the services' data plane (`DataPlane`: router, leased IDs, shard pools, `inBusiness`, `acrossBusinesses`, handles); v2 events (shard outbox, relays per shard, dedupe by the event's time); config — ✅ 2026-10-17 (#122) |
+| **D3b** auth                   | sign-up and sign-in, sessions, two-step sign-in, Google, employee logins, account erasure, data export, admin roles — ✅ 2026-10-18 (#123)                                                                                                          |
+| **D3c** business               | profiles, photos, documents, legal profiles, reports, favourites, members, suggested kinds of business — ✅ 2026-10-18 (#124)                                                                                                                       |
+| **D3d** booking                | services, team, schedules, appointments (the customer's time first), check-in, shifts, reviews — ✅ 2026-10-18 (#125)                                                                                                                               |
+| **D3e** queue                  | sessions, tickets, one queue at a time — ✅ 2026-10-18 (#126)                                                                                                                                                                                       |
+| **D3f** notification           | preferences, messages, marks, WhatsApp, push; reminders and suggestions across business shards — ✅ 2026-10-18 (#127)                                                                                                                               |
+| **D3g** billing                | plans on the directory, subscriptions and requests on business shards, store handles — ✅ 2026-10-18 (#128, Paddle sandbox #129)                                                                                                                    |
+| **D3h** search, ads, analytics | the catalog kept from events; v1's search queries against it; ads from the catalog — ✅ 2026-10-21 (#144)                                                                                                                                           |
+| **D3i** apps                   | the website and admin app on public IDs; the whole stack's acceptance and browser tests — ✅ 2026-10-23 (#145)                                                                                                                                      |
+| **D3j** retire v1              | services stop using the v1 database; it leaves the stack — ✅ 2026-10-31                                                                                                                                                                            |
+
+**D3a, as built (2026-10-17).**
+
+- DB-042 decided; `zId` and `zPublicId` in `@buku/common`; `databaseV2Env` (the directory and
+  catalog URLs default to `DATABASE_URL`'s server, signed in as the service's role).
+- `DataPlane` (`@buku/database`): started per service with its own credentials; `id()`,
+  `user(id)`, `placeUser`, `placeBusiness`, `inBusiness` (one business, DB-020),
+  `acrossBusinesses` (every business shard through the service's cross-business role, only for
+  services that have one), `acrossUsers`, handles; `recordShardAudit`, `businessRoleOnShard`;
+  `ShardRouter.shards(family)`.
+- `@buku/kafka`: event IDs may be snowflakes; `enqueueShardEvent`; the relay publishes v2 outboxes
+  (`shard: true`), one per shard with `ShardOutboxRelays` (new shards picked up within a minute);
+  `processOnceOnShard` (deduped by the event's own time).
+- Every service's container knows the local cluster's address; CodeQL also scans pull requests into
+  the integration branch.
+- Tests: the ID validators; a service's plane scoping work to one business and sweeping every
+  shard through its cross-business role (refused for a service without one); an event written with
+  its change, published from the shard with v2 IDs, and handled once.
+
+**D3b, as built (2026-10-17).** auth-service runs on v2 (D-113); nothing of it uses v1 any more.
+
+- **Accounts** live on the person's user shard. An account's row is written first and its handles
+  claimed after (email, then the Google or Apple account, then the public ID); if another sign-in
+  holds one of them, the claimed ones are given back and the row removed, and the sign-in tries
+  again and finds the winner's account. So a handle always leads to an account, and two first
+  sign-ins at once (a double tap) still make one. Handle keys: `users.email` and
+  `oauth_accounts.google`/`oauth_accounts.apple` blind-index contexts for the email and the
+  provider's subject; `push_tokens.token` for a device's token (taken over when a device signs in
+  to another account, which then loses it); `user.employee_login` is the business ID as 8 bytes
+  (big-endian) then the username (`employeeLoginKey`).
+- **Sessions:** a refresh token is `<user ID>.<256 random bits>`: the ID routes it to the person's
+  shard, and the stored SHA-256 covers the whole token, so a changed ID finds nothing. A session's
+  ID is its first token's ID; access tokens carry `sub` (the internal ID), `sid` and `pwc` (a
+  business-issued temporary password not yet changed, DB-042).
+- **Employee logins:** the business by its slug's handle, the account by `user.employee_login`, the
+  membership on the business's shard. A closed employee account keeps its business but gives its
+  username back (`users_employee_login` now requires a username only of live employee accounts).
+- **Teams:** the membership on the business's shard, the account and the person's own view
+  (`user_business_roles`) on theirs; each step on one shard that fails after a step on another is
+  undone. Plan limits are read on the business's shard from its subscriptions and the replicated
+  plans (`assertBusinessLimitOnShard` in `@buku/billing`). `requireBusinessPermissionOnShard` gives
+  an account on a temporary password no role.
+- **Data rights:** the export and erasure find the person's appointments (through
+  `appointment_index`, now indexed by person), reviews and queue tickets (now indexed by person)
+  in every business at once, through auth's cross-business role. Erasure blanks only the words
+  people wrote, by plain SQL (auth may write those columns and nothing else, so not even
+  `updated_at`), then anonymizes the account and gives back every handle auth writes. The WhatsApp
+  number's handle is notification-service's: it gives it back on `users.deleted` (D3f).
+- **APIs:** people by public ID (`/me`, team members' `userId`), businesses by public ID in URLs
+  (`/v1/businesses/<public id>/members`), sessions and members by decimal ID (`zId`). Tokens from
+  v1 (a UUID `sub`) are refused.
+- **Rights:** auth reads `appointment_index`, and the `user_id` of `notification_marks` and
+  `user_time_reservations` (a DELETE reads the columns it filters on).
+- **Tests:** services have a v2 world of their own (`packages/database/test/services-world.ts`): a
+  directory, `buku_directory_services_test` (made by `pnpm db:prepare`), with a user shard and a
+  business shard and its reference copy, every service's rights applied as in production, rebuilt
+  by the integration tests' global setup. auth's 60 integration tests run there as auth's own
+  role; fixtures go through a second data plane as `buku_app`.
+
+**D3c, as built (2026-10-18).** business-service runs on v2 (D-114); nothing of it uses v1 any more.
+
+- **A business** lives on its business shard; it is found by its public ID or its address (the
+  `business.public_id` and `business.slug` handles). Registering one writes the row first, then
+  claims the first free address (a candidate already used on the same shard or claimed on another
+  is skipped) and the public ID, then the owner's own list, then announces it; any failure undoes
+  what was done (D-113's rule: a handle always leads to a business).
+- **The owner's own list** of their businesses (`user_business_roles`, role `owner`, DB-014) is
+  written by business-service on the owner's shard; members' rows stay auth-service's (D3b). A
+  rename updates the name in the owner's and team's lists. "My businesses" reads that list and
+  checks each role on the business's own shard, so a stale list can't grant anything.
+- **Kinds of business** are reference data: owners' suggestions are written on the directory
+  (D-098, new IDs from the generator) and reach every business shard by replication; a business
+  may use one at once (the directory is checked, and a view falls back to it until the copy has
+  it). The suggestion's audit entry goes to the suggester's own shard (the directory keeps none).
+- **Permissions** come from `requireBusinessPermissionOnShard` and `businessRoleOfActor`
+  (`@buku/database`): the role on the business's shard, none while the token says the person is on
+  a temporary password. `requireActor` (`@buku/common`) turns a token into internal IDs for every
+  service.
+- **Admin tools** work on one business inside its transaction (row-level security is by
+  business, not by person). The review queue, the reports list and the lawful export visit every
+  business shard through business-service's cross-business role and merge the pages (oldest
+  first); a document or report is found by its ID on whichever shard holds it. The export's audit
+  entry goes to the admin's own shard.
+- **Pictures and documents** are stored under the business's public ID; plan limits and features
+  are read on the business's shard (`businessEntitlementsOnShard`, `assertFeature`).
+- **Events** (`businesses.*`) are written to the business shard's outbox with internal IDs; the
+  `businesses.member_removed` consumer reads them as decimal IDs.
+- **Favourites** have no API yet (the table is business-service's, on user shards); members were
+  moved in D3b.
+- **Rights:** business-service reads and adds to `user_business_roles` (the name, version and
+  time it may change; removing its own row undoes a failed registration).
+- **Tests:** business-service's 61 integration tests run on the services' v2 world as its own
+  role; the world now also offers `withBusinessBilling`, `givePlan` and the directory's owner (for
+  BUKU's own kinds of business).
+
+**D3d, as built (2026-10-18).** booking-service runs on v2 (D-115); nothing of it uses v1 any more.
+
+- **Booking, the customer's time first (DB-014, D-036):** a booking claims the customer's time on
+  their own shard (`user_time_reservations`, an exclusion constraint: one appointment at a time
+  anywhere, held for 2 minutes), then writes the appointment on the business's shard, whose index
+  refuses a double-booked employee or resource and a duplicate code (DB-024). The claim's ID is
+  the appointment's, so a failed booking gives its claim back at once and one left behind by a
+  crash is settled by the sweeper from the business's shard (booked if the appointment exists,
+  given back if not). Rescheduling replaces the old claim with the new one in one step (the two
+  times may overlap) and puts it back if the move fails.
+- **The customer's side (`PersonSync`):** their claim, their list of appointments
+  (`user_appointments`, replaced only by a newer version) and how each visit ended are brought in
+  step with the appointment as it is on the business's shard. That runs after every change, for
+  every `bookings.*` event (booking-service reads its own events back: the repair if a step after
+  the business's commit is lost), and from the sweeper. Running it again changes nothing.
+- **Reliability (D-078):** a person's outcomes are kept on their own shard
+  (`user_visit_outcomes`: a visit, a no-show or a late cancellation per appointment or queue
+  ticket, kept 13 months), so a business's list needs one small query per user shard. Queue
+  tickets add theirs from D3e.
+- **The name a customer booked under** is kept on the appointment (`customer_name`): the
+  business's list shows it and searches it without asking every user shard; erasing the account
+  blanks it (auth-service may write that column, D3b).
+- **Money** is in minor units (DB-009) and shown with as many decimals as the currency has (from
+  the replicated currencies); prices are entered as before ("800", "799.99").
+- **"My appointments" and "my reviews"** read the person's own list, then only the business
+  shards holding those businesses (`DataPlane.atBusinesses`); people's public IDs, names and
+  reliability are read by shard (`usersByShard`). Admin tools (reported reviews) visit every
+  business shard.
+- **A review must match its appointment** (business, customer and time), checked by a trigger
+  against the appointment index — v1's guarantee, kept.
+- **Rules of v2's tables** the service now follows: a part-day time off is stored as `modified`
+  (whole days are `holiday`), and settling a review's report clears when it was flagged.
+- **Rights:** booking-service owns `user_visit_outcomes`; auth-service may erase it and blank
+  `appointments.customer_name`. Kafka: booking-service reads its own `bookings.*` (the access test
+  now counts a topic named outside a service's handlers as one it publishes).
+- **Tests:** booking-service's 66 integration tests run on the services' v2 world as its own role
+  (a shared harness: people on user shards with their public-ID handles, a salon on the business
+  shard, appointments written directly with the customer's side synced), including the claim
+  sweeper and the event repair.
+
+**D3e, as built (2026-10-18).** queue-service runs on v2 (D-116); nothing of it uses v1 any more.
+
+- **Sessions and tickets** are on the business's shard; tickets are found by their ID and their
+  session's date (the partition key, DB-024), and every change to a session runs with its row
+  locked (ticket numbers and "who's next" are never handed out twice).
+- **One queue at a time, anywhere (DB-014):** a join first claims the person's row on their own
+  shard (`user_active_tickets`, one per person; its ticket ID is the new ticket's), then writes
+  the ticket. The row is their current or latest ticket: a new join replaces it only once that
+  ticket no longer holds a place (served, left, a no-show, its queue closed, or from an earlier
+  day) — or never appeared within 2 minutes. A failed join gives its claim back unless the ticket
+  was written after all. The row's `ticket_created_at` became `ticket_session_date` (DATE).
+- **Reliability (D-078):** a served ticket counts as a visit and a no-show as a no-show in the
+  person's `user_visit_outcomes`, written after the front desk's change and again from
+  queue-service's own `queue.entry.completed` / `queue.entry.no_show` events (the repair). The
+  show-up counts and labels moved into `@buku/database` (`showUpCountsOf`, `showUpLabelsOf`), used
+  by booking and queue alike; walk-ins record nothing.
+- **The front desk's board** shows customers' names read from their shards (by shard,
+  `usersByShard`) or the walk-in's name, with the reliability label; staff on shift come from
+  `staff_open_shifts`; the plan feature is read on the business's shard.
+- **Distances** are PostGIS on the business's shard (`extensions.ST_Distance` against the
+  business's `location`).
+- **Live screens** are kept by the business's internal ID on the Valkey channel; viewers name a
+  business by public ID or slug (`DataPlane.businessIdOf`, now shared with booking).
+- **Events** (`queue.*`) go to the business shard's outbox with internal IDs and the session's
+  date.
+- **Rights:** queue-service reads `user_visit_outcomes` and adds to it; Kafka: it reads its own
+  completed and no-show events.
+- **Tests:** queue-service's 24 integration tests (the queue and the live screens over two
+  replicas) run on the services' v2 world as its own role, through a shared harness; new ones
+  cover a finished ticket staying readable, a stale claim giving way, a ticket still being served
+  in a closed queue, and outcomes recorded once.
+
+**D3f, as built (2026-10-18).** notification-service runs on v2 (D-117); nothing of it uses v1 any
+more.
+
+- **On each person's shard:** their inbox and every send's record (`notifications`), preferences,
+  their WhatsApp connection, and the marks of timed messages (`notification_marks`, one per person
+  and key). A delivery writes each recipient's inbox row in the same transaction that records it
+  as handled on their shard — the event (`processed_events`) or the mark — then sends push, email
+  and WhatsApp after that commit; a message to people on several shards goes shard by shard.
+- **What messages are about** is read on the business's shard: the appointment (with the name the
+  customer booked under), the team, reviews, queue tickets. Links name appointments and businesses
+  by public ID (DB-042); the email unsubscribe link names the person by public ID.
+- **Timed messages:** reminders, "book again", review requests and plan notices read every business
+  shard a page at a time (`DataPlane.businessShards`: one transaction per page, through the
+  cross-business role). A request's nudge is marked for each approver.
+- **Suggestions** start from each user shard: regulars from the reliability ledger
+  (`user_visit_outcomes`), activity from the person's own list (an appointment's ID says when it was
+  booked, DB-002) and their place in line; only the businesses named are asked about.
+- **WhatsApp:** the `user.whatsapp` handle (the number's blind index) says whose number it is: an
+  incoming message finds its person, a number belongs to one account (proving it elsewhere moves
+  it), disconnecting releases it, and a closed account lets it go at once (`users.deleted`).
+  Meta's delivery statuses find the person by their `recipient_id`.
+- **Admin settings** are reference data on the directory (`reference.notification_settings`,
+  replicated to every shard); the audit entry goes to the admin's own shard.
+- **Plan notices** are for business plans only (subscriptions live on business shards; customers
+  are free, D-101); billing being on is read on the directory.
+- **Housekeeping:** v2's partitions and retention are pg_partman's on every shard; v1's partition
+  and retention jobs stopped with this move (v1 leaves in D3j).
+- **Rights:** notification reads `user_visit_outcomes` and `user_active_tickets`; Kafka: it reads
+  `users.deleted`.
+- **Tests:** notification-service's 36 integration tests run on the services' v2 world as its own
+  role (a harness that writes people, businesses and the customer's side of appointments as the
+  other services do), including deliveries across shards, a closed account's WhatsApp number, and
+  a service that is no longer offered.
+
+**D3g, as built (2026-10-18).** billing-service runs on v2 (D-118); nothing of it uses v1 any more.
+
+- **The catalog** (plans, prices, the switch per audience, costs, channel fees) is reference data on
+  the directory, edited only by billing-service (new IDs from the generator) and copied to every
+  shard by replication; billing reads plans and settings on the directory, so its own answers
+  never wait for a copy. Plan limits are still enforced on each business's shard
+  (`businessEntitlementsOnShard`).
+- **Money** is kept in minor units of its currency (DB-009: prices, fees and costs), entered and
+  shown as before ("24.99"); `toMinor` and `formatMinor` moved to `@buku/common` for every service.
+- **Subscriptions and plan requests** live on the business's shard. A business pays for one plan
+  at a time: business migration `20261018140000_one_live_subscription` restores v1's rule (one
+  live subscription per business) and checks that a period never ends before it starts. One trial
+  per business and one open request per business were already database rules.
+- **Paddle:** checkout names the business by its public ID in `custom_data`; a webhook is recorded
+  as handled (`processed_events`, also checked by its ID alone) and applied in one transaction on
+  that business's shard. An event whose business can't be found is acknowledged and logged.
+- **Customers are free (D-101):** there are no customer subscriptions in v2. `GET /v1/billing/me`
+  shows the customer plan and their visits (from their own list and queue outcomes); checkout,
+  trials and grants for people are refused.
+- **Admin:** subscription and plan-request lists visit every business shard and merge (newest /
+  oldest first); one named by its ID is found on whichever shard holds it; subscriber counts per
+  plan and price come from every shard. The admin's audit entries go to their own shard; a
+  business's (trial, request, checkout, grant) to its shard.
+- **Sweeper:** ended trials and grants are marked expired on every business shard.
+- **Rights:** billing reads `user_appointments` and `user_visit_outcomes` on user shards (the
+  visits count).
+- **Tests:** billing-service's 31 integration tests (the catalog, switches, trials, requests,
+  grants, costs and economics; Paddle against a fake Paddle) run on the services' v2 world as its
+  own role, including the one-live-subscription rule and a shard whose settings copy is missing.
+
+**D3h, as built (2026-10-21).** search-service runs on v2 (D-120); nothing of it uses v1 any more.
+
+- **Search reads only the catalog** (DB-041): v1's queries (full text, trigram typos, PostGIS,
+  open now, closures, today's queue, ranking) run against `catalog.*` and the catalog's reference
+  copy of the kinds of business. Businesses are named by public ID; `priceFrom` is the lowest
+  active price in the business's currency, in minor units in the catalog and shown in the
+  currency's decimals; categories have bigint IDs, shown as decimal strings.
+- **Keeping it** (`services/search/src/catalog/catalog-sync.ts`): an event names a business;
+  search reads it on its shard (profile, active services, hours, business-wide closures from
+  yesterday on, the cover — the primary uploaded photo, else the first — and today's queue) and
+  replaces its catalog rows in one transaction. The version is a generator ID taken **before**
+  the read; the write takes an advisory lock on the business and is skipped if the row already
+  has a newer version. A deleted business, or one placed nowhere, leaves the catalog with its
+  rows. Today's queue (sessions opened and closed, tickets joined, called, served or left) only
+  rewrites `catalog.queues` and `offers_queue`.
+- **Events** (each with one publisher, D-092): `businesses.created/updated/verified/suspended`
+  (business; photo and logo changes now announce `changedFields: ["photos"|"logo"]`),
+  `listings.changed` `{ businessId, part: menu | closures | rating }` (booking: services
+  created, changed or archived, closures added or removed, reviews written, changed, deleted or
+  moderated), `queue.settings.updated` `{ businessId }` (queue), and the queue's session and
+  ticket events. Search consumes them in its own group; handling one twice changes nothing.
+- **Repair:** every `CATALOG_SWEEP_MINUTES` (60) and at start, every business on every shard is
+  refreshed, a page at a time, through search's cross-business role: what fills an empty catalog
+  and puts right anything an event missed.
+- **Ranking figures** (D-076): every ten minutes, each business shard's `business_search_stats`
+  is computed in one statement (bookings this week and last, queue joins, visits kept and
+  bookings the business cancelled in 90 days), then copied onto the catalog rows 500 at a time. A
+  refresh leaves them alone.
+- **ads-service** starts on the data plane with the catalog (no routes yet); **analytics** keeps
+  using ClickHouse only.
+- **Tests:** the services' v2 world has its own catalog (`buku_svctest_catalog`, migrated, with
+  its reference copy and every service's rights). Search's 22 integration tests (v1's 15 ported,
+  and 7 on keeping the catalog: what a refresh copies, newer wins, deleted and unplaced, the
+  queue's path, events, figures, the sweep) run as search's own role; booking, business and queue
+  tests check their announcements.
+
+**D3i, as built (2026-10-23).** The website and the whole stack's tests run on v2 (D-121).
+
+- **IDs on the website:** one definition of both forms (`@buku/validation` `ids.ts`: a 12-character
+  public ID for people, businesses and appointments; a positive 64-bit decimal for everything under
+  a business), shared with the services (`@buku/common` re-uses it). Pages and links check each
+  address in its own form: appointments and businesses by public ID, tickets, services and staff
+  by decimal ID; a business's address is its public ID or its slug (the live queue stream accepted
+  only lower-case before). Search prices are decimal strings.
+- **Found on the way:** the gateway's public-profile route matched only lower-case slugs, so a link
+  to a business by its public ID (every notification's) was a 404 (now `[0-9A-Za-z-]+`); "my
+  reviews" named each visit by its internal ID instead of its public ID; and a service whose ID
+  lease ran out while the directory was unreachable never made an ID again (it now leases a new
+  generator by itself, `LeasedIdGenerator.renew`).
+- **Checkout:** `/checkout` opens Paddle's checkout for `?_ptxn=txn_…`; only that page may load
+  Paddle (script, styles, its API and the payment frame of `PADDLE_ENVIRONMENT`, sandbox or
+  live). The local test page (`scripts/paddle-sandbox-checkout.ts`) is gone.
+- **Simulated time:** `services/booking/scripts/dev-world.ts`, development only, as `buku_app` on
+  the business's shard (row-level security applies), then booking's own PersonSync for the
+  customer's side. An appointment's time is fixed on its shard (`appointments_fixed`: it is the
+  partition key), so a move writes the same appointment (same ID, public ID and code) again at the
+  new time in one transaction. A business a test closes is announced (`businesses.updated`), so
+  search drops it at once. The acceptance run imports it; the browser tests call its command line.
+- **Tests on v2:** acceptance 22/22 (journeys, races, every route; its authorization scan now sends
+  well-formed IDs of each kind, so a refusal is about who asks, not how); the website's browser
+  tests 220 passed (6 skip by design: keyboard tests on phones, a phone-only one on desktop, Google
+  set up or not), including the checkout page with a stand-in for Paddle.js; the admin app's 5;
+  unit 395, integration 406.
+
+**D3j, as built (2026-10-31).** v1 has left the stack (D-122); D3 is complete.
+
+- **Gone:** v1's schema, its 30 migrations and its seed (`prisma/schema.prisma`, `prisma/migrations`,
+  `prisma/seed.ts`, `prisma.config.ts`), its client and the helpers only it used (soft delete,
+  v1 audit and authorization, show-up counts, retention, partition upkeep); kafka's v1 outbox
+  writer and v1 `processOnce`; billing's v1 entitlement checks; the v1 rights map; the `buku_test`
+  database the init script made. What v2 shared with them stayed: the database error helpers,
+  `lockForLimit`.
+- **Databases now:** the directory, the catalog, the shards in the registry, and their test twins.
+  The server's first database (`POSTGRES_DB`) stays empty. Each service's `DATABASE_URL` is its
+  own role on the **directory**; the data plane reaches shards through the registry.
+- **Rights:** the roles belong to the server, so they're made from the directory
+  (`roleStatements`, then each database grants its own map from nothing:
+  `directoryAccessStatements`, `databaseAccessStatements`). `apply-access` needs only the
+  directory's administrator; the catalog and every shard follow.
+- **Admin connections:** `createDatabaseClient` is a plain connection for administrative SQL
+  (provisioning, rights, test set-up), built on the directory's generated client; it has no
+  models. Prisma error codes are recognised by shape, from whichever generated client throws.
+- **Relays:** every outbox is a shard's (numeric IDs, old days dropped with their partitions), so
+  the relay has one mode. Two outbox behaviours v1's tests covered are now shard tests: an event goes
+  out only if its change commits, and a handler that fails leaves the event to be handled again.
+- **Tooling:** `pnpm db:migrate:deploy` migrates the directory and the catalog; `pnpm db:shards`
+  every shard; `pnpm db:seed` seeds the directory's registry; `pnpm verify` checks v2 (registry
+  shards exist, extensions, partitions, exclusions, row-level security, replication, seed,
+  catalog, encryption, least privilege). CI drops v1's drift check.
+- **Tests:** unit 391, integration 376 in 21 files (v1's constraint, retention, outbox and
+  idempotency tests removed; their v2 equivalents run on the shards), acceptance 22/22 on the
+  stack with every service connecting through the directory.
+
+**D4, in slices** (each a pull request into `feat/db-v2-services`, D-112).
+
+| Slice                                      | What                                                                                                                  |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| **D4a** backups ✅ 2026-10-31              | pgBackRest: WAL archived continuously, encrypted repository, full/differential/incremental backups; the restore drill |
+| **D4b** TLS ✅ 2026-10-31                  | every connection over TLS, the server's certificate verified by every client (DB-020)                                 |
+| **D4c** audit and monitoring ✅ 2026-10-31 | pgaudit for human sessions; monitoring of archiving, backup age, replication slots, partitions, connections           |
+
+**D4a, as built (2026-10-31).** Backups and point-in-time recovery in development (DB-030, DB-034).
+
+- **Archiving:** the BUKU Postgres image has pgBackRest (2.60, from PGDG). `archive_mode = on`,
+  `archive_timeout = 60s`, and `archive_command` is `pgbackrest-archive-push`, which pushes each
+  WAL file to the repository and, on a new cluster, makes the repository's stanza first, so
+  archiving can't stall unnoticed with WAL piling up.
+- **Repository:** a Docker volume (`pgbackrest-repo`), encrypted with AES-256
+  (`BUKU_BACKUP_CIPHER_PASS`, generated by `pnpm bootstrap`, read from the environment only);
+  zstd compression; two full backups kept with their differentials. Production points the same
+  settings at two object stores (DB-033).
+- **Backups:** `pnpm db:backup [full|diff|incr]`.
+- **The restore drill**, `pnpm db:restore-drill` (and CI on every pull request), runs four steps:
+  1. It verifies every backup and WAL file.
+  2. It writes a marker at a moment T and counts the rows people create in every database (the
+     directory, the catalog, each shard), then deletes the marker after T.
+  3. It restores the latest backup to a scratch server (same image, empty volume, repository
+     read-only; no archiving, replication or scheduled jobs) and recovers to T.
+  4. It checks the marker is back and every count matches. First run: 8 databases, every check
+     passes.
+- **verify.sh** checks that WAL reaches the repository with no failures, and that an encrypted
+  backup exists.
+
+**D4b, as built (2026-10-31).** TLS on every connection in development (DB-020, layer 2).
+
+- **Certificates:** `pnpm bootstrap` runs `scripts/dev-certs.sh`, which makes a local authority
+  (`secrets/ca`, its key never leaves that folder) and the server's certificate for `postgres`,
+  `localhost` and `127.0.0.1` (ECDSA P-256), all in the git-ignored `secrets/`. Production uses
+  the provider's authority.
+- **Server:** the image's entrypoint installs the certificate and key from a read-only mount,
+  owned by the server and the key readable by it alone. Settings: `ssl = on`,
+  `ssl_min_protocol_version = TLSv1.3`, and the image's own `pg_hba.conf` (`hba_file`), which has
+  `hostssl` lines and no `host` line, so a network connection without TLS is refused. Only the
+  server's socket, inside its container, needs no TLS (pgBackRest, the administrator's `psql`).
+- **Clients** use libpq's settings, `PGSSLMODE=verify-full` and `PGSSLROOTCERT`: the chain is
+  checked against the authority, and the certificate's name against the host dialled.
+  - Services and database jobs get them from compose, with the authority mounted read-only.
+  - Tools on the host (tests, scripts, Prisma's CLI) read them from `.env`, written by bootstrap.
+  - `tlsOptions()` (`packages/database/src/tls.ts`) gives every Prisma client the same settings.
+    It refuses any other mode, so a client that doesn't check the server can't be configured.
+  - `cliUrl()` translates them into the URL settings of Prisma's migration engine
+    (`sslmode=require&sslaccept=strict&sslcert=…`).
+- **Reference copies:** subscriptions connect with `sslmode=verify-full` and the authority the
+  image installs (`localReferenceSource()`), so replication is encrypted too.
+- **The restore drill's scratch server** has no certificate. The same `pg_hba.conf` therefore
+  refuses every network connection, and it is reachable through its own socket alone.
+- **Tests:**
+  - unit: the settings are read and refused as above;
+  - integration: our clients connect with TLS 1.3, and a connection without TLS, with TLS 1.2, or
+    trusting another authority is refused;
+  - by hand: Prisma's CLI refuses a host name the certificate doesn't name, and an authority that
+    didn't sign the certificate.
+  - `verify.sh` checks that TLS 1.3 is the minimum, that a connection without TLS is refused, that
+    every network connection is encrypted, and that a wrong host name is refused.
+  - Every service's and every replication connection showed TLSv1.3 in `pg_stat_ssl`. Unit 396,
+    integration 380 in 22 files, acceptance 22/22, the restore drill passes.
+
+**D4c, as built (2026-10-31).** People's access and the database's own health (DB-021, DB-022,
+§14).
+
+- **Break-glass**, `pnpm db:break-glass --reason "…" [--db …] [--write]`
+  (`scripts/db/break-glass.sh`), makes a login role for this person and this session only:
+  - it is read-only (`pg_read_all_data`, and every transaction read-only by default); `--write`
+    adds `pg_write_all_data`;
+  - on a business shard it reads across businesses, through membership of `buku_all_businesses`;
+  - who, why and until when are written on the role (`COMMENT`, which pgaudit records);
+  - every statement is audited: `pgaudit.log = all` is set on the role, and only a superuser can
+    change it;
+  - it has no password, so it signs in only through the server's own socket, never over the
+    network;
+  - it gets one connection, a 5-minute statement limit and a 15-minute idle limit;
+  - it is dropped when the session ends, or after `--minutes` (at most 60).
+- **Who did it, in the log:** every Postgres log line now names the role and the database
+  (`log_line_prefix` `%u@%d`), so an audit line reads `human_<person>_<id>@<database> … AUDIT:
+SESSION,…`.
+- **Health**, `pnpm db:health` (`scripts/db/health.sh`): 13 checks, each ok, a warning (look today)
+  or critical (act now). The exit code is 1 if any is critical. The checks:
+  - archiving failures and the last archived WAL file;
+  - backup age (a warning after 26 hours, critical after 8 days);
+  - abandoned replication slots, and the WAL slots hold back;
+  - reference copies whose subscription stopped;
+  - partition coverage ahead of now, and rows in a `_default` partition, on every registry shard;
+  - failed pg_cron jobs;
+  - connections in use, the longest open transaction, transaction ID age;
+  - open registry alerts;
+  - break-glass roles that outlived their time.
+- **Alerts:** `--prometheus` prints the results as metrics for node_exporter's textfile collector.
+  `infrastructure/monitoring/alerts.yml` (group `database`) pages on a critical check, warns after
+  30 minutes of a warning, and pages when the checks stop running. Each check has a runbook entry
+  (`docs/compliance/runbooks.md#database`).
+- **Tests:**
+  - by hand: an abandoned slot and an expired break-glass role are both reported critical;
+  - `verify.sh` and CI: health has no critical check; a break-glass session reads, its statement
+    is in the audit log under its role, and a write is refused;
+  - unit 396, integration 380, acceptance 22/22, the restore drill passes, `pnpm verify` 59/59.

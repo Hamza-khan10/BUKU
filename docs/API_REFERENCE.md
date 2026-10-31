@@ -86,7 +86,7 @@ with `details.termsVersion` (show the consent screen, then retry). Response `201
 ```json
 {
   "user": {
-    "id": "…",
+    "id": "Xk3pQ9aB2mZt",
     "name": "Ayesha Khan",
     "email": "ayesha@gmail.com",
     "phone": null,
@@ -122,7 +122,8 @@ before booking.
 ```
 
 Refresh returns the same token fields as sign-in (without `user`). Store the NEW refresh token
-immediately — the one you sent is now used up. Logout always answers `204`.
+immediately — the one you sent is now used up. Logout always answers `204`. Treat both tokens as
+opaque strings (a refresh token is at most 200 characters); `sessionId` is a decimal ID.
 
 ### `PATCH /v1/auth/me`
 
@@ -185,7 +186,8 @@ POST /v1/auth/business-login
 { "business": "fade-masters-lahore", "username": "ali", "password": "<the temporary or own password>" }
 ```
 
-The response is the same as any sign-in. `user.account` tells the app what kind of account it is:
+The response is the same as any sign-in. `user.account` tells the app what kind of account it is
+(`businessId` is the business's public ID):
 
 ```json
 { "type": "employee", "businessId": "…", "username": "ali", "mustChangePassword": true }
@@ -208,10 +210,13 @@ The response is the same as any sign-in. `user.account` tells the app what kind 
 - Access turned off by the business → `403 ACCOUNT_SUSPENDED` (only shown after a correct password).
 - Employee accounts can't register a business or delete themselves; the business removes them.
 
-### A business's team — `/v1/businesses/:id/members`
+### A business's team — `/v1/businesses/:publicId/members`
 
 Served by auth-service. Requires `members.manage` (owner, manager). Managers create and manage
-**front desk and staff only**; nobody changes their own access here.
+**front desk and staff only**; nobody changes their own access here. The business is named by its
+public ID (12 characters); a member's `id` is a decimal ID under the business, and its `userId` is
+the person's public ID (DATABASE.md DB-042). An account still on a temporary password has no
+business access (`404`) until it chooses its own.
 
 | Method & path                            | Purpose                                                                                                      |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -231,6 +236,12 @@ Roles inside a business: **owner** (whoever registered it) and members with **ma
 **front desk** or **staff** roles. What each role may do is defined once in
 `packages/common/src/authz.ts`. Someone with no role in a business gets `404` for its private
 endpoints (we don't confirm what they can't manage); a role without the permission gets `403`.
+
+**IDs (DATABASE.md DB-042):** a business is `:id` = its **public ID** (12 characters) or, on the
+public profile, its slug; anything else is `400`. A business's own rows (documents `:docId`,
+photos `:photoId`, employees `:staffId`) and a kind of business (`categoryId`, `parentId`) are
+**decimal IDs** as strings. An admin acts on a document or a report by its decimal ID. Responses
+use the same forms; a member of the team who is still on a temporary password gets `404` (D-034).
 
 | Method & path                                                                                       | Auth | Who                                        | Purpose                                                               |
 | --------------------------------------------------------------------------------------------------- | ---- | ------------------------------------------ | --------------------------------------------------------------------- |
@@ -433,7 +444,10 @@ requests that have gone through the legal process (docs/DECISIONS.md D-033).
 
 ## Booking service — menu, staff and schedules (2.3 part 1)
 
-All under `/v1/businesses/:id/…`. Public pages accept the business's id **or slug**.
+All under `/v1/businesses/:id/…`, where `:id` is the business's **public ID** (12 characters);
+public pages also accept its **slug**. Services, categories, staff, time off, closures, shifts and
+reviews are named by **decimal IDs** under the business; a staff profile's linked account
+(`userId`) by the person's public ID (DATABASE.md DB-042).
 
 | Method & path                                                       | Auth | Who                                  | Purpose                                                                 |
 | ------------------------------------------------------------------- | ---- | ------------------------------------ | ----------------------------------------------------------------------- |
@@ -534,8 +548,14 @@ horizon, every `slotStepMinutes`. Daylight-saving changes are handled. Never cac
 
 ```json
 POST /v1/appointments
-{ "businessId": "…", "serviceId": "…", "staffId": "…", "startAt": "2026-10-04T05:00:00.000Z", "notes": "Please use a round brush" }
+{ "businessId": "Xk3pQ9aB2mZt", "serviceId": "104862745937051649", "staffId": "104862745937051650", "startAt": "2026-10-04T05:00:00.000Z", "notes": "Please use a round brush" }
 ```
+
+`businessId` is the business's public ID; `serviceId` and `staffId` are decimal IDs. An
+appointment is named by its **public ID** everywhere (`/v1/appointments/:id`,
+`/v1/businesses/:id/appointments/:appointmentId`); `rescheduledFromId` is the public ID of the
+appointment it replaced. The business's list shows the customer by their public ID and the name
+they booked under.
 
 `startAt` must be one of the offered times. Leave out `staffId` for "anyone": the person with
 the fewest bookings that day. Automatic businesses confirm at once; manual ones leave it
@@ -625,6 +645,10 @@ Attendance doesn't change bookable times; those come from working hours.
 | `PUT …/queue/entries/:entryId/priority` `{ priority }`                     | ✔    | owner, manager, front desk  | Move a waiting ticket into or out of the priority lane                                 |
 | `GET`/`PUT …/queue/settings`                                               | ✔    | owner, manager (read: team) | Distance, size, grace, ticket letters, starting estimate                               |
 
+**IDs (DATABASE.md DB-042):** a business is `:id` and `businessId` = its **public ID** (12
+characters; public pages also take its slug); a ticket (`:id`, `:entryId`) is a decimal ID. The
+ticket's `business.id` and the public state's `businessId` are public IDs too.
+
 ### The ticket (D-057)
 
 ```json
@@ -651,8 +675,13 @@ people ahead among the staff clocked in and uses the day's real average service 
 **Joining:** only within `remoteJoinRadiusMeters` of the business (default 5 km, measured by
 PostGIS from the phone's position): `422 QUEUE_TOO_FAR` with `details.distanceMeters`; a business
 without a location takes sign-ups at the counter only. One live ticket per customer anywhere:
-`409 QUEUE_ALREADY_JOINED`. `409 QUEUE_CLOSED` / `QUEUE_PAUSED` / `QUEUE_FULL`. Employee
+`409 QUEUE_ALREADY_JOINED` — until that ticket is served, left or marked a no-show, or its queue
+closes or is from an earlier day. `409 QUEUE_CLOSED` / `QUEUE_PAUSED` / `QUEUE_FULL`. Employee
 accounts can't join.
+
+**My ticket:** `GET /v1/queue/my-ticket` is the live one (or `null`); `GET /v1/queue/tickets/:id`
+also shows the person's latest ticket after it ends (served, left…) until they join another —
+older tickets are `404`.
 
 **Alerts:** `queue.position.updated` events (ids, ticket and `ahead`, never names) when a customer
 reaches 10 ahead, 5 ahead, then every step — delivered as push notifications in 2.6.
@@ -689,7 +718,7 @@ data: {"businessId":"…","status":"open","waiting":3,"line":["A-007","A-004","A
 | Method & path                                                                          | Auth | Who                | Purpose                                                                                |
 | -------------------------------------------------------------------------------------- | ---- | ------------------ | -------------------------------------------------------------------------------------- |
 | `GET /v1/billing/plans?audience=user\|business&channel=web\|android\|ios&currency=USD` | —    | anyone             | The pricing page (cached 5 min)                                                        |
-| `GET /v1/billing/me`                                                                   | ✔    | a customer         | My plan and how many bookings/queue joins I have left                                  |
+| `GET /v1/billing/me`                                                                   | ✔    | a customer         | My plan (free, D-101) and my visits                                                    |
 | `GET /v1/businesses/:id/billing`                                                       | ✔    | any team role      | The business's plan, features, and usage against each limit                            |
 | `GET`/`POST /v1/admin/billing/plans` · `PATCH …/plans/:code`                           | ✔    | super_admin        | Plans: name, tagline, benefits, limits, features, on the page or not                   |
 | `POST …/plans/:code/archive` · `/restore`                                              | ✔    | super_admin        | Stop / resume selling a plan (fallback plans are protected)                            |
@@ -700,10 +729,17 @@ data: {"businessId":"…","status":"open","waiting":3,"line":["A-007","A-004","A
 | `GET …/fees` · `PUT …/fees/:channel`                                                   | ✔    | super_admin        | What each channel keeps: `{ percent, fixedAmount }`                                    |
 | `POST …/economics` `{ taxPercent?, subscribers? }`                                     | ✔    | super_admin        | Profit per price and in total; break-even                                              |
 | `GET …/subscriptions` · `POST …/grants` · `POST …/subscriptions/:id/end`               | ✔    | super_admin        | List · give any plan free (`replace: true` swaps a grant/trial) · end a grant or trial |
-| `POST /v1/billing/me/trial`                                                            | ✔    | a customer         | Start my free trial (once)                                                             |
+| `POST /v1/billing/me/trial`                                                            | ✔    | a customer         | Refused (`409`): customers are free (D-101)                                            |
 | `POST /v1/businesses/:id/billing/trial`                                                | ✔    | owner              | Start the business's free trial (once)                                                 |
 | `GET`/`POST /v1/businesses/:id/billing/plan-requests` · `POST …/:requestId/withdraw`   | ✔    | owner (list: team) | Ask for a plan, e.g. Enterprise free of charge                                         |
 | `GET /v1/admin/billing/plan-requests?status=` · `POST …/:id/approve` · `/decline`      | ✔    | super_admin        | Approve (→ grant, optional `until`, other `planCode`) or decline (`note`)              |
+
+**IDs (DATABASE.md DB-042):** a business is `:id` and `businessId` = its **public ID** (12
+characters); prices, costs, subscriptions and plan requests go by decimal IDs (`subscribers` in
+`economics` is keyed by price ID). Customers use BUKU for free (D-101): `GET /v1/billing/me` shows
+their visits but no limit, their trial and checkout are refused (`409`), they have no subscription
+to cancel or change (`404`), and a grant to a person (`userId`) is refused (`409`). Paddle's
+`custom_data` names the business by its public ID.
 
 ### The pricing page
 
@@ -896,6 +932,10 @@ GET /v1/notifications
 `data.screen` tells the app where to go: `appointment`, `business-appointment` (team),
 `queue-ticket`. The same title, text and `data` arrive as a push.
 
+**IDs (DATABASE.md DB-042):** a message's `id` (and `:id`) is a decimal ID. Links in `data` name an
+appointment and a business by their public IDs; a service, an employee, a review and a queue
+ticket (`entryId`) by decimal IDs. The email unsubscribe link's `u` is the person's public ID.
+
 **What is sent, to whom**
 
 | Event                     | Customer                                                | Business                                                           |
@@ -915,18 +955,18 @@ Businesses see customers as "Ayesha K." (first name and initial).
 
 **Timed messages**
 
-| When                                                      | To                              | Message                                   |
-| --------------------------------------------------------- | ------------------------------- | ----------------------------------------- |
-| 24 h before (booked 30 h+ ahead; not at night)            | customer                        | "Reminder: Haircut tomorrow" + code       |
-| 2 h before (booked 2½ h+ ahead; not at night)             | customer                        | "Soon: Haircut at 10:30"                  |
-| Request unanswered for 2 h, or visit under 24 h away      | owner, managers, front desk     | "A booking request is waiting"            |
-| Cancelled with "remind me later", when that time comes    | customer (unless booked again)  | "Time to book Haircut again?"             |
-| Trial ends in 3 days / ended                              | the account (or business owner) | "Your free trial ends soon" / "has ended" |
-| Gifted plan ends in 7 days; cancelled plan ends in 3 days | the account (or business owner) | "Your Professional plan ends soon"        |
-| Payment failed                                            | the account (or business owner) | "Payment didn't go through"               |
+| When                                                      | To                             | Message                                   |
+| --------------------------------------------------------- | ------------------------------ | ----------------------------------------- |
+| 24 h before (booked 30 h+ ahead; not at night)            | customer                       | "Reminder: Haircut tomorrow" + code       |
+| 2 h before (booked 2½ h+ ahead; not at night)             | customer                       | "Soon: Haircut at 10:30"                  |
+| Request unanswered for 2 h, or visit under 24 h away      | owner, managers, front desk    | "A booking request is waiting"            |
+| Cancelled with "remind me later", when that time comes    | customer (unless booked again) | "Time to book Haircut again?"             |
+| Trial ends in 3 days / ended                              | the business owner             | "Your free trial ends soon" / "has ended" |
+| Gifted plan ends in 7 days; cancelled plan ends in 3 days | the business owner             | "Your Professional plan ends soon"        |
+| Payment failed                                            | the business owner             | "Payment didn't go through"               |
 
-Plan notices are only sent while billing is on for that audience, and not if the account already
-moved to another plan. `data.screen` adds `book` (`businessId`, `serviceId`), `billing` and
+Plan notices are about a business's plan (to its owner), only while billing is on for businesses,
+and not if the business already moved to another plan (customers are free, D-101). `data.screen` adds `book` (`businessId`, `serviceId`), `billing` and
 `business-billing`.
 
 **Suggestions** (opt-in; every 30 minutes, never at night; D-075)
@@ -962,6 +1002,8 @@ verified address; every email (except plan notices) has a one-click unsubscribe 
 (15 minutes; a new code replaces the old). The app opens `link`; the person taps send. That
 message proves the number and connects it. Afterwards, any message they send gets their upcoming
 visits back; `STOP` / `START` switch WhatsApp messages off / on. 503 until WhatsApp is set up.
+A number belongs to one account at a time (proving it on another account moves it); closing the
+account lets it go at once. Delivery statuses from Meta are matched by their `recipient_id`.
 
 **Preferences** (`PUT …/notification-prefs`, any subset): `pushBookingConfirmation`,
 `pushReminders`, `pushQueueUpdates`, `pushBusinessAlerts`, `whatsappUpdates`, `smsReminders`,
@@ -979,7 +1021,10 @@ audited.
 
 ## Search service — finding businesses (2.7)
 
-All public (no sign-in), rate-limited at the gateway (200/minute per address).
+All public (no sign-in), rate-limited at the gateway (200/minute per address). Search reads the
+catalog (DB-041), kept from every business shard's events (D-120): a change to a business shows
+within seconds, and an hourly sweep repairs anything an event missed. Businesses are named by
+their public IDs; categories by decimal-string IDs.
 
 | Method & path                                    | Purpose                                                                    |
 | ------------------------------------------------ | -------------------------------------------------------------------------- |
@@ -1003,26 +1048,27 @@ are refused (400).
 ```json
 GET /v1/businesses/search?q=haircut&lat=31.52&lng=74.35&openNow=true
 { "data": [{
-    "id": "…", "slug": "fade-masters", "name": "Fade Masters",
+    "id": "z6rR1qZjf3Pj", "slug": "fade-masters", "name": "Fade Masters",
     "category": { "slug": "barbershop", "name": "Barbershop" },
     "city": "Lahore", "address": "…", "location": { "lat": 31.52, "lng": 74.36 }, "distanceKm": 1.3,
     "rating": { "average": 4.7, "count": 128 }, "verified": true,
     "reliability": { "keptPercent": 98, "basedOn": 240 },
-    "priceFrom": { "amount": 400, "currency": "PKR" },
+    "priceFrom": { "amount": "400.00", "currency": "PKR" },
     "openNow": true, "queue": { "open": true, "waiting": 4 },
     "logoUrl": "https://…", "coverPhotoUrl": "https://…", "isPromoted": false }],
   "meta": { "page": 1, "limit": 20, "total": 7, "totalPages": 1, "sort": "relevance" } }
 ```
 
 `reliability` is null until a business has 10 decided bookings; `queue` is null without an open
-queue today; `priceFrom` is the lowest active service price. **Ranking** (`relevance`): how well
+queue today; `priceFrom` is the lowest active service price in the business's currency, as a
+decimal string in the currency's decimals (D-118). **Ranking** (`relevance`): how well
 the words match (name first, then category and services, description, city) + quality (rating
 adjusted for how many reviews there are, reliability, verified) + closeness. A 5.0 from 2
 reviews does not beat a 4.8 from 200.
 
 ```json
 GET /v1/businesses/autocomplete?q=hai
-{ "data": { "businesses": [{ "id": "…", "slug": "…", "name": "Hair by Sana", "city": "Lahore", "category": "Hair Salon" }],
+{ "data": { "businesses": [{ "id": "Hq3bT9xK2mPa", "slug": "…", "name": "Hair by Sana", "city": "Lahore", "category": "Hair Salon" }],
             "categories": [{ "slug": "hair-salon", "name": "Hair Salon", "icon": null }],
             "services": ["Haircut", "Haircut + Beard", "Hair Colour"] } }
 ```
@@ -1035,7 +1081,7 @@ GET /v1/businesses/autocomplete?q=hai
 | `POST /v1/appointments/:id/review`                                | the customer  | Review a visit that happened (within 30 days, once)                           |
 | `PATCH /v1/appointments/:id/review`                               | the customer  | Change it (7 days after posting)                                              |
 | `DELETE /v1/appointments/:id/review`                              | the customer  | Delete it                                                                     |
-| `GET /v1/appointments/reviews`                                    | ✔             | My reviews                                                                    |
+| `GET /v1/appointments/reviews`                                    | ✔             | My reviews; each names its visit (`appointmentId`) by the visit's public ID   |
 | `PUT`/`DELETE /v1/businesses/:id/reviews/:reviewId/response`      | owner/manager | Reply (replaces an earlier reply) / remove the reply                          |
 | `POST /v1/businesses/:id/reviews/:reviewId/report`                | owner/manager | `{ reason: offensive·fake·not_a_customer·personal_info·other, note? }`        |
 | `GET /v1/admin/reviews`                                           | admin         | Reported reviews, oldest report first                                         |
