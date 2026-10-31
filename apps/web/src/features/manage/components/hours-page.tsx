@@ -3,23 +3,42 @@
 import { zText } from '@buku/validation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CalendarOff, Pencil, Trash2 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/choice';
 import { CleanTextInput } from '@/components/ui/clean-text';
 import { Field } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
+import { Input, Select } from '@/components/ui/input';
 import { PageHeading } from '@/components/ui/layout';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState, ErrorState } from '@/components/ui/states';
 import { toast } from '@/components/ui/toaster';
+import { ME_KEY, fetchMe } from '@/features/auth/api';
 import { ProblemAlert } from '@/features/auth/components/problem-alert';
 import { problemFrom, type Problem } from '@/features/auth/problems';
 import { ApiError } from '@/lib/api/errors';
-import { can, fetchManaged, managedKey, type ManagedBusiness } from '../api';
-import { groupEntries, groupWhen, scheduleInput, scheduleProblems, type ScheduleGroup } from '../schedule';
-import { addClosure, closuresKey, fetchClosures, removeClosure } from '../schedule-api';
+import { can, fetchManaged, fetchStaff, managedKey, staffKey, type ManagedBusiness } from '../api';
+import {
+  groupEntries,
+  groupWhen,
+  scheduleInput,
+  scheduleProblems,
+  type EntryKind,
+  type ScheduleEntry,
+  type ScheduleGroup,
+  type ScheduleInput,
+} from '../schedule';
+import {
+  addClosure,
+  addTimeOff,
+  closuresKey,
+  fetchClosures,
+  fetchTimeOff,
+  removeClosure,
+  removeTimeOff,
+  timeOffKey,
+} from '../schedule-api';
 import { dayLabel as weekDayLabel, WEEK, weekFromApi } from '../setup';
 import { dateIn } from '../visits';
 import { OpeningHoursForm } from './opening-hours-form';
@@ -57,6 +76,7 @@ export function HoursPage({ id }: { id: string }) {
       />
       <OpeningHours business={b} />
       <ClosedDays business={b} />
+      <TimeOff business={b} />
     </div>
   );
 }
@@ -110,25 +130,7 @@ function ClosedDays({ business }: { business: ManagedBusiness }) {
     queryKey: closuresKey(business.id),
     queryFn: () => fetchClosures(business.id),
   });
-  const [removing, setRemoving] = useState<string | null>(null);
-  const [problem, setProblem] = useState<Problem | undefined>();
-
-  const remove = async (group: ScheduleGroup) => {
-    setRemoving(group.ids[0]!);
-    setProblem(undefined);
-    try {
-      // One row per day: a stretch goes day by day, and what's left is shown if one fails.
-      for (const id of group.ids) await removeClosure(business.id, id);
-      toast.success(`Open again ${groupWhen(group, today).replace(/^[A-Z]/, (c) => c.toLowerCase())}.`);
-    } catch (err) {
-      setProblem(problemFrom(err, 'That didn’t work. Please try again.'));
-    } finally {
-      await queryClient.invalidateQueries({ queryKey: closuresKey(business.id) });
-      setRemoving(null);
-    }
-  };
-
-  const groups = closures.data ? groupEntries(closures.data) : [];
+  const refresh = () => queryClient.invalidateQueries({ queryKey: closuresKey(business.id) });
   return (
     <section aria-labelledby="closed-days" className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -140,17 +142,179 @@ function ClosedDays({ business }: { business: ManagedBusiness }) {
           for those days stay — look at them in Appointments.
         </p>
       </div>
-      <ProblemAlert problem={problem} />
-      {closures.isPending ? (
+      <ScheduleList
+        label="Coming closed days"
+        query={closures}
+        today={today}
+        canChange={canChange}
+        empty={{
+          title: 'No closed days coming up',
+          body: canChange ? 'Add one below when you’ll be closed.' : 'The business is open as usual.',
+        }}
+        remove={async (id) => {
+          await removeClosure(business.id, id);
+        }}
+        removed={(g) => `Open again ${lower(groupWhen(g, today))}.`}
+        refresh={refresh}
+      />
+      {canChange && (
+        <DaysForm
+          title="Add closed days"
+          today={today}
+          added="Closed days added. Nobody can book them."
+          failed="The closed days couldn’t be added. Please try again."
+          partLabel="Closed from"
+          add={(input) => addClosure(business.id, input)}
+          refresh={refresh}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * One person's days that differ from their usual week: time off (a day, a stretch, an afternoon)
+ * and extra hours (staying late one day). Owners and managers keep anyone's; everyone else keeps
+ * their own — the profile customers book that is linked to their login.
+ */
+function TimeOff({ business }: { business: ManagedBusiness }) {
+  const queryClient = useQueryClient();
+  const today = dateIn(business.timezone);
+  const manageAll = can(business.myRole, 'schedule.manage_all');
+  const me = useQuery({ queryKey: ME_KEY, queryFn: fetchMe });
+  const staff = useQuery({ queryKey: staffKey(business.id), queryFn: () => fetchStaff(business.id) });
+  const people = (staff.data ?? []).filter((p) => p.isActive && (manageAll || p.userId === me.data?.id));
+  const [chosen, setChosen] = useState<string | null>(null);
+  const person = people.find((p) => p.id === chosen) ?? people[0];
+  const entries = useQuery({
+    queryKey: timeOffKey(business.id, person?.id ?? ''),
+    queryFn: () => fetchTimeOff(business.id, person!.id),
+    enabled: Boolean(person),
+  });
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: timeOffKey(business.id, person?.id ?? '') });
+
+  return (
+    <section aria-labelledby="time-off" className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h2 id="time-off" className="type-heading">
+          Time off and extra hours
+        </h2>
+        <p className="text-ink-2">
+          When someone is away, or stays later one day. Customers can only book them when they work.
+        </p>
+      </div>
+      {staff.isPending || me.isPending ? (
         <Skeleton className="h-24" />
-      ) : closures.isError ? (
-        <ErrorState title="Closed days aren’t loading" message="Please refresh the page in a moment." />
-      ) : groups.length === 0 ? (
-        <EmptyState icon={CalendarOff} title="No closed days coming up">
-          {canChange ? 'Add one below when you’ll be closed.' : 'The business is open as usual.'}
+      ) : staff.isError || me.isError ? (
+        <ErrorState title="The team isn’t loading" message="Please refresh the page in a moment." />
+      ) : !person ? (
+        <p className="text-ink-2">
+          {manageAll
+            ? 'Nobody can be booked here yet. Add the people customers book on the Team page first.'
+            : 'You aren’t one of the people customers book here, so there’s no time off to keep.'}
+        </p>
+      ) : (
+        <>
+          {people.length > 1 && (
+            <Field label="Whose days">
+              <Select value={person.id} onChange={(e) => setChosen(e.target.value)}>
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.userId && p.userId === me.data?.id ? `${p.displayName} (you)` : p.displayName}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+          <ScheduleList
+            label={`${person.displayName}’s coming days off and extra hours`}
+            query={entries}
+            today={today}
+            canChange
+            empty={{
+              title: `Nothing coming up for ${person.displayName}`,
+              body: 'They work their usual week.',
+            }}
+            remove={async (id) => {
+              await removeTimeOff(business.id, person.id, id);
+            }}
+            removed={(g) =>
+              g.kind === 'extra_hours'
+                ? `${person.displayName}’s extra hours ${lower(groupWhen(g, today))} are taken off.`
+                : `${person.displayName} works ${lower(groupWhen(g, today))} again.`
+            }
+            refresh={refresh}
+          />
+          <DaysForm
+            key={person.id}
+            title={`Add days for ${person.displayName}`}
+            today={today}
+            extra
+            added="Saved. Free times follow it from now on."
+            failed="That couldn’t be saved. Please try again."
+            partLabel="Away from"
+            add={(input, kind) => addTimeOff(business.id, person.id, { ...input, kind })}
+            refresh={refresh}
+          />
+        </>
+      )}
+    </section>
+  );
+}
+
+const lower = (text: string) => text.replace(/^[A-Z]/, (c) => c.toLowerCase());
+
+/** Coming days, a stretch to a row; each removable as a whole by those who may. */
+function ScheduleList({
+  label,
+  query,
+  today,
+  canChange,
+  empty,
+  remove,
+  removed,
+  refresh,
+}: {
+  label: string;
+  query: { isPending: boolean; isError: boolean; data?: ScheduleEntry[] | undefined };
+  today: string;
+  canChange: boolean;
+  empty: { title: string; body: string };
+  remove: (id: string) => Promise<void>;
+  removed: (group: ScheduleGroup) => string;
+  refresh: () => Promise<void>;
+}) {
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [problem, setProblem] = useState<Problem | undefined>();
+  const run = async (group: ScheduleGroup) => {
+    setRemoving(group.ids[0]!);
+    setProblem(undefined);
+    try {
+      // One row per day: a stretch goes day by day, and what's left is shown if one fails.
+      for (const id of group.ids) await remove(id);
+      toast.success(removed(group));
+    } catch (err) {
+      setProblem(problemFrom(err, 'That didn’t work. Please try again.'));
+    } finally {
+      await refresh();
+      setRemoving(null);
+    }
+  };
+
+  if (query.isPending) return <Skeleton className="h-24" />;
+  if (query.isError)
+    return <ErrorState title="These days aren’t loading" message="Please refresh the page in a moment." />;
+  const groups = groupEntries(query.data ?? []);
+  return (
+    <>
+      <ProblemAlert problem={problem} />
+      {groups.length === 0 ? (
+        <EmptyState icon={CalendarOff} title={empty.title}>
+          {empty.body}
         </EmptyState>
       ) : (
-        <ul aria-label="Coming closed days" className="flex flex-col gap-2">
+        <ul aria-label={label} className="flex flex-col gap-2">
           {groups.map((g) => {
             const when = groupWhen(g, today);
             return (
@@ -162,12 +326,14 @@ function ClosedDays({ business }: { business: ManagedBusiness }) {
                 <div className="flex min-w-0 flex-col gap-1">
                   <p className="font-medium text-ink">{when}</p>
                   <div className="flex flex-wrap items-center gap-2 text-sm text-ink-2">
-                    <Badge tone={g.startTime ? 'wait' : 'neutral'}>
-                      {g.startTime
-                        ? 'Closed part of the day'
-                        : g.ids.length > 1
-                          ? `${g.ids.length} days`
-                          : 'All day'}
+                    <Badge tone={g.kind === 'extra_hours' ? 'ok' : g.startTime ? 'wait' : 'neutral'}>
+                      {g.kind === 'extra_hours'
+                        ? 'Extra hours'
+                        : g.startTime
+                          ? 'Part of the day'
+                          : g.ids.length > 1
+                            ? `${g.ids.length} days`
+                            : 'All day'}
                     </Badge>
                     {g.reason && <span className="truncate">{g.reason}</span>}
                   </div>
@@ -178,7 +344,7 @@ function ClosedDays({ business }: { business: ManagedBusiness }) {
                     variant="ghost"
                     loading={removing === g.ids[0]}
                     disabled={removing !== null}
-                    onClick={() => void remove(g)}
+                    onClick={() => void run(g)}
                   >
                     <Trash2 aria-hidden />
                     Remove<span className="sr-only"> ({when})</span>
@@ -189,30 +355,50 @@ function ClosedDays({ business }: { business: ManagedBusiness }) {
           })}
         </ul>
       )}
-      {canChange && <ClosureForm business={business} today={today} />}
-    </section>
+    </>
   );
 }
 
 const EMPTY = { from: '', to: '', partDay: false, startTime: '', endTime: '', reason: '' };
 
-function ClosureForm({ business, today }: { business: ManagedBusiness; today: string }) {
-  const queryClient = useQueryClient();
+/** Adds a day, a stretch of whole days, part of a day — or, with `extra`, extra hours one day. */
+function DaysForm({
+  title,
+  today,
+  extra = false,
+  added,
+  failed,
+  partLabel,
+  add,
+  refresh,
+}: {
+  title: string;
+  today: string;
+  extra?: boolean;
+  added: string;
+  failed: string;
+  partLabel: string;
+  add: (input: ScheduleInput, kind: EntryKind) => Promise<unknown>;
+  refresh: () => Promise<void>;
+}) {
+  const headingId = useId();
   const [form, setForm] = useState(EMPTY);
+  const [kind, setKind] = useState<EntryKind>('time_off');
   const [shown, setShown] = useState<ReturnType<typeof scheduleProblems>>({});
   const [reasonError, setReasonError] = useState<string | undefined>();
   const [problem, setProblem] = useState<Problem | undefined>();
   const [busy, setBusy] = useState(false);
+  const isExtra = kind === 'extra_hours';
   const set = (change: Partial<typeof EMPTY>) => {
     const next = { ...form, ...change };
     setForm(next);
     // Problems clear as they're fixed, never appear while typing.
-    if (Object.keys(shown).length > 0) setShown(scheduleProblems(next, today));
+    if (Object.keys(shown).length > 0) setShown(scheduleProblems(next, today, isExtra));
   };
 
-  const add = async (e: FormEvent<HTMLFormElement>) => {
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const problems = scheduleProblems(form, today);
+    const problems = scheduleProblems(form, today, isExtra);
     setShown(problems);
     const reason = form.reason.trim() ? REASON.safeParse(form.reason.trim()) : null;
     setReasonError(reason && !reason.success ? reason.error.issues[0]?.message : undefined);
@@ -220,38 +406,64 @@ function ClosureForm({ business, today }: { business: ManagedBusiness; today: st
     setProblem(undefined);
     setBusy(true);
     try {
-      await addClosure(business.id, scheduleInput(form));
-      toast.success('Closed days added. Nobody can book them.');
+      await add(scheduleInput(form, isExtra), kind);
+      toast.success(added);
       setForm(EMPTY);
+      setShown({});
     } catch (err) {
-      setProblem(problemFrom(err, 'The closed days couldn’t be added. Please try again.'));
+      setProblem(problemFrom(err, failed));
     } finally {
-      await queryClient.invalidateQueries({ queryKey: closuresKey(business.id) });
+      await refresh();
       setBusy(false);
     }
   };
 
+  const timed = form.partDay || isExtra;
   return (
     <form
       noValidate
-      onSubmit={(e) => void add(e)}
-      aria-labelledby="add-closure"
+      onSubmit={(e) => void submit(e)}
+      aria-labelledby={headingId}
       className="flex flex-col gap-4 rounded-xl bg-surface p-5 shadow-soft ring-1 ring-line sm:p-6"
     >
-      <h3 id="add-closure" className="type-subheading">
-        Add closed days
+      <h3 id={headingId} className="type-subheading">
+        {title}
       </h3>
       <ProblemAlert problem={problem} />
+      {extra && (
+        <fieldset className="flex flex-wrap gap-2">
+          <legend className="sr-only">What kind</legend>
+          {(
+            [
+              ['time_off', 'Time off'],
+              ['extra_hours', 'Extra hours'],
+            ] as const
+          ).map(([value, text]) => (
+            <label
+              key={value}
+              className="flex cursor-pointer items-center gap-2 rounded-full border border-line px-4 py-2 text-[0.95rem] has-checked:border-brand has-checked:bg-brand-soft"
+            >
+              <input
+                type="radio"
+                name={`${headingId}-kind`}
+                value={value}
+                checked={kind === value}
+                onChange={() => {
+                  setKind(value);
+                  setShown({});
+                }}
+                className="accent-brand"
+              />
+              {text}
+            </label>
+          ))}
+        </fieldset>
+      )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field
-          label={form.partDay ? 'The day' : 'First day'}
-          required
-          optionalLabel={false}
-          error={shown.from}
-        >
+        <Field label={timed ? 'The day' : 'First day'} required optionalLabel={false} error={shown.from}>
           <Input type="date" min={today} value={form.from} onChange={(e) => set({ from: e.target.value })} />
         </Field>
-        {!form.partDay && (
+        {!timed && (
           <Field label="Last day" hint="Leave it empty for one day." error={shown.to}>
             <Input
               type="date"
@@ -262,15 +474,22 @@ function ClosureForm({ business, today }: { business: ManagedBusiness; today: st
           </Field>
         )}
       </div>
-      <Checkbox
-        label="Only part of the day"
-        description="Closed from one time to another, open the rest of the day."
-        checked={form.partDay}
-        onCheckedChange={(v) => set({ partDay: v === true, to: '' })}
-      />
-      {form.partDay && (
+      {!isExtra && (
+        <Checkbox
+          label="Only part of the day"
+          description="From one time to another; the rest of the day as usual."
+          checked={form.partDay}
+          onCheckedChange={(v) => set({ partDay: v === true, to: '' })}
+        />
+      )}
+      {timed && (
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Closed from" required optionalLabel={false} error={shown.startTime}>
+          <Field
+            label={isExtra ? 'Working from' : partLabel}
+            required
+            optionalLabel={false}
+            error={shown.startTime}
+          >
             <Input type="time" value={form.startTime} onChange={(e) => set({ startTime: e.target.value })} />
           </Field>
           <Field label="Until" required optionalLabel={false} error={shown.endTime}>
@@ -278,7 +497,7 @@ function ClosureForm({ business, today }: { business: ManagedBusiness; today: st
           </Field>
         </div>
       )}
-      <Field label="Why" hint="For your team, e.g. “Eid holidays”." error={reasonError}>
+      <Field label="Why" hint="For the team, e.g. “Eid holidays”." error={reasonError}>
         <CleanTextInput
           kind="line"
           value={form.reason}
@@ -288,7 +507,7 @@ function ClosureForm({ business, today }: { business: ManagedBusiness; today: st
       </Field>
       <div>
         <Button type="submit" variant="primary" loading={busy}>
-          Add closed days
+          {title}
         </Button>
       </div>
     </form>
