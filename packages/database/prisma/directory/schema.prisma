@@ -12,6 +12,8 @@
 //  • lookup.*    global handles (DB-018): what a person or business is found by before its shard
 //                is known (an email's blind index, a Google account, a slug, a public ID), each
 //                unique across every shard.
+//  • ops.*       emergency switches (D-129): parts of BUKU an operator turns off at once and back
+//                on; every service reads them every few seconds.
 //
 // Everything that may need to change as BUKU grows is a row, not code: add a region, a cluster, a
 // shard family or a shard; change a limit. Statuses are text with CHECK constraints (not enums),
@@ -29,7 +31,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["registry", "ids", "lookup", "reference"]
+  schemas  = ["registry", "ids", "lookup", "reference", "ops"]
 }
 
 /// A region data can be kept in (DB-002: the top 3 bits of an ID's generator say which).
@@ -413,4 +415,20 @@ model NotificationSettings {
 
   @@map("notification_settings")
   @@schema("reference")
+}
+
+/// An emergency switch (D-129): one part of BUKU, turned off by an operator under attack or when it
+/// misbehaves, and back on. Every service reads these every few seconds; only the admin endpoints
+/// change them, each change audited. The keys are fixed (a CHECK in the migration).
+model Switch {
+  key       String   @id
+  off       Boolean  @default(false)
+  /// Why it's off (required while it is; kept after for the record).
+  reason    String?
+  /// The admin who changed it last.
+  changedBy BigInt?  @map("changed_by")
+  changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  @@map("switches")
+  @@schema("ops")
 }

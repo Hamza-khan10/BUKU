@@ -126,6 +126,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/',
     auth,
     createLimit,
+    deps.plane.switches.guard('business_signup'),
     validated({ body: CreateBusinessBody }, async ({ body }, req, res) => {
       const actor = requireActor(req);
       // Employee accounts (platform role `staff`) exist only inside the business that made them.
@@ -267,6 +268,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/documents/uploads',
     auth,
     uploadLimit,
+    deps.plane.switches.guard('uploads'),
     validated({ params: IdParams, body: DocumentUploadBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
@@ -322,6 +324,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/photos/uploads',
     auth,
     uploadLimit,
+    deps.plane.switches.guard('uploads'),
     validated({ params: IdParams, body: PhotoUploadBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
@@ -377,6 +380,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/logo/uploads',
     auth,
     uploadLimit,
+    deps.plane.switches.guard('uploads'),
     validated({ params: IdParams, body: PictureUploadBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,
@@ -414,6 +418,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     '/:id/staff/:staffId/photo/uploads',
     auth,
     uploadLimit,
+    deps.plane.switches.guard('uploads'),
     validated({ params: StaffParams, body: StaffPhotoUploadBody }, async ({ params, body }, req, res) => {
       sendCreated(
         res,

@@ -109,6 +109,8 @@ export class SessionService {
     tx?: UserTx,
     opts: { mfa?: boolean } = {},
   ): Promise<SessionTokens> {
+    // Sign-in paused by an operator (D-129): platform admins still get in, to turn it back on.
+    if (user.role !== 'super_admin') this.deps.plane.switches.check('signin');
     // The family is named after its first token.
     const familyId = this.deps.plane.id();
     const mfa = opts.mfa === true;
@@ -181,6 +183,10 @@ export class SessionService {
         await this.revokeFamily(tx, userId, row.family_id, reason);
         return { kind: 'revoked' as const, reason, familyId: row.family_id };
       }
+
+      // Sign-in paused (D-129): sessions aren't renewed either, so everyone but platform admins is
+      // signed out within an access token's life. Thrown here, nothing about the session changes.
+      if (user.role !== 'super_admin') this.deps.plane.switches.check('signin');
 
       const sessionUser = {
         id: user.id,

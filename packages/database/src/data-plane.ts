@@ -9,6 +9,7 @@ import {
 } from '@buku/common';
 import { CROSS_BUSINESS, type ServiceName } from './access.js';
 import { whenDatabaseReady } from './index.js';
+import { Switches } from './switches.js';
 import {
   createDirectoryClient,
   LeasedIdGenerator,
@@ -87,6 +88,8 @@ export class DataPlane {
     readonly users: ShardClients<UserShardClient>,
     readonly businesses: ShardClients<BusinessShardClient>,
     readonly catalog: CatalogClient | null,
+    /** The emergency switches (D-129), read every few seconds: `plane.switches.check('bookings')`. */
+    readonly switches: Switches,
   ) {}
 
   static async start(options: DataPlaneOptions): Promise<DataPlane> {
@@ -128,7 +131,9 @@ export class DataPlane {
       );
     await whenDatabaseReady(() => router.start(), { onWait });
     await whenDatabaseReady(() => ids.start(), { onWait });
-    return new DataPlane(options.service, directory, router, ids, users, businesses, catalog);
+    const switches = new Switches(directory);
+    await switches.start();
+    return new DataPlane(options.service, directory, router, ids, users, businesses, catalog, switches);
   }
 
   /** A new ID (DB-002). */
@@ -314,6 +319,7 @@ export class DataPlane {
 
   async close(): Promise<void> {
     this.router.stop();
+    this.switches.stop();
     await this.ids.stop().catch(() => undefined);
     await Promise.all([this.users.close(), this.businesses.close(), this.catalog?.$disconnect()]);
     await this.directory.$disconnect();

@@ -10,6 +10,7 @@ import { tlsOptions } from './tls.js';
 
 export { showUpCountsOf, showUpLabelsOf, type PersonShowUpCounts } from './reliability.js';
 export { cliUrl, tlsOptions, type TlsOptions } from './tls.js';
+export { SWITCH_KEYS, SWITCHES, Switches, type SwitchKey } from './switches.js';
 export {
   createDirectoryClient,
   Directory,
