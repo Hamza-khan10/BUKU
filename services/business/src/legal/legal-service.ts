@@ -14,6 +14,7 @@ import {
   type DataPlane,
 } from '@buku/database';
 import { createEvent, enqueueShardEvent, TOPICS } from '@buku/kafka';
+import { onAdminTrail } from '../admin-trail.js';
 import { auditCtx, type RequestContext } from '../http/context.js';
 
 /**
@@ -183,6 +184,12 @@ export class LegalService {
       return profile;
     });
     if (!found) return null;
+    await onAdminTrail(plane, adminId, {
+      action: 'admin.legal_profile_viewed',
+      resourceType: 'business',
+      resourceId: businessId,
+      ...auditCtx(ctx),
+    });
     const sharing = await plane.acrossBusinesses((tx) =>
       tx.businessLegalProfile.findMany({
         where: { registrationNumberHash: found.registrationNumberHash, businessId: { not: businessId } },

@@ -1270,3 +1270,19 @@ shares the website's family (D-094) and stays recognisably the operators' room:
   refusals as trend lines with a readout under the pointer (the same facts are in each line's
   accessible name). Production is marked by a crimson band across the top as well as in the
   sidebar.
+
+**D-132 · The audit log in the console: everything platform admins did, in one place (3.6f).**
+Every step is already recorded where it belongs (DB-022): on each person's own shard, and on a
+business's shard for what happens to it. For operators that scattering hid the one question an
+audit answers: what did the admins do? Now an admin's own record holds everything that admin did:
+auth's steps already went there, billing and notification changes too, and business moderation
+(verify, reject, suspend, reinstate, reports, documents, legal details) now writes a copy there
+as well, after the business's own record. The console's **Audit log** reads, on every user shard,
+the steps of everyone who is a platform admin now (their sign-ins included) and any `admin.`
+step by someone who no longer is, newest first, by kind and period, with security events from
+Prometheus beside it. Each entry says who, what, to what, why, from where (address) and its
+request reference. On a person's record a step taken on their account is written as the admin's
+(`account.suspended`, not `admin.account_suspended`), so the log never shows a step twice. One
+person's trail (their steps, and what was done to their account) opens from Accounts; opening it
+is recorded. The feed of admins' own work is not recorded each time it's read, so it doesn't fill
+with itself. Entries can't be changed or deleted by anyone (the shards' rights, D-092).

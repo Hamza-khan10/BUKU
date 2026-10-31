@@ -3,8 +3,10 @@
 import { Search } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { ROLE_NAMES, type Account } from '@admin/lib/accounts';
+import type { AuditEntry } from '@admin/lib/audit';
 import { fieldText, post } from '@admin/lib/client';
 import { RowActions, type RowAction } from './row-actions';
+import { Timeline } from './timeline';
 import { Button, cx, Field, Initials, inputClass, Notice, Pill } from './ui';
 
 const day = (iso: string) =>
@@ -153,6 +155,8 @@ function AccountCard({ account: a, onChange }: { account: Account; onChange: (a:
         </Notice>
       )}
 
+      <Activity account={a} />
+
       {a.businesses.length > 0 && (
         <div className="flex flex-col gap-2">
           <h3 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">Businesses</h3>
@@ -176,6 +180,47 @@ function Fact({ term, children }: { term: string; children: ReactNode }) {
     <div className="flex flex-col gap-1 rounded-xl bg-sunken/60 px-3.5 py-3 ring-1 ring-line ring-inset">
       <dt className="text-xs text-ink-3">{term}</dt>
       <dd className="font-medium text-ink">{children}</dd>
+    </div>
+  );
+}
+
+/** The person's recent steps, opened on request (opening it is recorded on your own trail). */
+function Activity({ account }: { account: Account }) {
+  const [state, setState] = useState<
+    | { kind: 'closed' }
+    | { kind: 'loading' }
+    | { kind: 'shown'; entries: AuditEntry[] }
+    | { kind: 'failed'; message: string }
+  >({ kind: 'closed' });
+  const open = async () => {
+    setState({ kind: 'loading' });
+    const result = await post<AuditEntry[]>(`/api/accounts/${account.id}/audit`);
+    setState(
+      result.ok ? { kind: 'shown', entries: result.data } : { kind: 'failed', message: result.message },
+    );
+  };
+  return (
+    <div className="flex flex-col gap-3 border-t border-line pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-ink">Recent activity</h3>
+        {state.kind !== 'shown' && (
+          <Button variant="secondary" size="sm" busy={state.kind === 'loading'} onClick={() => void open()}>
+            Show their activity
+          </Button>
+        )}
+      </div>
+      {state.kind === 'closed' && (
+        <p className="text-xs text-ink-3">
+          Their last 50 steps and what was done to their account. Opening it is recorded.
+        </p>
+      )}
+      {state.kind === 'failed' && <Notice tone="danger" title={state.message} />}
+      {state.kind === 'shown' &&
+        (state.entries.length === 0 ? (
+          <p className="text-sm text-ink-3">Nothing recorded yet.</p>
+        ) : (
+          <Timeline entries={state.entries} />
+        ))}
     </div>
   );
 }

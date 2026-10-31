@@ -1,6 +1,7 @@
 import { AppError, ErrorCodes, pageMeta, type Pagination } from '@buku/common';
 import { recordShardAudit, type BusinessTx, type DataPlane, type UserShardClient } from '@buku/database';
 import { createEvent, enqueueShardEvent, TOPICS, type Topic } from '@buku/kafka';
+import { onAdminTrail } from '../admin-trail.js';
 import { auditCtx, type RequestContext } from '../http/context.js';
 import type { LegalService } from '../legal/legal-service.js';
 import { verificationChecklist } from '../verification/checklist.js';
@@ -268,6 +269,13 @@ export class AdminService {
       return count;
     });
     if (resolved.every((n) => n === 0)) throw AppError.notFound('Open report');
+    await onAdminTrail(plane, adminId, {
+      action: 'admin.report_resolved',
+      resourceType: 'business_report',
+      resourceId: reportId,
+      newValues: { status },
+      ...auditCtx(ctx),
+    });
     return { id: reportId.toString(), status };
   }
 
@@ -304,7 +312,7 @@ export class AdminService {
     },
   ) {
     const { plane } = this;
-    return plane.inBusiness(id, async (tx: BusinessTx) => {
+    const changed = await plane.inBusiness(id, async (tx: BusinessTx) => {
       const { count } = await tx.business.updateMany({
         where: { id, deletedAt: null, status: { in: t.from } },
         data: t.data,
@@ -347,5 +355,13 @@ export class AdminService {
       });
       return { id: business.publicId, status: t.data.status };
     });
+    await onAdminTrail(plane, adminId, {
+      action: t.action,
+      resourceType: 'business',
+      resourceId: id,
+      newValues: { status: t.data.status, ...(t.data.rejectionReason && { reason: t.data.rejectionReason }) },
+      ...auditCtx(ctx),
+    });
+    return changed;
   }
 }

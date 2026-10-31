@@ -11,6 +11,7 @@ import {
 } from '@buku/common';
 import type { AccessReview } from '../admin/access-review.js';
 import type { AccountControl } from '../admin/accounts.js';
+import type { AuditLog } from '../admin/audit-log.js';
 import type { SwitchControl } from '../admin/switches.js';
 import type { MfaService } from '../mfa/mfa-service.js';
 import { Router, type Express } from 'express';
@@ -50,6 +51,7 @@ import {
   AccountParams,
   AccountReasonBody,
   AccountReinstateBody,
+  AuditQuery,
 } from './schemas.js';
 import type { JwtVerifier } from '@buku/common';
 
@@ -68,6 +70,7 @@ export interface RouteDeps {
   accessReview: AccessReview;
   switches: SwitchControl;
   accounts: AccountControl;
+  audit: AuditLog;
   mfa: MfaService;
   /** A business's internal ID from the public one in the URL (DB-042); null when there is none. */
   businessIdOf: (publicId: string) => Promise<bigint | null>;
@@ -436,6 +439,24 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
         res,
         await deps.accounts.endSessions(params.id, body.reason, actorOf(req).id, requestContext(req)),
       );
+    }),
+  );
+
+  // ── Platform admins: the audit log (3.6f) ────────────────────────────────
+  app.get(
+    '/v1/admin/audit',
+    auth,
+    requireRole('super_admin'),
+    validated({ query: AuditQuery }, async ({ query }, _req, res) => {
+      sendSuccess(res, await deps.audit.activity(query));
+    }),
+  );
+  app.get(
+    '/v1/admin/accounts/:id/audit',
+    auth,
+    requireRole('super_admin'),
+    validated({ params: AccountParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.audit.trail(params.id, actorOf(req).id, requestContext(req)));
     }),
   );
 

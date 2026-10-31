@@ -12,7 +12,7 @@ export const DECIMAL_ID = /^[1-9][0-9]{0,18}$/;
 
 /** What a route makes of the page's request: the API call, or why not. */
 export type Plan =
-  | { path: string; method?: 'POST' | 'PUT'; body?: unknown }
+  | { path: string; method?: 'GET' | 'POST' | 'PUT'; body?: unknown }
   | { refuse: { status: number; code: string; message: string } };
 
 /**

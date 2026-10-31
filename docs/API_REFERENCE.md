@@ -1193,3 +1193,15 @@ service sees a change within five seconds. Signing in off never applies to platf
 lastSignIn, deletionRequested, twoStep, sessions, employeeLogin, businesses[] }`. Platform admins'
 accounts and the admin's own are refused (`403`, `400`); suspending twice or reinstating an active
 account is `409`. Admin app only (D-091).
+
+## The audit log, for platform admins (D-132)
+
+| Method & path                                    | Auth                    | Purpose                                                        |
+| ------------------------------------------------ | ----------------------- | -------------------------------------------------------------- |
+| `GET /v1/admin/audit?days=&limit=&area=&before=` | ✔ super_admin, two-step | What platform admins did, newest first: `{ entries[], next }`  |
+| `GET /v1/admin/accounts/:id/audit`               | ✔ super_admin, two-step | One person's last 50 steps and what was done to them (audited) |
+
+`days` 1–90 (7), `limit` 1–100 (50), `area` one of `accounts`, `businesses`, `switches`,
+`billing`, `notifications`, `sign-in`, `access`; `before` is the previous page's `next`. An entry:
+`{ id, at, actor: { id, name }, action, target: { type, id, label }, reason, details, ip,
+requestId }`. Admin app only (D-091).

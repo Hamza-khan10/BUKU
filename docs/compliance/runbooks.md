@@ -115,7 +115,9 @@ without a reason is refused). Services pick it up within five seconds, as from t
    account is being used against BUKU or its owner, or **Sign out everywhere** if only a device was
    lost. Either ends every session and its access at once. A platform admin's account: remove the
    role first with `pnpm admin:role` (ends their sessions at once), then suspend it if needed.
-2. Read the account's audit trail (`GET /v1/auth/me/export` as the person, or the audit log).
+2. Read the account's trail: admin console → Accounts → the person → **Show their activity**
+   (their steps and what was done to their account, with addresses). What admins did: Security →
+   **Audit log**.
 3. Personal data exposed? → breach assessment under the incident response policy.
 
 ### Restore drill (quarterly)

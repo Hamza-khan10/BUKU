@@ -5,6 +5,7 @@ import {
   type BusinessTx,
   type DataPlane,
 } from '@buku/database';
+import { onAdminTrail } from '../admin-trail.js';
 import { auditCtx, type RequestContext } from '../http/context.js';
 import {
   matchesSignature,
@@ -191,6 +192,12 @@ export class DocumentService {
         orderBy: { createdAt: 'desc' },
       });
     });
+    await onAdminTrail(plane, adminId, {
+      action: 'admin.documents_viewed',
+      resourceType: 'business',
+      resourceId: businessId,
+      ...auditCtx(ctx),
+    });
     return Promise.all(
       docs.map(async (d) => ({
         ...documentView(d),
@@ -233,6 +240,13 @@ export class DocumentService {
       return count;
     });
     if (reviewed.every((n) => n === 0)) throw AppError.notFound('Uploaded document');
+    await onAdminTrail(plane, adminId, {
+      action: `admin.document_${decision}`,
+      resourceType: 'business_document',
+      resourceId: documentId,
+      ...(note && { newValues: { note } }),
+      ...auditCtx(ctx),
+    });
     return { id: documentId.toString(), status: decision };
   }
 

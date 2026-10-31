@@ -10,6 +10,7 @@ import {
   zTimezone,
 } from '@buku/common';
 import { SWITCH_KEYS, type SwitchKey } from '@buku/database';
+import { AUDIT_AREAS, type AuditArea } from '../admin/audit-log.js';
 import { MAX_PHOTO_BYTES, PHOTO_TYPES } from '@buku/media';
 import { z } from 'zod';
 
@@ -154,6 +155,18 @@ export const AccountParams = z.object({ id: zPublicId });
 export const AccountReasonBody = zBody({ reason: zSafeText({ kind: 'text', min: 3, max: 500 }) });
 export const AccountReinstateBody = zBody({
   reason: zSafeText({ kind: 'text', min: 3, max: 500 }).optional(),
+});
+
+// ── The audit log, for platform admins (3.6f) ──────────────────────────────
+export const AuditQuery = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(7),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  area: z.enum(Object.keys(AUDIT_AREAS) as [AuditArea, ...AuditArea[]]).optional(),
+  /** Where the previous page ended (`<ms>_<id>`, from `next`). */
+  before: z
+    .string()
+    .regex(/^\d{1,15}_\d{1,19}$/)
+    .optional(),
 });
 
 // ── Emergency switches (D-129) ─────────────────────────────────────────────
