@@ -73,6 +73,13 @@ check "Postgres: TLS on, nothing older than TLS 1.3"     eq "$(psql_q "SELECT cu
 check "Postgres refuses a network connection without TLS" bash -c "${COMPOSE[*]} exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql 'host=localhost sslmode=disable user=buku_app dbname=buku_directory' -c 'SELECT 1' 2>&1 | grep -q 'no encryption'"
 check "Every network connection to Postgres is encrypted" eq "$(psql_q "SELECT count(*) FROM pg_stat_activity a LEFT JOIN pg_stat_ssl s USING (pid) WHERE a.client_addr IS NOT NULL AND NOT coalesce(s.ssl, false)")" 0
 check "A client checking the certificate refuses the wrong host name" bash -c "${COMPOSE[*]} exec -T postgres sh -c 'psql \"host=\$(hostname -i | cut -d\" \" -f1) sslmode=verify-full sslrootcert=${TLS_CA} user=buku_app dbname=buku_directory\" -c \"SELECT 1\" 2>&1' | grep -q 'does not match host name'"
+# Health (D4c): archiving, backups, slots, partitions, jobs, limits, the registry (scripts/db/health.sh).
+check "Database health: no critical check (pnpm db:health)" bash scripts/db/health.sh
+# Break-glass (DB-021, DB-022): a person's session reads, can't write, is audited, and is gone after.
+BG="verify-$(openssl rand -hex 4)"; BG_SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+check "Break-glass session reads, and every statement is audited with its role" bash -c "bash scripts/db/break-glass.sh --reason 'pnpm verify: the break-glass check' -- -tAc \"SELECT '$BG'\" 2>/dev/null | grep -q '$BG' && ${COMPOSE[*]} logs --since $BG_SINCE --no-log-prefix postgres | grep -q 'human_.*AUDIT: SESSION.*$BG'"
+check "Break-glass session can't write"                  bash -c "bash scripts/db/break-glass.sh --reason 'pnpm verify: the break-glass write check' -- -c 'UPDATE registry.regions SET name = name' 2>&1 | grep -q 'read-only transaction'"
+check "No break-glass role is left behind"              eq "$(psql_q "SELECT count(*) FROM pg_roles WHERE rolname LIKE 'human\\_%'")" 0
 check "App role cannot DROP tables (least privilege)"  bash -c "docker compose -f docker-compose.dev.yml exec -T -e PGPASSWORD=\$(grep ^BUKU_APP_PASSWORD= .env | cut -d= -f2) postgres psql 'host=localhost sslmode=verify-full sslrootcert=${TLS_CA} user=buku_app dbname=$BIZ' -c 'DROP TABLE businesses' 2>&1 | grep -q 'must be owner'"
 
 echo "═══ 4. Kafka ═══"

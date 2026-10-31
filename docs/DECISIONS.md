@@ -1174,3 +1174,12 @@ but `verify-full` (or `disable`, which the server refuses), so a client that con
 checking can't be configured. Prisma's migration engine gets the same checks in its own URL
 words, and reference-data subscriptions use `verify-full` too. Development certificates come from
 a local authority made by `pnpm bootstrap`, git-ignored; production uses the provider's.
+
+**D-125 · People reach data only through break-glass, and the database watches itself (D4c).**
+Nobody keeps a database login. A person who must look runs `pnpm db:break-glass` with a reason.
+It makes a role for that person and that session: read-only unless the change is agreed, across
+businesses, every statement audited, signing in only on the database host's own socket, and
+dropped afterwards. The reason sits on the role, so the audit log says who, why and what. The
+database's health (archiving, backups, slots, copies, partitions, jobs, limits, the registry, roles
+left behind) is one script. People run it, CI runs it, and Prometheus reads it as metrics, so the
+same checks that pass in development are the ones that page in production.

@@ -35,6 +35,29 @@ what happened and what changes.
 2. CPU: event-loop lag means synchronous work (large JSON, image processing) — find it in a
    profile; scale out if it's load.
 
+### Database
+
+`DatabaseCheckCritical` / `DatabaseCheckWarning` / `DatabaseChecksNotRunning` — a check of
+`scripts/db/health.sh` (`pnpm db:health`, docs/DATABASE.md §14) is critical, has warned for 30
+minutes, or the checks stopped running. Run `pnpm db:health` on the database host to see the
+measured value of each check.
+
+| Check                | What it means, and what to do                                                                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `archiving`          | WAL can't reach the backup repository: point-in-time recovery stops and WAL fills the disk. Check the repository (space, credentials), then `pgbackrest check`.  |
+| `backup_age`         | No recent backup. Find why the scheduled backup failed; take one (`pnpm db:backup full`).                                                                        |
+| `replication_slots`  | A slot nobody reads (a reference copy dropped without its slot): it keeps every WAL file. If its copy is gone, drop the slot (`pg_drop_replication_slot`).       |
+| `slot_retained_wal`  | A copy is far behind. Look at that copy's server and its subscription's errors.                                                                                  |
+| `reference_copies`   | A copy's subscription isn't running: its reference data goes stale. Its server's log says why; `ALTER SUBSCRIPTION … ENABLE` once fixed.                         |
+| `partition_coverage` | A table has no partition for the next interval: partition upkeep has stopped. Run `partman.run_maintenance_proc()` on that shard and fix the scheduled job.      |
+| `default_partitions` | Rows outside every partition (a clock or a bug). Find them with `partman.check_default()`; move them with `partman.partition_data_proc()` once partitions exist. |
+| `scheduled_jobs`     | A pg_cron job failed: `SELECT * FROM cron.job_run_details WHERE status = 'failed'` in the `postgres` database.                                                   |
+| `connections`        | Nearly out of connections: a pool too large, or a leak. `pg_stat_activity` by `application_name`.                                                                |
+| `long_transactions`  | A transaction open for minutes holds locks and stops vacuum. Find it in `pg_stat_activity`; end it with `pg_terminate_backend` if it's stuck.                    |
+| `wraparound`         | Transaction IDs are ageing: vacuum isn't keeping up. Run `VACUUM (FREEZE)` on the oldest tables; never ignore a critical one.                                    |
+| `registry_alerts`    | A shard family filled with no ready shard to take over (DB-011): add a shard (`registry.add_shard`) and provision it (`pnpm db:shards`).                         |
+| `break_glass`        | A person's break-glass role outlived its time (its session crashed): `DROP OWNED BY` and `DROP ROLE` it, and check the audit log for what it did.                |
+
 ### Suspicious sign-in
 
 `RefreshTokenReuse`, `TwoStepCodeGuessing`, `EmployeeLockouts`, `AdminWithoutTwoStep`,
@@ -79,6 +102,20 @@ Proves backups work and measures the real recovery time (target: RTO 4 h, RPO 15
 3. Run the acceptance suite against a copy of the stack pointed at it (`pnpm acceptance`).
 4. Record: date, backup time restored, time taken, problems, who did it. Delete the restored
    cluster.
+
+### Break-glass database access
+
+Nobody has standing access to data (docs/DATABASE.md DB-021). When a person must look:
+
+1. Write down why (a ticket or incident note).
+2. On the database host: `pnpm db:break-glass --reason "<ticket: why>" --db <database>`. It
+   opens a session as a role made for this person and this hour only. The session is read-only;
+   add `--write` only for a change agreed in the incident. Every statement goes to the audit log,
+   with the reason.
+3. Quit when done: the role is dropped. If the session crashed, `pnpm db:health` reports the role
+   left behind (`break_glass`); drop it.
+4. Record in the incident note what was looked at or changed. The access review reads the audit
+   log's `human_` sessions.
 
 ### Access review (quarterly)
 

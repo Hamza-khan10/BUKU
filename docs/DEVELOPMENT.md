@@ -46,6 +46,8 @@ password `buku-dev-password-2026`.
 | `pnpm db:seed:v2`                               | Database v2 development data, placed across shards (idempotent)           |
 | `pnpm db:backup [full\|diff\|incr]`             | A pgBackRest backup of the dev cluster (encrypted repository)             |
 | `pnpm db:restore-drill`                         | Restore the latest backup at a point in time to a scratch server; check   |
+| `pnpm db:health`                                | The database's health checks (✔ ok, ! warning, ✘ critical)                |
+| `pnpm db:break-glass --reason "…" [--db …]`     | A person's read-only, audited session on one database (dropped after)     |
 
 Postgres accepts network connections only over TLS 1.3 (DB-020). `pnpm bootstrap` makes the
 development certificates in `secrets/` (git-ignored) and writes `PGSSLMODE=verify-full` and
