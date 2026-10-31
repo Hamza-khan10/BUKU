@@ -4,7 +4,7 @@ The state of the whole project in one place: what is built, how it is run and wo
 things stand on GitHub, and what comes next. Last updated **2026-10-31**.
 
 Deeper detail lives in the docs this page points to — [BUILD_GUIDE](docs/BUILD_GUIDE.md) (the
-phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-125),
+phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-126),
 [DATABASE](docs/DATABASE.md) (database v2), [ARCHITECTURE](docs/ARCHITECTURE.md),
 [SECURITY](docs/SECURITY.md), [API_REFERENCE](docs/API_REFERENCE.md),
 [DEVELOPMENT](docs/DEVELOPMENT.md) (setting up and running) and [WEB_PLAN](docs/WEB_PLAN.md).
@@ -24,7 +24,7 @@ free** (D-101); businesses pay (Starter free, Essential, Professional, Enterpris
 | ------ | ------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                         |
 | 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred |
-| 3      | Web app (Next.js) and admin app                                                      | ▶ resumes at 3.5 (the business area)            |
+| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 business area: a, b, c, d done            |
 | **3D** | **Database v2** — built for hundreds of millions of people                           | ✅ **D1–D4 built and on `main`**; D5 later      |
 | 4      | Mobile app (Expo)                                                                    | planned                                         |
 | 5      | Production: deployment, observability, backups, load and security testing            | planned                                         |
@@ -78,12 +78,13 @@ deployed yet, Phase 5).
 
 ### Web and admin apps
 
-- **Website** (`apps/web`, live at `thebuku.vercel.app` from `main`; on v2 in the integration branch): public site,
+- **Website** (`apps/web`, live at `thebuku.vercel.app` from `main`, on database v2): public site,
   business pages, explore and categories, pricing, sign-in (including employees and two-step),
   booking, visits and tickets, the walk-in queue, reviews, notifications, account settings and
-  data; the business area — adding a business, today, appointments, check-in, services and team.
-  Still to build: the rest of the business area (calendar, queue board and screen, hours, reviews,
-  insights, billing, settings), the checkout page for payments, the operator console, and polish.
+  data; the checkout page for payments; the business area — adding a business, today,
+  appointments, check-in, the queue board and the waiting-room screen, services and team. Still to
+  build: the rest of the business area (calendar, hours, time off and attendance, reviews, insights,
+  billing, settings), the operator console, and polish.
 - **Admin app** (`apps/admin`, D-091): sign-in and two-step only so far; operator tools come with
   3.6.
 
@@ -156,24 +157,28 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
 
 ## 5. GitHub today (2026-10-31)
 
-- `main`: database v2 merged from `feat/db-v2-services` (D1–D4); 0 code-scanning, 0 Dependabot
-  and 0 secret-scanning alerts; no open issues. The live website runs **Next.js 16.4.2**.
-- Latest on `main` before it: **#158** (the four Dependabot updates opened after #153, and qs,
-  ip-address and fast-uri patched for moderate advisories). Dependabot closes its own PRs (#136,
-  #151, #152, #156) on its next run.
+- `main`: database v2 (D1–D4, #160), the checkout page working without the API (#161),
+  lucide-react 1.63.0 (#152); 0 Dependabot and 0 secret-scanning alerts; no open issues. The live
+  website runs **Next.js 16.4.2**.
+- **Code scanning: 26 open warnings, `js/missing-rate-limiting`**, raised on `main` by #160. They
+  are the same false positive as the 93 dismissed on 2026-10-04: the routes are limited by
+  express-rate-limit per address before every route (`packages/common/src/http/app.ts`, D-086),
+  most also by a route limiter, and Kong. CodeQL can't follow routes registered through the
+  routes callback; the v2 rewrite changed those lines, so it raised them again. Dismissing needs
+  the owner (the command is in the session note of 2026-10-31).
 - `feat/db-v2-services` is done: every slice D3a → D4c is on `main`.
 - **Branches:** 40 on GitHub belong to merged or closed PRs whose last commit is the PR's (safe to
-  delete; deleting needs the owner, see the session note of 2026-10-31), plus `feat/db-v2-d4c`
-  and `feat/db-v2-services` now; two more (`feat/categories-and-motion`,
-  `feat/redesign-foundation`) have commits after their PR and stay.
+  delete; deleting needs the owner, see the session note of 2026-10-31), plus `feat/db-v2-d4c`,
+  `feat/db-v2-services` and `fix/web-checkout-without-api` now; two more
+  (`feat/categories-and-motion`, `feat/redesign-foundation`) have commits after their PR and stay.
 
 ## 6. What's next
 
-1. **Website, Phase 3.5 → 3.7** (paused for the database since D-105), on database v2. Still to
-   build in 3.5, the business area (WEB_PLAN §7): the queue board and screen, time off and
-   attendance, reviews, insights, billing and settings. 3.5a (adding a business), 3.5b (today,
-   appointments, check-in) and 3.5d (services and team) are done. Then 3.6, the operator
-   console, and 3.7, polish and proof.
+1. **Website, Phase 3.5 → 3.7**, on database v2. Done in 3.5, the business area: 3.5a (adding a
+   business), 3.5b (today, appointments, check-in), 3.5c (the queue board and the waiting-room
+   screen, D-126) and 3.5d (services and team). Still to build (WEB_PLAN §7): the calendar, hours
+   and closures, time off and attendance, reviews, insights, billing and settings. Then 3.6, the
+   operator console, and 3.7, polish and proof.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
 3. **Phase 5** — production: deployment, PgBouncer, the standby and a second region, backups to

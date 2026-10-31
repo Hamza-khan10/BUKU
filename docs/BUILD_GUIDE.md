@@ -579,6 +579,32 @@ The detailed plan — every page, its data and edge cases, the design system and
   name; each visit's details and the steps it allows now (confirm, decline, check in, done, didn't
   come, cancel with a reason). Check-in: the code typed or its QR scanned (camera on that page
   only), and the people expected now for those without a phone.
+- **3.5c The queue board and the waiting-room screen — ✅ done (D-126).**
+  `/business/[id]/queue`, a "Queue" tab for the whole team:
+  - Today's queue: not opened, open, paused (nobody new joins, calling still works) or closed,
+    with how many are waiting, served today, minutes each and staff on shift.
+  - The desk (owner, manager, front desk; others can follow it read-only) opens it, pauses and
+    resumes it, and closes it for the day. Closing with people still in line asks first, and
+    says their phones will be told.
+  - "Call next" names who's next: the priority lane first, then in order.
+  - Three lanes. Being served: done. Called: they're here, or didn't come (offered only after
+    the grace period, as the API allows). Waiting: call, serve now, priority lane on or off.
+    Each person shows the ticket, the name, how long, walk-in or joined from their phone, and
+    how reliably they come (a label only).
+  - A walk-in gets a ticket at the counter (a name is optional, checked as typed; priority lane
+    if needed), said once to read out.
+  - It follows the queue live (the public stream says when anything changed, then the board
+    reloads its own view) and refreshes every half minute in case the link drops.
+  - `/b/[slug]/screen`, the waiting-room screen, needs no sign-in, so the TV never holds a team
+    login (D-126). It shows ticket numbers only:
+    - the ticket called to the counter, on the split-flap board, read out to screen readers;
+    - who's being served, and the next eight;
+    - the queue's state, and a QR code to join from a phone;
+    - it keeps the display awake and has a full-screen button.
+  - The account button's initials and unread count are now drawn from attributes, not written
+    as text. A newer accessibility checker (axe 4.14, in #153) counted them as part of the
+    button's visible label (WCAG 2.5.3) and failed every signed-in page; CI didn't notice
+    because its browser tests run without the API.
 - **3.5d Services and team — ✅ done (time off and attendance come later).** A business's own
   pages have tabs (Overview · Services · Team), each shown only to roles that can use it, from the
   same role table the API enforces (`BUSINESS_PERMISSIONS`, now in `@buku/validation`).

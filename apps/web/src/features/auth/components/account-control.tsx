@@ -93,12 +93,13 @@ export function AccountControl({ signedIn }: { signedIn: boolean }) {
         <span className="relative">
           <Avatar name={user.name} src={user.avatarUrl} size={34} />
           {count > 0 && (
+            // The count is drawn from the attribute (the button's name says it in words), so the
+            // button's visible text stays the person's name (WCAG 2.5.3, label in name).
             <span
               aria-hidden
-              className="absolute -top-1 -right-1 grid h-4.5 min-w-4.5 place-items-center rounded-full bg-brand px-1 text-[0.65rem] font-bold text-on-brand ring-2 ring-canvas"
-            >
-              {count > 9 ? '9+' : count}
-            </span>
+              data-count={count > 9 ? '9+' : String(count)}
+              className="absolute -top-1 -right-1 grid h-4.5 min-w-4.5 place-items-center rounded-full bg-brand px-1 text-[0.65rem] font-bold text-on-brand ring-2 ring-canvas before:content-[attr(data-count)]"
+            />
           )}
         </span>
         <span className="hidden max-w-32 truncate text-sm font-medium text-ink sm:inline">{first}</span>
