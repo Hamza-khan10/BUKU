@@ -1247,3 +1247,26 @@ suspended or signed out here, and nobody can act on their own account: a stolen 
 must not be able to lock the other admins out. Their access is removed first with
 `pnpm admin:role`, which leaves an audited trail, then they're an ordinary account. Suspensions
 and sign-outs count as security events on the Security dashboard.
+
+**D-131 · The admin console looks like BUKU, and is made to be watched for hours.** The owner
+found the console plain and dated ("a 1980s page"): someone will look at it for hours, so it
+should be as considered as the website. D-091 had kept it deliberately unlike the website; it now
+shares the website's family (D-094) and stays recognisably the operators' room:
+
+- **Palette:** Midnight by default (deep, green-tinted, low glare) and Porcelain when the device
+  asks for light; emerald means healthy, ours, go; saffron means waiting or a decision; crimson
+  means broken. The generic blue is gone. Healthy numbers stay in ink, so colour only draws the eye
+  to what needs it. Every text pair meets WCAG 2.2 AA in both themes (checked numerically, and by
+  axe on every page in both); hover colours raise contrast instead of fading.
+- **Type and surfaces:** Instrument Sans and JetBrains Mono, as on the website; headings with
+  size-specific tracking; sentence-case labels instead of capitals. Raised panels catch light on
+  their top edge and cast shadows in the page's own tint; the sidebar is a translucent material;
+  a faint emerald light and a fine grain keep large dark areas from looking flat.
+- **Motion:** content rises in once, a beat apart; the sidebar's highlight glides to the page you
+  open (a spring that doesn't bounce); buttons give way on press. All of it stops for people who
+  ask for reduced motion, and translucency turns solid for reduced transparency.
+- **Information:** the overview leads with one answer ("All systems answering" or "Something
+  needs someone now") and shows the last hour of traffic, errors, the 95th percentile and
+  refusals as trend lines with a readout under the pointer (the same facts are in each line's
+  accessible name). Production is marked by a crimson band across the top as well as in the
+  sidebar.

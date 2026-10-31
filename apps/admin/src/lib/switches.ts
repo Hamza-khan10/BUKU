@@ -1,3 +1,16 @@
+import {
+  CalendarCheck,
+  CreditCard,
+  ImageUp,
+  ListOrdered,
+  LogIn,
+  MessageSquareText,
+  Power,
+  Store,
+  UserPlus,
+  type LucideIcon,
+} from 'lucide-react';
+
 /**
  * The emergency switches as the console shows them (D-129). The API lists them and says what each
  * stops; the console only names them.
@@ -27,3 +40,16 @@ export const switchName = (key: string) => NAMES[key] ?? key;
 
 /** The API's key format: lower case and underscores (it refuses any key it doesn't know). */
 export const SWITCH_KEY = /^[a-z][a-z_]{0,31}$/;
+
+const ICONS: Record<string, LucideIcon> = {
+  signups: UserPlus,
+  signin: LogIn,
+  bookings: CalendarCheck,
+  queue: ListOrdered,
+  payments: CreditCard,
+  uploads: ImageUp,
+  reviews: MessageSquareText,
+  business_signup: Store,
+};
+
+export const switchIcon = (key: string): LucideIcon => ICONS[key] ?? Power;

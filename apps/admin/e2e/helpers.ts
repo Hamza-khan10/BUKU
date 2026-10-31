@@ -24,6 +24,15 @@ export async function apiAvailable(): Promise<boolean> {
 }
 
 export async function expectAccessible(page: Page) {
+  // Checked as people see it once things have arrived: entries that rise in (D-131) finish first;
+  // the endless "live" pulses are left running.
+  await page.evaluate(async () => {
+    const arriving = document
+      .getAnimations()
+      .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+      .map((a) => a.finished.catch(() => undefined));
+    await Promise.all(arriving);
+  });
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
     .analyze();

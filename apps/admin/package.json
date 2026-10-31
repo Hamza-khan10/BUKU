@@ -14,6 +14,7 @@
   "dependencies": {
     "@buku/web-security": "workspace:*",
     "lucide-react": "1.63.0",
+    "motion": "14.1.0",
     "next": "16.4.2",
     "qrcode.react": "4.2.0",
     "react": "19.3.0",

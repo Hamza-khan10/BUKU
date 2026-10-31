@@ -103,6 +103,58 @@ export async function systemStatus(): Promise<SystemStatus | null> {
   };
 }
 
+interface RangeSample {
+  metric: Record<string, string>;
+  values: [number, string][];
+}
+
+/** One measure over the last `minutes`, a point a minute; null when it can't be read. */
+async function series(expr: string, minutes = 60): Promise<[number, number][] | null> {
+  const base = env().PROMETHEUS_URL;
+  if (!base) return null;
+  const end = Math.floor(Date.now() / 1000);
+  const params = new URLSearchParams({
+    query: expr,
+    start: String(end - minutes * 60),
+    end: String(end),
+    step: '60',
+  });
+  try {
+    const res = await fetch(`${base}/api/v1/query_range?${params}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(4_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { status?: string; data?: { result?: RangeSample[] } };
+    if (body.status !== 'success') return null;
+    const values = body.data?.result?.[0]?.values ?? [];
+    return values.map(([t, v]) => [t, Number(v)] as [number, number]).filter(([, v]) => Number.isFinite(v));
+  } catch {
+    return null;
+  }
+}
+
+export interface SystemTrends {
+  requests: [number, number][] | null;
+  errors: [number, number][] | null;
+  p95: [number, number][] | null;
+  refused: [number, number][] | null;
+}
+
+/** The overview's numbers over the last hour, for their trend lines. */
+export async function systemTrends(): Promise<SystemTrends | null> {
+  if (!env().PROMETHEUS_URL) return null;
+  const [requests, errors, p95, refused] = await Promise.all([
+    series(`sum(rate(${REQ}[5m]))`),
+    series(
+      `100 * (sum(rate(${REQ}{status_code=~"5.."}[5m])) or vector(0)) / clamp_min(sum(rate(${REQ}[5m])), 1e-9)`,
+    ),
+    series('histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))'),
+    series('sum(rate(kong_http_requests_total{code=~"401|403|429"}[5m])) or vector(0)'),
+  ]);
+  return { requests, errors, p95, refused };
+}
+
 /** Grafana's address and its BUKU dashboards (by their fixed ids), or null when not set. */
 export function grafana(): { url: string; dashboards: { title: string; href: string }[] } | null {
   const url = env().GRAFANA_URL;

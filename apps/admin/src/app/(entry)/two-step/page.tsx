@@ -16,12 +16,17 @@ export default async function TwoStepPage() {
   if (gate.kind === 'ok') redirect('/');
   if (gate.kind === 'unavailable') return <Notice tone="danger" title={gate.message} />;
   return (
-    <div className="mx-auto flex max-w-lg flex-col gap-6">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold tracking-tight">Set up two-step sign-in</h1>
+    <div className="mx-auto flex w-full max-w-lg flex-col gap-6">
+      <div className="rise flex items-end justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <p className="text-sm font-medium text-brand-text">One more step</p>
+          <h1 className="text-[1.9rem] leading-[1.1] font-semibold tracking-[-0.025em]">
+            Set up two-step sign-in
+          </h1>
+        </div>
         <SignOut />
       </div>
-      <Card>
+      <Card className="rise">
         <TwoStepSetup />
       </Card>
     </div>

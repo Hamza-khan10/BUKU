@@ -62,13 +62,16 @@ export function TwoStepSetup() {
           <div
             role="img"
             aria-label="QR code to add BUKU admin to your authenticator app"
-            className="w-fit rounded-md bg-white p-3"
+            className="w-fit rounded-xl bg-white p-3 ring-1 ring-line"
           >
             <QRCodeSVG value={stage.otpauthUri} size={176} level="M" aria-hidden />
           </div>
           <p className="text-sm text-ink-2">
             Can’t scan it? Enter this key:{' '}
-            <code aria-label="Setup key" className="rounded bg-sunken px-2 py-1 font-mono tracking-wider">
+            <code
+              aria-label="Setup key"
+              className="rounded-lg bg-sunken px-2 py-1 font-mono tracking-wider ring-1 ring-line ring-inset"
+            >
               {stage.secret.match(/.{1,4}/g)?.join(' ')}
             </code>
           </p>
@@ -97,7 +100,7 @@ export function TwoStepSetup() {
           </Notice>
           <ol
             aria-label="Your recovery codes"
-            className="grid grid-cols-2 gap-2 rounded-md bg-sunken p-4 font-mono tracking-wider"
+            className="grid grid-cols-2 gap-2 rounded-xl bg-sunken p-4 font-mono tracking-wider ring-1 ring-line ring-inset"
           >
             {stage.codes.map((c) => (
               <li key={c}>{c}</li>
@@ -108,7 +111,7 @@ export function TwoStepSetup() {
               type="checkbox"
               checked={saved}
               onChange={(e) => setSaved(e.target.checked)}
-              className="size-4"
+              className="size-4 accent-[var(--brand)]"
             />
             I’ve saved my recovery codes somewhere safe
           </label>
