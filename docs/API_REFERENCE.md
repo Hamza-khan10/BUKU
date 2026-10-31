@@ -1167,3 +1167,15 @@ the code and calls `/mfa/verify`, which returns the usual `{ user, accessToken, 
 Errors: `MFA_INVALID_CODE` (401), `MFA_LOCKED` (429, after 5 wrong codes, 15 minutes),
 `MFA_REQUIRED` (403: a platform admin route with a session that didn't pass it — set it up, or
 `step-up`). Access tokens carry `mfa: true` when the session passed it.
+
+## Emergency switches (D-129)
+
+| Method & path                                    | Auth                    | Purpose                                                                  |
+| ------------------------------------------------ | ----------------------- | ------------------------------------------------------------------------ |
+| `GET /v1/admin/switches`                         | ✔ super_admin, two-step | Every switch: `{ key, what, off, reason, changedAt, changedBy }[]`       |
+| `PUT /v1/admin/switches/:key` `{ off, reason? }` | ✔ super_admin, two-step | Turn one off (`reason`, 3–500 characters, required) or back on; the list |
+
+Keys: `signups`, `signin`, `bookings`, `queue`, `payments`, `uploads`, `reviews`,
+`business_signup`. Admin app only (D-091). While one is off, the routes it covers answer
+`503 SERVICE_PAUSED` ("This is paused for a moment. Please try again a little later."); every
+service sees a change within five seconds. Signing in off never applies to platform admins.

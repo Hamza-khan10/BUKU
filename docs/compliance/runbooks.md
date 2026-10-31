@@ -77,6 +77,8 @@ measured value of each check.
    and raise the rate limit severity; many addresses: tighten sign-in rate limits.
 4. Admin without two-step: someone with admin role is using a session that didn't pass it —
    confirm it was them; if not, treat as a compromised account (below).
+5. Still going, and widespread: turn off what is being abused (Emergency switches, below), e.g.
+   sign-ups for a flood of fake accounts, signing in for stolen sessions.
 
 ### Webhooks
 
@@ -87,6 +89,25 @@ measured value of each check.
    change); note the source addresses, consider blocking.
 
 ## Procedures
+
+### Emergency switches (take a part offline)
+
+For an attack in progress or one part misbehaving (D-129). Admin console → Security → Emergency
+switches.
+
+1. Turn off only what is being abused: sign-ups (fake accounts), signing in (stolen sessions;
+   platform admins can still sign in), bookings, walk-in queues, payments (card testing), uploads
+   (malicious files), reviews (fake reviews), registering businesses. Say why: it is recorded
+   with your name, and people only see "paused, try again later".
+2. Every service obeys within five seconds. Watch the Security dashboard: refusals should fall,
+   and the switch shows as a security event.
+3. Record it in the incident note (the switch, the time, why). Fix the cause: block addresses,
+   end sessions, rotate secrets, deploy a fix.
+4. Turn it back on from the same page, and watch the dashboards for a few minutes.
+
+If the console can't be reached: break-glass with `--write` on `buku_directory` (below), then
+`UPDATE ops.switches SET off = true, reason = '…', changed_at = now() WHERE key = '…'` (off
+without a reason is refused). Services pick it up within five seconds, as from the console.
 
 ### Compromised account
 
