@@ -12,6 +12,8 @@ export interface RowAction {
   tone?: 'primary' | 'secondary' | 'danger' | 'danger-quiet';
   /** Asks for a reason first (the owner is told it); the question shown. */
   reason?: string;
+  /** The longest reason accepted (the API's own limit; 1000 unless said). */
+  reasonMax?: number;
   /** Sent as the body, besides any reason. */
   body?: Record<string, unknown>;
 }
@@ -83,7 +85,7 @@ export function RowActions({ subject, actions }: { subject: string; actions: Row
             id={`${formId}-reason`}
             required
             minLength={3}
-            maxLength={1000}
+            maxLength={asking.reasonMax ?? 1000}
             rows={2}
             value={reason}
             onChange={(e) => setReason(e.target.value)}

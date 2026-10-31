@@ -1,6 +1,6 @@
 'use client';
 
-import { Activity, Flag, LayoutDashboard, ShieldCheck, Store, type LucideIcon } from 'lucide-react';
+import { Activity, Flag, LayoutDashboard, Power, ShieldCheck, Store, type LucideIcon } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -22,7 +22,13 @@ const SECTIONS: { title: string | null; items: Item[] }[] = [
     ],
   },
   { title: 'Watch', items: [{ href: '/monitoring', label: 'Monitoring', icon: Activity }] },
-  { title: 'Security', items: [{ href: '/security/access', label: 'Access review', icon: ShieldCheck }] },
+  {
+    title: 'Security',
+    items: [
+      { href: '/security/switches', label: 'Emergency switches', icon: Power },
+      { href: '/security/access', label: 'Access review', icon: ShieldCheck },
+    ],
+  },
 ];
 
 const cx = (...c: (string | false)[]) => c.filter(Boolean).join(' ');

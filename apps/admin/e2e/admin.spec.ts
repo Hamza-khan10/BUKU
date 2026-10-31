@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Page } from '@playwright/test';
 import { API, apiAvailable, devSignIn, expect, expectAccessible, test, totp } from './helpers';
 
 /**
@@ -154,5 +155,69 @@ test.describe('Admin app', () => {
     expect(noHeader.status()).toBe(403);
     // Straight at the gateway, without the admin app's key, admin routes don't exist.
     expect((await fetch(`${API}/v1/admin/access-review`)).status).toBe(404);
+    expect((await fetch(`${API}/v1/admin/switches`)).status).toBe(404);
+  });
+
+  test('an emergency switch: turned off with a reason, obeyed by the API, shown on the overview, turned back on', async ({
+    page,
+    context,
+  }) => {
+    await newOperator(page);
+    await page
+      .getByRole('navigation', { name: 'Console' })
+      .getByRole('link', { name: 'Emergency switches' })
+      .click();
+    await expect(page.getByRole('heading', { name: 'Emergency switches', level: 1 })).toBeVisible();
+    await expectAccessible(page);
+    const uploads = page
+      .getByRole('list', { name: 'Switches' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Uploading pictures and documents' });
+    await expect(uploads).toContainText('On');
+
+    await uploads.getByRole('button', { name: 'Turn off (Uploads)' }).click();
+    await uploads.getByLabel(/Why turn it off\?/).fill('e2e: checking the switch');
+    await uploads.getByRole('button', { name: 'Turn off', exact: true }).click();
+    try {
+      await expect(uploads.getByRole('button', { name: 'Turn back on (Uploads)' })).toBeVisible();
+      await expect(uploads).toContainText('“e2e: checking the switch”');
+      await expect(page.getByRole('alert').filter({ hasText: 'Off now: Uploads' })).toBeVisible();
+      await expectAccessible(page);
+
+      // The API refuses an upload at once, saying only that it's paused.
+      const token = (await context.cookies()).find((c) => c.name === 'buku_admin_at')?.value;
+      expect(token).toBeTruthy();
+      const refused = await fetch(`${API}/v1/auth/me/avatar/uploads`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      expect(refused.status).toBe(503);
+      expect(((await refused.json()) as { error: { code: string } }).error.code).toBe('SERVICE_PAUSED');
+
+      await page.getByRole('navigation', { name: 'Console' }).getByRole('link', { name: 'Overview' }).click();
+      await expect(page.getByRole('alert').filter({ hasText: 'Turned off: Uploads' })).toBeVisible();
+      await page
+        .getByRole('navigation', { name: 'Console' })
+        .getByRole('link', { name: 'Emergency switches' })
+        .click();
+    } finally {
+      await uploads.getByRole('button', { name: 'Turn back on (Uploads)' }).click();
+    }
+    await expect(uploads.getByRole('button', { name: 'Turn off (Uploads)' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Everything is on' })).toBeVisible();
   });
 });
+
+/** A new platform admin with two-step sign-in set up, on the overview. */
+async function newOperator(page: Page) {
+  await devSignIn(page, newEmail(), 'Sana Operator');
+  await expect(page).toHaveURL((url) => url.pathname === '/two-step');
+  await page.getByRole('button', { name: 'Set it up' }).click();
+  const secret = (await page.getByLabel('Setup key').innerText()).replace(/\s+/g, '');
+  await page.getByLabel('6-digit code').fill(totp(secret));
+  await page.getByRole('button', { name: 'Turn on two-step sign-in' }).click();
+  await page.getByLabel('I’ve saved my recovery codes somewhere safe').check();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
+}
