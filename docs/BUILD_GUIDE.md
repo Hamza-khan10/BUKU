@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–f done (2026-11-01)            |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–g done (2026-11-02)            |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -717,6 +717,14 @@ The detailed plan — every page, its data and edge cases, the design system and
   who, what, to what, why, address, reference. Accounts → "Show their activity": one person's
   trail (recorded). Business moderation is now also on the admin's own record. Auth:
   `GET /v1/admin/audit`, `GET /v1/admin/accounts/:id/audit`.
+- **3.6g Review moderation — ✅ done.** Operations → Reviews: what a business reported (the
+  stars, the words, who and when, the business's reply, the report's reason and note); hide one
+  (with a reason: stored, but no longer shown or counted in the rating) or keep it; Hidden lists
+  what was hidden, most recent first, to put one back. Booking: `GET /v1/admin/reviews?status=
+reported|hidden`; each decision is also on the admin's own record (`admin.review_hidden`,
+  `_kept`, `_restored`; the audit log's Reviews view). The overview counts reported reviews.
+  Browser test (WEB_PLAN's 3.6 check): a customer's review, reported by the business, is hidden
+  and leaves the business's page, then is put back; both steps are in the audit log.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business

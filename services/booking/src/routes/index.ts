@@ -28,6 +28,7 @@ import type { AttendanceService } from '../staff/attendance-service.js';
 import type { StaffService } from '../staff/staff-service.js';
 import {
   AdminReviewParams,
+  AdminReviewsQuery,
   AppointmentParams,
   AttendanceQuery,
   BusinessReviewsQuery,
@@ -788,13 +789,10 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   admin.use(auth, requireRole('super_admin'), writeLimit);
   admin.get(
     '/',
-    validated(
-      { query: MyAppointmentsQuery.pick({ page: true, limit: true }) },
-      async ({ query }, _req, res) => {
-        const { items, meta } = await deps.reviews.reported(query.page, query.limit);
-        sendSuccess(res, items, 200, meta);
-      },
-    ),
+    validated({ query: AdminReviewsQuery }, async ({ query }, _req, res) => {
+      const { items, meta } = await deps.reviews.reported(query.page, query.limit, query.status);
+      sendSuccess(res, items, 200, meta);
+    }),
   );
   admin.post(
     '/:reviewId/decision',

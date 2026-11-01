@@ -205,6 +205,9 @@ export const BusinessReviewsQuery = zPagination.extend({
 });
 export const ReviewParams = z.object({ id: zPublicId, reviewId: zId });
 export const AdminReviewParams = z.object({ reviewId: zId });
+export const AdminReviewsQuery = zPagination.extend({
+  status: z.enum(['reported', 'hidden']).default('reported'),
+});
 export const ReviewResponseBody = zBody({ text: zSafeText({ kind: 'text', min: 2, max: 1000 }) });
 export const ReportReviewBody = zBody({
   reason: z.enum(['offensive', 'fake', 'not_a_customer', 'personal_info', 'other']),

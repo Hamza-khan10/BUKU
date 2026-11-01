@@ -4,6 +4,7 @@ import {
   Activity,
   Flag,
   LayoutDashboard,
+  MessageSquareWarning,
   Power,
   ScrollText,
   ShieldCheck,
@@ -31,6 +32,7 @@ const SECTIONS: { title: string | null; items: Item[] }[] = [
     items: [
       { href: '/businesses', label: 'Businesses', icon: Store },
       { href: '/reports', label: 'Reports', icon: Flag },
+      { href: '/reviews', label: 'Reviews', icon: MessageSquareWarning },
       { href: '/accounts', label: 'Accounts', icon: UserSearch },
     ],
   },

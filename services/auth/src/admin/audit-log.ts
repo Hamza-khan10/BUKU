@@ -22,6 +22,7 @@ export interface AuditEntry {
 export const AUDIT_AREAS = {
   accounts: ['admin.account_', 'admin.sessions_'],
   businesses: ['admin.business_', 'admin.report_', 'admin.document', 'admin.legal_'],
+  reviews: ['admin.review_'],
   switches: ['admin.switch_'],
   billing: ['billing.'],
   notifications: ['notifications.'],
