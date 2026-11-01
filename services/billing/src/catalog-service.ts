@@ -148,9 +148,11 @@ export class CatalogService {
       subscribers: subscribers.get(p.id) ?? 0,
       usedAs: settings
         .flatMap((s) => [
-          s.defaultPlanId === p.id ? `default for ${s.audience}s` : null,
-          s.planWhenDisabledId === p.id ? `plan for ${s.audience}s while billing is off` : null,
-          s.trialPlanId === p.id ? `free trial for ${s.audience}s` : null,
+          s.defaultPlanId === p.id ? `default for ${WHO[s.audience as Audience]}` : null,
+          s.planWhenDisabledId === p.id
+            ? `plan for ${WHO[s.audience as Audience]} while billing is off`
+            : null,
+          s.trialPlanId === p.id ? `free trial for ${WHO[s.audience as Audience]}` : null,
         ])
         .filter(Boolean),
     }));
@@ -648,6 +650,9 @@ function priceView(p: PriceRow, exp: (currency: string) => number) {
     createdAt: p.createdAt.toISOString(),
   };
 }
+
+/** An audience in words, for the plans' "used as" notes. */
+const WHO: Record<Audience, string> = { user: 'customers', business: 'businesses' };
 
 const settingsInclude = { defaultPlan: true, planWhenDisabled: true, trialPlan: true } as const;
 
