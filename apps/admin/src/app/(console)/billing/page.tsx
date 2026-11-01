@@ -1,9 +1,12 @@
 import type { Metadata, Route } from 'next';
 import Link from 'next/link';
 import { Receipt, Inbox } from 'lucide-react';
+import { AddCost } from '@admin/components/add-cost';
 import { ApproveRequest } from '@admin/components/approve-request';
 import { BillingSettings } from '@admin/components/billing-settings';
+import { EconomicsCalculator } from '@admin/components/economics-calculator';
 import { Empty } from '@admin/components/empty';
+import { FeeForm } from '@admin/components/fee-form';
 import { GivePlan } from '@admin/components/give-plan';
 import { NewPrice } from '@admin/components/new-price';
 import { RowActions } from '@admin/components/row-actions';
@@ -12,7 +15,11 @@ import { Card, Initials, Notice, PageTitle, Pill, SectionTitle, beat } from '@ad
 import { requireAdmin } from '@admin/lib/admin';
 import {
   CHANNELS,
+  COST_CATEGORIES,
   SOURCE,
+  type Cost,
+  type Economics,
+  type Fee,
   type Plan,
   type PlanRequest,
   type Settings,
@@ -26,6 +33,7 @@ const VIEWS = [
   { value: 'requests', label: 'Plan requests' },
   { value: 'subscriptions', label: 'Subscriptions' },
   { value: 'plans', label: 'Plans and prices' },
+  { value: 'economics', label: 'Economics' },
 ] as const;
 const REQUEST_STATUSES = [
   { value: 'pending', label: 'Waiting' },
@@ -85,6 +93,8 @@ export default async function BillingPage({ searchParams }: PageProps<'/billing'
         <Requests status={query.status} call={call} plans={businessPlans} />
       ) : view === 'subscriptions' ? (
         <Subscriptions status={query.status} page={query.page} call={call} plans={businessPlans} />
+      ) : view === 'economics' ? (
+        <EconomicsView call={call} incoming={gate} />
       ) : !plans.ok ? (
         <Notice tone="danger" title={plans.error.message} />
       ) : (
@@ -533,5 +543,107 @@ function PlanCard({
         />
       </div>
     </li>
+  );
+}
+
+async function EconomicsView({
+  call,
+  incoming,
+}: {
+  call: Call;
+  incoming: { accessToken: string; incoming: Headers; requestId: string };
+}) {
+  const [costs, fees, economics] = await Promise.all([
+    call<{ items: Cost[]; monthlyTotal: string }>('/v1/admin/billing/costs'),
+    call<Fee[]>('/v1/admin/billing/fees'),
+    callApi<Economics>({
+      method: 'POST',
+      path: '/v1/admin/billing/economics',
+      body: {},
+      accessToken: incoming.accessToken,
+      incoming: incoming.incoming,
+      requestId: incoming.requestId,
+    }),
+  ]);
+  return (
+    <div className="flex flex-col gap-8">
+      <section aria-labelledby="month" className="flex flex-col gap-4">
+        <SectionTitle
+          id="month"
+          title="A month of BUKU"
+          description="With today’s subscribers (or the ones you type in), after tax, the stores’ fees and running costs. A calculation: nothing changes."
+        />
+        {economics.ok ? (
+          <EconomicsCalculator initial={economics.data} />
+        ) : (
+          <Notice tone="danger" title={economics.error.message} />
+        )}
+      </section>
+
+      <div className="grid items-start gap-6 xl:grid-cols-2">
+        <Card
+          title="Running costs"
+          description={
+            costs.ok ? `${costs.data.items.length} items · $${costs.data.monthlyTotal} a month` : undefined
+          }
+          className="rise"
+        >
+          {!costs.ok ? (
+            <Notice tone="danger" title={costs.error.message} />
+          ) : (
+            <>
+              {costs.data.items.length === 0 ? (
+                <p className="text-sm text-ink-3">None yet: add what BUKU pays each month.</p>
+              ) : (
+                <ul aria-label="Running costs" className="flex flex-col divide-y divide-line">
+                  {costs.data.items.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between gap-3 py-2.5">
+                      <span className="min-w-0">
+                        <span className="block font-medium text-ink">{c.name}</span>
+                        <span className="text-xs text-ink-3">{COST_CATEGORIES[c.category]}</span>
+                      </span>
+                      <span className="flex items-center gap-3">
+                        <span className="font-semibold tabular-nums">
+                          {c.currency} {c.monthlyAmount}
+                        </span>
+                        <RowActions
+                          subject={c.name}
+                          actions={[
+                            {
+                              path: `/api/billing/costs/${c.id}`,
+                              label: 'Remove',
+                              tone: 'danger-quiet',
+                              confirm: 'Remove this cost from the economics?',
+                            },
+                          ]}
+                        />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="border-t border-line pt-4">
+                <AddCost />
+              </div>
+            </>
+          )}
+        </Card>
+        <Card
+          title="What the stores keep"
+          description="Of each payment, by where it's made: Paddle on the website, Apple and Google in the apps."
+          className="rise"
+        >
+          {!fees.ok ? (
+            <Notice tone="danger" title={fees.error.message} />
+          ) : (
+            <div className="flex flex-col gap-2">
+              {fees.data.map((f) => (
+                <FeeForm key={f.channel} fee={f} />
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+    </div>
   );
 }

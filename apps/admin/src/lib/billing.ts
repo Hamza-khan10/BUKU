@@ -77,3 +77,62 @@ export const SOURCE: Record<string, string> = {
 };
 
 export const PLAN_CODE = /^[a-z][a-z0-9_]{1,49}$/;
+
+export interface Cost {
+  id: string;
+  name: string;
+  category: 'infrastructure' | 'messaging' | 'software' | 'other';
+  monthlyAmount: string;
+  currency: string;
+  notes: string | null;
+}
+
+export interface Fee {
+  channel: 'web' | 'ios' | 'android';
+  percent: string;
+  fixedAmount: string;
+  currency: string;
+  notes: string | null;
+}
+
+export interface EconomicsRow {
+  priceId: string;
+  plan: string;
+  planName: string;
+  channel: 'web' | 'ios' | 'android';
+  currency: string;
+  interval: 'month' | 'year';
+  price: string;
+  perSubscriberPerMonth: {
+    customerPays: string;
+    tax: string;
+    channelFee: string;
+    net: string;
+    keepPercent: number;
+  };
+  subscribers: number;
+  monthlyNet: string;
+  breakEvenSubscribers: number | null;
+  includedInTotals: boolean;
+}
+
+export interface Economics {
+  currency: string;
+  assumptions: { taxPercent: number; monthlyCosts: string };
+  prices: EconomicsRow[];
+  totals: {
+    subscribers: number;
+    customersPayPerMonth: string;
+    netRevenuePerMonth: string;
+    costsPerMonth: string;
+    profitPerMonth: string;
+    marginPercent: number | null;
+  };
+}
+
+export const COST_CATEGORIES = {
+  infrastructure: 'Servers and hosting',
+  messaging: 'Messages (email, WhatsApp, SMS)',
+  software: 'Software and tools',
+  other: 'Something else',
+} as const;
