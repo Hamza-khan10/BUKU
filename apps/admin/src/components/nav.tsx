@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  BellRing,
   CreditCard,
   Flag,
   LayoutDashboard,
@@ -39,6 +40,7 @@ const SECTIONS: { title: string | null; items: Item[] }[] = [
     ],
   },
   { title: 'Watch', items: [{ href: '/monitoring', label: 'Monitoring', icon: Activity }] },
+  { title: 'Settings', items: [{ href: '/settings/notifications', label: 'Notifications', icon: BellRing }] },
   {
     title: 'Security',
     items: [
@@ -60,7 +62,7 @@ export function Nav() {
   return (
     <nav
       aria-label="Console"
-      className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-col lg:gap-6 lg:overflow-visible lg:px-0 lg:pb-0"
+      className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-col lg:gap-5 lg:overflow-visible lg:px-0 lg:pb-0"
     >
       {SECTIONS.map((section) => (
         <div key={section.title ?? 'top'} className="flex gap-1 lg:flex-col lg:gap-0.5">
