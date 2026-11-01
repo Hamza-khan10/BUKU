@@ -441,6 +441,34 @@ test.describe('Admin app', () => {
     await page.getByRole('button', { name: 'Save settings' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
   });
+
+  test('economics: a “what if” worked out; a running cost added and removed', async ({ page }) => {
+    await newOperator(page);
+    await page.goto('/billing?view=economics');
+    await expect(page.getByRole('heading', { name: 'A month of BUKU' })).toBeVisible();
+    await expectAccessible(page);
+
+    // What if 200 businesses were on Essential on the website?
+    await page.getByLabel('Subscribers on Essential, Website (Paddle)').fill('200');
+    await page.getByRole('button', { name: 'Work it out' }).click();
+    const customersPay = page.locator('.panel').filter({ hasText: 'Customers pay a month' });
+    await expect(customersPay).toContainText(/\$[\d,]{4,}\.\d\d/);
+    await expect(page.locator('.panel').filter({ hasText: 'Profit a month' })).not.toContainText('−');
+
+    // A cost, added and removed again.
+    const name = `e2e cost ${Date.now()}`;
+    await page.getByLabel('What it is').fill(name);
+    await page.getByLabel('USD a month').fill('1.50');
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    const item = page
+      .getByRole('list', { name: 'Running costs' })
+      .getByRole('listitem')
+      .filter({ hasText: name });
+    await expect(item).toContainText('1.50');
+    await item.getByRole('button', { name: `Remove (${name})` }).click();
+    await item.getByRole('button', { name: 'Remove', exact: true }).click();
+    await expect(item).toHaveCount(0);
+  });
 });
 
 /** A new platform admin with two-step sign-in set up, on the overview. */
