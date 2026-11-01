@@ -14,7 +14,7 @@ import {
   type DataPlane,
 } from '@buku/database';
 import { auditCtx, type RequestContext } from './http/context.js';
-import { LIVE } from './shared.js';
+import { auditByPerson, LIVE } from './shared.js';
 
 /**
  * Accounts and their plans:
@@ -250,12 +250,14 @@ export class AccountService {
     ctx: RequestContext,
   ) {
     const businessId = await this.businessOfRequest(requestId);
-    return this.plane.inBusiness(businessId, async (tx) => {
+    let given = '';
+    const view = await this.plane.inBusiness(businessId, async (tx) => {
       const request = await tx.planRequest.findFirst({ where: { id: requestId, status: 'pending' } });
       if (!request) throw AppError.notFound('Open plan request');
       const requested = await this.plane.directory.plan.findUnique({ where: { id: request.planId } });
       const planCode = input.planCode ?? requested?.code;
       if (!planCode) throw AppError.notFound('Plan');
+      given = planCode;
       const grant = await this.createGrant(
         tx,
         {
@@ -289,11 +291,19 @@ export class AccountService {
       });
       return this.requestView(tx, requestId);
     });
+    // The same step on the admin's own record, for the console's audit log (D-132).
+    await auditByPerson(this.plane, adminId, ctx, {
+      action: 'admin.plan_request_approved',
+      resourceType: 'plan_request',
+      resourceId: requestId,
+      newValues: { plan: given, until: input.until ?? null, ...(input.note && { reason: input.note }) },
+    });
+    return view;
   }
 
   async declineRequest(requestId: bigint, adminId: bigint, note: string, ctx: RequestContext) {
     const businessId = await this.businessOfRequest(requestId);
-    return this.plane.inBusiness(businessId, async (tx) => {
+    const view = await this.plane.inBusiness(businessId, async (tx) => {
       const { count } = await tx.planRequest.updateMany({
         where: { id: requestId, status: 'pending' },
         data: { status: 'declined', decidedById: adminId, decidedAt: new Date(), decisionNote: note },
@@ -309,6 +319,13 @@ export class AccountService {
       });
       return this.requestView(tx, requestId);
     });
+    await auditByPerson(this.plane, adminId, ctx, {
+      action: 'admin.plan_request_declined',
+      resourceType: 'plan_request',
+      resourceId: requestId,
+      newValues: { reason: note },
+    });
+    return view;
   }
 
   /** Give any plan to any business, free of charge, optionally until a date. */
@@ -319,6 +336,17 @@ export class AccountService {
     const id = await this.plane.inBusiness(businessId, async (tx) => {
       const sub = await this.createGrant(tx, { ...input, businessId }, adminId, ctx);
       return sub.id;
+    });
+    await auditByPerson(this.plane, adminId, ctx, {
+      action: 'admin.plan_granted',
+      resourceType: 'subscription',
+      resourceId: id,
+      newValues: {
+        plan: input.planCode,
+        business: input.businessId,
+        until: input.until ?? null,
+        reason: input.note,
+      },
     });
     return this.subscriptionView(id);
   }
@@ -354,6 +382,12 @@ export class AccountService {
         ...auditCtx(ctx),
       });
     });
+    await auditByPerson(this.plane, adminId, ctx, {
+      action: 'admin.subscription_ended',
+      resourceType: 'subscription',
+      resourceId: subscriptionId,
+      newValues: { reason },
+    });
     return this.subscriptionView(subscriptionId);
   }
 
@@ -378,7 +412,7 @@ export class AccountService {
       total: await tx.subscription.count({ where }),
       rows: await tx.subscription.findMany({
         where,
-        include: { business: { select: { publicId: true } } },
+        include: { business: { select: { publicId: true, name: true } } },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: query.page * query.limit,
       }),
@@ -390,7 +424,10 @@ export class AccountService {
     const total = perShard.reduce((n, s) => n + s.total, 0);
     const plans = await this.planNames(rows.map((r) => r.planId));
     return {
-      items: rows.map((r) => subscriptionView(r, r.business.publicId, plans)),
+      items: rows.map((r) => ({
+        ...subscriptionView(r, r.business.publicId, plans),
+        businessName: r.business.name,
+      })),
       meta: { page: query.page, limit: query.limit, total, totalPages: Math.ceil(total / query.limit) },
     };
   }

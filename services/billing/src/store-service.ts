@@ -196,6 +196,12 @@ export class StoreService {
       await paddle.cancelSubscription(sub.externalSubscriptionId, 'immediately'),
     );
     await this.audit(sub.businessId, adminId, 'billing.subscription_ended', sub.id, ctx, { reason });
+    await auditByPerson(this.plane, adminId, ctx, {
+      action: 'admin.subscription_ended',
+      resourceType: 'subscription',
+      resourceId: sub.id,
+      newValues: { reason, provider: 'paddle' },
+    });
     return this.view(sub.businessId, sub.id);
   }
 

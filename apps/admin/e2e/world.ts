@@ -103,3 +103,54 @@ export async function reportedReview(): Promise<{
     throw new Error('the review couldn’t be reported');
   return { business: { id: place.id, slug: place.slug, name: place.name }, comment };
 }
+
+/**
+ * A new business whose owner asked for a plan (Enterprise, for a clinic group): made through the
+ * API as an owner would. Returns the business and the request's words.
+ */
+export async function businessAskingForPlan(): Promise<{ id: string; name: string; message: string }> {
+  const login = await json<{ accessToken: string }>(
+    await fetch(`${API}/v1/auth/dev/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: `owner.${randomUUID()}@example.com`,
+        name: 'Saima Owner',
+        role: 'business_owner',
+      }),
+    }),
+  );
+  const auth = { authorization: `Bearer ${login.accessToken}`, 'content-type': 'application/json' };
+  const categories = await json<{ children: { id: string; name: string }[] }[]>(
+    await fetch(`${API}/v1/categories`),
+  );
+  const category = categories.flatMap((c) => c.children).find((c) => c.name === 'Barbershop')!;
+  const name = `Plan Request Clinic ${randomUUID().slice(0, 6)}`;
+  const business = await json<{ id: string }>(
+    await fetch(`${API}/v1/businesses`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({
+        name,
+        categoryId: category.id,
+        address: '12 Main Boulevard',
+        city: 'Lahore',
+        country: 'PK',
+        lat: 31.5204,
+        lng: 74.3587,
+        timezone: 'Asia/Karachi',
+        currency: 'PKR',
+        acceptedBusinessTermsVersion: '1.0',
+      }),
+    }),
+  );
+  const message = `Clinic group, 14 branches (${randomUUID().slice(0, 6)})`;
+  await json(
+    await fetch(`${API}/v1/businesses/${business.id}/billing/plan-requests`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({ planCode: 'business_enterprise', message }),
+    }),
+  );
+  return { id: business.id, name, message };
+}

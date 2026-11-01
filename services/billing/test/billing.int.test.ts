@@ -385,6 +385,14 @@ describe('Grants and subscriptions', () => {
       reason: 'Gesture over',
     });
     expect(ended.body.data.status).toBe('cancelled');
+    const onAdmin = await (
+      await h.world.user(h.admin.id)
+    ).auditLog.findMany({
+      where: { userId: h.admin.id, resourceId: BigInt(first.body.data.id) },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(onAdmin.map((e) => e.action)).toEqual(['admin.plan_granted', 'admin.subscription_ended']);
+    expect(onAdmin[1]!.newValues).toMatchObject({ reason: 'Gesture over' });
     expect((await grant(b, 'business_essential', 'Again')).status).toBe(201);
 
     const store = await subscribe(await x.business(), { planCode: 'business_essential', provider: 'paddle' });
@@ -672,6 +680,23 @@ describe('Any plan for any business: requests and grants', () => {
       subscription: { currentPeriodEnd: null },
     });
     expect((await x.subscriptions(b)).find((s) => s.provider === 'trial')!.status).toBe('cancelled');
+
+    // Each decision is also on the admin's own record, for the console's audit log (D-132).
+    const onAdmin = await (
+      await h.world.user(h.admin.id)
+    ).auditLog.findMany({
+      where: {
+        userId: h.admin.id,
+        resourceId: { in: [BigInt(first.body.data.id), BigInt(third.body.data.id)] },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(onAdmin.map((e) => e.action)).toEqual([
+      'admin.plan_request_declined',
+      'admin.plan_request_approved',
+    ]);
+    expect(onAdmin[0]!.newValues).toMatchObject({ reason: 'Not eligible yet' });
+    expect(onAdmin[1]!.newValues).toMatchObject({ plan: 'business_enterprise' });
     await x.setBilling('business', false);
   });
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { API, apiAvailable, devSignIn, expect, expectAccessible, test, totp } from './helpers';
-import { reportedReview } from './world';
+import { businessAskingForPlan, reportedReview } from './world';
 
 /**
  * The admin app (D-091): its own sign-in, platform admins only, two-step
@@ -360,6 +360,54 @@ test.describe('Admin app', () => {
     await expect(
       steps.getByRole('listitem').filter({ hasText: 'You put a hidden review back' }).first(),
     ).toBeVisible();
+  });
+
+  test('billing: a plan request approved free until a date, then the plan ended; both in the audit log', async ({
+    page,
+  }) => {
+    const business = await businessAskingForPlan();
+    await newOperator(page);
+    await page.getByRole('navigation', { name: 'Console' }).getByRole('link', { name: 'Billing' }).click();
+    await expect(page.getByRole('heading', { name: 'Billing', level: 1 })).toBeVisible();
+    const request = page
+      .getByRole('list', { name: 'Plan requests' })
+      .getByRole('listitem')
+      .filter({ hasText: business.message });
+    await expect(request).toContainText(business.name);
+    await expect(request).toContainText('Enterprise');
+    await expectAccessible(page);
+
+    await request.getByRole('button', { name: `Approve… (${business.name})` }).click();
+    const until = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
+    await request.getByLabel(/Free until/).fill(until);
+    await request.getByLabel(/Note for the record/).fill('e2e: pilot for a quarter');
+    await request.getByRole('button', { name: 'Approve', exact: true }).click();
+    await expect(request).toHaveCount(0);
+
+    // The plan is theirs: under Subscriptions, given by an admin, until that day.
+    await page
+      .getByRole('navigation', { name: 'Billing' })
+      .getByRole('link', { name: 'Subscriptions' })
+      .click();
+    const row = page.getByRole('row').filter({ hasText: business.name });
+    await expect(row).toContainText('Enterprise');
+    await expect(row).toContainText('Given by an admin');
+    await expectAccessible(page);
+    await row.getByRole('button', { name: /^End now \(/ }).click();
+    await row.getByLabel(/Why end it\?/).fill('e2e: pilot over');
+    await row.getByRole('button', { name: 'End now', exact: true }).click();
+    await expect(row).toHaveCount(0);
+    await page.getByRole('navigation', { name: 'By status' }).getByRole('link', { name: 'Ended' }).click();
+    await expect(page.getByRole('row').filter({ hasText: business.name })).toContainText('Ended');
+
+    await page.goto('/security/audit?area=billing&days=1');
+    const steps = page.getByRole('region', { name: 'Steps' });
+    await expect(
+      steps.getByRole('listitem').filter({ hasText: 'You approved a plan request' }).first(),
+    ).toContainText('“e2e: pilot for a quarter”');
+    await expect(
+      steps.getByRole('listitem').filter({ hasText: 'You ended a subscription' }).first(),
+    ).toContainText('“e2e: pilot over”');
   });
 });
 

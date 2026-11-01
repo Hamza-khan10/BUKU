@@ -24,7 +24,7 @@ export const AUDIT_AREAS = {
   businesses: ['admin.business_', 'admin.report_', 'admin.document', 'admin.legal_'],
   reviews: ['admin.review_'],
   switches: ['admin.switch_'],
-  billing: ['billing.'],
+  billing: ['billing.', 'admin.plan_', 'admin.subscription_'],
   notifications: ['notifications.'],
   'sign-in': ['auth.', 'mfa.'],
   access: ['access_review.', 'admin.audit_', 'admin.account_trail_'],
@@ -188,7 +188,8 @@ export class AuditLog {
     }
     if (r.resourceType === 'business')
       return { type: 'business', id: await business(r.resourceId), label: null };
-    const code = typeof values?.code === 'string' ? values.code : null;
+    const code =
+      typeof values?.code === 'string' ? values.code : typeof values?.plan === 'string' ? values.plan : null;
     return { type: r.resourceType, id: r.resourceId.toString(), label: code };
   }
 }

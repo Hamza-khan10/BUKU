@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–g done (2026-11-02)            |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–h done (2026-11-02)            |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -725,6 +725,19 @@ reported|hidden`; each decision is also on the admin's own record (`admin.review
   `_kept`, `_restored`; the audit log's Reviews view). The overview counts reported reviews.
   Browser test (WEB_PLAN's 3.6 check): a customer's review, reported by the business, is hidden
   and leaves the business's page, then is put back; both steps are in the audit log.
+- **3.6h Billing: plan requests and subscriptions — ✅ done.** Operations → Billing:
+  - **Plan requests** (waiting, approved, declined, withdrawn): what the business asked for and
+    why; approve (the plan asked for or another, for good or free until a date, a note) or decline
+    with a note the business sees.
+  - **Subscriptions** (active, trials, payment due, ended): each business's plan and how (paid
+    through Paddle, given by an admin, a free trial), until when; end one now with a reason (a paid
+    one is cancelled in Paddle at once). **Give a business a plan** free of charge.
+  - Billing: approve, decline, grant and end are also on the admin's own record (`admin.plan_*`,
+    `admin.subscription_ended`; the audit log's Billing view); subscriptions list the business's
+    name. The overview counts plan requests waiting.
+  - Browser test: a new business asks for Enterprise; it's approved free until a date, shows as
+    given by an admin, is ended, and both steps are in the audit log. Plans, prices and the
+    economics come next.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business
