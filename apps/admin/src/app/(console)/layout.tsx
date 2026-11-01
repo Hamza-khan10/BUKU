@@ -37,7 +37,7 @@ export default async function ConsoleLayout({ children }: { children: ReactNode 
           className="fixed inset-x-0 top-0 z-40 h-[3px] bg-danger shadow-[0_0_16px_var(--danger)]"
         />
       )}
-      <aside className="material sticky top-0 z-30 flex flex-col gap-3 border-b border-line px-4 pt-3 pb-2 lg:h-dvh lg:w-[15.5rem] lg:shrink-0 lg:gap-8 lg:border-r lg:border-b-0 lg:px-3 lg:py-6">
+      <aside className="material sticky top-0 z-30 flex flex-col gap-3 border-b border-line px-4 pt-3 pb-2 lg:h-dvh lg:w-[15.5rem] lg:shrink-0 lg:gap-6 lg:border-r lg:border-b-0 lg:px-3 lg:py-6">
         <div className="flex items-center justify-between gap-3 lg:px-2">
           <div className="flex items-center gap-2.5">
             <Mark className="size-8 drop-shadow-[0_4px_12px_rgb(6_127_93/0.35)]" />
@@ -48,8 +48,12 @@ export default async function ConsoleLayout({ children }: { children: ReactNode 
           </div>
           <EnvBadge env={env} className="lg:hidden" />
         </div>
-        <Nav />
-        <div className="mt-auto hidden flex-col gap-3 lg:flex">
+        {/* The sections scroll on their own when the window is short, so where it's acting and who
+            is signed in (and signing out) always stay on screen. */}
+        <div className="lg:-mx-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-1">
+          <Nav />
+        </div>
+        <div className="hidden shrink-0 flex-col gap-3 lg:flex">
           <EnvBadge env={env} />
           {me && (
             <div className="flex items-center gap-3 rounded-xl border border-line bg-surface/60 p-2.5">

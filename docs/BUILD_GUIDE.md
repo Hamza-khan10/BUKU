@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–j done (2026-11-02)            |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6 done (2026-11-02)               |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -754,6 +754,15 @@ reported|hidden`; each decision is also on the admin's own record (`admin.review
   Running costs (add, remove after a confirm) and what each store keeps (Paddle, Apple, Google).
   Customer plans are left out (customers are free). A calculation: nothing changes. Browser test:
   a "what if" turns the month's loss into a profit; a cost is added and removed.
+- **3.6k Notification settings — ✅ done.** Settings → Notifications: this month's WhatsApp
+  (replies in the free window, template messages, estimated cost against the budget, as a meter);
+  every setting (email and WhatsApp on or off, the monthly budget, the cost per message, the free
+  replies, which messages are worth paying for, reminders, quiet hours, suggestions), with
+  switching WhatsApp on confirmed in words first; the templates to create in Meta. Saved within 30
+  seconds and recorded (old and new values). The sidebar's sections now scroll on their own, so
+  where the console acts and who is signed in stay on screen in a short window (a browser test
+  found the sign-out button pushed off a 720-pixel screen). This completes the operator console
+  of WEB_PLAN §3.5 (3.6a–k).
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business

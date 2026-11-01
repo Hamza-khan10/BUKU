@@ -24,7 +24,7 @@ free** (D-101); businesses pay (Starter free, Essential, Professional, Enterpris
 | ------ | ------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                         |
 | 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred |
-| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 a–g and 3.6 a–j done                      |
+| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 a–g and 3.6 done                          |
 | **3D** | **Database v2** — built for hundreds of millions of people                           | ✅ **D1–D4 built and on `main`**; D5 later      |
 | 4      | Mobile app (Expo)                                                                    | planned                                         |
 | 5      | Production: deployment, observability, backups, load and security testing            | planned                                         |
@@ -89,11 +89,11 @@ deployed yet, Phase 5).
 - **Admin app** (`apps/admin`, D-091, D-128, D-131: BUKU's palette and fonts, made to be watched for hours): an operator console — the overview (system status
   from Prometheus, what's waiting for a decision, what's switched off), businesses (verify, reject,
   suspend, reinstate), reports, reported reviews (hide, keep, put back), billing (plan requests,
-  subscriptions, giving a plan, plans and prices, billing settings, the economics), **accounts** (find one person; suspend, reinstate or sign out
+  subscriptions, giving a plan, plans and prices, billing settings, the economics), notification settings and WhatsApp usage, **accounts** (find one person; suspend, reinstate or sign out
   everywhere, D-130), monitoring (targets, alerts, the database's checks, links to Grafana),
   **emergency switches** (turn sign-ups, signing in, bookings, queues, payments, uploads, reviews
   or business registration off at once, D-129), the **audit log** (what every admin did, D-132) and
-  the access review. The rest of 3.6 (notification settings and WhatsApp usage) comes next.
+  the access review. The console of WEB_PLAN §3.5 is complete.
 - **Monitoring** (D-127, `pnpm dev:monitoring`): Prometheus reads every service, the gateway and
   the database's checks; Grafana (localhost:3300) has four dashboards: platform, security, gateway
   and database.
@@ -170,9 +170,9 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
 - `main`: database v2 (D1–D4, #160), the checkout page working without the API (#161),
   lucide-react 1.63.0 (#152), the queue board (3.5c, #162), services waiting for the database at
   start (#163), opening hours (3.5e, #164), time off (3.5f, #165), attendance (3.5g, #166) and
-  monitoring (3.6a, #167), the operator console (3.6b, #168), emergency switches (3.6c, #169), accounts (3.6d, #170), the console redrawn (3.6e, #171), the audit log (3.6f, #172), review moderation (3.6g, #173) and billing (3.6h, #174); 0 Dependabot and 0 secret-scanning alerts; no open issues. The live
+  monitoring (3.6a, #167), the operator console (3.6b, #168), emergency switches (3.6c, #169), accounts (3.6d, #170), the console redrawn (3.6e, #171), the audit log (3.6f, #172), review moderation (3.6g, #173), billing (3.6h, #174) and plans and prices (3.6i, #175); 0 Dependabot and 0 secret-scanning alerts; no open issues. The live
   website runs **Next.js 16.4.2**.
-- **Open:** plans and prices (3.6i, #175) and the economics (3.6j) in the console.
+- **Open:** the economics (3.6j, #176) and notification settings (3.6k) in the console.
 - **GitGuardian** flagged `PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?…}` in
   `docker-compose.dev.yml` on #167: a reference to a variable, not a secret. It isn't a required
   check; the owner marks it as a false positive in GitGuardian.
@@ -197,8 +197,9 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    reviews, insights, billing and settings. In 3.6, the operator console: 3.6a monitoring
    (Prometheus and Grafana, D-127), 3.6b the console itself (D-128), 3.6c emergency switches
    (D-129), 3.6d accounts (D-130), 3.6e the console redrawn (D-131), 3.6f the audit log (D-132), 3.6g review moderation, 3.6h billing (plan requests,
-   subscriptions), 3.6i plans and prices and 3.6j the economics are done; next, notification
-   settings and WhatsApp usage in the console. Then 3.7, polish and proof.
+   subscriptions), 3.6i plans and prices, 3.6j the economics and 3.6k notification settings are
+   done: the operator console is complete. Next, the rest of 3.5 (calendar, reviews, insights,
+   billing and settings for businesses). Then 3.7, polish and proof.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
 3. **Phase 5** — production: deployment, PgBouncer, the standby and a second region, backups to

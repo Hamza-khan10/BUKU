@@ -94,6 +94,7 @@ export const AREAS = [
   { value: 'switches', label: 'Switches' },
   { value: 'sign-in', label: 'Sign-ins' },
   { value: 'billing', label: 'Billing' },
+  { value: 'notifications', label: 'Notifications' },
   { value: 'access', label: 'Access' },
 ] as const;
 
