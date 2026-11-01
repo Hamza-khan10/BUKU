@@ -469,6 +469,41 @@ test.describe('Admin app', () => {
     await item.getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(item).toHaveCount(0);
   });
+
+  test('notifications: WhatsApp can’t be switched on unconfirmed; quiet hours saved and put back', async ({
+    page,
+  }) => {
+    await newOperator(page);
+    await page
+      .getByRole('navigation', { name: 'Console' })
+      .getByRole('link', { name: 'Notifications' })
+      .click();
+    await expect(page.getByRole('heading', { name: 'Notifications', level: 1 })).toBeVisible();
+    await expect(page.getByText('buku_booking_confirmed')).toBeVisible();
+    await expectAccessible(page);
+
+    const save = page.getByRole('button', { name: 'Save settings' });
+    const whatsapp = page.getByRole('switch', { name: /Send WhatsApp messages/ });
+    if (!(await whatsapp.isChecked())) {
+      await whatsapp.check();
+      await expect(save).toBeDisabled();
+      await page.getByLabel(/I understand: messages beyond/).check();
+      await expect(save).toBeEnabled();
+      await whatsapp.uncheck(); // not turned on by a test
+    }
+
+    const from = page.getByLabel('Quiet from');
+    const before = await from.inputValue();
+    const changed = before === '22' ? '21' : '22';
+    await from.selectOption(changed);
+    await save.click();
+    await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel('Quiet from')).toHaveValue(changed);
+    await page.getByLabel('Quiet from').selectOption(before);
+    await page.getByRole('button', { name: 'Save settings' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
+  });
 });
 
 /** A new platform admin with two-step sign-in set up, on the overview. */
