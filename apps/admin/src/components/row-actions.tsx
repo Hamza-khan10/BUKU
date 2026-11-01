@@ -14,6 +14,8 @@ export interface RowAction {
   reason?: string;
   /** The longest reason accepted (the API's own limit; 1000 unless said). */
   reasonMax?: number;
+  /** Asks to be sure first, without a reason (for a step the API takes no reason for). */
+  confirm?: string;
   /** Sent as the body, besides any reason. */
   body?: Record<string, unknown>;
 }
@@ -72,9 +74,9 @@ export function RowActions({
             size="sm"
             busy={busy === a.label}
             disabled={busy !== null}
-            aria-expanded={a.reason ? asking === a : undefined}
-            aria-controls={a.reason ? formId : undefined}
-            onClick={() => (a.reason ? setAsking(asking === a ? null : a) : void run(a))}
+            aria-expanded={a.reason || a.confirm ? asking === a : undefined}
+            aria-controls={a.reason || a.confirm ? formId : undefined}
+            onClick={() => (a.reason || a.confirm ? setAsking(asking === a ? null : a) : void run(a))}
           >
             {a.label}
             <span className="sr-only"> ({subject})</span>
@@ -87,22 +89,28 @@ export function RowActions({
           className="flex w-full max-w-sm flex-col gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            void run(asking, reason.trim());
+            void run(asking, asking.reason ? reason.trim() : undefined);
           }}
         >
-          <label htmlFor={`${formId}-reason`} className="text-left text-xs font-medium text-ink-2">
-            {asking.reason}
-          </label>
-          <textarea
-            id={`${formId}-reason`}
-            required
-            minLength={3}
-            maxLength={asking.reasonMax ?? 1000}
-            rows={2}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            className="w-full rounded-[10px] border border-control bg-sunken px-3 py-2 text-sm text-ink focus-visible:border-focus focus-visible:shadow-[0_0_0_4px_color-mix(in_oklab,var(--focus)_22%,transparent)] focus-visible:outline-none"
-          />
+          {asking.reason ? (
+            <>
+              <label htmlFor={`${formId}-reason`} className="text-left text-xs font-medium text-ink-2">
+                {asking.reason}
+              </label>
+              <textarea
+                id={`${formId}-reason`}
+                required
+                minLength={3}
+                maxLength={asking.reasonMax ?? 1000}
+                rows={2}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="w-full rounded-[10px] border border-control bg-sunken px-3 py-2 text-sm text-ink focus-visible:border-focus focus-visible:shadow-[0_0_0_4px_color-mix(in_oklab,var(--focus)_22%,transparent)] focus-visible:outline-none"
+              />
+            </>
+          ) : (
+            <p className="text-right text-xs text-ink-2">{asking.confirm}</p>
+          )}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="secondary" size="sm" onClick={() => setAsking(null)}>
               Keep it

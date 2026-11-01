@@ -28,12 +28,46 @@ export interface Subscription {
   createdAt: string;
 }
 
+export interface Price {
+  id: string;
+  channel: 'web' | 'ios' | 'android';
+  currency: string;
+  amount: string;
+  interval: 'month' | 'year';
+  taxInclusive: boolean;
+  trialDays: number;
+  externalPriceId: string | null;
+  active: boolean;
+  archivedAt: string | null;
+  createdAt: string;
+}
+
 export interface Plan {
+  id: string;
   code: string;
   audience: 'user' | 'business';
   name: string;
+  tagline: string | null;
+  benefits: string[];
+  limits: Record<string, number | null>;
+  features: Record<string, boolean>;
+  isPublic: boolean;
+  sortOrder: number;
   archivedAt: string | null;
+  prices: Price[];
+  subscribers: number;
+  usedAs: string[];
 }
+
+export interface Settings {
+  audience: 'user' | 'business';
+  enabled: boolean;
+  defaultPlan: { code: string; name: string };
+  planWhenDisabled: { code: string; name: string };
+  trial: { enabled: boolean; days: number; plan: { code: string; name: string } | null };
+}
+
+export const CHANNELS = { web: 'Website (Paddle)', ios: 'iPhone app', android: 'Android app' } as const;
 
 /** Who bills it, in words. */
 export const SOURCE: Record<string, string> = {
