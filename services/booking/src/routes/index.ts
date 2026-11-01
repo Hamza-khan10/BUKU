@@ -29,6 +29,7 @@ import type { StaffService } from '../staff/staff-service.js';
 import {
   AdminReviewParams,
   AdminReviewsQuery,
+  TeamReviewsQuery,
   AppointmentParams,
   AttendanceQuery,
   BusinessReviewsQuery,
@@ -132,6 +133,18 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
         sendSuccess(res, items, 200, meta);
       },
     ),
+  );
+  r.get(
+    '/:id/reviews/manage',
+    auth,
+    validated({ params: IdParams, query: TeamReviewsQuery }, async ({ params, query }, req, res) => {
+      const { items, meta } = await deps.reviews.teamList(
+        await businessOf(params.id),
+        requireActor(req),
+        query,
+      );
+      sendSuccess(res, items, 200, meta);
+    }),
   );
   r.put(
     '/:id/reviews/:reviewId/response',

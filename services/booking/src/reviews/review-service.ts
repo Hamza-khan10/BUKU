@@ -321,6 +321,70 @@ export class ReviewService {
     });
   }
 
+  /**
+   * The business's own view (3.5i): every review, hidden ones too, with what the team did (a
+   * reply, a report) and whether BUKU hid it (not BUKU's reason: that's the moderators'). Owners
+   * and managers, who may reply. Filters: all, not replied yet, reported, hidden; by stars.
+   */
+  async teamList(
+    businessId: bigint,
+    actor: Actor,
+    query: {
+      filter: 'all' | 'unanswered' | 'reported' | 'hidden';
+      rating?: number | undefined;
+      page: number;
+      limit: number;
+    },
+  ) {
+    const { rows, total, counts, summary, visits } = await this.plane.inBusiness(businessId, async (tx) => {
+      await requireBusinessPermissionOnShard(tx, businessId, actor, 'reviews.respond');
+      const base = { businessId };
+      const kinds = {
+        all: base,
+        unanswered: { ...base, isVisible: true, ownerResponse: null },
+        reported: { ...base, isFlagged: true },
+        hidden: { ...base, isVisible: false },
+      } as const;
+      const where = { ...kinds[query.filter], ...(query.rating && { overallRating: query.rating }) };
+      const rows = await tx.review.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      });
+      const [total, unanswered, reported, hidden] = await Promise.all([
+        tx.review.count({ where }),
+        tx.review.count({ where: kinds.unanswered }),
+        tx.review.count({ where: kinds.reported }),
+        tx.review.count({ where: kinds.hidden }),
+      ]);
+      return {
+        rows,
+        total,
+        counts: { unanswered, reported, hidden },
+        summary: await summaryOf(tx, businessId),
+        visits: await visitsOf(tx, rows),
+      };
+    });
+    const context: Context = { visits, authors: await this.authors(rows.map((r) => r.userId)) };
+    return {
+      items: rows.map((r) => ({
+        ...publicView(r, context),
+        visible: r.isVisible,
+        reported: r.isFlagged ? { reason: r.flagReason, at: r.flaggedAt?.toISOString() ?? null } : null,
+        hiddenAt: r.hiddenAt?.toISOString() ?? null,
+      })),
+      meta: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+        counts,
+        summary,
+      },
+    };
+  }
+
   // ── Platform admins ───────────────────────────────────────────────────────
 
   /**
