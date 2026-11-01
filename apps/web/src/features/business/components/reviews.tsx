@@ -13,7 +13,7 @@ const DETAILS: [keyof ReviewsMeta['summary']['details'], string][] = [
 ];
 
 /** Average, how the stars spread, and the four details people rate. */
-function Summary({ summary }: { summary: ReviewsMeta['summary'] }) {
+export function Summary({ summary }: { summary: ReviewsMeta['summary'] }) {
   return (
     <div className="grid gap-6 rounded-lg border border-line bg-surface p-5 sm:grid-cols-[auto_1fr_1fr]">
       <div className="flex flex-col items-start gap-1">
