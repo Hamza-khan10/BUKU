@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
 import { API, apiAvailable, devSignIn, expect, expectAccessible, test, totp } from './helpers';
+import { reportedReview } from './world';
 
 /**
  * The admin app (D-091): its own sign-in, platform admins only, two-step
@@ -305,6 +306,60 @@ test.describe('Admin app', () => {
       .getByRole('button', { name: 'Reinstate (Ayesha Audit)' })
       .click();
     await expect(page.getByRole('region', { name: 'Account: Ayesha Audit' })).toContainText('Active');
+  });
+
+  test('a reported review: read, hidden with a reason (gone from the business’s page), put back', async ({
+    page,
+  }) => {
+    const reported = await reportedReview();
+    test.skip(!reported, 'the development database isn’t reachable to set the review up');
+    const { business, comment } = reported!;
+    const publicReviews = async () =>
+      (await (await fetch(`${API}/v1/businesses/${business.slug}/reviews?limit=50`)).json()) as {
+        data: { comment: string | null }[];
+      };
+    expect((await publicReviews()).data.some((r) => r.comment === comment)).toBe(true);
+
+    await newOperator(page);
+    await page.getByRole('navigation', { name: 'Console' }).getByRole('link', { name: 'Reviews' }).click();
+    await expect(page.getByRole('heading', { name: 'Reviews', level: 1 })).toBeVisible();
+    const item = page
+      .getByRole('list', { name: 'Reviews' })
+      .getByRole('listitem')
+      .filter({ hasText: comment });
+    await expect(item).toContainText('Fake review');
+    await expect(item).toContainText('“No booking at that time”');
+    await expect(item).toContainText('1 of 5');
+    await expectAccessible(page);
+
+    await item.getByRole('button', { name: /^Hide \(/ }).click();
+    await item.getByLabel(/Why hide it\?/).fill('e2e: not a real visit');
+    await item.getByRole('button', { name: 'Hide', exact: true }).click();
+    await expect(item).toHaveCount(0);
+    expect((await publicReviews()).data.some((r) => r.comment === comment)).toBe(false);
+
+    await page
+      .getByRole('navigation', { name: 'Which reviews' })
+      .getByRole('link', { name: 'Hidden' })
+      .click();
+    const hidden = page
+      .getByRole('list', { name: 'Reviews' })
+      .getByRole('listitem')
+      .filter({ hasText: comment });
+    await expect(hidden).toContainText('“e2e: not a real visit”');
+    await hidden.getByRole('button', { name: /^Put it back \(/ }).click();
+    await expect(hidden).toHaveCount(0);
+    expect((await publicReviews()).data.some((r) => r.comment === comment)).toBe(true);
+
+    // Both steps are in the audit log, as this admin's.
+    await page.goto('/security/audit?area=reviews&days=1');
+    const steps = page.getByRole('region', { name: 'Steps' });
+    await expect(steps.getByRole('listitem').filter({ hasText: 'You hid a review' }).first()).toContainText(
+      '“e2e: not a real visit”',
+    );
+    await expect(
+      steps.getByRole('listitem').filter({ hasText: 'You put a hidden review back' }).first(),
+    ).toBeVisible();
   });
 });
 

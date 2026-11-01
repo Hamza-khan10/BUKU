@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Flag,
   LayoutDashboard,
+  MessageSquareWarning,
   Network,
   ShieldAlert,
   ServerCrash,
@@ -58,11 +59,12 @@ export default async function OverviewPage() {
   }
   const call = <T,>(path: string) =>
     callApi<T>({ path, accessToken: gate.accessToken, incoming: gate.incoming, requestId: gate.requestId });
-  const [status, trends, pending, reports, access, switches] = await Promise.all([
+  const [status, trends, pending, reports, reviews, access, switches] = await Promise.all([
     systemStatus(),
     systemTrends(),
     call<unknown[]>('/v1/admin/businesses?status=pending&limit=1'),
     call<unknown[]>('/v1/admin/business-reports?status=open&limit=1'),
+    call<unknown[]>('/v1/admin/reviews?status=reported&limit=1'),
     call<AccessReport>('/v1/admin/access-review'),
     call<SwitchView[]>('/v1/admin/switches'),
   ]);
@@ -133,7 +135,7 @@ export default async function OverviewPage() {
                 status.alerts.length === 0 ? 'no alerts firing' : `${status.alerts.length} alerts firing`,
                 dbTrouble.length === 0
                   ? `${status.database.length} database checks OK`
-                  : `${dbTrouble.length} database checks not OK`,
+                  : `${dbTrouble.length} database ${dbTrouble.length === 1 ? 'check' : 'checks'} not OK`,
               ]
             : []
         }
@@ -250,7 +252,7 @@ export default async function OverviewPage() {
 
       <section aria-labelledby="waiting" className="mb-10 flex flex-col gap-4">
         <SectionTitle id="waiting" title="Waiting for a decision" />
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <Waiting
             i={8}
             href="/businesses"
@@ -267,6 +269,13 @@ export default async function OverviewPage() {
           />
           <Waiting
             i={10}
+            href="/reviews"
+            icon={MessageSquareWarning}
+            label="Reported reviews"
+            count={reviews.ok ? (reviews.meta?.total ?? null) : null}
+          />
+          <Waiting
+            i={11}
             href="/security/access"
             icon={UserRoundX}
             label="Admins without two-step sign-in"
@@ -283,7 +292,7 @@ export default async function OverviewPage() {
             {links.dashboards.map((d, i) => {
               const Icon = DASHBOARD_ICONS[d.title] ?? LayoutDashboard;
               return (
-                <li key={d.title} className="rise" style={beat(11 + i)}>
+                <li key={d.title} className="rise" style={beat(12 + i)}>
                   <a
                     href={d.href}
                     target="_blank"
@@ -431,19 +440,19 @@ function Waiting({
       >
         <Icon aria-hidden strokeWidth={1.8} className="size-5" />
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="text-sm text-ink-2">{label}</span>
-        <span className="text-2xl leading-none font-semibold tracking-[-0.02em] tabular-nums">
-          {count === null ? <Pill tone="danger">Couldn’t load</Pill> : count}
+      <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <span className="text-sm leading-snug text-ink-2">{label}</span>
+        <span className="flex flex-wrap items-center gap-2.5">
+          <span className="text-2xl leading-none font-semibold tracking-[-0.02em] tabular-nums">
+            {count === null ? <Pill tone="danger">Couldn’t load</Pill> : count}
+          </span>
+          {waiting && <Pill tone={bad ? 'danger' : 'wait'}>{bad ? 'Fix' : 'Waiting'}</Pill>}
         </span>
       </span>
-      <span className="flex items-center gap-2">
-        {waiting && <Pill tone={bad ? 'danger' : 'wait'}>{bad ? 'Fix' : 'Waiting'}</Pill>}
-        <ArrowRight
-          aria-hidden
-          className="size-4 text-ink-3 transition-transform group-hover:translate-x-0.5"
-        />
-      </span>
+      <ArrowRight
+        aria-hidden
+        className="size-4 shrink-0 text-ink-3 transition-transform group-hover:translate-x-0.5"
+      />
     </Link>
   );
 }
