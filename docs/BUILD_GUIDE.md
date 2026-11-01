@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–i done (2026-11-02)            |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6a–j done (2026-11-02)            |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -746,7 +746,14 @@ reported|hidden`; each decision is also on the admin's own record (`admin.review
     create a web price in Paddle, stop selling a price or the plan (asked first), sell it again.
   - Customer plans are listed as kept but unused (customers are free, D-101). Billing's "used as"
     notes read "businesses", not "businesss". Row actions gain a plain confirm step for steps the
-    API takes no reason for. The economics (costs, fees, profit, break-even) come next.
+    API takes no reason for.
+- **3.6j Economics — ✅ done.** Billing → Economics: a month of BUKU with today's subscribers or
+  any typed in ("what if 200 businesses were on Essential?") at a chosen tax rate: what customers
+  pay, what BUKU keeps after tax and the stores' fees, running costs, profit and margin; per price,
+  the breakdown per subscriber and how many subscribers alone would cover the running costs.
+  Running costs (add, remove after a confirm) and what each store keeps (Paddle, Apple, Google).
+  Customer plans are left out (customers are free). A calculation: nothing changes. Browser test:
+  a "what if" turns the month's loss into a profit; a cost is added and removed.
 - **3.5 additions (2026-10-13).** Registering a business can add a kind BUKU doesn't list
   ("Something else…", D-098): duplicates spotted as typed and refused by a unique key, a strict
   name rule shared with the API, pending review before it's in the public list. The for-business
