@@ -155,6 +155,8 @@ export const RescheduleBody = zBody({
 
 export const BusinessAppointmentsQuery = z.object({
   date: zDate.optional(),
+  /** How many days from `date` (a week view asks for 7). */
+  days: z.coerce.number().int().min(1).max(7).default(1),
   staffId: zId.optional(),
   status: z.enum(['pending', 'confirmed', 'cancelled', 'completed', 'no_show', 'rescheduled']).optional(),
   /** A booking code ("BK-7KQ2MX") or part of a customer's name. */
