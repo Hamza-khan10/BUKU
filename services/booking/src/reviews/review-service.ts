@@ -323,22 +323,27 @@ export class ReviewService {
 
   // ── Platform admins ───────────────────────────────────────────────────────
 
-  /** Reported reviews from every business shard, oldest report first (an admin tool). */
-  async reported(page: number, limit: number) {
+  /**
+   * For platform admins, from every business shard: reported reviews, oldest report first; or
+   * hidden ones, most recently hidden first (so one hidden by mistake can be found and put back).
+   */
+  async reported(page: number, limit: number, status: 'reported' | 'hidden' = 'reported') {
     const take = page * limit;
+    const hidden = status === 'hidden';
     const found = await this.plane.acrossBusinesses(async (tx) => {
-      const where = { isFlagged: true };
+      const where = hidden ? { isVisible: false } : { isFlagged: true };
       const rows = await tx.review.findMany({
         where,
         include: { business: { select: { publicId: true, slug: true, name: true } } },
-        orderBy: [{ flaggedAt: 'asc' }, { id: 'asc' }],
+        orderBy: hidden ? [{ hiddenAt: 'desc' }, { id: 'desc' }] : [{ flaggedAt: 'asc' }, { id: 'asc' }],
         take,
       });
       return { rows, total: await tx.review.count({ where }), visits: await visitsOf(tx, rows) };
     });
+    const at = (r: Review) => +((hidden ? r.hiddenAt : r.flaggedAt) ?? 0);
     const rows = found
       .flatMap((f) => f.rows)
-      .sort((a, b) => +(a.flaggedAt ?? 0) - +(b.flaggedAt ?? 0) || (a.id < b.id ? -1 : 1))
+      .sort((a, b) => (hidden ? at(b) - at(a) : at(a) - at(b)) || (a.id < b.id ? -1 : 1))
       .slice((page - 1) * limit, take);
     const context: Context = {
       visits: new Map(found.flatMap((f) => [...f.visits])),
@@ -406,6 +411,18 @@ export class ReviewService {
         },
       );
       if (decision.action !== 'keep') await announceListing(tx, this.plane, review.businessId, 'rating');
+    });
+    // The same step on the admin's own record, for the console's audit log (D-132).
+    await recordShardAudit(await this.plane.user(adminId), this.plane.id(), {
+      userId: adminId,
+      action: `admin.review_${decision.action === 'keep' ? 'kept' : decision.action === 'hide' ? 'hidden' : 'restored'}`,
+      resourceType: 'review',
+      resourceId: reviewId,
+      newValues: {
+        businessId: found.businessId.toString(),
+        ...(decision.action === 'hide' && { reason: decision.reason }),
+      },
+      ...auditCtx(ctx),
     });
   }
 

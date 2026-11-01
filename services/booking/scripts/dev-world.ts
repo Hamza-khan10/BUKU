@@ -122,6 +122,22 @@ export class DevWorld {
     return false;
   }
 
+  /**
+   * The business reported a review (what its owner does from the review's page), for tests of the
+   * admin's moderation: same fields as a real report, no notification.
+   */
+  async reviewReported(businessPublicId: string, reviewId: string, reason: string): Promise<boolean> {
+    const businessId = await this.plane.idOfPublic('business', businessPublicId);
+    if (!businessId || !/^[1-9][0-9]{0,18}$/.test(reviewId)) return false;
+    return this.plane.inBusiness(businessId, async (tx) => {
+      const { count } = await tx.review.updateMany({
+        where: { id: BigInt(reviewId), businessId, isFlagged: false },
+        data: { isFlagged: true, flagReason: reason.slice(0, 200), flaggedAt: new Date() },
+      });
+      return count === 1;
+    });
+  }
+
   /** A visit as the business's shard has it, or null. */
   async visit(businessPublicId: string, appointmentPublicId: string) {
     const businessId = await this.plane.idOfPublic('business', businessPublicId);
@@ -227,6 +243,7 @@ const COMMANDS: Record<string, (dev: DevWorld, args: string[]) => Promise<unknow
       ...(endsIn !== undefined && { endAt: new Date(Date.now() + Number(endsIn) * 60_000) }),
     }),
   'visit-status': async (dev, [b, a]) => (await dev.visit(b!, a!))?.status ?? null,
+  'review-reported': (dev, [b, r, reason]) => dev.reviewReported(b!, r!, reason ?? 'fake'),
   'close-business': (dev, [b]) => dev.closeBusiness(b!),
   'provider-picture': (dev, [u, url]) => dev.providerPicture(u!, url!),
   'signed-in-ago': (dev, [u, minutes]) => dev.signedInAgo(u!, Number(minutes)),

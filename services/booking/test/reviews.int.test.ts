@@ -261,6 +261,22 @@ describe('The business: reply and report', () => {
       ),
     ).toBe(2);
 
+    // Hidden: no longer reported, but listed under hidden (to be found and put back), and the step
+    // is on the admin's own record too, for the console's audit log (D-132).
+    const reported = await request(h.app).get('/v1/admin/reviews').set(admin.auth).expect(200);
+    expect(reported.body.data.map((r: { id: string }) => r.id)).not.toContain(fake);
+    const hidden = await request(h.app).get('/v1/admin/reviews?status=hidden').set(admin.auth).expect(200);
+    expect(hidden.body.data.find((r: { id: string }) => r.id === fake)).toMatchObject({
+      visible: false,
+      hidden: { reason: 'Not a real visit' },
+    });
+    await request(h.app).get('/v1/admin/reviews?status=everything').set(admin.auth).expect(400);
+    const trail = await (
+      await h.world.user(admin.id)
+    ).auditLog.findMany({ where: { userId: admin.id, resourceId: BigInt(fake) } });
+    expect(trail.map((e) => e.action)).toEqual(['admin.review_hidden']);
+    expect(trail[0]!.newValues).toMatchObject({ reason: 'Not a real visit' });
+
     await request(h.app)
       .post(`/v1/admin/reviews/${fake}/decision`)
       .set(admin.auth)
