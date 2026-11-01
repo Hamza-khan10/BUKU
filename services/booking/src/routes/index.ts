@@ -98,6 +98,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     durationSeconds: 60,
     redis: deps.redis,
   });
+  /** The team's own lists (reviews): roomy for paging and filters, still bounded. */
+  const teamReadLimit = rateLimit({
+    keyPrefix: 'rl:booking:team-read',
+    points: 120,
+    durationSeconds: 60,
+    redis: deps.redis,
+  });
   const r = Router();
   /** The business in the URL, by its public ID (DB-042): unknown is "not found". */
   const businessOf = async (publicId: string) => {
@@ -137,6 +144,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   r.get(
     '/:id/reviews/manage',
     auth,
+    teamReadLimit,
     validated({ params: IdParams, query: TeamReviewsQuery }, async ({ params, query }, req, res) => {
       const { items, meta } = await deps.reviews.teamList(
         await businessOf(params.id),
