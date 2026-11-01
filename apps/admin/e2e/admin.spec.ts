@@ -409,6 +409,38 @@ test.describe('Admin app', () => {
       steps.getByRole('listitem').filter({ hasText: 'You ended a subscription' }).first(),
     ).toContainText('“e2e: pilot over”');
   });
+
+  test('plans and prices: what each plan includes and costs; a settings change saved and put back', async ({
+    page,
+  }) => {
+    await newOperator(page);
+    await page.goto('/billing?view=plans');
+    const plans = page.getByRole('list', { name: 'Business plans' });
+    const essential = plans.getByRole('listitem').filter({ hasText: 'business_essential' });
+    await expect(essential).toContainText('Team logins');
+    await expect(essential).toContainText('Website (Paddle)');
+    await expect(essential.getByRole('button', { name: 'New price… (Essential)' })).toBeVisible();
+    await expectAccessible(page);
+
+    // Stopping a sale asks first, and can be called off.
+    await essential.getByRole('button', { name: /^Stop selling the plan \(/ }).click();
+    await expect(essential).toContainText('New businesses can’t choose it');
+    await essential.getByRole('button', { name: 'Keep it' }).click();
+    await expect(essential).not.toContainText('New businesses can’t choose it');
+
+    // The trial's length: changed, saved, still there after a reload, then put back.
+    const days = page.getByLabel('Trial length (days)');
+    const before = await days.inputValue();
+    const changed = String(Number(before) === 365 ? 364 : Number(before) + 1);
+    await days.fill(changed);
+    await page.getByRole('button', { name: 'Save settings' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel('Trial length (days)')).toHaveValue(changed);
+    await page.getByLabel('Trial length (days)').fill(before);
+    await page.getByRole('button', { name: 'Save settings' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeVisible();
+  });
 });
 
 /** A new platform admin with two-step sign-in set up, on the overview. */
