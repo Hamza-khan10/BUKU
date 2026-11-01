@@ -61,7 +61,7 @@ export function Appointments({ id, query }: { id: string; query: VisitQuery }) {
   const go = (change: Partial<VisitQuery>) => {
     const next = { ...query, ...change };
     const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(next)) if (v) params.set(k, v);
+    for (const [k, v] of Object.entries(next)) if (v) params.set(k, String(v));
     const qs = params.toString();
     router.replace(`/business/${id}/appointments${qs ? `?${qs}` : ''}` as Route, { scroll: false });
   };

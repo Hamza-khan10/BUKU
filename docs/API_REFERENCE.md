@@ -525,7 +525,7 @@ Dates are in the business's timezone, never in the past, up to 62 days at once.
 | `GET /v1/appointments/:id`                                                  | ✔    | the customer               | One receipt (`404` for anyone else)                         |
 | `POST /v1/appointments/:id/cancel`                                          | ✔    | the customer               | `{ "reasonCode", "note"?, "bookLater"? }`                   |
 | `POST /v1/appointments/:id/reschedule`                                      | ✔    | the customer               | `{ "startAt", "staffId"? }`, before the cancellation window |
-| `GET /v1/businesses/:id/appointments?date=&staffId=&status=&q=`             | ✔    | team (staff: own only)     | The day's list, or search by code / customer name           |
+| `GET /v1/businesses/:id/appointments?date=&days=&staffId=&status=&q=`       | ✔    | team (staff: own only)     | A day's list (`days` 1–7: a week), or search by code / name |
 | `GET /v1/businesses/:id/appointments/:appointmentId`                        | ✔    | team (staff: own only)     | One appointment                                             |
 | `POST …/appointments/:appointmentId/confirm` · `/decline`                   | ✔    | owner, manager, front desk | Manual approval                                             |
 | `POST …/appointments/:appointmentId/cancel`                                 | ✔    | owner, manager, front desk | `{ "reason" }` (counts against the business)                |

@@ -471,6 +471,23 @@ describe('The business’s list (serve customers with or without a phone)', () =
     });
     expect(JSON.stringify(item)).not.toMatch(/email|phone|avatar/i);
 
+    // A week (the calendar): the day before shows nothing, a week from it includes this one.
+    const before = addDays(DAY(), -1);
+    expect(
+      (await request(h.app).get(`${s.base}/appointments`).query({ date: before }).set(s.owner.auth)).body.data
+        .items,
+    ).toEqual([]);
+    const week = await request(h.app)
+      .get(`${s.base}/appointments`)
+      .query({ date: before, days: 7 })
+      .set(s.owner.auth);
+    expect(week.body.data.items.map((a: { code: string }) => a.code)).toEqual([code]);
+    await request(h.app)
+      .get(`${s.base}/appointments`)
+      .query({ date: before, days: 8 })
+      .set(s.owner.auth)
+      .expect(400);
+
     const byCode = await request(h.app)
       .get(`${s.base}/appointments`)
       .query({ q: code.toLowerCase() })

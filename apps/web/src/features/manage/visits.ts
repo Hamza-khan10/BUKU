@@ -43,6 +43,8 @@ export interface VisitList {
 
 export interface VisitQuery {
   date?: string | undefined;
+  /** Days from `date` (the calendar asks for a week: 7). */
+  days?: number | undefined;
   staffId?: string | undefined;
   status?: VisitStatus | undefined;
   q?: string | undefined;

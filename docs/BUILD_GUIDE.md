@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–g and 3.6 done (2026-11-02)               |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–h and 3.6 done (2026-11-02)               |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -650,6 +650,16 @@ The detailed plan — every page, its data and edge cases, the design system and
     time zone (summer-time changes included); the API keeps the old and new times in the audit
     log. A clock-out before its clock-in, a time in the future and a shift over 24 hours are
     said on the field before anything is sent.
+- **3.5h Calendar — ✅ done.** `/business/[id]/calendar`, a "Calendar" tab: a week of
+  appointments by the business's own clock, everyone's or one person's (staff see their own).
+  Each visit is as tall as it lasts, in its stage's colour (to confirm, booked, here, done,
+  didn't come), overlapping ones side by side; 08:00–20:00, widened to whole hours around an
+  early or late visit; a line at now, today marked. Each visit opens on the appointments page
+  (found by its code), where the desk acts on it. Phones get the week as a list, day by day.
+  The week and the person are in the address. Cancelled and moved visits stay on the
+  appointments page. Booking: the business list takes `days` (1–7), so a week is one request.
+  Tests: the week arithmetic and layout (unit), `days` (integration), and a browser test on
+  desktop and phone.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

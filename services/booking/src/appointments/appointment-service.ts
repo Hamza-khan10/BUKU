@@ -90,6 +90,8 @@ export interface BookInput {
 
 export interface BusinessListQuery {
   date?: string | undefined;
+  /** Days from `date`, 1 (the default) to 7. */
+  days?: number | undefined;
   staffId?: bigint | undefined;
   status?: (typeof LIVE)[number] | 'cancelled' | 'completed' | 'no_show' | 'rescheduled' | undefined;
   /** A booking code (any date) or part of the customer's name. */
@@ -434,7 +436,7 @@ export class AppointmentService {
         : {
             startAt: {
               gte: startOfDay(date, business.timezone),
-              lt: startOfDay(addDays(date, 1), business.timezone),
+              lt: startOfDay(addDays(date, Math.min(7, Math.max(1, query.days ?? 1))), business.timezone),
             },
           };
 
@@ -453,7 +455,8 @@ export class AppointmentService {
             },
             include: appointmentInclude,
             orderBy: { startAt: 'asc' },
-            take: 200,
+            // A week is up to seven days' worth.
+            take: (query.days ?? 1) > 1 ? 1000 : 200,
           });
       const visible = found.filter(
         (a) =>
