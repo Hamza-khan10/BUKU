@@ -1084,6 +1084,7 @@ GET /v1/businesses/autocomplete?q=hai
 | `GET /v1/appointments/reviews`                                    | ✔             | My reviews; each names its visit (`appointmentId`) by the visit's public ID   |
 | `PUT`/`DELETE /v1/businesses/:id/reviews/:reviewId/response`      | owner/manager | Reply (replaces an earlier reply) / remove the reply                          |
 | `POST /v1/businesses/:id/reviews/:reviewId/report`                | owner/manager | `{ reason: offensive·fake·not_a_customer·personal_info·other, note? }`        |
+| `GET /v1/businesses/:id/reviews/manage?filter=&rating=`           | owner/manager | Every review with the team's reply, report and BUKU's hiding; `meta.counts`   |
 | `GET /v1/admin/reviews?status=reported\|hidden`                   | admin         | Reported (oldest report first) or hidden (latest first) reviews               |
 | `POST /v1/admin/reviews/:reviewId/decision`                       | admin         | `{ action: "hide", reason }` · `{ action: "keep" }` · `{ action: "restore" }` |
 
