@@ -24,6 +24,7 @@ export function BusinessNav({ id }: { id: string }) {
   const pages = [
     { href: `/business/${id}`, label: 'Today', show: true },
     { href: `/business/${id}/appointments`, label: 'Appointments', show: true },
+    { href: `/business/${id}/calendar`, label: 'Calendar', show: true },
     { href: `/business/${id}/check-in`, label: 'Check-in', show: true },
     { href: `/business/${id}/queue`, label: 'Queue', show: true },
     { href: `/business/${id}/hours`, label: 'Hours', show: true },

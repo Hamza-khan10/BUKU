@@ -9,6 +9,7 @@ export const visitsKey = (id: string, query: VisitQuery = {}) =>
     id,
     'visits',
     query.date ?? 'today',
+    query.days ?? 1,
     query.staffId ?? '',
     query.status ?? '',
     query.q ?? '',
@@ -21,6 +22,7 @@ export function fetchVisits(id: string, query: VisitQuery = {}) {
     const value = query[key];
     if (value) params.set(key, value);
   }
+  if (query.days && query.days > 1) params.set('days', String(query.days));
   const qs = params.toString();
   return api<VisitList>(`businesses/${id}/appointments${qs ? `?${qs}` : ''}`);
 }
