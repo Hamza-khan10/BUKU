@@ -207,6 +207,11 @@ export const BusinessReviewsQuery = zPagination.extend({
 });
 export const ReviewParams = z.object({ id: zPublicId, reviewId: zId });
 export const AdminReviewParams = z.object({ reviewId: zId });
+export const TeamReviewsQuery = zPagination.extend({
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  filter: z.enum(['all', 'unanswered', 'reported', 'hidden']).default('all'),
+  rating: z.coerce.number().int().min(1).max(5).optional(),
+});
 export const AdminReviewsQuery = zPagination.extend({
   status: z.enum(['reported', 'hidden']).default('reported'),
 });
