@@ -3,6 +3,7 @@ import Link from 'next/link';
 import {
   Activity,
   ArrowRight,
+  CreditCard,
   BellRing,
   Database,
   ExternalLink,
@@ -59,12 +60,13 @@ export default async function OverviewPage() {
   }
   const call = <T,>(path: string) =>
     callApi<T>({ path, accessToken: gate.accessToken, incoming: gate.incoming, requestId: gate.requestId });
-  const [status, trends, pending, reports, reviews, access, switches] = await Promise.all([
+  const [status, trends, pending, reports, reviews, planRequests, access, switches] = await Promise.all([
     systemStatus(),
     systemTrends(),
     call<unknown[]>('/v1/admin/businesses?status=pending&limit=1'),
     call<unknown[]>('/v1/admin/business-reports?status=open&limit=1'),
     call<unknown[]>('/v1/admin/reviews?status=reported&limit=1'),
+    call<unknown[]>('/v1/admin/billing/plan-requests?status=pending'),
     call<AccessReport>('/v1/admin/access-review'),
     call<SwitchView[]>('/v1/admin/switches'),
   ]);
@@ -252,7 +254,7 @@ export default async function OverviewPage() {
 
       <section aria-labelledby="waiting" className="mb-10 flex flex-col gap-4">
         <SectionTitle id="waiting" title="Waiting for a decision" />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <Waiting
             i={8}
             href="/businesses"
@@ -276,6 +278,13 @@ export default async function OverviewPage() {
           />
           <Waiting
             i={11}
+            href="/billing"
+            icon={CreditCard}
+            label="Plan requests"
+            count={planRequests.ok ? planRequests.data.length : null}
+          />
+          <Waiting
+            i={12}
             href="/security/access"
             icon={UserRoundX}
             label="Admins without two-step sign-in"
@@ -292,7 +301,7 @@ export default async function OverviewPage() {
             {links.dashboards.map((d, i) => {
               const Icon = DASHBOARD_ICONS[d.title] ?? LayoutDashboard;
               return (
-                <li key={d.title} className="rise" style={beat(12 + i)}>
+                <li key={d.title} className="rise" style={beat(13 + i)}>
                   <a
                     href={d.href}
                     target="_blank"

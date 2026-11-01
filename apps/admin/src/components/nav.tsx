@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  CreditCard,
   Flag,
   LayoutDashboard,
   MessageSquareWarning,
@@ -34,6 +35,7 @@ const SECTIONS: { title: string | null; items: Item[] }[] = [
       { href: '/reports', label: 'Reports', icon: Flag },
       { href: '/reviews', label: 'Reviews', icon: MessageSquareWarning },
       { href: '/accounts', label: 'Accounts', icon: UserSearch },
+      { href: '/billing', label: 'Billing', icon: CreditCard },
     ],
   },
   { title: 'Watch', items: [{ href: '/monitoring', label: 'Monitoring', icon: Activity }] },
