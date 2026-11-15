@@ -37,11 +37,14 @@ export default async function CheckoutPage({ searchParams }: PageProps<'/checkou
         ) : !transactionId ? (
           <>
             <p className="text-ink-2">
-              There’s nothing to pay on this page. To change your business’s plan, start from its plan page:
-              it brings you back here with the payment ready.
+              There’s nothing to pay on this page. To change your business’s plan, open the business and its
+              Plan tab: choosing a plan there brings you back here with the payment ready.
             </p>
-            <div>
+            <div className="flex flex-wrap gap-2">
               <Button asChild variant="primary">
+                <Link href="/business">Your businesses</Link>
+              </Button>
+              <Button asChild variant="secondary">
                 <Link href="/pricing">See the plans</Link>
               </Button>
             </div>
