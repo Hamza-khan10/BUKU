@@ -282,13 +282,13 @@ Once, in the Cloudflare dashboard and a terminal (`! pnpm --filter @buku/web exe
    `localhost` only on a separate test widget). Its **site key** is public, its **secret key** is
    not.
 3. **The Worker, built from GitHub:** Workers & Pages → Create → Import a repository → this one;
-   project name `buku-web`, root directory `apps/web`, build command
+   project name `buku`, root directory `apps/web`, build command
    `pnpm install --frozen-lockfile --filter @buku/web... && pnpm cf:build`, deploy command
    `pnpm exec opennextjs-cloudflare deploy`, production branch `main`; build variables
    `NODE_VERSION=24` and `PNPM_VERSION=12.8.1`. Builds for other branches: off for now (a
    preview would write to the live list). The first deploy creates the Worker; until step 4 its
    list says it opens soon.
-4. **The Worker's settings** (Workers & Pages → `buku-web` → Settings → Variables and Secrets;
+4. **The Worker's settings** (Workers & Pages → `buku` → Settings → Variables and Secrets;
    `keep_vars` in `wrangler.jsonc` keeps them across deploys): variables `APP_URL` (the site's
    https address), `TURNSTILE_SITE_KEY`, `GOOGLE_SITE_VERIFICATION` (Search Console's HTML tag
    value); secrets, typed into the terminal and never pasted anywhere else,
@@ -298,7 +298,7 @@ Once, in the Cloudflare dashboard and a terminal (`! pnpm --filter @buku/web exe
    `MEDIA_ORIGIN`, `STORAGE_ORIGIN` (its private bucket's CORS must allow `PUT` from the site's
    address, as `infrastructure/s3/init.sh` does in development), the `LEGAL_*` / `*_EMAIL` details, Google sign-in; and
    `PRELAUNCH` removed at launch. Then **Retry deployment** (or push to `main`).
-5. **The domain:** buy it in Cloudflare Registrar (at cost), then `buku-web` → Settings →
+5. **The domain:** buy it in Cloudflare Registrar (at cost), then `buku` → Settings →
    Domains & Routes → add it (and `www`); Cloudflare issues the certificate. Set `APP_URL` to it.
 6. **Google:** Search Console → add the domain (DNS record, added in Cloudflare in one click) or
    the URL prefix with the HTML tag (`GOOGLE_SITE_VERIFICATION`), then submit

@@ -4,13 +4,13 @@
  */
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "buku-web",
+  "name": "buku",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
   // OpenNext calls the site through itself for some routes; the name must match "name" above.
-  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "buku-web" }],
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "buku" }],
   // Request logs in the dashboard (no request bodies), for when something goes wrong.
   "observability": { "enabled": true },
   // Plain settings (never secrets). Ones set in the dashboard (like TURNSTILE_SITE_KEY) survive deploys.

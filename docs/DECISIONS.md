@@ -1339,7 +1339,7 @@ the free plan's 3 MiB limit, and the free plan's 10 ms of CPU per request is les
 server-rendered page can take; Paid allows 10 MiB and 30 s, with 10 million requests a month
 included. CI builds the Worker on every change and fails above 9 MiB. The website (Next.js) runs on a
 Worker through OpenNext (`@opennextjs/cloudflare`, a build-time tool only): `apps/web/wrangler.jsonc`
-names the Worker (`buku-web`), its settings (`BUKU_SITE_ENV=production`,
+names the Worker (`buku`), its settings (`BUKU_SITE_ENV=production`,
 `WEB_CLIENT_IP_HEADER=cf-connecting-ip`, `PRELAUNCH=true`, `ALLOW_INDEXING=true`) and its one
 database. The early-access list (D-134) is a D1 database (`buku-early-access`, SQLite): one STRICT
 table, `migrations/0001_waitlist.sql`, applied with `wrangler d1 migrations apply`. Only the
