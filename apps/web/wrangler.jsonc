@@ -24,12 +24,12 @@
     // No API on Cloudflare yet: the doors lead to the early-access list (D-134).
     "PRELAUNCH": "true",
   },
-  // The early-access list (D-134). The id is the database's, not a secret: `wrangler d1 create buku-early-access`.
+  // The early-access list (D-134). No id here on purpose: the first deploy creates the database by
+  // this name, and every later deploy finds it by name. `pnpm cf:release` then applies migrations/.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "buku-early-access",
-      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations",
     },
   ],

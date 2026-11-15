@@ -1342,7 +1342,8 @@ Worker through OpenNext (`@opennextjs/cloudflare`, a build-time tool only): `app
 names the Worker (`buku`), its settings (`BUKU_SITE_ENV=production`,
 `WEB_CLIENT_IP_HEADER=cf-connecting-ip`, `PRELAUNCH=true`, `ALLOW_INDEXING=true`) and its one
 database. The early-access list (D-134) is a D1 database (`buku-early-access`, SQLite): one STRICT
-table, `migrations/0001_waitlist.sql`, applied with `wrangler d1 migrations apply`. Only the
+table, `migrations/0001_waitlist.sql`, applied on every deploy (`cf:release`); the first deploy
+creates the database by name, so no id is kept anywhere. Only the
 Worker reaches it, through its binding: no connection string or key exists to leak. The secrets
 (Turnstile's, the address-hash key) are Worker secrets, never files in the build. Supabase was
 considered first and dropped: a second company holding the list, and a public key in the
