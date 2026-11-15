@@ -7,6 +7,7 @@ import { siteUrl } from '../src/lib/site-url';
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('Before launch (D-134)', () => {
@@ -29,6 +30,21 @@ describe('Before launch (D-134)', () => {
     expect(siteUrl()).toBe('https://buku-ruo5.vercel.app');
     vi.stubEnv('APP_URL', 'https://buku.pk/');
     expect(siteUrl()).toBe('https://buku.pk');
+  });
+
+  it('takes a bare host as https, and sets aside an address that isn’t one instead of failing every page', () => {
+    vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', '');
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // How the Cloudflare dashboard's field was first filled in (2026-11-16): every page answered 500.
+    vi.stubEnv('APP_URL', 'buku.example.workers.dev');
+    expect(siteUrl()).toBe('https://buku.example.workers.dev');
+    expect(() => new URL(siteUrl())).not.toThrow();
+    vi.stubEnv('APP_URL', ' https://buku.pk/some/path ');
+    expect(siteUrl()).toBe('https://buku.pk');
+    for (const wrong of ['javascript:alert(1)', 'ftp://buku.pk', 'https://', 'not a web address']) {
+      vi.stubEnv('APP_URL', wrong);
+      expect(siteUrl(), wrong).toBe('http://localhost:3000');
+    }
   });
 
   it('shows search engines nothing until indexing is allowed', () => {
