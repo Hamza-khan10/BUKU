@@ -13,7 +13,8 @@
     "cf:build": "opennextjs-cloudflare build && node scripts/cf-strip-env.ts",
     "cf:preview": "opennextjs-cloudflare build && node scripts/cf-strip-env.ts --preview && opennextjs-cloudflare preview",
     "cf:deploy": "pnpm cf:build && opennextjs-cloudflare deploy",
-    "cf:migrate": "wrangler d1 migrations apply DB"
+    "cf:release": "opennextjs-cloudflare deploy && wrangler d1 migrations apply buku-early-access --remote",
+    "cf:migrate": "wrangler d1 migrations apply buku-early-access"
   },
   "dependencies": {
     "@buku/validation": "workspace:*",

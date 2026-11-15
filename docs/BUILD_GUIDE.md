@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–b built (2026-11-15)    |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–b done (2026-11-16)     |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -744,7 +744,7 @@ The detailed plan — every page, its data and edge cases, the design system and
   the logo and photos moved to Settings. Every field's hint sits under its box. Tests: who sees
   which pages (unit); the business-area browser tests reach pages the way people do (`goToPage`,
   `expectOnPage`: the sidebar, or the tabs and More on a phone).
-- **3.7b Early access, and the website on Cloudflare — ✅ built (D-134, D-135).** `/early-access`
+- **3.7b Early access, and the website on Cloudflare — ✅ done (D-134, D-135, #205).** `/early-access`
   takes businesses (name, business, kind, branches, email, WhatsApp, city, country, the plan it
   would consider) and people who book (email, city), each field checked in the browser, on the
   server and by the table itself; where the visit came from is kept with it. Before launch the

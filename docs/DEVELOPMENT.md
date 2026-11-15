@@ -273,31 +273,31 @@ warns, and serves the Worker on http://localhost:8787 for a local try; it reads 
 an `EARLY_ACCESS_HASH_SECRET`), and `pnpm --filter @buku/web cf:migrate --local` creates the
 local list first.
 
-Once, in the Cloudflare dashboard and a terminal (`! pnpm --filter @buku/web exec wrangler login`):
+Once, in the Cloudflare dashboard:
 
-1. **The database:** `pnpm --filter @buku/web exec wrangler d1 create buku-early-access`, then put
-   the `database_id` it prints into `wrangler.jsonc` (an id, not a secret) and commit it. Create
-   the table: `pnpm --filter @buku/web cf:migrate --remote`.
+1. **The Worker, built from GitHub** (Workers & Pages → `buku` → Settings → Build; to start one:
+   Create → Import a repository): root directory `apps/web`; build command `pnpm cf:build`
+   (Cloudflare installs the dependencies itself, with the Node and pnpm versions this repository
+   names); deploy command `pnpm cf:release`; production branch `main`; builds for other
+   branches off for now (a preview would write to the live list). `cf:release` deploys the
+   Worker, creates the D1 database `buku-early-access` the first time (and finds it by name
+   after that), then applies `migrations/`. No database id is written anywhere. If the build log
+   says it may not create or change D1: Manage account → Account API tokens → the Workers Builds
+   token → add **D1: Edit**, and retry.
 2. **The bot check:** Turnstile → Add widget (mode Managed, the site's hostnames, and
    `localhost` only on a separate test widget). Its **site key** is public, its **secret key** is
    not.
-3. **The Worker, built from GitHub:** Workers & Pages → Create → Import a repository → this one;
-   project name `buku`, root directory `apps/web`, build command
-   `pnpm install --frozen-lockfile --filter @buku/web... && pnpm cf:build`, deploy command
-   `pnpm exec opennextjs-cloudflare deploy`, production branch `main`; build variables
-   `NODE_VERSION=24` and `PNPM_VERSION=12.8.1`. Builds for other branches: off for now (a
-   preview would write to the live list). The first deploy creates the Worker; until step 4 its
-   list says it opens soon.
-4. **The Worker's settings** (Workers & Pages → `buku` → Settings → Variables and Secrets;
-   `keep_vars` in `wrangler.jsonc` keeps them across deploys): variables `APP_URL` (the site's
-   https address), `TURNSTILE_SITE_KEY`, `GOOGLE_SITE_VERIFICATION` (Search Console's HTML tag
-   value); secrets, typed into the terminal and never pasted anywhere else,
-   `pnpm --filter @buku/web exec wrangler secret put TURNSTILE_SECRET_KEY` and
-   `… wrangler secret put EARLY_ACCESS_HASH_SECRET` (32+ random characters:
-   `openssl rand -hex 32`). Later, with the API: `API_URL`, `WEB_GATEWAY_KEY` (secret),
-   `MEDIA_ORIGIN`, `STORAGE_ORIGIN` (its private bucket's CORS must allow `PUT` from the site's
-   address, as `infrastructure/s3/init.sh` does in development), the `LEGAL_*` / `*_EMAIL` details, Google sign-in; and
-   `PRELAUNCH` removed at launch. Then **Retry deployment** (or push to `main`).
+3. **The Worker's settings** (Workers & Pages → `buku` → Settings → Variables and Secrets;
+   `keep_vars` in `wrangler.jsonc` keeps them across deploys): **text** `APP_URL` (the site's
+   https address: the `workers.dev` one until there's a domain), `TURNSTILE_SITE_KEY`,
+   `GOOGLE_SITE_VERIFICATION` (Search Console's HTML tag value); **secrets** (type Secret,
+   entered there and nowhere else) `TURNSTILE_SECRET_KEY` and `EARLY_ACCESS_HASH_SECRET` (32+
+   random characters: `openssl rand -hex 32`). Later, with the API: `API_URL`, `WEB_GATEWAY_KEY`
+   (secret), `MEDIA_ORIGIN`, `STORAGE_ORIGIN` (its private bucket's CORS must allow `PUT` from the
+   site's address, as `infrastructure/s3/init.sh` does in development), the `LEGAL_*` /
+   `*_EMAIL` details, Google sign-in; and `PRELAUNCH` removed at launch. Then **Retry
+   deployment** (or push to `main`): until these are set, the list says it opens soon.
+4. **The plan:** Workers Paid (Workers & Pages → Plans), before the site gets visitors.
 5. **The domain:** buy it in Cloudflare Registrar (at cost), then `buku` → Settings →
    Domains & Routes → add it (and `www`); Cloudflare issues the certificate. Set `APP_URL` to it.
 6. **Google:** Search Console → add the domain (DNS record, added in Cloudflare in one click) or

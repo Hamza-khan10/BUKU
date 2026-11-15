@@ -1,5 +1,5 @@
 -- Early access (D-134): people and businesses who want BUKU when it opens, in Cloudflare D1 (D-135).
--- Applied with `pnpm --filter @buku/web cf:migrate --remote` (or `--local` for previews).
+-- Applied on every deploy (`pnpm cf:release`, Cloudflare's builds), or `pnpm --filter @buku/web cf:migrate --local`.
 -- Only the website's own Worker reaches it (the DB binding); nothing else can read or write it.
 -- The website checks every field first; these checks hold even if that ever slipped.
 
