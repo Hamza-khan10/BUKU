@@ -52,6 +52,11 @@
   --danger-soft: #ffe6e4;
   --shadow-color: 19 26 23; /* shadows tinted to the page, never black */
   --material: rgb(244 248 246 / 0.74); /* the header's glass */
+  /* Chart series (3.5j), checked for colour-blind separation and contrast (dataviz validator):
+     a visit kept, a no-show, a cancellation; stacked in that order. */
+  --series-kept: #0b7a52;
+  --series-missed: #6250d6;
+  --series-cancelled: #eb6834;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -81,6 +86,9 @@
     --danger-soft: #3a1614;
     --shadow-color: 0 0 0;
     --material: rgb(12 19 16 / 0.72);
+    --series-kept: #1fa67a;
+    --series-missed: #9085e9;
+    --series-cancelled: #d95926;
   }
 }
 
@@ -110,6 +118,9 @@
   --danger-soft: #3a1614;
   --shadow-color: 0 0 0;
   --material: rgb(12 19 16 / 0.72);
+  --series-kept: #1fa67a;
+  --series-missed: #9085e9;
+  --series-cancelled: #d95926;
 }
 
 @theme inline {

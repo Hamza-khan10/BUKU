@@ -203,6 +203,10 @@ describe('Cancellation report', () => {
     );
     expect(r.byWeekday).toHaveLength(7);
     expect(r.byWeekday.reduce((n: number, d: { noShows: number }) => n + d.noShows, 0)).toBe(1);
+    // Every week's rows add up to the totals, and say how many visits happened.
+    const weekly = r.weekly as Record<'booked' | 'completed' | 'cancellations' | 'noShows', number>[];
+    const sum = (k: keyof (typeof weekly)[number]) => weekly.reduce((n, w) => n + w[k], 0);
+    expect([sum('booked'), sum('completed'), sum('cancellations'), sum('noShows')]).toEqual([7, 2, 2, 1]);
     expect(r.byService[0]).toMatchObject({ name: 'Haircut', booked: 7, cancellations: 2, noShows: 1 });
     expect(r.rebookLater).toEqual({ asked: 1, bookedAgain: 1, rate: 100 });
   });
