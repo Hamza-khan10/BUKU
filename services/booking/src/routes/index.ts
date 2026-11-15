@@ -13,6 +13,7 @@ import {
   type RevocationStore,
 } from '@buku/common';
 import { Router, type Express, type Response } from 'express';
+import { rateLimit as expressRateLimit } from 'express-rate-limit';
 import type { DataPlane } from '@buku/database';
 import type { Redis } from 'ioredis';
 import type { AppointmentService } from '../appointments/appointment-service.js';
@@ -98,12 +99,16 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     durationSeconds: 60,
     redis: deps.redis,
   });
-  /** The team's own lists (reviews): roomy for paging and filters, still bounded. */
-  const teamReadLimit = rateLimit({
-    keyPrefix: 'rl:booking:team-read',
-    points: 120,
-    durationSeconds: 60,
-    redis: deps.redis,
+  /**
+   * The team's own lists (reviews): roomy for paging and filters, still bounded per address, on
+   * the route itself (express-rate-limit, which code scanning recognises; D-086's limits apply too).
+   */
+  const teamReadLimit = expressRateLimit({
+    windowMs: 60_000,
+    limit: 120,
+    standardHeaders: false,
+    legacyHeaders: false,
+    handler: (_req, _res, next) => next(AppError.rateLimited(60)),
   });
   const r = Router();
   /** The business in the URL, by its public ID (DB-042): unknown is "not found". */
