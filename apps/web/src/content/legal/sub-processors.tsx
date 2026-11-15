@@ -30,6 +30,18 @@ export function subProcessors(): LegalDocument {
                 'Region chosen at launch',
               ],
               ['Vercel', 'Hosting this website', 'Request details (IP address, browser)', 'Global'],
+              [
+                'Supabase',
+                'Keeping the early-access list',
+                'Email, name, city and country; for businesses their details and WhatsApp number',
+                'Region chosen when the project is created',
+              ],
+              [
+                'Cloudflare (Turnstile)',
+                'Checking a person, not a bot, fills in the early-access form',
+                'Request details (IP address, browser)',
+                'Global',
+              ],
               ['Google', 'Signing in with Google', 'Name, email, Google account ID', 'Global'],
               [
                 'Paddle',

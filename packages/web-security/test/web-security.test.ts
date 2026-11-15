@@ -114,4 +114,14 @@ describe('Content-Security-Policy', () => {
     expect(live).toContain('frame-src https://buy.paddle.com;');
     expect(live).not.toContain('sandbox');
   });
+  it('Cloudflare’s person check only on the early-access page, its script and its frame alone', () => {
+    expect(buildCsp({ nonce: 'n', dev: false })).not.toContain('challenges.cloudflare.com');
+    const check = buildCsp({ nonce: 'n', dev: false, turnstile: true });
+    expect(check).toContain(
+      "script-src 'self' 'nonce-n' 'strict-dynamic' https://challenges.cloudflare.com;",
+    );
+    expect(check).toContain('frame-src https://challenges.cloudflare.com;');
+    expect(check).toContain("connect-src 'self';");
+    expect(check).toContain("frame-ancestors 'none'");
+  });
 });

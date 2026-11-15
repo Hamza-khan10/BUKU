@@ -144,6 +144,8 @@ jobs:
       # A placeholder in a real token's shape, so /checkout is tested: the tests replace Paddle.js
       # with a stand-in, and this token opens nothing anywhere.
       PADDLE_CLIENT_TOKEN: test_ci00000000000000
+      # Early access (D-134): signups kept in memory for the browser tests (never on the live site).
+      EARLY_ACCESS_TEST_STORE: 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1

@@ -2,12 +2,17 @@ import Link from 'next/link';
 import { Logo } from '@/components/brand/logo';
 import { Container } from '@/components/ui/layout';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { Button } from '@/components/ui/button';
 import { AccountControl } from '@/features/auth/components/account-control';
+import { prelaunch } from '@/lib/flags';
 import type { Theme } from '@/lib/theme';
 import { HeaderShell } from './header-shell';
 import { DesktopNav, MobileNav } from './site-nav';
 
-/** The public site's header: logo, main links (a menu on phones), theme, and signing in or the account menu. */
+/**
+ * The public site's header: logo, main links (a menu on phones), theme, and signing in or the
+ * account menu; before launch, the way onto the early-access list instead (D-134).
+ */
 export function SiteHeader({ theme, signedIn }: { theme: Theme; signedIn: boolean }) {
   return (
     <HeaderShell className="material-bar sticky top-0 z-30 border-b border-line/60">
@@ -20,7 +25,13 @@ export function SiteHeader({ theme, signedIn }: { theme: Theme; signedIn: boolea
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle initial={theme} className="hidden lg:inline-flex" />
-          <AccountControl signedIn={signedIn} />
+          {prelaunch() ? (
+            <Button asChild variant="primary" size="sm">
+              <Link href="/early-access?source=header">Get early access</Link>
+            </Button>
+          ) : (
+            <AccountControl signedIn={signedIn} />
+          )}
           <MobileNav theme={theme} />
         </div>
       </Container>

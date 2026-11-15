@@ -10,6 +10,7 @@ import { StackedCards } from '@/components/motion/stacked-cards';
 import { Container, Eyebrow, SectionHeading } from '@/components/ui/layout';
 import { FrontDeskBoard } from '@/features/home/components/front-desk-board';
 import { pricing } from '@/features/pricing/api';
+import { prelaunch } from '@/lib/flags';
 
 export const metadata = {
   title: 'For businesses',
@@ -103,7 +104,11 @@ export default async function ForBusinessPage() {
           <div className="rise-in flex flex-wrap gap-3 pt-1 [--i:2]">
             <Magnetic>
               <Button asChild variant="primary" size="lg">
-                <Link href="/business/new">Add your business</Link>
+                {prelaunch() ? (
+                  <Link href="/early-access?as=business&source=for-business">Join early as a business</Link>
+                ) : (
+                  <Link href="/business/new">Add your business</Link>
+                )}
               </Button>
             </Magnetic>
             <Button asChild size="lg">
