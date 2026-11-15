@@ -17,6 +17,14 @@ export default defineConfig({
             { find: /^@\//, replacement: fileURLToPath(new URL('./apps/web/src/', import.meta.url)) },
             // The admin app imports its own source as "@admin/…" (apps/admin/tsconfig.json).
             { find: /^@admin\//, replacement: fileURLToPath(new URL('./apps/admin/src/', import.meta.url)) },
+            // "server-only" refuses to load outside React's server build; unit tests run server code
+            // directly, so they get the package's own no-op.
+            {
+              find: /^server-only$/,
+              replacement: fileURLToPath(
+                new URL('./apps/web/node_modules/server-only/empty.js', import.meta.url),
+              ),
+            },
           ],
         },
         test: {

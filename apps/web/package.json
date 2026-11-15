@@ -9,7 +9,11 @@
     "build": "next build",
     "start": "next start --port 3000",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "cf:build": "opennextjs-cloudflare build && node scripts/cf-strip-env.ts",
+    "cf:preview": "opennextjs-cloudflare build && node scripts/cf-strip-env.ts --preview && opennextjs-cloudflare preview",
+    "cf:deploy": "pnpm cf:build && opennextjs-cloudflare deploy",
+    "cf:migrate": "wrangler d1 migrations apply DB"
   },
   "dependencies": {
     "@buku/validation": "workspace:*",
@@ -23,7 +27,7 @@
     "lenis": "1.3.27",
     "lucide-react": "1.63.0",
     "motion": "14.9.0",
-    "next": "16.4.2",
+    "next": "16.4.6",
     "qrcode.react": "4.2.0",
     "radix-ui": "1.7.0",
     "react": "19.3.1",
@@ -36,10 +40,12 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
+    "@opennextjs/cloudflare": "1.20.17",
     "@playwright/test": "1.64.1",
     "@tailwindcss/postcss": "4.3.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "tailwindcss": "4.3.3"
+    "tailwindcss": "4.3.3",
+    "wrangler": "4.162.0"
   }
 }

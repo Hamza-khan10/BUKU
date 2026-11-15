@@ -1,0 +1,36 @@
+/**
+ * The website on Cloudflare Workers (D-135), built by OpenNext (`pnpm cf:build`).
+ * Secrets are never here: `wrangler secret put` (or the dashboard) holds them.
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "buku",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  // OpenNext calls the site through itself for some routes; the name must match "name" above.
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "buku" }],
+  // Request logs in the dashboard (no request bodies), for when something goes wrong.
+  "observability": { "enabled": true },
+  // Plain settings (never secrets). Ones set in the dashboard (like TURNSTILE_SITE_KEY) survive deploys.
+  "keep_vars": true,
+  "vars": {
+    "BUKU_SITE_ENV": "production",
+    // Cloudflare sets this to the visitor's address itself; a visitor can't forge it.
+    "WEB_CLIENT_IP_HEADER": "cf-connecting-ip",
+    // The marketing pages may be found on Google; personal pages never are (robots.ts).
+    "ALLOW_INDEXING": "true",
+    // No API on Cloudflare yet: the doors lead to the early-access list (D-134).
+    "PRELAUNCH": "true",
+  },
+  // The early-access list (D-134). The id is the database's, not a secret: `wrangler d1 create buku-early-access`.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "buku-early-access",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+}

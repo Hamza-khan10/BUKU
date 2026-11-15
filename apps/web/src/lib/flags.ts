@@ -39,3 +39,12 @@ export function googleSignInEnabled(): boolean {
 export function paymentsConfigured(): boolean {
   return Boolean(apiConfigured() && process.env.PADDLE_CLIENT_TOKEN?.trim());
 }
+
+/**
+ * Before launch (D-134): the site runs without the API (as on Vercel today), or PRELAUNCH is set.
+ * Its doors lead to the early-access list instead of signing in, and search engines are shown only
+ * the pages that stand on their own.
+ */
+export function prelaunch(): boolean {
+  return process.env.PRELAUNCH === 'true' || !apiConfigured();
+}

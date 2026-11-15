@@ -25,7 +25,14 @@ export interface CspOptions {
    * itself, talk to Paddle and show its payment frame — the sandbox's or the live one, never both.
    */
   payments?: 'sandbox' | 'production' | undefined;
+  /**
+   * The early-access page only (D-134): Cloudflare Turnstile, the check that a person is filling in
+   * the form, may load (with this response's nonce) and show its small frame.
+   */
+  turnstile?: boolean | undefined;
 }
+
+const TURNSTILE = 'https://challenges.cloudflare.com';
 
 /** Paddle.js itself, then the sandbox's own assets (its styles come from there); the payment frame. */
 const PADDLE_CDN = {
@@ -41,6 +48,7 @@ export function buildCsp({
   storageOrigin,
   imageOrigins = [],
   payments,
+  turnstile = false,
 }: CspOptions): string {
   const media = mediaOrigin ? ` ${mediaOrigin}` : '';
   const storage = storageOrigin ? ` ${storageOrigin}` : '';
@@ -48,9 +56,10 @@ export function buildCsp({
   const extra = imageOrigins.map((o) => ` ${o}`).join('');
   // Paddle's script still needs this response's nonce: with 'strict-dynamic' a host alone admits nothing.
   const paddle = payments ? ` ${PADDLE_CDN[payments]}` : '';
+  const human = turnstile ? ` ${TURNSTILE}` : '';
   const directives: Record<string, string> = {
     'default-src': "'self'",
-    'script-src': `'self' 'nonce-${nonce}' 'strict-dynamic'${paddle}${dev ? " 'unsafe-eval'" : ''}`,
+    'script-src': `'self' 'nonce-${nonce}' 'strict-dynamic'${paddle}${human}${dev ? " 'unsafe-eval'" : ''}`,
     'style-src': `'self' 'unsafe-inline'${paddle}`,
     'img-src': `'self' data: blob:${pictures}${extra}${paddle}`,
     'media-src': `'self'${media}`,
@@ -58,7 +67,7 @@ export function buildCsp({
     'connect-src': `'self'${storage}${payments ? ' https://*.paddle.com' : ''}${dev ? ' ws: wss:' : ''}`,
     'worker-src': "'self' blob:",
     'manifest-src': "'self'",
-    'frame-src': payments ? PADDLE_CHECKOUT[payments] : "'none'",
+    'frame-src': payments ? PADDLE_CHECKOUT[payments] : turnstile ? TURNSTILE : "'none'",
     'object-src': "'none'",
     'base-uri': "'none'",
     'form-action': "'self'",

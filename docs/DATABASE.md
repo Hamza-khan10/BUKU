@@ -16,6 +16,13 @@ every connection (D4b), break-glass access for people and health checks with ale
 Database v2 is on `main` (2026-10-31); website work resumes (DB-000), and D5 proves it at scale.
 The directory also holds the emergency switches (`ops.switches`, D-129, 2026-11-01).
 
+Outside this design (2026-11-15): the website's **early-access list** (D-134) is kept apart from
+the platform, in a Cloudflare D1 database bound to the website's Worker (D-135; "D1" there is
+Cloudflare's SQLite product, not step D1 here). One STRICT table, `waitlist`
+(`apps/web/migrations/0001_waitlist.sql`): one row per email and kind, every field checked by
+the table as well as the website, the visitor's address only as a keyed hash. When BUKU opens,
+it is exported and the people on it are invited; nothing in the platform reads it.
+
 ---
 
 ## 1. Why now (DB-000)

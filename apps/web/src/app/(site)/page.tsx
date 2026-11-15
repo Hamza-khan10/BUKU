@@ -17,6 +17,7 @@ import { categoryTree, cities, shelf } from '@/features/search/api';
 import { SearchBox } from '@/features/search/components/search-box';
 import type { CategoryNode, City } from '@/features/search/types';
 import { cn } from '@/lib/cn';
+import { prelaunch } from '@/lib/flags';
 
 export const metadata: Metadata = { alternates: { canonical: '/' } };
 
@@ -122,9 +123,21 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
             Appointments and walk-in queues at barbers, clinics, salons and offices near you, all from your
             phone.
           </p>
-          <div className="rise-in max-w-xl [--i:2] sm:pt-1">
-            <SearchBox city={city || undefined} />
-          </div>
+          {prelaunch() ? (
+            // Before launch (D-134) there's nothing to search yet: the door is the early-access list.
+            <div className="rise-in flex flex-wrap gap-3 [--i:2] sm:pt-1">
+              <Button asChild variant="primary" size="lg">
+                <Link href="/early-access?as=customer&source=home">Get early access</Link>
+              </Button>
+              <Button asChild size="lg">
+                <Link href="/early-access?as=business&source=home">I run a business</Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="rise-in max-w-xl [--i:2] sm:pt-1">
+              <SearchBox city={city || undefined} />
+            </div>
+          )}
         </div>
         <BoardGlow>
           <QueueBoard className="w-full" />

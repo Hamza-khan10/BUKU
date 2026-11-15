@@ -85,6 +85,28 @@ export function privacy(facts: SiteFacts): LegalDocument {
         ),
       },
       {
+        id: 'early-access',
+        title: 'The early-access list',
+        body: (
+          <>
+            <p>
+              Before BUKU opens, you can join a list to hear when it does. We keep what you give us there:
+              your email, city and country, and your name if you add it; for a business also its name, kind,
+              how many branches it has, the plan it would consider and, if you give it, a WhatsApp number. We
+              also keep the link tags that brought you (like “instagram”) and a scrambled form of your
+              internet address, which can’t be turned back into the address and is only used to stop one place
+              flooding the list.
+            </p>
+            <p>
+              We use it to email you when BUKU opens near you and, for businesses, to get in touch to help set
+              up. Nothing else, and it isn’t shared or sold. It’s kept until BUKU opens and a year after, or
+              until you ask us to remove it: write to <Contact value={facts.email.privacy} kind="email" /> and
+              we’ll delete it.
+            </p>
+          </>
+        ),
+      },
+      {
         id: 'what-we-dont-do',
         title: 'What we don’t do',
         body: (

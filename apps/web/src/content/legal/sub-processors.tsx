@@ -29,7 +29,18 @@ export function subProcessors(): LegalDocument {
                 'All data BUKU holds',
                 'Region chosen at launch',
               ],
-              ['Vercel', 'Hosting this website', 'Request details (IP address, browser)', 'Global'],
+              [
+                'Cloudflare',
+                'Hosting this website, keeping the early-access list, and checking a person (not a bot) fills in its form',
+                'Request details (IP address, browser); the early-access list: email, name, city and country, and for businesses their details and WhatsApp number',
+                'Global (the list: one region Cloudflare chooses near us)',
+              ],
+              [
+                'Vercel',
+                'Hosting this website, until its move to Cloudflare is finished',
+                'Request details (IP address, browser)',
+                'Global',
+              ],
               ['Google', 'Signing in with Google', 'Name, email, Google account ID', 'Global'],
               [
                 'Paddle',

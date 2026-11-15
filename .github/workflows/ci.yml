@@ -144,6 +144,11 @@ jobs:
       # A placeholder in a real token's shape, so /checkout is tested: the tests replace Paddle.js
       # with a stand-in, and this token opens nothing anywhere.
       PADDLE_CLIENT_TOKEN: test_ci00000000000000
+      # Early access (D-134): signups kept in memory for the browser tests (never on the live site).
+      EARLY_ACCESS_TEST_STORE: 'true'
+      # Each browser test is its own visitor (e2e/fixtures.ts), as on the development server: here the
+      # local server takes the tests' address header (on the live site the host sets it, D-084).
+      WEB_CLIENT_IP_HEADER: x-real-ip
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -178,6 +183,35 @@ jobs:
             apps/web/playwright-report
             apps/admin/playwright-report
           retention-days: 14
+
+  web-cloudflare:
+    name: Website on Cloudflare · build · size
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The Worker the website is deployed as (D-135), built as Cloudflare builds it: with no .env
+      # anywhere. The build refuses to finish if a local secret ended up inside (cf-strip-env.ts).
+      - run: pnpm --filter @buku/web cf:build
+      # Its size as Cloudflare would take it (no account, nothing uploaded). Workers Paid allows
+      # 10 MiB compressed: this fails at 9, while there's still room to act.
+      - name: Worker size
+        working-directory: apps/web
+        run: |
+          set -o pipefail
+          pnpm exec wrangler deploy --dry-run --outdir "$RUNNER_TEMP/worker" 2>&1 | tee "$RUNNER_TEMP/dry-run.txt"
+          kib=$(grep -oE 'gzip: [0-9.]+ KiB' "$RUNNER_TEMP/dry-run.txt" | grep -oE '[0-9.]+')
+          test -n "$kib" || { echo "::error::wrangler didn't report the Worker's size"; exit 1; }
+          echo "Worker: ${kib} KiB compressed (limit 10240, budget 9216)" >> "$GITHUB_STEP_SUMMARY"
+          awk -v k="$kib" 'BEGIN { exit !(k <= 9216) }' || { echo "::error::Worker is ${kib} KiB compressed, over the 9 MiB budget"; exit 1; }
 
   images:
     name: Production image (${{ matrix.service }})

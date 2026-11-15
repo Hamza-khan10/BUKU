@@ -1,3 +1,4 @@
+import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
 import type { NextConfig } from 'next';
 
 /**
@@ -45,3 +46,7 @@ const config: NextConfig = {
 };
 
 export default config;
+
+// Cloudflare's bindings (the early-access list's D1) in `next dev` (D-135), when asked for: it starts
+// a local Workers runtime, which ordinary development and the browser tests don't need.
+if (process.env.CF_DEV_BINDINGS === 'true') void initOpenNextCloudflareForDev();

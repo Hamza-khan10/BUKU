@@ -9,7 +9,8 @@ import { buildCsp, newNonce, originOnly } from '@/lib/security/csp';
  *  • a request id that follows the request into the API's logs;
  *  • personal areas send signed-out visitors to sign in first, and back after.
  *    (A convenience only: the API refuses anyone without a valid session.)
- *  • the checkout page alone may load Paddle's checkout (D-119).
+ *  • the checkout page alone may load Paddle's checkout (D-119), and the early-access page
+ *    alone Cloudflare's check that a person is filling it in (D-134).
  */
 
 const PERSONAL = ['/account', '/appointments', '/queue', '/business', '/welcome'];
@@ -37,6 +38,7 @@ export function proxy(request: NextRequest) {
           ? 'production'
           : 'sandbox'
         : undefined,
+    turnstile: pathname === '/early-access',
   });
   const requestId = requestIdFrom(request.headers.get(REQUEST_ID_HEADER));
 

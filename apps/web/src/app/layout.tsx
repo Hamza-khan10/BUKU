@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Instrument_Sans, JetBrains_Mono } from 'next/font/google';
 import { cookies } from 'next/headers';
+import { siteUrl } from '@/lib/site-url';
 import { THEME_COOKIE, themeFrom } from '@/lib/theme';
 import { Providers } from './providers';
 import './globals.css';
@@ -17,7 +18,7 @@ const instrument = Instrument_Sans({
 const jetbrains = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains', display: 'swap' });
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.APP_URL || 'http://localhost:3000'),
+  metadataBase: new URL(siteUrl()),
   title: { default: 'BUKU: book appointments and join queues', template: '%s · BUKU' },
   description:
     'Book appointments and join queues at local businesses, get reminded, and see your place in line as it moves.',
@@ -25,6 +26,10 @@ export const metadata: Metadata = {
   // Not indexed until launch (ALLOW_INDEXING=true on the production domain).
   robots: process.env.ALLOW_INDEXING === 'true' ? undefined : { index: false, follow: false },
   formatDetection: { telephone: false, email: false, address: false },
+  // Google Search Console's ownership check (a public token), once the owner adds the site there.
+  ...(process.env.GOOGLE_SITE_VERIFICATION?.trim() && {
+    verification: { google: process.env.GOOGLE_SITE_VERIFICATION.trim() },
+  }),
 };
 
 export const viewport: Viewport = {
