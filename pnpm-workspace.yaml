@@ -58,3 +58,8 @@ overrides:
   # GHSA-mrhx-c7xc-m3w5 (high): memory exhaustion validating oversized collections. Only the React
   # hooks lint plugin still resolved an older zod; it accepts any zod 4, and gets the one BUKU uses.
   eslint-plugin-react-hooks>zod: 4.6.7
+  # GHSA-g3hv-75wg-m249 (moderate): denial of service through globparts amplification. ESLint 10.15
+  # itself requires minimatch 11; only @typescript-eslint/typescript-estree still asks for ^10, and
+  # it calls minimatch(path, pattern, { dot: true }) alone, unchanged in 11 (whose breaking changes
+  # remove makeRe, the AST class and internal methods). Development only (linting).
+  '@typescript-eslint/typescript-estree>minimatch': 11.0.8
