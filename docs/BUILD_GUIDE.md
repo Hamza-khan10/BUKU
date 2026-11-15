@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–h and 3.6 done (2026-11-02)               |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–i and 3.6 done (2026-11-02)               |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -660,6 +660,14 @@ The detailed plan — every page, its data and edge cases, the design system and
   appointments page. Booking: the business list takes `days` (1–7), so a week is one request.
   Tests: the week arithmetic and layout (unit), `days` (integration), and a browser test on
   desktop and phone.
+- **3.5i Reviews — ✅ done.** `/business/[id]/reviews`, a "Reviews" tab for the owner and
+  managers: the rating summary, then every review (all, not replied, reported, hidden by BUKU; by
+  stars) with what the team did. Reply (it shows under the review on the business's page; the
+  customer is told the first time), change or remove the reply (asked first), or report a review
+  for BUKU's moderators (why, and a note). A review BUKU hid says so, without BUKU's reason.
+  Booking: `GET /v1/businesses/:id/reviews/manage` (owners and managers; front desk 403; others 404) with the counts for the filters. Browser test (desktop and phone): a customer's visit,
+  their review, a reply changed, the reply on the public page, and a report. The business-area
+  browser tests share their setup in `e2e/business-world.ts`.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request
