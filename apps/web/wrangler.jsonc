@@ -6,6 +6,9 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "buku",
   "main": ".open-next/worker.js",
+  // The site's address until it has a domain (https://buku.<account>.workers.dev). With the domain,
+  // set this to false so the site has one address only.
+  "workers_dev": true,
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
