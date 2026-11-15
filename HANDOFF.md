@@ -1,7 +1,7 @@
 # BUKU — Handoff
 
 The state of the whole project in one place: what is built, how it is run and worked on, where
-things stand on GitHub, and what comes next. Last updated **2026-11-02**.
+things stand on GitHub, and what comes next. Last updated **2026-11-15**.
 
 Deeper detail lives in the docs this page points to — [BUILD_GUIDE](docs/BUILD_GUIDE.md) (the
 phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-132),
@@ -24,7 +24,7 @@ free** (D-101); businesses pay (Starter free, Essential, Professional, Enterpris
 | ------ | ------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                         |
 | 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred |
-| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 a–i and 3.6 done                          |
+| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 a–j and 3.6 done                          |
 | **3D** | **Database v2** — built for hundreds of millions of people                           | ✅ **D1–D4 built and on `main`**; D5 later      |
 | 4      | Mobile app (Expo)                                                                    | planned                                         |
 | 5      | Production: deployment, observability, backups, load and security testing            | planned                                         |
@@ -165,23 +165,24 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
   content; anything a user types is validated against breaking the system (duplicates, malicious
   input, characters that corrupt data).
 
-## 5. GitHub today (2026-11-02)
+## 5. GitHub today (2026-11-15)
 
 - `main`: database v2 (D1–D4, #160), the checkout page working without the API (#161),
   lucide-react 1.63.0 (#152), the queue board (3.5c, #162), services waiting for the database at
   start (#163), opening hours (3.5e, #164), time off (3.5f, #165), attendance (3.5g, #166) and
-  monitoring (3.6a, #167), the operator console (3.6b, #168), emergency switches (3.6c, #169), accounts (3.6d, #170), the console redrawn (3.6e, #171), the audit log (3.6f, #172), review moderation (3.6g, #173), billing (3.6h, #174), plans and prices (3.6i, #175), the economics (3.6j, #176) and notification settings (3.6k, #177): the operator console is complete; 0 Dependabot and 0 secret-scanning alerts; no open issues. The live
+  monitoring (3.6a, #167), the operator console (3.6b, #168), emergency switches (3.6c, #169), accounts (3.6d, #170), the console redrawn (3.6e, #171), the audit log (3.6f, #172), review moderation (3.6g, #173), billing (3.6h, #174), plans and prices (3.6i, #175), the economics (3.6j, #176) and notification settings (3.6k, #177): the operator console is complete; the calendar (3.5h, #178), reviews for businesses (3.5i, #179), and the runtime image's patched zlib (CVE-2026-85091, #193); 0 secret-scanning alerts; no open issues. The live
   website runs **Next.js 16.4.2**.
-- **Open:** the calendar (3.5h, #178) and reviews for businesses (3.5i).
+- **Open:** insights (3.5j); two bookings racing for the same person's time retried instead of a 500 (#194); the November Dependabot bumps in one tested change (#195, which closes #181–#192 as included).
 - **GitGuardian** flagged `PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?…}` in
   `docker-compose.dev.yml` on #167: a reference to a variable, not a secret. It isn't a required
   check; the owner marks it as a false positive in GitGuardian.
-- **Code scanning: 26 open warnings, `js/missing-rate-limiting`**, raised on `main` by #160. They
+- **Code scanning: 33 open warnings, `js/missing-rate-limiting`**, raised on `main` by #160 and the 3.6 routes. They
   are the same false positive as the 93 dismissed on 2026-10-04: the routes are limited by
   express-rate-limit per address before every route (`packages/common/src/http/app.ts`, D-086),
   most also by a route limiter, and Kong. CodeQL can't follow routes registered through the
   routes callback; the v2 rewrite changed those lines, so it raised them again. Dismissing needs
-  the owner (the command is in the session note of 2026-10-31).
+  the owner (the command is in the session note of 2026-10-31). A limiter put before `auth` on the
+  route (express-rate-limit, as #179's review list) is one CodeQL does recognise.
 - `feat/db-v2-services` is done: every slice D3a → D4c is on `main`.
 - **Branches:** 40 on GitHub belong to merged or closed PRs whose last commit is the PR's (safe to
   delete; deleting needs the owner, see the session note of 2026-10-31), plus `feat/db-v2-d4c`,
@@ -193,12 +194,12 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
 1. **Website, Phase 3.5 → 3.7**, on database v2. Done in 3.5, the business area: 3.5a (adding a
    business), 3.5b (today, appointments, check-in), 3.5c (the queue board and the waiting-room
    screen, D-126), 3.5d (services and team), 3.5e (opening hours and closed days), 3.5f (people's
-   time off and extra hours), 3.5g (attendance), 3.5h (the calendar) and 3.5i (reviews). Still to build
-   (WEB_PLAN §7): insights, billing and settings. In 3.6, the operator console: 3.6a monitoring
+   time off and extra hours), 3.5g (attendance), 3.5h (the calendar), 3.5i (reviews) and 3.5j
+   (insights). Still to build (WEB_PLAN §7): billing and settings. In 3.6, the operator console: 3.6a monitoring
    (Prometheus and Grafana, D-127), 3.6b the console itself (D-128), 3.6c emergency switches
    (D-129), 3.6d accounts (D-130), 3.6e the console redrawn (D-131), 3.6f the audit log (D-132), 3.6g review moderation, 3.6h billing (plan requests,
    subscriptions), 3.6i plans and prices, 3.6j the economics and 3.6k notification settings are
-   done: the operator console is complete. Next, the rest of 3.5 (insights, billing and settings for
+   done: the operator console is complete. Next, the rest of 3.5 (billing and settings for
    businesses). Then 3.7, polish and proof.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
