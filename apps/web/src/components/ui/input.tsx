@@ -5,7 +5,7 @@ import { cn } from '@/lib/cn';
 import { useFieldControl } from './field';
 
 export const controlStyles = cn(
-  'w-full rounded-md border border-control bg-surface px-4 text-[0.95rem] text-ink',
+  'w-full rounded-sm border border-control bg-surface px-4 text-[0.95rem] text-ink',
   'placeholder:text-ink-3 transition-[border-color,box-shadow] duration-200 ease-(--ease-out)',
   'hover:border-ink-3 focus-visible:border-focus focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-focus/15',
   'aria-invalid:border-danger aria-invalid:focus-visible:ring-danger/25',
@@ -29,8 +29,13 @@ export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
   );
 }
 
-/** A native select that belongs to its Field (label, hint, error). */
+/**
+ * A native select that belongs to its Field (label, hint, error). Native, so phones open their own
+ * picker; its arrow is drawn to match the other fields (`select-chevron`, globals.css).
+ */
 export function Select({ className, ...props }: ComponentProps<'select'>) {
   const { noticeId: _notice, ...field } = useFieldControl(props);
-  return <select {...props} {...field} className={cn(controlStyles, 'h-12 pr-9', className)} />;
+  return (
+    <select {...props} {...field} className={cn(controlStyles, 'select-chevron h-12 pr-10', className)} />
+  );
 }

@@ -80,7 +80,7 @@ export default async function EarlyAccessPage({ searchParams }: PageProps<'/earl
           tags={tags}
         />
       ) : (
-        <div role="status" className="rounded-3xl bg-surface p-8 shadow-soft ring-1 ring-line">
+        <div role="status" className="rounded-lg bg-surface p-8 shadow-soft ring-1 ring-line">
           <h2 className="type-heading">The list opens very soon</h2>
           <p className="mt-2 text-ink-2">We’re getting it ready. Please come back in a day or two.</p>
         </div>

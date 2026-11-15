@@ -754,7 +754,8 @@ The detailed plan — every page, its data and edge cases, the design system and
   Cloudflare Worker (OpenNext) with the list in D1; a guard refuses any build that holds a local
   `.env` value, and CI builds the Worker and checks its size (2.9 MiB compressed: Workers Paid).
   Going live needs the owner's Cloudflare steps (DEVELOPMENT.md → Deploy the website on
-  Cloudflare). Tests: the rules, the hash, the bot check, the list on SQLite with the real
+  Cloudflare). The form keeps the site's shape rule (globals.css): 8px fields everywhere, a 16px
+  panel, pill buttons; choices stacked, fields grouped, selects with a drawn arrow. Tests: the rules, the hash, the bot check, the list on SQLite with the real
   migration, the table's own refusals (unit); a browser test of both forms, problems in plain
   words, the same answer twice, the five-an-hour limit, the origin checks and WCAG.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
