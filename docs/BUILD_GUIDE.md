@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–l and 3.6 done (2026-11-15)               |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done (2026-11-15); next 3.7        |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -716,6 +716,25 @@ The detailed plan — every page, its data and edge cases, the design system and
     and ticket letters. A day's queue keeps the ones it opened with; the page says so.
   - Tests: what changed, clearing, re-review, numbers and ticket letters (unit); a browser test
     that catches a wrong value in each part, saves, and finds everything after a reload.
+- **3.5m Verification — ✅ done. The business area (WEB_PLAN §3.5) is complete.**
+  `/business/[id]/verification`, a "Verification" tab for the owner (`business.legal`; WEB_PLAN
+  had it under settings, it has its own page because it is the owner's alone):
+  - Where BUKU's check stands (verified; in review; not approved, with BUKU's reason; suspended;
+    or not verified yet, with "customers can already find and book you"), and the checklist
+    that blocks BUKU's "verify", item by item (the same function on the server).
+  - **Legal details:** legal name, country, kind of registration, registration and tax numbers,
+    registered address and the person responsible. Checked as the API checks them. Saved
+    numbers come back masked, so changing the details asks for them again (they're never sent
+    back masked); a saved tax number left empty is removed, and the form says so. A verified
+    business is warned that changing the legal name, number or country sends it back for review.
+  - **Documents:** what it is (licence, medical licence, identity, address, tax, other) and the
+    file: PDF, JPEG or PNG up to 25 MB, checked before it leaves, sent straight to storage and
+    then checked by the API (signature, size). Listed with BUKU's answer; anything not approved
+    can be removed; 20 at most.
+  - `uploadFile` (lib/api/upload.ts) now also finishes documents (`…/documents/:documentId/complete`).
+  - Tests: file checks, the list, sizes and registration numbers (unit); a browser test that
+    saves the details, sees them masked, sends a PDF and removes it (with the test's own address
+    off: storage accepts only the headers it expects).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request
