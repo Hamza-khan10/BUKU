@@ -1286,3 +1286,20 @@ request reference. On a person's record a step taken on their account is written
 person's trail (their steps, and what was done to their account) opens from Accounts; opening it
 is recorded. The feed of admins' own work is not recorded each time it's read, so it doesn't fill
 with itself. Entries can't be changed or deleted by anyone (the shards' rights, D-092).
+
+**D-133 · A business's pages: a rail on wide screens, a sheet on phones; hints under fields
+(3.7).** With 3.5 complete a business had fifteen pages, and the tabs became one long row that
+scrolled sideways, with a scrollbar. The owner: "not a good interface for the business to use".
+The pages now come in four groups people can hold in their head: **Run the day** (today,
+appointments, calendar, check-in, queue), **People and time** (hours, attendance, team,
+services), **Customers** (reviews, insights) and **The business** (plan, settings,
+verification); each person still sees only what their role can use. On a wide screen they're a
+rail beside the page that stays in view as it scrolls: the business at the top (its logo, its
+standing with BUKU, a way back to all your businesses), then the groups, with a highlight that
+glides to the page you open (a critically damped spring; still under reduced motion). On a short
+window the rail scrolls on its own and keeps the page you're on in view. On a phone, one glass bar
+under the header says where you are, and **All pages** opens a sheet from the bottom with every
+page as a tile, by group. Nothing scrolls sideways. Separately, a field's hint now sits under its
+box instead of between the label and the box: side by side, a field with a hint pushed its box
+lower than its neighbour's ("there is a problem in the text boxes"). Label, box, hint, error, in
+that order, on every form.

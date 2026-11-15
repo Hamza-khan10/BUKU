@@ -83,3 +83,16 @@ export async function customerBooks(
   const booked = await bookThroughSite(page.request, baseURL, place, startAt);
   return { ...booked, startAt, page, close: () => context.close() };
 }
+
+/**
+ * Go to one of the business's pages the way a person would: from the rail on a wide screen, or
+ * from the "All pages" sheet on a phone.
+ */
+export async function goToPage(page: Page, business: string, label: string) {
+  const nav = page.getByRole('navigation', { name: business });
+  await expect(nav).toBeVisible();
+  const link = nav.getByRole('link', { name: label, exact: true });
+  if (await link.isVisible()) return link.click();
+  await nav.getByRole('button', { name: 'All pages' }).click();
+  await page.getByRole('dialog', { name: business }).getByRole('link', { name: label, exact: true }).click();
+}

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { openBusiness, signIn } from './business-world';
+import { goToPage, openBusiness, signIn } from './business-world';
 import { closeBusiness } from './db';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
@@ -28,7 +28,7 @@ test.describe('Settings', () => {
     const place = await openBusiness(page, made, 'Settings Test');
 
     await page.goto(`/business/${place.id}`);
-    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await goToPage(page, place.name, 'Settings');
     await expect(page).toHaveURL((url) => url.pathname === `/business/${place.id}/settings`);
     await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible();
     await expectAccessible(page);

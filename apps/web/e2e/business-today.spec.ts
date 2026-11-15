@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Browser, Page } from '@playwright/test';
 import { bookThroughSite, freeTimes, type Bookable } from './booking-helpers';
+import { goToPage } from './business-world';
 import { canSimulateTime, closeBusiness, moveVisit } from './db';
 import { expect, test, visitorAddress } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
@@ -176,10 +177,7 @@ test.describe('The front desk’s day', () => {
     await expect(today.getByRole('alert').filter({ hasText: 'No booking BK-ZZZZZZ here' })).toBeVisible();
 
     // The third booking, found by its code, cancelled with a reason the customer will see.
-    await page
-      .getByRole('navigation', { name: place.name })
-      .getByRole('link', { name: 'Appointments' })
-      .click();
+    await goToPage(page, place.name, 'Appointments');
     await page.getByLabel('Find a booking by code or customer name').fill(later!.code);
     await page.getByRole('button', { name: 'Find', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`q=${later!.code}`));
@@ -202,7 +200,7 @@ test.describe('The front desk’s day', () => {
     await expect(page.getByRole('listitem').filter({ hasText: arriving!.code })).toBeVisible();
 
     // Check-in: the camera is allowed on this page only, and only for this site.
-    await page.getByRole('navigation', { name: place.name }).getByRole('link', { name: 'Check-in' }).click();
+    await goToPage(page, place.name, 'Check-in');
     await expect(page.getByRole('heading', { name: 'Check someone in', level: 1 })).toBeVisible();
     await expectAccessible(page);
     const policy = async (path: string) => (await page.request.get(path)).headers()['permissions-policy'];

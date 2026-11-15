@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { bookThroughSite, freeTimes } from './booking-helpers';
-import { customerBooks, openBusiness, signIn } from './business-world';
+import { customerBooks, goToPage, openBusiness, signIn } from './business-world';
 import { canSimulateTime, closeBusiness, moveVisit, visitHappened } from './db';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
@@ -48,7 +48,7 @@ test.describe('Insights', () => {
     expect(moveVisit(place.id, cancelled.id, -3 * DAY, -3 * DAY + 30)).toBe(true);
 
     await page.goto(`/business/${place.id}`);
-    await page.getByRole('link', { name: 'Insights' }).click();
+    await goToPage(page, place.name, 'Insights');
     await expect(page).toHaveURL((url) => url.pathname === `/business/${place.id}/insights`);
     await expect(page.getByRole('heading', { name: 'Insights', level: 1 })).toBeVisible();
 

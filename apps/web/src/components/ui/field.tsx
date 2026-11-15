@@ -75,12 +75,14 @@ export function Field({
           {label}
           {!required && optionalLabel && <span className="font-normal text-ink-3"> (optional)</span>}
         </label>
+        {/* The control sits right under its label and the hint under the control, so fields side by
+            side line up box with box whatever their hints say. */}
+        {children}
         {hint && (
           <p id={state.hintId} className="text-sm text-ink-3">
             {hint}
           </p>
         )}
-        {children}
         {error && (
           <p id={state.errorId} className="text-sm font-medium text-danger">
             {error}
