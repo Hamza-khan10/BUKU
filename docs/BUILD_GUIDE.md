@@ -735,13 +735,15 @@ The detailed plan — every page, its data and edge cases, the design system and
   - Tests: file checks, the list, sizes and registration numbers (unit); a browser test that
     saves the details, sees them masked, sends a PDF and removes it (with the test's own address
     off: storage accepts only the headers it expects).
-- **3.7a A business's pages, and fields that line up — ✅ done (D-133).** The fifteen pages in four
-  groups: a rail beside the page on wide screens (the business and its standing at the top, a
-  gliding highlight, scrolls on its own on a short window and keeps the current page in view), a
-  glass bar and an "All pages" sheet of tiles on phones; nothing scrolls sideways. Every field's
-  hint sits under its box, so fields side by side line up. Tests: who sees which pages (unit);
-  the business-area browser tests reach pages the way people do (`goToPage`: the rail, or the
-  sheet on a phone).
+- **3.7a The business workspace, and fields that line up — ✅ done (D-133).** `/business/[id]/*`
+  is an app of its own (route group `(work)`): a slim bar (the business with a switcher, your page,
+  theme, account), a full-height sidebar with the pages in four groups (folds to icons, remembered
+  on the device), and the page at full width; on a phone, a solid tab bar (Today, Appointments,
+  Check-in, Queue, More, a sheet of every page). The home is a dashboard: today's figures in one
+  strip, the visits beside check-in, who's next, Coming up (seven days) and the setup checklist;
+  the logo and photos moved to Settings. Every field's hint sits under its box. Tests: who sees
+  which pages (unit); the business-area browser tests reach pages the way people do (`goToPage`,
+  `expectOnPage`: the sidebar, or the tabs and More on a phone).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

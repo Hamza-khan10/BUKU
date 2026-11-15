@@ -85,14 +85,27 @@ export async function customerBooks(
 }
 
 /**
- * Go to one of the business's pages the way a person would: from the rail on a wide screen, or
- * from the "All pages" sheet on a phone.
+ * Go to one of the business's pages the way a person would: from the sidebar on a wide screen,
+ * or on a phone from the tabs at the bottom, or "More" for the rest.
  */
 export async function goToPage(page: Page, business: string, label: string) {
   const nav = page.getByRole('navigation', { name: business });
   await expect(nav).toBeVisible();
   const link = nav.getByRole('link', { name: label, exact: true });
   if (await link.isVisible()) return link.click();
-  await nav.getByRole('button', { name: 'All pages' }).click();
+  await nav.getByRole('button', { name: 'More' }).click();
   await page.getByRole('dialog', { name: business }).getByRole('link', { name: label, exact: true }).click();
+}
+
+/** The business's menu says which page you're on (on a phone, in "More" when it isn't a tab). */
+export async function expectOnPage(page: Page, business: string, label: string) {
+  const nav = page.getByRole('navigation', { name: business });
+  await expect(nav).toBeVisible();
+  const link = nav.getByRole('link', { name: label, exact: true });
+  if (await link.isVisible()) return expect(link).toHaveAttribute('aria-current', 'page');
+  await nav.getByRole('button', { name: 'More' }).click();
+  const sheet = page.getByRole('dialog', { name: business });
+  await expect(sheet.getByRole('link', { name: label, exact: true })).toHaveAttribute('aria-current', 'page');
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
 }

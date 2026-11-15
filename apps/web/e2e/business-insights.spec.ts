@@ -68,7 +68,8 @@ test.describe('Insights', () => {
 
     // A week's numbers on focus, as on hover; the arrow keys walk the weeks.
     await weeks.getByRole('button', { name: /1 came/ }).focus();
-    await expect(page.getByText(/^Week of \d{1,2} \w{3} \d{4}$/)).toBeVisible();
+    // ("Sept" is four letters in British English.)
+    await expect(page.getByText(/^Week of \d{1,2} \w{3,4} \d{4}$/)).toBeVisible();
     await page.keyboard.press('Home');
     await expect(weeks.getByRole('button').first()).toBeFocused();
 

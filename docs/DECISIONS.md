@@ -1287,19 +1287,24 @@ person's trail (their steps, and what was done to their account) opens from Acco
 is recorded. The feed of admins' own work is not recorded each time it's read, so it doesn't fill
 with itself. Entries can't be changed or deleted by anyone (the shards' rights, D-092).
 
-**D-133 · A business's pages: a rail on wide screens, a sheet on phones; hints under fields
-(3.7).** With 3.5 complete a business had fifteen pages, and the tabs became one long row that
-scrolled sideways, with a scrollbar. The owner: "not a good interface for the business to use".
-The pages now come in four groups people can hold in their head: **Run the day** (today,
-appointments, calendar, check-in, queue), **People and time** (hours, attendance, team,
-services), **Customers** (reviews, insights) and **The business** (plan, settings,
-verification); each person still sees only what their role can use. On a wide screen they're a
-rail beside the page that stays in view as it scrolls: the business at the top (its logo, its
-standing with BUKU, a way back to all your businesses), then the groups, with a highlight that
-glides to the page you open (a critically damped spring; still under reduced motion). On a short
-window the rail scrolls on its own and keeps the page you're on in view. On a phone, one glass bar
-under the header says where you are, and **All pages** opens a sheet from the bottom with every
-page as a tile, by group. Nothing scrolls sideways. Separately, a field's hint now sits under its
-box instead of between the label and the box: side by side, a field with a hint pushed its box
-lower than its neighbour's ("there is a problem in the text boxes"). Label, box, hint, error, in
-that order, on every form.
+**D-133 · A business's pages are a workspace: the whole window, a sidebar, tabs on a phone;
+hints under fields (3.7).** With 3.5 complete a business had fifteen pages. First they were one
+row of tabs that scrolled sideways; then a rail inside the website's centred column, which left
+wide empty margins on a big screen ("so much empty space on the sides… it's a business dashboard").
+A business's pages are now their own app, under `/business/[id]` as before (route group `(work)`):
+no website header or footer, but a slim bar on top (the BUKU mark; the business, with a switcher
+to your others and to add one; your public page; theme; account), a sidebar flush to the left,
+full height, with the pages in four groups (**Run the day**: today, appointments, calendar,
+check-in, queue; **People and time**: hours, attendance, team, services; **Customers**: reviews,
+insights; **The business**: plan, settings, verification), and the page beside it using the full
+width. Each person sees only what their role can use. The sidebar folds to icons (each names
+itself on hover and focus; the choice is remembered on that device); its highlight glides to the
+page you open (a critically damped spring; still under reduced motion); a business not yet
+verified sees "Get verified" at its foot. On a phone, a solid tab bar at the bottom keeps the four
+pages used all day (Today, Appointments, Check-in, Queue) at the thumb, and **More** opens a sheet
+with every page as a tile. Toasts sit above it. The home is a dashboard: the date, the business
+and its standing, the two things the desk reaches for (check someone in, the queue); today's
+figures in one strip; the day's visits beside check-in by code, who's next, **Coming up** (the
+next seven days) and the setup checklist. The logo and photos moved to Settings. Separately, a
+field's hint now sits under its box: label, box, hint, error, on every form, so fields side by
+side line up ("there is a problem in the text boxes").

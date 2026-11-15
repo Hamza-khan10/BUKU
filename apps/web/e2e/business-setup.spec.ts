@@ -159,7 +159,7 @@ test.describe('Adding a business', () => {
     await expect(page).toHaveURL(/\/business\/[0-9A-Za-z]{12}\/setup$/, { timeout: 20_000 });
     made.push(/\/business\/([0-9A-Za-z]{12})\//.exec(page.url())![1]!);
     await page.goto(page.url().replace(/\/setup$/, ''));
-    await expect(page.getByText(`${kind} · Lahore`)).toBeVisible();
+    await expect(page.getByText(`${kind}, Lahore`)).toBeVisible();
     expect(problems).toEqual([]);
   });
 });

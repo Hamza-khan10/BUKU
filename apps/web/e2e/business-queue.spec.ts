@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
+import { expectOnPage } from './business-world';
 import { closeBusiness } from './db';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
@@ -67,9 +68,7 @@ test.describe('Front desk queue', () => {
     await expect(page.getByRole('heading', { name: 'Queue', exact: true })).toBeVisible();
     const today = page.getByRole('region', { name: 'Today’s queue' });
     await expect(today.getByText('Not opened today')).toBeVisible();
-    await expect(
-      page.getByRole('navigation', { name: business.name }).getByRole('link', { name: 'Queue' }),
-    ).toHaveAttribute('aria-current', 'page');
+    await expectOnPage(page, business.name, 'Queue');
 
     // The waiting-room screen: no sign-in (its own browser, no cookies).
     const tv = await browser.newContext({ baseURL });

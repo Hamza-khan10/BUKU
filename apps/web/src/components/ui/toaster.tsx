@@ -12,6 +12,9 @@ export function Toaster() {
     <Sonner
       position="bottom-center"
       closeButton
+      // Above a business's tabs on a phone (and clear of the page's own last buttons elsewhere).
+      offset={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
+      mobileOffset={{ bottom: 'calc(5rem + env(safe-area-inset-bottom))' }}
       toastOptions={{
         classNames: {
           toast: 'rounded-xl border border-line bg-surface text-ink shadow-lift font-sans',

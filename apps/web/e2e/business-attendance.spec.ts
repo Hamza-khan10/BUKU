@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
+import { expectOnPage } from './business-world';
 import { closeBusiness } from './db';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
@@ -84,9 +85,7 @@ test.describe('Attendance', () => {
     const business = await ownerWithBusiness(page);
     await page.goto(`/business/${business.id}/attendance`);
     await expect(page.getByRole('heading', { name: 'Attendance', exact: true })).toBeVisible();
-    await expect(
-      page.getByRole('navigation', { name: business.name }).getByRole('link', { name: 'Attendance' }),
-    ).toHaveAttribute('aria-current', 'page');
+    await expectOnPage(page, business.name, 'Attendance');
 
     const team = page.getByRole('list', { name: 'The team' });
     const ali = team.getByRole('listitem', { name: 'Ali Raza' });

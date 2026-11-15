@@ -172,7 +172,7 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
   start (#163), opening hours (3.5e, #164), time off (3.5f, #165), attendance (3.5g, #166) and
   monitoring (3.6a, #167), the operator console (3.6b, #168), emergency switches (3.6c, #169), accounts (3.6d, #170), the console redrawn (3.6e, #171), the audit log (3.6f, #172), review moderation (3.6g, #173), billing (3.6h, #174), plans and prices (3.6i, #175), the economics (3.6j, #176) and notification settings (3.6k, #177): the operator console is complete; the calendar (3.5h, #178), reviews for businesses (3.5i, #179), the runtime image's patched zlib (CVE-2026-85091, #193), two bookings racing for the same person's time retried instead of a 500 (#194), insights (3.5j, #197), the November Dependabot bumps (#195, closing #181–#192), the plan for businesses (3.5k, #198), settings (3.5l, #201), verification (3.5m, #202: the business area is complete) and Dependabot's esbuild 0.28.2 (#199) and lint-and-types group (#200); 0 secret-scanning alerts; no open issues. The live
   website runs **Next.js 16.4.2**.
-- **Open:** a business's pages as a rail and a sheet, and fields that line up (3.7a, D-133).
+- **Open:** the business workspace and fields that line up (3.7a, D-133, #203); minimatch 11 for Dependabot alert 5 (#204).
 - **GitGuardian** flagged `PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?…}` in
   `docker-compose.dev.yml` on #167: a reference to a variable, not a secret. It isn't a required
   check; the owner marks it as a false positive in GitGuardian.
@@ -200,7 +200,7 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    (Prometheus and Grafana, D-127), 3.6b the console itself (D-128), 3.6c emergency switches
    (D-129), 3.6d accounts (D-130), 3.6e the console redrawn (D-131), 3.6f the audit log (D-132), 3.6g review moderation, 3.6h billing (plan requests,
    subscriptions), 3.6i plans and prices, 3.6j the economics and 3.6k notification settings are
-   done: the operator console is complete. Now 3.7, polish and proof: 3.7a (a business's pages,
+   done: the operator console is complete. Now 3.7, polish and proof: 3.7a (the business workspace,
    fields that line up, D-133); next the accessibility audit, Lighthouse budgets, the visual pass
    at every breakpoint and the copy review. Then 3.7, polish and proof.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
