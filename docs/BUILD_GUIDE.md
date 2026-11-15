@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–k and 3.6 done (2026-11-15)               |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–l and 3.6 done (2026-11-15)               |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -699,6 +699,23 @@ The detailed plan — every page, its data and edge cases, the design system and
     browser test as the development stack has it (billing off: everything included, nothing to
     buy, a request sent and withdrawn). Paying, switching and the trial are billing's own
     integration tests: switching billing on would change it for every other browser test.
+- **3.5l Settings — ✅ done.** `/business/[id]/settings`, a "Settings" tab for the owner and
+  managers. Three parts, each saving on its own and sending only what changed:
+  - **The business:** name, about, phone, email, website, address, city, province, postal code,
+    and where it is on the map (this phone's location, or pasted from a map). Each field is
+    checked as the API checks it, with the problem on the field and focus moved there. An optional
+    field can't be emptied (the API keeps what's absent), so emptying one is caught rather than
+    silently kept. Changing what BUKU checked (name, address, place) on a verified or rejected
+    business is announced first ("BUKU will check this again"), and Save asks once more.
+  - **Bookings:** confirm automatically or approve each one; approving only customers who often
+    don't come (50–99%); how far ahead, shortest notice, free cancellation, upcoming bookings
+    per customer, wait before a no-show, and the spacing of start times. Whole numbers in the
+    API's ranges only.
+  - **Queue:** join distance (read live), most people waiting (walk-ins too), time to come up
+    when called, the starting estimate (in minutes; unchanged minutes keep the exact seconds)
+    and ticket letters. A day's queue keeps the ones it opened with; the page says so.
+  - Tests: what changed, clearing, re-review, numbers and ticket letters (unit); a browser test
+    that catches a wrong value in each part, saves, and finds everything after a reload.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

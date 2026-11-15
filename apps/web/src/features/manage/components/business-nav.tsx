@@ -35,6 +35,7 @@ export function BusinessNav({ id }: { id: string }) {
     { href: `/business/${id}/insights`, label: 'Insights', show: can(role, 'reports.view') },
     // Everyone may read the plan; it's the owner's to change, and the managers' to know about.
     { href: `/business/${id}/billing`, label: 'Plan', show: role === 'owner' || role === 'manager' },
+    { href: `/business/${id}/settings`, label: 'Settings', show: can(role, 'business.update') },
   ].filter((p) => p.show);
   if (pages.length < 2) return null;
   return (
