@@ -16,6 +16,7 @@
     "@buku/kafka": "workspace:*",
     "@buku/media": "workspace:*",
     "express": "5.3.0",
+    "express-rate-limit": "8.7.1",
     "ioredis": "6.0.0",
     "zod": "4.6.7"
   },

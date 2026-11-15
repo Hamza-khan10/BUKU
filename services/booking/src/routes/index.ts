@@ -13,6 +13,7 @@ import {
   type RevocationStore,
 } from '@buku/common';
 import { Router, type Express, type Response } from 'express';
+import expressRateLimit from 'express-rate-limit';
 import type { DataPlane } from '@buku/database';
 import type { Redis } from 'ioredis';
 import type { AppointmentService } from '../appointments/appointment-service.js';
@@ -29,6 +30,7 @@ import type { StaffService } from '../staff/staff-service.js';
 import {
   AdminReviewParams,
   AdminReviewsQuery,
+  TeamReviewsQuery,
   AppointmentParams,
   AttendanceQuery,
   BusinessReviewsQuery,
@@ -97,6 +99,18 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     durationSeconds: 60,
     redis: deps.redis,
   });
+  /**
+   * The team's own lists (reviews): roomy for paging and filters, still bounded per address, on
+   * the route itself (express-rate-limit, which code scanning recognises; D-086's limits apply too).
+   * It runs before `auth`, so a flood is turned away before any token is checked.
+   */
+  const teamReadLimit = expressRateLimit({
+    windowMs: 60_000,
+    limit: 120,
+    standardHeaders: false,
+    legacyHeaders: false,
+    handler: (_req, _res, next) => next(AppError.rateLimited(60)),
+  });
   const r = Router();
   /** The business in the URL, by its public ID (DB-042): unknown is "not found". */
   const businessOf = async (publicId: string) => {
@@ -132,6 +146,19 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
         sendSuccess(res, items, 200, meta);
       },
     ),
+  );
+  r.get(
+    '/:id/reviews/manage',
+    teamReadLimit,
+    auth,
+    validated({ params: IdParams, query: TeamReviewsQuery }, async ({ params, query }, req, res) => {
+      const { items, meta } = await deps.reviews.teamList(
+        await businessOf(params.id),
+        requireActor(req),
+        query,
+      );
+      sendSuccess(res, items, 200, meta);
+    }),
   );
   r.put(
     '/:id/reviews/:reviewId/response',
