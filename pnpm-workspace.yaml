@@ -15,6 +15,10 @@ allowBuilds:
   prisma: true
   # Installs the platform-specific esbuild binary (used by tsx and tsup).
   esbuild: true
+  # Cloudflare's runtime for previewing the website as it runs on Workers (D-135). Like esbuild's:
+  # uses the platform package already installed, else fetches that exact pinned version from the npm
+  # registry, then checks the binary's version. Nothing else is downloaded or run.
+  workerd: true
 
 # Refuse to resolve package versions younger than 24h, which is when most
 # malicious npm releases are detected and pulled. (pnpm default, kept explicit.)

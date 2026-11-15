@@ -4,7 +4,7 @@ The state of the whole project in one place: what is built, how it is run and wo
 things stand on GitHub, and what comes next. Last updated **2026-11-15**.
 
 Deeper detail lives in the docs this page points to — [BUILD_GUIDE](docs/BUILD_GUIDE.md) (the
-phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-133),
+phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-135),
 [DATABASE](docs/DATABASE.md) (database v2), [ARCHITECTURE](docs/ARCHITECTURE.md),
 [SECURITY](docs/SECURITY.md), [API_REFERENCE](docs/API_REFERENCE.md),
 [DEVELOPMENT](docs/DEVELOPMENT.md) (setting up and running) and [WEB_PLAN](docs/WEB_PLAN.md).
@@ -24,7 +24,7 @@ free** (D-101); businesses pay (Starter free, Essential, Professional, Enterpris
 | ------ | ------------------------------------------------------------------------------------ | ----------------------------------------------- |
 | 1      | Foundation: monorepo, shared packages, events, infrastructure, security baseline, CI | ✅ done                                         |
 | 2      | Backend services, ending with a SOC 2 compliance review                              | ✅ built (2.0–2.10); ads and analytics deferred |
-| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 and 3.6 done; 3.7 started                 |
+| 3      | Web app (Next.js) and admin app                                                      | ▶ 3.5 and 3.6 done; 3.7a–b built                |
 | **3D** | **Database v2** — built for hundreds of millions of people                           | ✅ **D1–D4 built and on `main`**; D5 later      |
 | 4      | Mobile app (Expo)                                                                    | planned                                         |
 | 5      | Production: deployment, observability, backups, load and security testing            | planned                                         |
@@ -171,8 +171,8 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
   lucide-react 1.63.0 (#152), the queue board (3.5c, #162), services waiting for the database at
   start (#163), opening hours (3.5e, #164), time off (3.5f, #165), attendance (3.5g, #166) and
   monitoring (3.6a, #167), the operator console (3.6b, #168), emergency switches (3.6c, #169), accounts (3.6d, #170), the console redrawn (3.6e, #171), the audit log (3.6f, #172), review moderation (3.6g, #173), billing (3.6h, #174), plans and prices (3.6i, #175), the economics (3.6j, #176) and notification settings (3.6k, #177): the operator console is complete; the calendar (3.5h, #178), reviews for businesses (3.5i, #179), the runtime image's patched zlib (CVE-2026-85091, #193), two bookings racing for the same person's time retried instead of a 500 (#194), insights (3.5j, #197), the November Dependabot bumps (#195, closing #181–#192), the plan for businesses (3.5k, #198), settings (3.5l, #201), verification (3.5m, #202: the business area is complete) and Dependabot's esbuild 0.28.2 (#199) and lint-and-types group (#200); 0 secret-scanning alerts; no open issues. The live
-  website runs **Next.js 16.4.2**.
-- **Open:** the business workspace and fields that line up (3.7a, D-133, #203); minimatch 11 for Dependabot alert 5 (#204).
+  website runs **Next.js 16.4.6**. Also on `main`: the business workspace and fields that line up (3.7a, D-133, #203) and minimatch 11 for Dependabot alert 5 (#204).
+- **Open:** early access and the website on Cloudflare Workers with D1 (3.7b, D-134, D-135), branch `feat/web-early-access`. Going live needs the owner's Cloudflare steps (DEVELOPMENT.md).
 - **GitGuardian** flagged `PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?…}` in
   `docker-compose.dev.yml` on #167: a reference to a variable, not a secret. It isn't a required
   check; the owner marks it as a false positive in GitGuardian.
@@ -201,8 +201,11 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    (D-129), 3.6d accounts (D-130), 3.6e the console redrawn (D-131), 3.6f the audit log (D-132), 3.6g review moderation, 3.6h billing (plan requests,
    subscriptions), 3.6i plans and prices, 3.6j the economics and 3.6k notification settings are
    done: the operator console is complete. Now 3.7, polish and proof: 3.7a (the business workspace,
-   fields that line up, D-133); next the accessibility audit, Lighthouse budgets, the visual pass
-   at every breakpoint and the copy review. Then 3.7, polish and proof.
+   fields that line up, D-133) and 3.7b (the early-access list, the website on Cloudflare Workers
+   with D1, D-134, D-135); next the owner's Cloudflare setup and the domain, the pricing page in
+   the new plan names (Starter free, Essential, Professional, Network, Enterprise; prices in the
+   visitor's currency), then the accessibility audit, Lighthouse budgets, the visual pass at every
+   breakpoint and the copy review.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
 3. **Phase 5** — production: deployment, PgBouncer, the standby and a second region, backups to

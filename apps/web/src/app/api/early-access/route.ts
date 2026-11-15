@@ -6,6 +6,7 @@ import {
   passedBotCheck,
   saveSignup,
   saveToTestStore,
+  waitlistDb,
 } from '@/features/early-access/server';
 import { checkSameOrigin } from '@/lib/api/bff-rules';
 import { errorResponse } from '@/lib/api/respond';
@@ -78,10 +79,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         'BOT_CHECK_FAILED',
         'Please complete the check below and try again.',
       );
+    const db = await waitlistDb();
+    if (!db)
+      return errorResponse(
+        requestId,
+        503,
+        'NOT_AVAILABLE',
+        'Early access isn’t open yet. Please try again soon.',
+      );
     try {
-      outcome = await saveSignup(settings, details.data, ip ? hashAddress(ip, settings.hashSecret) : null);
+      outcome = await saveSignup(db, details.data, ip ? hashAddress(ip, settings.hashSecret) : null);
     } catch (err) {
-      // eslint-disable-next-line no-console -- the server's own log (Vercel keeps it): what failed and the request, never the person's details.
+      // eslint-disable-next-line no-console -- the Worker's own log (Cloudflare keeps it): what failed and the request, never the person's details.
       console.error(
         JSON.stringify({ msg: 'early access: not saved', requestId, error: (err as Error).message }),
       );

@@ -13,6 +13,9 @@ export default tseslint.config(
       '**/coverage/**',
       'packages/database/src/generated/**',
       'apps/*/.next/**',
+      // The Cloudflare build (OpenNext) and wrangler's local state: generated, never committed.
+      'apps/*/.open-next/**',
+      'apps/*/.wrangler/**',
       'apps/*/next-env.d.ts',
       'apps/*/test-results/**',
       'apps/*/playwright-report/**',

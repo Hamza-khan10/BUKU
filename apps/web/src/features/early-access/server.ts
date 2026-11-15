@@ -3,16 +3,14 @@ import { createHmac } from 'node:crypto';
 import type { EarlyAccessInput } from './schema';
 
 /**
- * Early access on the server (D-134). Signups are kept in Supabase (Postgres), reached only from
- * this web server with a secret key, and only through one database function (join_waitlist) that
- * checks, de-duplicates and slows down repeats; the table itself is closed to everyone
- * (infrastructure/supabase/waitlist.sql). A bot check (Cloudflare Turnstile) comes first. The
- * visitor's address is never stored, only a keyed hash of it, to count repeats.
+ * Early access on the server (D-134). Signups are kept in Cloudflare D1 (D-135), which only this
+ * website's own Worker can reach (its DB binding: no key travels anywhere), in one table whose
+ * own checks repeat the website's (migrations/0001_waitlist.sql). A bot check (Cloudflare
+ * Turnstile) comes first. The visitor's address is never stored, only a keyed hash of it, to
+ * slow down repeats from one place.
  */
 
 export interface EarlyAccessSettings {
-  supabaseUrl: string;
-  supabaseKey: string;
   turnstileSiteKey: string;
   turnstileSecret: string;
   hashSecret: string;
@@ -21,33 +19,22 @@ export interface EarlyAccessSettings {
 /**
  * The settings, or 'test' for the in-memory store (development and the browser tests only:
  * switched on by EARLY_ACCESS_TEST_STORE, refused on the live site), or null: not available.
+ * (On Workers, OpenNext puts the Worker's variables and secrets in process.env.)
  */
 export function earlyAccessSettings(): EarlyAccessSettings | 'test' | null {
   const e = process.env;
   const settings = {
-    supabaseUrl: e.SUPABASE_URL?.trim() ?? '',
-    supabaseKey: e.SUPABASE_SECRET_KEY?.trim() ?? '',
     turnstileSiteKey: e.TURNSTILE_SITE_KEY?.trim() ?? '',
     turnstileSecret: e.TURNSTILE_SECRET_KEY?.trim() ?? '',
     hashSecret: e.EARLY_ACCESS_HASH_SECRET?.trim() ?? '',
   };
-  if (
-    Object.values(settings).every(Boolean) &&
-    isHttps(settings.supabaseUrl) &&
-    settings.hashSecret.length >= 32
-  )
-    return settings;
-  if (e.EARLY_ACCESS_TEST_STORE === 'true' && e.VERCEL_ENV !== 'production') return 'test';
+  if (Object.values(settings).every(Boolean) && settings.hashSecret.length >= 32) return settings;
+  if (e.EARLY_ACCESS_TEST_STORE === 'true' && !liveSite()) return 'test';
   return null;
 }
 
-function isHttps(url: string): boolean {
-  try {
-    return new URL(url).protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
+/** The live site: Vercel's production, or the Worker on Cloudflare (wrangler.jsonc says so). */
+const liveSite = () => process.env.VERCEL_ENV === 'production' || process.env.BUKU_SITE_ENV === 'production';
 
 /** A keyed hash of the visitor's address: repeats can be counted, the address can't be read back. */
 export function hashAddress(ip: string, secret: string): string {
@@ -80,62 +67,93 @@ export async function passedBotCheck(
 
 export type Outcome = 'joined' | 'already' | 'slow_down';
 
-/** The database function's parameters, by name (PostgREST passes a JSON object to a function). */
-export function rowOf(input: EarlyAccessInput, ipHash: string | null) {
-  const business = input.kind === 'business' ? input : null;
-  return {
-    p_email: input.email,
-    p_kind: input.kind,
-    p_name: input.name ?? null,
-    p_business_name: business?.businessName ?? null,
-    p_business_type: business?.businessType ?? null,
-    p_branches: business?.branches ?? null,
-    p_city: input.city,
-    p_country: input.country,
-    p_whatsapp: business?.whatsapp ?? null,
-    p_plan_interest: business?.planInterest ?? null,
-    p_source: input.source ?? null,
-    p_utm_source: input.utmSource ?? null,
-    p_utm_medium: input.utmMedium ?? null,
-    p_utm_campaign: input.utmCampaign ?? null,
-    p_ip_hash: ipHash,
+/** The part of D1's API used here (a Worker's D1Database has it; the tests give SQLite's). */
+export interface Db {
+  prepare(sql: string): {
+    bind(...values: unknown[]): {
+      first<T>(): Promise<T | null>;
+      run(): Promise<{ meta: { changes: number } }>;
+    };
   };
 }
 
-/** Keep a signup in Supabase, through join_waitlist only. Throws when Supabase can't be reached. */
-export async function saveSignup(
-  settings: EarlyAccessSettings,
-  input: EarlyAccessInput,
-  ipHash: string | null,
-  fetchImpl: typeof fetch = fetch,
-): Promise<Outcome> {
-  const key = settings.supabaseKey;
-  const res = await fetchImpl(`${settings.supabaseUrl.replace(/\/+$/, '')}/rest/v1/rpc/join_waitlist`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      apikey: key,
-      // The older keys are tokens (JWTs) and go in Authorization too; the newer secret keys don't.
-      ...(key.startsWith('eyJ') && { authorization: `Bearer ${key}` }),
-    },
-    body: JSON.stringify(rowOf(input, ipHash)),
-    signal: AbortSignal.timeout(8_000),
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`join_waitlist answered ${res.status}`);
-  const outcome = (await res.json()) as unknown;
-  if (outcome === 'joined' || outcome === 'already' || outcome === 'slow_down') return outcome;
-  throw new Error('join_waitlist answered something unexpected');
+declare global {
+  interface CloudflareEnv {
+    /** The early-access list (wrangler.jsonc). */
+    DB?: Db;
+  }
 }
 
-/** The browser tests' store: the same rules as join_waitlist, kept in memory. */
+/** The Worker's D1 database, or null where the site isn't running on Workers (Vercel, `next start`). */
+export async function waitlistDb(): Promise<Db | null> {
+  try {
+    const { getCloudflareContext } = await import('@opennextjs/cloudflare');
+    const { env } = await getCloudflareContext({ async: true });
+    return env.DB ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Five signups an hour from one address: enough for a family or an office, not a script. */
+const PER_ADDRESS_PER_HOUR = 5;
+
+/**
+ * Keep a signup: one row per email and kind (a second time changes nothing), and from one address
+ * at most five an hour. Dates are kept as ISO text, which sorts as time does.
+ */
+export async function saveSignup(
+  db: Db,
+  input: EarlyAccessInput,
+  ipHash: string | null,
+  now = new Date(),
+): Promise<Outcome> {
+  if (ipHash) {
+    const since = new Date(now.getTime() - 3_600_000).toISOString();
+    const recent = await db
+      .prepare('SELECT count(*) AS n FROM waitlist WHERE ip_hash = ?1 AND created_at > ?2')
+      .bind(ipHash, since)
+      .first<{ n: number }>();
+    if ((recent?.n ?? 0) >= PER_ADDRESS_PER_HOUR) return 'slow_down';
+  }
+  const business = input.kind === 'business' ? input : null;
+  const result = await db
+    .prepare(
+      `INSERT INTO waitlist (email, kind, name, business_name, business_type, branches, city, country, whatsapp,
+         plan_interest, source, utm_source, utm_medium, utm_campaign, ip_hash, consent_at, created_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16)
+       ON CONFLICT (email, kind) DO NOTHING`,
+    )
+    .bind(
+      input.email,
+      input.kind,
+      input.name ?? null,
+      business?.businessName ?? null,
+      business?.businessType ?? null,
+      business?.branches ?? null,
+      input.city,
+      input.country,
+      business?.whatsapp ?? null,
+      business?.planInterest ?? null,
+      input.source ?? null,
+      input.utmSource ?? null,
+      input.utmMedium ?? null,
+      input.utmCampaign ?? null,
+      ipHash,
+      now.toISOString(),
+    )
+    .run();
+  return result.meta.changes > 0 ? 'joined' : 'already';
+}
+
+/** The browser tests' store: the same rules, kept in memory. */
 const testRows = new Map<string, number>();
 const testAddresses = new Map<string, number[]>();
 
 export function saveToTestStore(input: EarlyAccessInput, ipHash: string | null, now = Date.now()): Outcome {
   if (ipHash) {
     const recent = (testAddresses.get(ipHash) ?? []).filter((t) => now - t < 3_600_000);
-    if (recent.length >= 5) return 'slow_down';
+    if (recent.length >= PER_ADDRESS_PER_HOUR) return 'slow_down';
     testAddresses.set(ipHash, [...recent, now]);
   }
   const key = `${input.kind}:${input.email}`;

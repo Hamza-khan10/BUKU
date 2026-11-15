@@ -1308,3 +1308,49 @@ figures in one strip; the day's visits beside check-in by code, who's next, **Co
 next seven days) and the setup checklist. The logo and photos moved to Settings. Separately, a
 field's hint now sits under its box: label, box, hint, error, on every form, so fields side by
 side line up ("there is a problem in the text boxes").
+
+**D-134 · An early-access list before BUKU opens: businesses first, people who book a click away
+(3.7b).** BUKU needs proof of demand before launch ("I need some evidence that this will be a
+great investment"), and that proof has to come from real visitors to the real website, not a
+form somewhere else. `/early-access` is that door: a business gives its name, the business's
+name and kind, branches (one, 2 to 5, 6 to 20, more than 20), email, an optional WhatsApp number,
+city, country and the plan it would consider; someone who books gives only an email, a city and
+their yes. Every field is checked against BUKU's text rules, in the browser and again on the
+server (no emoji or hidden characters in names, E.164 numbers, ISO countries, lowercase emails,
+nothing not asked for); the stored table repeats those checks, so a slip in the code can't
+corrupt it. Where a visit came from (`source`/`ref` and the `utm_*` tags, plain and short or
+dropped) is kept with the signup, so channels can be compared. Abuse: only this site's own page
+may post (our header and the browser's origin), at most 8 KB, a bot check (Cloudflare Turnstile,
+its script allowed by the CSP on this page only), and five signups an hour from one address,
+counted by a keyed hash (HMAC-SHA256 with a secret of 32+ characters; the address itself is never
+kept). The same email twice gets the same answer, so nobody can use the form to learn who signed
+up. Consent is explicit and linked to the privacy notice's own section; nothing is sent yet: the
+"BUKU is open" email goes out once there is a domain and a sender (a free SMTP tier first).
+Before launch (`PRELAUNCH=true`, or no API configured) the site's doors lead here: the header's
+"Get early access", the home page (as a business or as someone who books) and For businesses; the
+pages that need the API stay out of `robots.txt` and the sitemap. The browser tests use an
+in-memory store (`EARLY_ACCESS_TEST_STORE`), refused on the live site.
+
+**D-135 · The website is hosted on Cloudflare Workers, and the early-access list is kept in D1.**
+Vercel's free plan is for non-commercial use only, and BUKU is a business. Cloudflare puts the
+domain, DNS, the bot check, the website and a database in one place. **The plan is Workers Paid
+($5 a month), not the free one:** the website's Worker is 2.9 MiB compressed (2026-11-15) against
+the free plan's 3 MiB limit, and the free plan's 10 ms of CPU per request is less than a
+server-rendered page can take; Paid allows 10 MiB and 30 s, with 10 million requests a month
+included. CI builds the Worker on every change and fails above 9 MiB. The website (Next.js) runs on a
+Worker through OpenNext (`@opennextjs/cloudflare`, a build-time tool only): `apps/web/wrangler.jsonc`
+names the Worker (`buku-web`), its settings (`BUKU_SITE_ENV=production`,
+`WEB_CLIENT_IP_HEADER=cf-connecting-ip`, `PRELAUNCH=true`, `ALLOW_INDEXING=true`) and its one
+database. The early-access list (D-134) is a D1 database (`buku-early-access`, SQLite): one STRICT
+table, `migrations/0001_waitlist.sql`, applied with `wrangler d1 migrations apply`. Only the
+Worker reaches it, through its binding: no connection string or key exists to leak. The secrets
+(Turnstile's, the address-hash key) are Worker secrets, never files in the build. Supabase was
+considered first and dropped: a second company holding the list, and a public key in the
+browser. The platform's own databases (Postgres, database v2) are unaffected: D1 holds only this
+list. **A hazard found while moving:** OpenNext copies every value of the repository's `.env*`
+files into the Worker (`next-env.mjs`, no way to turn it off), so a build on a development
+machine would ship its secrets. `scripts/cf-strip-env.ts` runs after every build: it empties that
+file, then scans the whole build for any value of 16+ characters from a local `.env*` file and
+refuses to finish if one is found (naming the variable, never its value). A real deploy is built
+where no `.env` exists (Cloudflare's own builds from GitHub, or CI); `cf:preview` only warns, for
+local tries.

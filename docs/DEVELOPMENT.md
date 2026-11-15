@@ -258,28 +258,58 @@ it refuses any database not on this machine. By hand:
 `pnpm exec tsx services/booking/scripts/dev-world.ts visit-happened <businessPublicId> <appointmentPublicId>`
 (also `move-visit`, `visit-status`, `close-business`, `signed-in-ago`, …).
 
-### Deploy the website on Vercel
+### Deploy the website on Cloudflare
 
-One Vercel project, connected to this repository, with these settings:
+The website runs as a Cloudflare Worker (D-135), built by OpenNext; the early-access list
+(D-134) is a D1 database bound to it. Plan: **Workers Paid** ($5 a month; the Worker is too big
+and too busy for the free plan). The Worker, its settings and its database are in
+`apps/web/wrangler.jsonc`.
 
-| Setting (Vercel → Project → Settings)                  | Value                                                       |
-| ------------------------------------------------------ | ----------------------------------------------------------- |
-| Build and Deployment → **Root Directory**              | `apps/web` (a folder; the branch is chosen separately)      |
-| Build and Deployment → Framework Preset                | Next.js (install command comes from `apps/web/vercel.json`) |
-| Build and Deployment → **Node.js Version**             | 24.x (the repository requires Node 24)                      |
-| Environment Variables → `ENABLE_EXPERIMENTAL_COREPACK` | `1` — so Vercel uses this repository's pnpm (12.8.1)        |
-| Git → Production Branch                                | `main`                                                      |
+**Never deploy from this machine.** OpenNext copies every `.env*` value into the build, so
+`pnpm --filter @buku/web cf:build` here refuses to finish (it names the variables it found).
+Deploys are built by Cloudflare from GitHub, where no `.env` exists. `cf:preview` builds anyway,
+warns, and serves the Worker on http://localhost:8787 for a local try; it reads `apps/web/.dev.vars`
+(git-ignored: `NEXTJS_ENV=development`, `BUKU_SITE_ENV=preview`, Turnstile's test keys,
+an `EARLY_ACCESS_HASH_SECRET`), and `pnpm --filter @buku/web cf:migrate --local` creates the
+local list first.
 
-Then the web app's own variables (from `apps/web/.env.example`), for Production and Preview:
-`APP_URL` (the site's https address), `API_URL` (the public API address, once it is deployed),
-`WEB_GATEWAY_KEY` (the same value as the API's), `WEB_CLIENT_IP_HEADER=x-real-ip`,
-`DEV_SIGN_IN=false`, `ALLOW_INDEXING=false` until launch, the `LEGAL_*` / `*_EMAIL` details
-when they exist, `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` once Google sign-in is set up
-(below), and with the API: `MEDIA_ORIGIN` (the CDN that serves public photos) and
-`STORAGE_ORIGIN` (the API's `S3_PUBLIC_ENDPOINT`: profile pictures load from it and are
-uploaded straight to it — its private bucket's CORS must allow `PUT` from the site's address,
-as `infrastructure/s3/init.sh` does in development). Until the API is online, pages that only describe BUKU work, and pages that need live
-data show their "isn't loading" state. Previews are behind Vercel's login by default.
+Once, in the Cloudflare dashboard and a terminal (`! pnpm --filter @buku/web exec wrangler login`):
+
+1. **The database:** `pnpm --filter @buku/web exec wrangler d1 create buku-early-access`, then put
+   the `database_id` it prints into `wrangler.jsonc` (an id, not a secret) and commit it. Create
+   the table: `pnpm --filter @buku/web cf:migrate --remote`.
+2. **The bot check:** Turnstile → Add widget (mode Managed, the site's hostnames, and
+   `localhost` only on a separate test widget). Its **site key** is public, its **secret key** is
+   not.
+3. **The Worker, built from GitHub:** Workers & Pages → Create → Import a repository → this one;
+   project name `buku-web`, root directory `apps/web`, build command
+   `pnpm install --frozen-lockfile --filter @buku/web... && pnpm cf:build`, deploy command
+   `pnpm exec opennextjs-cloudflare deploy`, production branch `main`; build variables
+   `NODE_VERSION=24` and `PNPM_VERSION=12.8.1`. Builds for other branches: off for now (a
+   preview would write to the live list). The first deploy creates the Worker; until step 4 its
+   list says it opens soon.
+4. **The Worker's settings** (Workers & Pages → `buku-web` → Settings → Variables and Secrets;
+   `keep_vars` in `wrangler.jsonc` keeps them across deploys): variables `APP_URL` (the site's
+   https address), `TURNSTILE_SITE_KEY`, `GOOGLE_SITE_VERIFICATION` (Search Console's HTML tag
+   value); secrets, typed into the terminal and never pasted anywhere else,
+   `pnpm --filter @buku/web exec wrangler secret put TURNSTILE_SECRET_KEY` and
+   `… wrangler secret put EARLY_ACCESS_HASH_SECRET` (32+ random characters:
+   `openssl rand -hex 32`). Later, with the API: `API_URL`, `WEB_GATEWAY_KEY` (secret),
+   `MEDIA_ORIGIN`, `STORAGE_ORIGIN` (its private bucket's CORS must allow `PUT` from the site's
+   address, as `infrastructure/s3/init.sh` does in development), the `LEGAL_*` / `*_EMAIL` details, Google sign-in; and
+   `PRELAUNCH` removed at launch. Then **Retry deployment** (or push to `main`).
+5. **The domain:** buy it in Cloudflare Registrar (at cost), then `buku-web` → Settings →
+   Domains & Routes → add it (and `www`); Cloudflare issues the certificate. Set `APP_URL` to it.
+6. **Google:** Search Console → add the domain (DNS record, added in Cloudflare in one click) or
+   the URL prefix with the HTML tag (`GOOGLE_SITE_VERIFICATION`), then submit
+   `https://<domain>/sitemap.xml`.
+
+Signups: `pnpm --filter @buku/web exec wrangler d1 execute buku-early-access --remote --command
+"SELECT kind, count(*) FROM waitlist GROUP BY kind"`, or the D1 console in the dashboard. Export
+before any email goes out; remove a person on request (`DELETE … WHERE email = ?`).
+
+The site still builds and runs on Vercel or `next start` (no D1 there: the list says it opens
+soon), which is how CI's browser tests run it.
 
 ### Work on the admin app (apps/admin)
 

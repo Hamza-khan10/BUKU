@@ -1,13 +1,13 @@
 'use client';
 
-import { ISO_COUNTRY_CODES } from '@buku/validation';
 import { CalendarCheck, CircleCheck, Store } from 'lucide-react';
 import Link from 'next/link';
 import Script from 'next/script';
-import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input, Select } from '@/components/ui/input';
+import type { Option } from '@/features/manage/setup';
 import { cn } from '@/lib/cn';
 import { BRANCHES, EarlyAccessInput, fieldProblems, PLAN_INTEREST, PLAN_LABEL, type Kind } from '../schema';
 
@@ -62,12 +62,15 @@ export function EarlyAccessForm({
   nonce,
   initialKind,
   initialCountry,
+  countries,
   tags,
 }: {
   siteKey: string | null;
   nonce: string | undefined;
   initialKind: Kind;
   initialCountry: string;
+  /** Countries by name, named on the server (the browser's names can differ: see countryOptions). */
+  countries: Option[];
   tags: Tags;
 }) {
   const [kind, setKind] = useState<Kind>(initialKind);
@@ -84,13 +87,6 @@ export function EarlyAccessForm({
   const token = useRef<string | null>(null);
   const widget = useRef<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
-
-  const countries = useMemo(() => {
-    const names = new Intl.DisplayNames(['en'], { type: 'region' });
-    return [...ISO_COUNTRY_CODES]
-      .map((code) => ({ code, name: names.of(code) ?? code }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, []);
 
   const set = (key: string, value: string) => setValues((v) => ({ ...v, [key]: value }));
 
@@ -319,8 +315,8 @@ export function EarlyAccessForm({
         <Field label="Country" required error={errors.country}>
           <Select name="country" value={values.country} onChange={(e) => set('country', e.target.value)}>
             {countries.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.name}
+              <option key={c.value} value={c.value}>
+                {c.label}
               </option>
             ))}
           </Select>

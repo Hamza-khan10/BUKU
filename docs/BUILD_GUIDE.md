@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7 started (2026-11-15)     |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–b built (2026-11-15)    |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -744,6 +744,19 @@ The detailed plan — every page, its data and edge cases, the design system and
   the logo and photos moved to Settings. Every field's hint sits under its box. Tests: who sees
   which pages (unit); the business-area browser tests reach pages the way people do (`goToPage`,
   `expectOnPage`: the sidebar, or the tabs and More on a phone).
+- **3.7b Early access, and the website on Cloudflare — ✅ built (D-134, D-135).** `/early-access`
+  takes businesses (name, business, kind, branches, email, WhatsApp, city, country, the plan it
+  would consider) and people who book (email, city), each field checked in the browser, on the
+  server and by the table itself; where the visit came from is kept with it. Before launch the
+  site's doors lead there and the pages that need the API stay out of robots and the sitemap.
+  Abuse: our own page only, 8 KB, Cloudflare Turnstile, five an hour per address (a keyed hash,
+  never the address), the same answer for an email already there. The website is built as a
+  Cloudflare Worker (OpenNext) with the list in D1; a guard refuses any build that holds a local
+  `.env` value, and CI builds the Worker and checks its size (2.9 MiB compressed: Workers Paid).
+  Going live needs the owner's Cloudflare steps (DEVELOPMENT.md → Deploy the website on
+  Cloudflare). Tests: the rules, the hash, the bot check, the list on SQLite with the real
+  migration, the table's own refusals (unit); a browser test of both forms, problems in plain
+  words, the same answer twice, the five-an-hour limit, the origin checks and WCAG.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

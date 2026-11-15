@@ -1,13 +1,14 @@
+import { readFileSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EarlyAccessInput, fieldProblems } from '../src/features/early-access/schema';
 import {
   earlyAccessSettings,
   hashAddress,
   passedBotCheck,
-  rowOf,
   saveSignup,
   saveToTestStore,
-  type EarlyAccessSettings,
+  type Db,
 } from '../src/features/early-access/server';
 
 const business = {
@@ -25,13 +26,26 @@ const business = {
   utmSource: 'instagram',
 };
 
-const settings: EarlyAccessSettings = {
-  supabaseUrl: 'https://abc.supabase.co/',
-  supabaseKey: 'sb_secret_test',
-  turnstileSiteKey: 'site',
-  turnstileSecret: 'secret',
-  hashSecret: 'x'.repeat(32),
-};
+/**
+ * D1 is SQLite: the real migration, on Node's own SQLite, behind the few D1 calls the site uses.
+ */
+function d1(): { db: Db; sqlite: DatabaseSync } {
+  const sqlite = new DatabaseSync(':memory:');
+  sqlite.exec(readFileSync(new URL('../migrations/0001_waitlist.sql', import.meta.url), 'utf8'));
+  const db: Db = {
+    prepare: (sql) => ({
+      bind: (...values) => {
+        const statement = sqlite.prepare(sql);
+        const args = values as (string | number | null)[];
+        return {
+          first: <T>() => Promise.resolve((statement.get(...args) as T | undefined) ?? null),
+          run: () => Promise.resolve({ meta: { changes: Number(statement.run(...args).changes) } }),
+        };
+      },
+    }),
+  };
+  return { db, sqlite };
+}
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -99,16 +113,18 @@ describe('Early access: on the server', () => {
     expect(earlyAccessSettings()).toBeNull();
     vi.stubEnv('EARLY_ACCESS_TEST_STORE', 'true');
     expect(earlyAccessSettings()).toBe('test');
-    vi.stubEnv('VERCEL_ENV', 'production');
-    expect(earlyAccessSettings()).toBeNull();
-    vi.stubEnv('SUPABASE_URL', 'http://abc.supabase.co');
-    vi.stubEnv('SUPABASE_SECRET_KEY', 'k');
+    vi.stubEnv('BUKU_SITE_ENV', 'production');
+    expect(earlyAccessSettings()).toBeNull(); // never the in-memory store on the live Worker
     vi.stubEnv('TURNSTILE_SITE_KEY', 's');
     vi.stubEnv('TURNSTILE_SECRET_KEY', 't');
+    vi.stubEnv('EARLY_ACCESS_HASH_SECRET', 'short');
+    expect(earlyAccessSettings()).toBeNull(); // too short a key to scramble addresses with
     vi.stubEnv('EARLY_ACCESS_HASH_SECRET', 'y'.repeat(32));
-    expect(earlyAccessSettings()).toBeNull(); // not https
-    vi.stubEnv('SUPABASE_URL', 'https://abc.supabase.co');
-    expect(earlyAccessSettings()).toMatchObject({ supabaseUrl: 'https://abc.supabase.co' });
+    expect(earlyAccessSettings()).toEqual({
+      turnstileSiteKey: 's',
+      turnstileSecret: 't',
+      hashSecret: 'y'.repeat(32),
+    });
   });
 
   it('scrambles an address with a key: the same address matches itself, nothing else, and can’t be read back', () => {
@@ -138,37 +154,78 @@ describe('Early access: on the server', () => {
     expect(await passedBotCheck('secret', 't', undefined, down)).toBe(false);
   });
 
-  it('keeps a signup through join_waitlist only, with the key where Supabase expects it', async () => {
+  it('keeps a signup in D1: one per email and kind, the same answer twice, five an hour from one address', async () => {
+    const { db, sqlite } = d1();
     const input = EarlyAccessInput.parse(business);
-    const supabase = vi.fn(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve('joined') } as unknown as Response),
-    );
-    expect(await saveSignup(settings, input, 'a'.repeat(64), supabase)).toBe('joined');
-    const [url, init] = supabase.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('https://abc.supabase.co/rest/v1/rpc/join_waitlist');
-    const headers = init.headers as Record<string, string>;
-    expect(headers.apikey).toBe('sb_secret_test');
-    expect(headers.authorization).toBeUndefined(); // the newer secret keys aren't tokens
-    expect(JSON.parse(init.body as string)).toEqual(rowOf(input, 'a'.repeat(64)));
-
-    const legacy = vi.fn(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve('already') } as unknown as Response),
-    );
-    await saveSignup({ ...settings, supabaseKey: 'eyJhbGciOi.legacy' }, input, null, legacy);
-    const legacyHeaders = (legacy.mock.calls[0] as unknown as [string, RequestInit])[1].headers as Record<
+    const now = new Date('2026-11-16T10:00:00.000Z');
+    expect(await saveSignup(db, input, 'a'.repeat(64), now)).toBe('joined');
+    expect(await saveSignup(db, input, 'a'.repeat(64), now)).toBe('already');
+    expect(await saveSignup(db, { ...input, kind: 'customer' }, null, now)).toBe('joined');
+    const row = sqlite.prepare('SELECT * FROM waitlist WHERE kind = ?').get('business') as Record<
       string,
-      string
+      unknown
     >;
-    expect(legacyHeaders.authorization).toBe('Bearer eyJhbGciOi.legacy');
+    expect(row).toMatchObject({
+      email: 'hina@example.com',
+      business_name: 'Happy Tails Clinic',
+      whatsapp: '+923001234567',
+      country: 'PK',
+      plan_interest: 'network',
+      utm_source: 'instagram',
+      ip_hash: 'a'.repeat(64),
+      created_at: '2026-11-16T10:00:00.000Z',
+    });
 
-    const odd = vi.fn(() =>
-      Promise.resolve({ ok: true, json: () => Promise.resolve('surprise') } as unknown as Response),
-    );
-    await expect(saveSignup(settings, input, null, odd)).rejects.toThrow();
-    const failing = vi.fn(() =>
-      Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve(null) } as unknown as Response),
-    );
-    await expect(saveSignup(settings, input, null, failing)).rejects.toThrow('500');
+    const address = 'b'.repeat(64);
+    for (let i = 0; i < 5; i++)
+      expect(await saveSignup(db, { ...input, email: `p${i}@example.com` }, address, now)).toBe('joined');
+    expect(await saveSignup(db, { ...input, email: 'p6@example.com' }, address, now)).toBe('slow_down');
+    // An hour later, that place may sign up again.
+    expect(
+      await saveSignup(
+        db,
+        { ...input, email: 'p7@example.com' },
+        address,
+        new Date('2026-11-16T11:00:01.000Z'),
+      ),
+    ).toBe('joined');
+  });
+
+  it('the table refuses what the website would, even if a check there ever slipped', () => {
+    const { sqlite } = d1();
+    const insert = (values: Record<string, unknown>) => () =>
+      sqlite
+        .prepare(
+          `INSERT INTO waitlist (email, kind, name, business_name, business_type, branches, city, country, whatsapp, plan_interest, ip_hash)
+           VALUES (:email, :kind, :name, :business_name, :business_type, :branches, :city, :country, :whatsapp, :plan_interest, :ip_hash)`,
+        )
+        .run({
+          email: 'ok@example.com',
+          kind: 'customer',
+          name: null,
+          business_name: null,
+          business_type: null,
+          branches: null,
+          city: 'Lahore',
+          country: 'PK',
+          whatsapp: null,
+          plan_interest: null,
+          ip_hash: null,
+          ...values,
+        } as Record<string, string | null>);
+    expect(insert({})).not.toThrow();
+    for (const bad of [
+      { email: 'Upper@Example.com' },
+      { email: 'no-at-sign' },
+      { kind: 'admin' },
+      { country: 'Pakistan' },
+      { country: 'pk' },
+      { whatsapp: '0300-1234567' },
+      { kind: 'business' }, // a business without its details
+      { branches: '3' },
+      { ip_hash: 'not-a-hash' },
+    ])
+      expect(insert({ email: `x${Math.random()}@example.com`, ...bad }), JSON.stringify(bad)).toThrow();
   });
 
   it('the tests’ store follows the same rules: one per email and kind, five an hour from one address', () => {

@@ -1,0 +1,5 @@
+# Cloudflare builds and local state (D-135)
+.open-next/
+.wrangler/
+# Local secrets for `wrangler dev` / `pnpm cf:preview` (like .env.local)
+.dev.vars
