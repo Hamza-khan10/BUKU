@@ -699,20 +699,31 @@ export class AppointmentService {
     replacing?: bigint,
   ) {
     const db = await this.plane.user(userId);
-    try {
-      await db.$transaction(async (tx) => {
-        if (replacing) {
-          await tx.userTimeReservation.deleteMany({
-            where: { userId, OR: [{ id: replacing }, { appointmentId: replacing }] },
+    // Two claims for the same person at the same instant (two businesses, two taps) can each wait
+    // on the other's row under the exclusion rule; Postgres then aborts one as a deadlock. Tried
+    // again, that one finds the other's claim and is told plainly "you already have one" (409),
+    // never a server error.
+    for (let tries = 0; ; tries++) {
+      try {
+        await db.$transaction(async (tx) => {
+          if (replacing) {
+            await tx.userTimeReservation.deleteMany({
+              where: { userId, OR: [{ id: replacing }, { appointmentId: replacing }] },
+            });
+          }
+          await tx.userTimeReservation.create({
+            data: { ...hold, userId, expiresAt: new Date(Date.now() + CLAIM_MS) },
           });
-        }
-        await tx.userTimeReservation.create({
-          data: { ...hold, userId, expiresAt: new Date(Date.now() + CLAIM_MS) },
         });
-      });
-    } catch (err) {
-      if (isExclusionViolation(err)) throw overlap();
-      throw err;
+        return;
+      } catch (err) {
+        if (isExclusionViolation(err)) throw overlap();
+        if (isRetryableTransactionError(err) && tries < MAX_ATTEMPTS - 1) {
+          await pause(10 + randomInt(40) * (tries + 1));
+          continue;
+        }
+        throw err;
+      }
     }
   }
 
