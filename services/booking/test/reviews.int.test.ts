@@ -288,6 +288,57 @@ describe('The business: reply and report', () => {
   });
 });
 
+describe('The business’s own view of its reviews (3.5i)', () => {
+  it('every review with what the team did and what BUKU hid; filters and counts; owners and managers only', async () => {
+    const s = await h.salon();
+    const admin = await h.person('super_admin');
+    const [c1, c2, c3] = [await h.person(), await h.person(), await h.person()];
+    const fake = (await review(c1, (await visit(s, c1, HOUR)).id, { overall: 1, comment: 'Never went' })).body
+      .data.id as string;
+    const good = (await review(c2, (await visit(s, c2, HOUR)).id, { overall: 5, comment: 'Lovely' })).body
+      .data.id as string;
+    const meh = (await review(c3, (await visit(s, c3, HOUR)).id, { overall: 3 })).body.data.id as string;
+    await request(h.app)
+      .put(`${s.base}/reviews/${good}/response`)
+      .set(s.owner.auth)
+      .send({ text: 'Thank you!' })
+      .expect(200);
+    await request(h.app)
+      .post(`${s.base}/reviews/${fake}/report`)
+      .set(s.owner.auth)
+      .send({ reason: 'fake' })
+      .expect(204);
+    await request(h.app)
+      .post(`/v1/admin/reviews/${meh}/decision`)
+      .set(admin.auth)
+      .send({ action: 'hide', reason: 'test: hidden' })
+      .expect(204);
+
+    const list = (filter: string) =>
+      request(h.app).get(`${s.base}/reviews/manage`).query({ filter }).set(s.owner.auth).expect(200);
+    const all = await list('all');
+    expect(all.body.data.map((r: { id: string }) => r.id).sort()).toEqual([fake, good, meh].sort());
+    expect(all.body.meta.counts).toEqual({ unanswered: 1, reported: 1, hidden: 1 });
+    const byId = new Map(all.body.data.map((r: { id: string }) => [r.id, r]));
+    expect(byId.get(fake)).toMatchObject({ visible: true, reported: { reason: 'fake' }, response: null });
+    expect(byId.get(good)).toMatchObject({ reported: null, response: { text: 'Thank you!' } });
+    expect(byId.get(meh)).toMatchObject({ visible: false, hiddenAt: expect.any(String) });
+    expect(JSON.stringify(byId.get(meh))).not.toContain('test: hidden'); // BUKU's reason stays BUKU's
+
+    expect((await list('unanswered')).body.data.map((r: { id: string }) => r.id)).toEqual([fake]);
+    expect((await list('reported')).body.data.map((r: { id: string }) => r.id)).toEqual([fake]);
+    expect((await list('hidden')).body.data.map((r: { id: string }) => r.id)).toEqual([meh]);
+    const fives = await request(h.app).get(`${s.base}/reviews/manage`).query({ rating: 5 }).set(s.owner.auth);
+    expect(fives.body.data.map((r: { id: string }) => r.id)).toEqual([good]);
+
+    const manager = await s.member('manager');
+    await request(h.app).get(`${s.base}/reviews/manage`).set(manager.auth).expect(200);
+    const desk = await s.member('front_desk');
+    await request(h.app).get(`${s.base}/reviews/manage`).set(desk.auth).expect(403);
+    await request(h.app).get(`${s.base}/reviews/manage`).set(c1.auth).expect(404);
+  });
+});
+
 describe('Helpers', () => {
   it('mask contact details but not prices or times', () => {
     expect(maskContacts('Rs 1500, 10:30, open 9-5')).toBe('Rs 1500, 10:30, open 9-5');
