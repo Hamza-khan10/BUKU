@@ -168,7 +168,8 @@
   --font-display: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
-  /* Shape: pills for buttons, chips and times; 12px inputs; 16px pictures; 20px panels. */
+  /* Shape: pills for buttons, chips and times; 8px fields (inputs, selects, choices); 16px pictures
+     and forms; 20px panels. An inner box is never rounder than the one around it. */
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
@@ -401,6 +402,25 @@
 
 /* One type scale for every page (D-095): what a heading looks like depends on its job, not on
    the page it's on. Tight as it grows, Apple-style. */
+/* A select's arrow, drawn like the rest of the field (two small triangles in the field's own
+   muted ink, so it follows light and dark) instead of each browser's own. Without colours forced
+   (Windows high contrast), the system's arrow comes back. */
+@utility select-chevron {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+    linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.3rem) 50%,
+    calc(100% - 0.98rem) 50%;
+  background-size: 0.32rem 0.32rem;
+  background-repeat: no-repeat;
+  @media (forced-colors: active) {
+    appearance: auto;
+    background-image: none;
+  }
+}
+
 @utility type-title {
   /* A page's h1 (every page but the home page, whose headline is its own). */
   font-size: 2.35rem;
