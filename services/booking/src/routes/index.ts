@@ -13,7 +13,7 @@ import {
   type RevocationStore,
 } from '@buku/common';
 import { Router, type Express, type Response } from 'express';
-import { rateLimit as expressRateLimit } from 'express-rate-limit';
+import expressRateLimit from 'express-rate-limit';
 import type { DataPlane } from '@buku/database';
 import type { Redis } from 'ioredis';
 import type { AppointmentService } from '../appointments/appointment-service.js';
