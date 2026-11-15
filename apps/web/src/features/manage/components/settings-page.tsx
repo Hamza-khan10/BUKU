@@ -39,6 +39,7 @@ import {
   updateProfile,
 } from '../settings-api';
 import { cleanPhone, coordinatesLabel, E164, mapsLink, parseCoordinates, roundCoordinates } from '../setup';
+import { BusinessPictures } from './business-pictures';
 
 /** What went wrong, in the API's words when it said. */
 const problem = (err: unknown) =>
@@ -88,6 +89,9 @@ export function SettingsPage({ id }: { id: string }) {
       />
       {/* Keyed by when it last changed, so a save elsewhere refills the form. */}
       <ProfileForm key={business.data.updatedAt} business={business.data} />
+      <Section title="Logo and photos" description="How your page looks. The first photo is the cover.">
+        <BusinessPictures business={business.data} />
+      </Section>
       <BookingForm id={id} />
       <QueueForm id={id} />
     </div>

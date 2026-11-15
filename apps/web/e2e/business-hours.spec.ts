@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
+import { expectOnPage } from './business-world';
 import { closeBusiness } from './db';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible } from './helpers';
@@ -70,9 +71,7 @@ test.describe('Business hours', () => {
     const business = await ownerWithBusiness(page);
     await page.goto(`/business/${business.id}/hours`);
     await expect(page.getByRole('heading', { name: 'Hours', exact: true })).toBeVisible();
-    await expect(
-      page.getByRole('navigation', { name: business.name }).getByRole('link', { name: 'Hours' }),
-    ).toHaveAttribute('aria-current', 'page');
+    await expectOnPage(page, business.name, 'Hours');
 
     // The usual week, then Sundays too.
     const hours = page.getByRole('region', { name: 'Opening hours' });

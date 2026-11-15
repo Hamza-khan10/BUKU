@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done (2026-11-15); next 3.7        |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7 started (2026-11-15)     |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -735,6 +735,15 @@ The detailed plan — every page, its data and edge cases, the design system and
   - Tests: file checks, the list, sizes and registration numbers (unit); a browser test that
     saves the details, sees them masked, sends a PDF and removes it (with the test's own address
     off: storage accepts only the headers it expects).
+- **3.7a The business workspace, and fields that line up — ✅ done (D-133).** `/business/[id]/*`
+  is an app of its own (route group `(work)`): a slim bar (the business with a switcher, your page,
+  theme, account), a full-height sidebar with the pages in four groups (folds to icons, remembered
+  on the device), and the page at full width; on a phone, a solid tab bar (Today, Appointments,
+  Check-in, Queue, More, a sheet of every page). The home is a dashboard: today's figures in one
+  strip, the visits beside check-in, who's next, Coming up (seven days) and the setup checklist;
+  the logo and photos moved to Settings. Every field's hint sits under its box. Tests: who sees
+  which pages (unit); the business-area browser tests reach pages the way people do (`goToPage`,
+  `expectOnPage`: the sidebar, or the tabs and More on a phone).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request
