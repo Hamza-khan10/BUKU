@@ -102,6 +102,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   /**
    * The team's own lists (reviews): roomy for paging and filters, still bounded per address, on
    * the route itself (express-rate-limit, which code scanning recognises; D-086's limits apply too).
+   * It runs before `auth`, so a flood is turned away before any token is checked.
    */
   const teamReadLimit = expressRateLimit({
     windowMs: 60_000,
@@ -148,8 +149,8 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   );
   r.get(
     '/:id/reviews/manage',
-    auth,
     teamReadLimit,
+    auth,
     validated({ params: IdParams, query: TeamReviewsQuery }, async ({ params, query }, req, res) => {
       const { items, meta } = await deps.reviews.teamList(
         await businessOf(params.id),
