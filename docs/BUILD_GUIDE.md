@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–i and 3.6 done (2026-11-02)               |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–j and 3.6 done (2026-11-15)               |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -668,6 +668,18 @@ The detailed plan — every page, its data and edge cases, the design system and
   Booking: `GET /v1/businesses/:id/reviews/manage` (owners and managers; front desk 403; others 404) with the counts for the filters. Browser test (desktop and phone): a customer's visit,
   their review, a reply changed, the reply on the public page, and a report. The business-area
   browser tests share their setup in `e2e/business-world.ts`.
+- **3.5j Insights — ✅ done.** `/business/[id]/insights`, an "Insights" tab for the owner and
+  managers (`reports.view`): cancellations and no-shows over the last 30 days, 90 days or 12
+  months (in the address), each visit counted on the day it was for, by the business's clock.
+  Four figures (bookings, cancelled by customers, didn't come, booked again after "remind me
+  later"); what happened week by week (came, didn't come, cancelled: every week shown, the quiet
+  ones as zeros); why customers cancelled (ranked); which days and which hours; the rest of the
+  bookings (late, by the business, declined, automatic, moved, still to come); by service and by
+  person. Charts by the dataviz method: series colours checked for colour-blind separation in
+  both themes, a key for two or more series, numbers in ink, each week's numbers on hover and on
+  keyboard focus (the arrow keys walk the columns), and every chart's numbers in a table.
+  Booking: a week's row adds `completed`, counted like the totals'. Tests: the period and axis
+  arithmetic (unit), the weekly rows adding up to the totals (integration), and a browser test.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

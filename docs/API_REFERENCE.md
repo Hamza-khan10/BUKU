@@ -1143,12 +1143,13 @@ GET /v1/businesses/:id/insights/cancellations
     "byHour": [{ "hour": 10, "cancellations": 2, "noShows": 1 }, …],
     "byService": [{ "id": "…", "name": "Haircut", "booked": 90, "cancellations": 6, "noShows": 3, "cancellationRate": 6.7 }],
     "byStaff": [{ "id": "…", "name": "Ali", "booked": 70, "cancellations": 4, "noShows": 2, "cancellationRate": 5.7 }],
-    "weekly": [{ "weekOf": "2026-09-28", "booked": 12, "cancellations": 1, "noShows": 0 }, …],
+    "weekly": [{ "weekOf": "2026-09-28", "booked": 12, "completed": 10, "cancellations": 1, "noShows": 0 }, …],
     "rebookLater": { "asked": 4, "bookedAgain": 3, "rate": 75 } } }
 ```
 
 Visits are counted by when they were (or would have been). Rates have one decimal; the no-show
-rate is of visits that happened or were missed.
+rate is of visits that happened or were missed. A week's `completed` (visits that happened: done,
+or checked in) is counted like the totals' (3.5j); `weekOf` is the Monday, in the business's timezone.
 
 ## Two-step sign-in (D-081)
 

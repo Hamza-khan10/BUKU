@@ -117,9 +117,12 @@ async function report(
         FROM appointments a JOIN staff st ON st.id = a.staff_id
         WHERE a.business_id = ${businessId} AND a.start_at >= ${start} AND a.start_at < ${end}
         GROUP BY st.id, st.display_name ORDER BY booked DESC, st.display_name LIMIT 50`,
-    tx.$queryRaw<{ week: string; booked: number; cancellations: number; no_shows: number }[]>`
+    tx.$queryRaw<
+      { week: string; booked: number; completed: number; cancellations: number; no_shows: number }[]
+    >`
         SELECT to_char(date_trunc('week', start_at AT TIME ZONE ${tz}), 'YYYY-MM-DD') AS week,
           count(*) FILTER (WHERE status <> 'rescheduled')::int AS booked,
+          count(*) FILTER (WHERE status = 'completed' OR (status = 'confirmed' AND checked_in_at IS NOT NULL))::int AS completed,
           count(*) FILTER (WHERE status = 'cancelled' AND cancelled_by = 'user')::int AS cancellations,
           count(*) FILTER (WHERE status = 'no_show')::int AS no_shows
         FROM appointments
@@ -171,6 +174,8 @@ async function report(
     weekly: weekly.map((w) => ({
       weekOf: w.week,
       booked: w.booked,
+      /** Visits that happened (done, or checked in), the same as the totals' `completed`. */
+      completed: w.completed,
       cancellations: w.cancellations,
       noShows: w.no_shows,
     })),
