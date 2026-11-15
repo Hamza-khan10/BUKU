@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–j and 3.6 done (2026-11-15)               |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5a–k and 3.6 done (2026-11-15)               |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -680,6 +680,25 @@ The detailed plan — every page, its data and edge cases, the design system and
   keyboard focus (the arrow keys walk the columns), and every chart's numbers in a table.
   Booking: a week's row adds `completed`, counted like the totals'. Tests: the period and axis
   arithmetic (unit), the weekly rows adding up to the totals (integration), and a browser test.
+- **3.5k The plan — ✅ done.** `/business/[id]/billing`, a "Plan" tab for the owner and managers
+  (every team role may read it; changes are the owner's, `billing.manage`):
+  - Where the business stands: everything included (BUKU isn't charging), the free plan, a free
+    trial and its end, a paid plan (renews, ends, a failed payment), a plan given by BUKU, or one
+    paid through an app store (changed there).
+  - What it uses: a meter per limit (nearly full at 80%, full at the limit, with an icon and words,
+    never colour alone) and each feature, in or out.
+  - The free trial, once per business, when offered.
+  - The plans and their comparison, each saying what it means here: your plan, choose it (Paddle's
+    checkout, D-119), switch to it now (the difference charged or credited), or change it in the
+    store. Cancel at the end of the period, keep it after all, and card and invoices (Paddle's
+    portal, in a new tab). A payment link is followed only to this site or Paddle, over https.
+  - Asking BUKU for a plan (which, and why, at least 10 characters), waiting, withdrawing, and
+    the earlier requests with BUKU's answer.
+  - `/checkout` without a payment now points to the business's Plan tab.
+  - Tests: the standing, meters, what each plan offers and the payment-link guard (unit), and a
+    browser test as the development stack has it (billing off: everything included, nothing to
+    buy, a request sent and withdrawn). Paying, switching and the trial are billing's own
+    integration tests: switching billing on would change it for every other browser test.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request
