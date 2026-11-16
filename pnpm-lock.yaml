@@ -204,8 +204,8 @@ importers:
         specifier: 7.1.1
         version: 7.1.1(eslint@10.15.0(jiti@2.6.1)(supports-color@10.2.2))(supports-color@10.2.2)
       globals:
-        specifier: 17.13.0
-        version: 17.13.0
+        specifier: 17.14.0
+        version: 17.14.0
       husky:
         specifier: 9.1.7
         version: 9.1.7
@@ -4568,8 +4568,8 @@ packages:
     resolution: {integrity: sha512-1pgFdhK3J2LeM+dVf2Pd424yHx2ou338lC0ErNP2hPx4j8eW1Sp0XqSjNxtk6Tc4Kr5wlWtSvz8cn2yb7/SG/w==}
     engines: {node: '>=20'}
 
-  globals@17.13.0:
-    resolution: {integrity: sha512-RwMTC61u7hrG3ZJMkZQOK4JLJrKS8QtoTii63EmWvFXHqycY9FObBJQCbsLxSO8kjKhWE5kV1GC+Vb1g3RI0Zg==}
+  globals@17.14.0:
+    resolution: {integrity: sha512-UtdkTVyAJePQv0J2M9Xe4L0ruNSDV314XiIJsADI2Zf40bcdAonE/D/OhAU8AT99oij9mhLByb+NvA3QWZYgCg==}
     engines: {node: '>=18'}
 
   gopd@1.2.0:
@@ -10259,7 +10259,7 @@ snapshots:
     dependencies:
       ini: 6.0.0
 
-  globals@17.13.0: {}
+  globals@17.14.0: {}
 
   gopd@1.2.0: {}
 
