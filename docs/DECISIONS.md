@@ -1374,7 +1374,12 @@ organic visitors through SEO, AEO (answer engines) and GEO (AI assistants). Deci
   the same plain-text questions people see (`features/marketing/faq.ts`), which also make
   `/llms.txt` (llmstxt.org), so engines quote what BUKU says about itself, word for word. Answers
   in accordions stay in the page while closed (hidden, not removed), so engines read them (/help
-  too).
+  too). The owner rejected the first, plain list ("this design isn't good"): questions are now an
+  open list between hairlines (no box), the question in medium weight at 18px with tightened
+  tracking, the answer at a 62-character measure, a round plus that turns into a filled close mark,
+  answers growing to their height without overshoot (none under reduced motion); on /for-business
+  the heading, a lead and "write to us" stay in view beside them. Every new part of the site goes
+  through the design skills first.
 - **Counting people, not requests.** Cloudflare's own dashboard counts every request, crawlers
   and scanners included (a new domain is probed from many countries within minutes, because its
   certificate is public), so it can't say how many people came. Cloudflare Web Analytics can: a

@@ -198,7 +198,7 @@ export default async function ForBusinessPage() {
       <Container>
         <section
           aria-labelledby="questions"
-          className="reveal-rise grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16"
+          className="reveal-rise grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:gap-20"
         >
           {/* The same questions, for search and answer engines (D-136). */}
           <script
@@ -206,10 +206,21 @@ export default async function ForBusinessPage() {
             nonce={incoming.get('x-nonce') ?? undefined}
             dangerouslySetInnerHTML={{ __html: jsonLd(faqStructuredData(BUSINESS_QUESTIONS)) }}
           />
-          <h2 id="questions" className="type-section">
-            Questions businesses ask.
-          </h2>
-          <Accordion type="multiple">
+          {/* Stays in view beside the answers on wide screens, so the column has a purpose. */}
+          <div className="flex flex-col gap-5 lg:sticky lg:top-28 lg:self-start">
+            <h2 id="questions" className="type-section">
+              Questions businesses ask.
+            </h2>
+            <p className="type-lead max-w-md">Straight answers about running your front desk on BUKU.</p>
+            <p className="text-ink-2">
+              Something we haven’t answered?{' '}
+              <Link href="/contact" className="font-medium text-brand-ink underline underline-offset-4">
+                Write to us
+              </Link>
+              .
+            </p>
+          </div>
+          <Accordion type="single" collapsible defaultValue={`faq-${BUSINESS_QUESTIONS[0]!.id}`}>
             {BUSINESS_QUESTIONS.map((item) => (
               <AccordionItem key={item.id} value={`faq-${item.id}`} question={item.q}>
                 <p>{item.a}</p>

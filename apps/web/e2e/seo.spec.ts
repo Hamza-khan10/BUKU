@@ -48,16 +48,19 @@ test.describe('Search and answer engines', () => {
     };
     expect(faq.mainEntity.length).toBeGreaterThanOrEqual(6);
     const section = page.getByRole('region', { name: 'Questions businesses ask.' });
-    for (const { name, acceptedAnswer } of faq.mainEntity) {
-      const question = section.getByRole('button', { name });
-      await expect(question).toBeVisible();
+    const [first, second, ...rest] = faq.mainEntity;
+    // The first answer starts open, showing what the list does.
+    await expect(section.getByText(first!.acceptedAnswer.text)).toBeVisible();
+    for (const { name, acceptedAnswer } of [second!, ...rest]) {
+      await expect(section.getByRole('button', { name })).toBeVisible();
       // In the page while closed (crawlers read it), hidden until opened.
       await expect(section.getByText(acceptedAnswer.text)).toBeAttached();
       await expect(section.getByText(acceptedAnswer.text)).toBeHidden();
     }
-    const first = faq.mainEntity[0]!;
-    await section.getByRole('button', { name: first.name }).click();
-    await expect(section.getByText(first.acceptedAnswer.text)).toBeVisible();
+    // One open at a time: opening another closes the first.
+    await section.getByRole('button', { name: second!.name }).click();
+    await expect(section.getByText(second!.acceptedAnswer.text)).toBeVisible();
+    await expect(section.getByText(first!.acceptedAnswer.text)).toBeHidden();
     await expectAccessible(page);
   });
 
