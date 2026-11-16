@@ -107,6 +107,17 @@ export function privacy(facts: SiteFacts): LegalDocument {
         ),
       },
       {
+        id: 'counting-visits',
+        title: 'Counting visits',
+        body: (
+          <p>
+            To see how many people visit the website and which pages help them, we use Cloudflare Web
+            Analytics. It sets no cookies, doesn’t build a profile of you or follow you to other sites, and
+            shows us only totals: pages, countries, browsers and how fast pages load.
+          </p>
+        ),
+      },
+      {
         id: 'what-we-dont-do',
         title: 'What we don’t do',
         body: (

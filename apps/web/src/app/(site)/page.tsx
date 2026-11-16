@@ -1,5 +1,6 @@
 import { ArrowRight, BadgeCheck, LockKeyhole, MessageSquareQuote, Wallet } from 'lucide-react';
-import type { Metadata, Route } from 'next';
+import type { Route } from 'next';
+import { headers } from 'next/headers';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
@@ -18,8 +19,16 @@ import { SearchBox } from '@/features/search/components/search-box';
 import type { CategoryNode, City } from '@/features/search/types';
 import { cn } from '@/lib/cn';
 import { prelaunch } from '@/lib/flags';
+import { jsonLd, pageMetadata } from '@/lib/seo';
+import { siteUrl } from '@/lib/site-url';
 
-export const metadata: Metadata = { alternates: { canonical: '/' } };
+export const metadata = pageMetadata({
+  title: 'BUKU: book appointments and join queues',
+  description:
+    'Book appointments and join walk-in queues at barbers, clinics, salons and offices, free. Businesses take bookings and run their queue with BUKU.',
+  path: '/',
+  absoluteTitle: true,
+});
 
 /**
  * The home page (WEB_PLAN §2, D-093): what BUKU is in one line and one
@@ -89,8 +98,36 @@ function acrossGroups(tree: CategoryNode[], n: number): string[] {
   return names;
 }
 
+/** BUKU as an organisation and its website (schema.org), at the site's one address. */
+function siteStructuredData() {
+  const site = siteUrl();
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': `${site}/#organization`,
+        name: 'BUKU',
+        url: site,
+        logo: `${site}/brand/buku-app-icon.svg`,
+        description:
+          'BUKU is an app for booking appointments and joining walk-in queues at local businesses such as barbers, clinics, salons and offices.',
+      },
+      {
+        '@type': 'WebSite',
+        '@id': `${site}/#website`,
+        name: 'BUKU',
+        url: site,
+        inLanguage: 'en',
+        publisher: { '@id': `${site}/#organization` },
+      },
+    ],
+  };
+}
+
 export default async function HomePage({ searchParams }: PageProps<'/'>) {
-  const asked = (await searchParams).city;
+  const [query, incoming] = await Promise.all([searchParams, headers()]);
+  const asked = query.city;
   const [cityList, tree] = await Promise.all([
     cities().catch(() => []),
     categoryTree().catch(() => [] as CategoryNode[]),
@@ -113,6 +150,12 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
 
   return (
     <div className="flex flex-col gap-20 pb-8 sm:gap-36">
+      {/* Who runs this site and what it is, for search and answer engines (D-136). */}
+      <script
+        type="application/ld+json"
+        nonce={incoming.get('x-nonce') ?? undefined}
+        dangerouslySetInnerHTML={{ __html: jsonLd(siteStructuredData()) }}
+      />
       {/* ── What BUKU is ── */}
       <Container className="grid grid-cols-1 items-center gap-9 pt-7 sm:gap-14 sm:pt-16 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
         <div className="flex flex-col gap-5 sm:gap-7">

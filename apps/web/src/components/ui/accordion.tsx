@@ -38,7 +38,12 @@ export function AccordionItem({
           />
         </RadixAccordion.Trigger>
       </RadixAccordion.Header>
-      <RadixAccordion.Content className="px-5 pb-5 text-ink-2 [&_a]:font-medium [&_a]:text-brand-ink [&_a]:underline [&_a]:underline-offset-4 [&_p+p]:mt-3">
+      {/* Always in the page, hidden while closed (not removed): search and answer engines read
+          every answer, as people can by opening it (D-136). */}
+      <RadixAccordion.Content
+        forceMount
+        className="px-5 pb-5 text-ink-2 data-[state=closed]:hidden [&_a]:font-medium [&_a]:text-brand-ink [&_a]:underline [&_a]:underline-offset-4 [&_p+p]:mt-3"
+      >
         {children}
       </RadixAccordion.Content>
     </RadixAccordion.Item>

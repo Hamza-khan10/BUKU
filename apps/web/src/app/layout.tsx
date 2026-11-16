@@ -1,8 +1,11 @@
 import type { Metadata, Viewport } from 'next';
 import { Instrument_Sans, JetBrains_Mono } from 'next/font/google';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import Script from 'next/script';
+import { SHARE_IMAGE } from '@/lib/seo';
 import { siteUrl } from '@/lib/site-url';
 import { THEME_COOKIE, themeFrom } from '@/lib/theme';
+import { beaconSettings, webAnalyticsToken } from '@/lib/web-analytics';
 import { Providers } from './providers';
 import './globals.css';
 
@@ -23,6 +26,16 @@ export const metadata: Metadata = {
   description:
     'Book appointments and join queues at local businesses, get reminded, and see your place in line as it moves.',
   applicationName: 'BUKU',
+  // The share card of pages that don't set their own (public pages do, through pageMetadata).
+  openGraph: {
+    type: 'website',
+    siteName: 'BUKU',
+    title: 'BUKU: book appointments and join queues',
+    description:
+      'Book appointments and join queues at local businesses, get reminded, and see your place in line as it moves.',
+    images: [SHARE_IMAGE],
+  },
+  twitter: { card: 'summary_large_image', images: [SHARE_IMAGE] },
   // Not indexed until launch (ALLOW_INDEXING=true on the production domain).
   robots: process.env.ALLOW_INDEXING === 'true' ? undefined : { index: false, follow: false },
   formatDetection: { telephone: false, email: false, address: false },
@@ -41,7 +54,9 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: LayoutProps<'/'>) {
-  const theme = themeFrom((await cookies()).get(THEME_COOKIE)?.value);
+  const [jar, incoming] = await Promise.all([cookies(), headers()]);
+  const theme = themeFrom(jar.get(THEME_COOKIE)?.value);
+  const analytics = webAnalyticsToken();
   return (
     <html
       lang="en"
@@ -50,6 +65,15 @@ export default async function RootLayout({ children }: LayoutProps<'/'>) {
     >
       <body>
         <Providers>{children}</Providers>
+        {/* Cloudflare Web Analytics (D-136): counts visits from real browsers, no cookies. */}
+        {analytics && (
+          <Script
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            data-cf-beacon={beaconSettings(analytics)}
+            nonce={incoming.get('x-nonce') ?? undefined}
+            strategy="afterInteractive"
+          />
+        )}
       </body>
     </html>
   );

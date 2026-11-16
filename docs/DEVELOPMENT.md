@@ -311,6 +311,50 @@ before any email goes out; remove a person on request (`DELETE … WHERE email =
 The site still builds and runs on Vercel or `next start` (no D1 there: the list says it opens
 soon), which is how CI's browser tests run it.
 
+### The domain, search engines and Cloudflare settings (D-136)
+
+The site's one address is **https://onbuku.com** (`APP_URL` in `apps/web/wrangler.jsonc`); `www.`
+and the workers.dev address send people there (308). In the Cloudflare dashboard (zone `onbuku.com`
+unless it says otherwise), once:
+
+1. **www:** Workers & Pages → `buku` → Settings → Domains & Routes → Add → Custom domain →
+   `www.onbuku.com`. Cloudflare makes its DNS record and certificate; the site redirects it.
+2. **The bot check on the new address:** Turnstile → the widget → Hostname management → add
+   `onbuku.com` and `www.onbuku.com`. Without this the early-access form fails its check there.
+3. **Counting people:** Analytics & Logs → Web Analytics → Add a site → `onbuku.com` → the **JS
+   snippet** way (not automatic: an injected script is blocked by the site's CSP). Copy the
+   `token` from the snippet (public) into the Worker's text variable `CF_WEB_ANALYTICS_TOKEN`.
+   The zone's Traffic dashboard counts every request, crawlers and scanners included, so it
+   shows many countries before anyone visits; Web Analytics counts real browsers only.
+4. **Answer engines may read the site:** AI Crawl Control (or Security → Settings → Bot traffic):
+   **Block AI bots: off**, and don't let Cloudflare manage robots.txt (the site serves its own,
+   which allows them). Bot Fight Mode: off for now (it can't be tuned on this plan and can stop
+   crawlers that aren't on Cloudflare's verified list); Turnstile and the rate limits guard the
+   form.
+5. **Telling search engines about changes:** Caching → Configuration → **Crawler Hints: on**
+   (sends IndexNow to Bing and others whenever pages change).
+6. **Security:** DNS → Settings → **DNSSEC: enable** (one click with Cloudflare Registrar).
+   SSL/TLS → Edge Certificates: Always Use HTTPS on, Minimum TLS 1.2, TLS 1.3 on (the site already
+   sends HSTS; don't add preload yet). Security → WAF → Rate limiting rules (one on this plan):
+   path equals `/api/early-access` and method `POST`, 5 requests per 10 seconds per IP → Block.
+7. **Email:** Email → Email Routing → enable, then addresses `hello@`, `support@`, `privacy@`,
+   `security@` forwarding to the owner's inbox (Cloudflare adds the MX and SPF records). Then
+   Email → DMARC Management → enable (`p=reject` is safe while nothing sends as onbuku.com; change
+   it with SPF and DKIM when a sender such as Brevo is added). Then the Worker's text variables
+   `SUPPORT_EMAIL`, `PRIVACY_EMAIL`, `SECURITY_EMAIL` (the legal pages show them).
+8. **Google:** Search Console → Add property → **Domain** `onbuku.com` → verify (it offers to add
+   the DNS record in Cloudflare itself) → Sitemaps → `https://onbuku.com/sitemap.xml` → URL
+   inspection → request indexing for `/`, `/for-business`, `/early-access`, `/pricing`.
+9. **Bing** (also feeds ChatGPT search, Copilot and DuckDuckGo): Bing Webmaster Tools → Import from
+   Google Search Console.
+10. **Vercel:** delete the old website project (its free plan isn't for commercial use, and it
+    serves a copy of the site at a vercel.app address).
+
+The share card is `apps/web/public/og/buku.png`; redraw it after changing its words or the brand:
+`pnpm web`, then `node apps/web/scripts/og-image.ts`. What answer engines read is in
+`apps/web/src/features/marketing/faq.ts` (the questions on /for-business, their structured data and
+`/llms.txt`): keep it true as BUKU changes.
+
 ### Work on the admin app (apps/admin)
 
 Platform operators use a separate app (D-091), never the website. Copy `apps/admin/.env.example` to

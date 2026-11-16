@@ -1,5 +1,6 @@
 import { CalendarCheck, Store, Ticket as TicketIcon } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { headers } from 'next/headers';
 import Link from 'next/link';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -11,12 +12,16 @@ import { Container, Eyebrow, SectionHeading } from '@/components/ui/layout';
 import { FrontDeskBoard } from '@/features/home/components/front-desk-board';
 import { pricing } from '@/features/pricing/api';
 import { prelaunch } from '@/lib/flags';
+import { BUSINESS_QUESTIONS, faqStructuredData } from '@/features/marketing/faq';
+import { jsonLd, pageMetadata } from '@/lib/seo';
+import { Accordion, AccordionItem } from '@/components/ui/accordion';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'For businesses',
   description:
     'Take bookings from your real availability, run your walk-in queue, check customers in by QR code, and see who turns up.',
-};
+  path: '/for-business',
+});
 
 /**
  * What BUKU gives a business, grouped the way a front desk thinks: the
@@ -88,7 +93,7 @@ const STEPS = [
 ];
 
 export default async function ForBusinessPage() {
-  const plans = await pricing('business').catch(() => null);
+  const [plans, incoming] = await Promise.all([pricing('business').catch(() => null), headers()]);
   return (
     <div className="flex flex-col gap-20 pb-8 sm:gap-36">
       <Container className="grid grid-cols-1 items-center gap-12 pt-8 sm:gap-14 sm:pt-20 lg:min-h-[calc(88dvh-4rem)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
@@ -187,6 +192,30 @@ export default async function ForBusinessPage() {
               </li>
             ))}
           </ol>
+        </section>
+      </Container>
+
+      <Container>
+        <section
+          aria-labelledby="questions"
+          className="reveal grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16"
+        >
+          {/* The same questions, for search and answer engines (D-136). */}
+          <script
+            type="application/ld+json"
+            nonce={incoming.get('x-nonce') ?? undefined}
+            dangerouslySetInnerHTML={{ __html: jsonLd(faqStructuredData(BUSINESS_QUESTIONS)) }}
+          />
+          <h2 id="questions" className="type-section">
+            Questions businesses ask.
+          </h2>
+          <Accordion type="multiple">
+            {BUSINESS_QUESTIONS.map((item) => (
+              <AccordionItem key={item.id} value={`faq-${item.id}`} question={item.q}>
+                <p>{item.a}</p>
+              </AccordionItem>
+            ))}
+          </Accordion>
         </section>
       </Container>
 

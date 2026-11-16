@@ -2,11 +2,13 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Accordion, AccordionItem } from '@/components/ui/accordion';
 import { Container, PageHeading } from '@/components/ui/layout';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'Help',
   description: 'Answers about booking, queues, your account, notifications, reviews and businesses on BUKU.',
-};
+  path: '/help',
+});
 
 /**
  * Honest answers. Every rule quoted here is the system's own (booking,
