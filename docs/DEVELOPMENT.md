@@ -317,8 +317,20 @@ The site's one address is **https://onbuku.com** (`APP_URL` in `apps/web/wrangle
 and the workers.dev address send people there (308). In the Cloudflare dashboard (zone `onbuku.com`
 unless it says otherwise), once:
 
-1. **www:** Workers & Pages → `buku` → Settings → Domains & Routes → Add → Custom domain →
-   `www.onbuku.com`. Cloudflare makes its DNS record and certificate; the site redirects it.
+1. **www and https, at Cloudflare's edge** (no Worker involved; set up 2026-11-17):
+   - DNS → Records → Add: type `AAAA`, name `www`, IPv6 `100::` (Cloudflare's placeholder for a
+     name that only redirects), **Proxied**. (The Worker's "Connect domain" box can't add `www`:
+     it looks for a whole zone and offers to onboard `www.onbuku.com` as a new one.)
+   - Rules → Redirect Rules → one rule: **If** custom filter `Hostname equals www.onbuku.com`;
+     **Then** Dynamic, `concat("https://onbuku.com", http.request.uri.path)`, 301, preserve query
+     string. (Or the wildcard form: request `https://www.onbuku.com/*`, target
+     `https://onbuku.com/${1}`.) Pitfalls met: the expression in a **Static** rule is sent as text
+     (a redirect to `concat(...)`), and a rule whose "If" isn't limited to `www.` also matches
+     onbuku.com and sends every page to itself (the whole site in a loop).
+   - SSL/TLS → Edge Certificates: **Always Use HTTPS** on (a toggle, no save button), minimum TLS
+     1.2, TLS 1.3 on.
+   - Check: `curl -sIL http://www.onbuku.com/pricing?source=x` ends at
+     `https://onbuku.com/pricing?source=x` after one redirect.
 2. **The bot check on the new address:** Turnstile → the widget → Hostname management → add
    `onbuku.com` and `www.onbuku.com`. Without this the early-access form fails its check there.
 3. **Counting people:** Analytics & Logs → Web Analytics → Add a site → `onbuku.com` → the **JS
