@@ -198,7 +198,7 @@ export default async function ForBusinessPage() {
       <Container>
         <section
           aria-labelledby="questions"
-          className="reveal grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16"
+          className="reveal-rise grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] lg:gap-16"
         >
           {/* The same questions, for search and answer engines (D-136). */}
           <script
