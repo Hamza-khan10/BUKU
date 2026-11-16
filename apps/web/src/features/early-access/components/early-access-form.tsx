@@ -82,6 +82,7 @@ export function EarlyAccessForm({
   siteKey,
   nonce,
   initialKind,
+  initialPlan = 'not_sure',
   initialCountry,
   countries,
   tags,
@@ -89,6 +90,8 @@ export function EarlyAccessForm({
   siteKey: string | null;
   nonce: string | undefined;
   initialKind: Kind;
+  /** The plan someone chose on the pricing page, if they came from there. */
+  initialPlan?: (typeof PLAN_INTEREST)[number];
   initialCountry: string;
   /** Countries by name, named on the server (the browser's names can differ: see countryOptions). */
   countries: Option[];
@@ -98,7 +101,7 @@ export function EarlyAccessForm({
   const [values, setValues] = useState<Values>({
     country: initialCountry,
     branches: '1',
-    planInterest: 'not_sure',
+    planInterest: initialPlan,
   });
   const [consent, setConsent] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});

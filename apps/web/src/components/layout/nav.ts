@@ -21,6 +21,13 @@ export const primaryNav: NavLink[] = [
   { href: '/for-business', label: 'For businesses' },
 ];
 
+/** Pages that need the API to show anything: kept out of the navigation before launch (D-137). */
+const NEED_THE_API = new Set<string>(['/explore']);
+
+/** The links to show: all of them, or before launch only those that stand without the API. */
+export const visibleLinks = (links: NavLink[], early: boolean) =>
+  early ? links.filter((l) => !NEED_THE_API.has(l.href)) : links;
+
 /** Shown under the main links in the phone menu. */
 export const secondaryNav: NavLink[] = [
   { href: '/help', label: 'Help' },

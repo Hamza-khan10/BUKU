@@ -62,6 +62,9 @@ describe('Before launch (D-134)', () => {
       expect.arrayContaining(['/explore', '/c/', '/b/', '/business', '/account']),
     );
     expect(robots().sitemap).toBe('https://buku-ruo5.vercel.app/sitemap.xml');
+    // The categories and the prices stand without the API (D-137): open to search engines.
+    expect(rules.disallow).not.toContain('/categories');
+    expect(rules.disallow).not.toContain('/pricing');
 
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
@@ -70,6 +73,8 @@ describe('Before launch (D-134)', () => {
     expect(urls).toContain('https://buku-ruo5.vercel.app/early-access');
     expect(urls).toContain('https://buku-ruo5.vercel.app/for-business');
     expect(urls).not.toContain('https://buku-ruo5.vercel.app/explore');
+    expect(urls).toContain('https://buku-ruo5.vercel.app/categories');
+    expect(urls).toContain('https://buku-ruo5.vercel.app/pricing');
     expect(urls.some((u) => u.includes('/legal/privacy'))).toBe(true);
   });
 

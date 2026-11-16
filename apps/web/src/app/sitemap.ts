@@ -12,7 +12,8 @@ import { siteUrl } from '@/lib/site-url';
 export const revalidate = 3600;
 
 /** Before launch (D-134), the pages that need the API wait; the early-access list is the door. */
-const NEED_THE_API = new Set(['/explore', '/categories']);
+// /categories stands without the API (its kinds are kept in the site, D-137); /explore doesn't.
+const NEED_THE_API = new Set(['/explore']);
 
 const STATIC = [
   '/',

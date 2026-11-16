@@ -16,9 +16,10 @@ export interface FinderGroup {
 /**
  * "Find a kind of place": type part of a name and the kinds that match appear at once, each
  * with its group, so nobody has to read 116 names to find theirs. Nothing found: a way on to
- * searching every place instead.
+ * searching every place instead. Before launch (`early`) the kinds aren't links yet: there are no
+ * places to show, so the page shows what BUKU covers, and a kind it doesn't is an invitation.
  */
-export function CategoryFinder({ groups }: { groups: FinderGroup[] }) {
+export function CategoryFinder({ groups, early = false }: { groups: FinderGroup[]; early?: boolean }) {
   const id = useId();
   const [text, setText] = useState('');
   const query = searchKey(useDeferredValue(text));
@@ -64,28 +65,43 @@ export function CategoryFinder({ groups }: { groups: FinderGroup[] }) {
       </p>
       {matches.length > 0 && (
         <ul className="grid gap-1 rounded-2xl bg-surface p-2 shadow-soft ring-1 ring-line sm:grid-cols-2">
-          {matches.slice(0, 24).map((k) => (
-            <li key={k.slug}>
-              <Link
-                href={`/c/${k.slug}` as Route}
-                className="flex min-h-12 items-center gap-3 rounded-xl px-3 py-2 hover:bg-sunken"
-              >
+          {matches.slice(0, 24).map((k) => {
+            const inside = (
+              <>
                 <CategoryIcon slug={k.slug} className="size-5 shrink-0 text-brand-ink" />
                 <span className="flex flex-col leading-tight">
                   <span className="font-medium text-ink">{k.name}</span>
                   <span className="text-sm text-ink-2">{k.group}</span>
                 </span>
-              </Link>
-            </li>
-          ))}
+              </>
+            );
+            return (
+              <li key={k.slug}>
+                {early ? (
+                  <span className="flex min-h-12 items-center gap-3 rounded-xl px-3 py-2">{inside}</span>
+                ) : (
+                  <Link
+                    href={`/c/${k.slug}` as Route}
+                    className="flex min-h-12 items-center gap-3 rounded-xl px-3 py-2 hover:bg-sunken"
+                  >
+                    {inside}
+                  </Link>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       {query.length > 0 && matches.length === 0 && (
         <Link
-          href={`/explore?q=${encodeURIComponent(text.trim())}` as Route}
+          href={
+            early
+              ? '/early-access?as=business&source=categories'
+              : `/explore?q=${encodeURIComponent(text.trim())}`
+          }
           className="inline-flex items-center gap-1.5 self-start font-semibold text-brand-ink underline-offset-4 hover:underline"
         >
-          Search every place for “{text.trim()}”
+          {early ? 'Run one? Join early as a business' : `Search every place for “${text.trim()}”`}
           <ArrowRight aria-hidden className="size-4" />
         </Link>
       )}

@@ -9,19 +9,19 @@ import { LogoMark } from '@/components/brand/logo';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/cn';
 import type { Theme } from '@/lib/theme';
-import { primaryNav, secondaryNav } from './nav';
+import { primaryNav, secondaryNav, visibleLinks } from './nav';
 
 function isCurrent(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 /** Links in the header (from `md`), with the current page marked for everyone, screen readers included. */
-export function DesktopNav() {
+export function DesktopNav({ early = false }: { early?: boolean }) {
   const pathname = usePathname();
   return (
     <nav aria-label="Main" className="hidden lg:block">
       <ul className="flex items-center gap-1">
-        {primaryNav.map(({ href, label }) => {
+        {visibleLinks(primaryNav, early).map(({ href, label }) => {
           const current = isCurrent(pathname, href);
           return (
             <li key={href}>
@@ -44,7 +44,7 @@ export function DesktopNav() {
 }
 
 /** The menu on phones: a full-height sheet, closed by Escape, the button or choosing a page. */
-export function MobileNav({ theme }: { theme: Theme }) {
+export function MobileNav({ theme, early = false }: { theme: Theme; early?: boolean }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   return (
@@ -75,7 +75,7 @@ export function MobileNav({ theme }: { theme: Theme }) {
           </div>
           <nav aria-label="Main" className="flex-1 overflow-y-auto p-4">
             <ul className="flex flex-col gap-1">
-              {primaryNav.map(({ href, label }) => (
+              {visibleLinks(primaryNav, early).map(({ href, label }) => (
                 <li key={href}>
                   <Link
                     href={href}

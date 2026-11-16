@@ -38,6 +38,13 @@ test.describe('Early access', () => {
     expect(problems).toEqual([]);
   });
 
+  test('the plan chosen on the pricing page comes along', async ({ page }) => {
+    await page.goto('/early-access?as=business&plan=professional&source=pricing');
+    await expect(page.getByLabel('Which plan would you consider')).toHaveValue('professional');
+    await page.goto('/early-access?plan=<script>');
+    await expect(page.getByLabel('Which plan would you consider')).toHaveValue('not_sure');
+  });
+
   test('someone who books needs only an email, a city and their yes', async ({ page }) => {
     await page.goto('/early-access?as=customer');
     await expect(page.getByRole('radio', { name: 'I book appointments' })).toBeChecked();

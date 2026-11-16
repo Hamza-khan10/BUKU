@@ -21,7 +21,7 @@ export function SiteHeader({ theme, signedIn }: { theme: Theme; signedIn: boolea
           <Link href="/" aria-label="BUKU home" className="rounded-md">
             <Logo />
           </Link>
-          <DesktopNav />
+          <DesktopNav early={prelaunch()} />
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle initial={theme} className="hidden lg:inline-flex" />
@@ -32,7 +32,7 @@ export function SiteHeader({ theme, signedIn }: { theme: Theme; signedIn: boolea
           ) : (
             <AccountControl signedIn={signedIn} />
           )}
-          <MobileNav theme={theme} />
+          <MobileNav theme={theme} early={prelaunch()} />
         </div>
       </Container>
     </HeaderShell>
