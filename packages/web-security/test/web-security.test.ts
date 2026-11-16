@@ -124,4 +124,15 @@ describe('Content-Security-Policy', () => {
     expect(check).toContain("connect-src 'self';");
     expect(check).toContain("frame-ancestors 'none'");
   });
+
+  it('lets Cloudflare Web Analytics load and report only when the site has it (D-136)', () => {
+    const off = buildCsp({ nonce: 'n', dev: false });
+    expect(off).not.toContain('cloudflareinsights');
+    const on = buildCsp({ nonce: 'n', dev: false, analytics: true });
+    const directive = (name: string) => on.split('; ').find((d) => d.startsWith(`${name} `)) ?? '';
+    expect(directive('script-src')).toContain('https://static.cloudflareinsights.com');
+    expect(directive('script-src')).toContain("'nonce-n'");
+    expect(directive('connect-src')).toContain('https://cloudflareinsights.com');
+    expect(directive('frame-src')).toBe("frame-src 'none'");
+  });
 });

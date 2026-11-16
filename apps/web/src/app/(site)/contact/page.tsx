@@ -5,11 +5,13 @@ import type { ReactNode } from 'react';
 import { Contact } from '@/components/content/legal-doc';
 import { Container, PageHeading } from '@/components/ui/layout';
 import { siteFacts } from '@/lib/site';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'Contact',
   description: 'How to reach BUKU: support, privacy and security.',
-};
+  path: '/contact',
+});
 
 function Way({ Icon, title, children }: { Icon: LucideIcon; title: string; children: ReactNode }) {
   return (

@@ -30,7 +30,15 @@ export interface CspOptions {
    * the form, may load (with this response's nonce) and show its small frame.
    */
   turnstile?: boolean | undefined;
+  /**
+   * Cloudflare Web Analytics (D-136): its beacon (loaded with this response's nonce) and where it
+   * reports visits. Only when the site has it set up.
+   */
+  analytics?: boolean | undefined;
 }
+
+const ANALYTICS_SCRIPT = 'https://static.cloudflareinsights.com';
+const ANALYTICS_REPORT = 'https://cloudflareinsights.com';
 
 const TURNSTILE = 'https://challenges.cloudflare.com';
 
@@ -49,6 +57,7 @@ export function buildCsp({
   imageOrigins = [],
   payments,
   turnstile = false,
+  analytics = false,
 }: CspOptions): string {
   const media = mediaOrigin ? ` ${mediaOrigin}` : '';
   const storage = storageOrigin ? ` ${storageOrigin}` : '';
@@ -57,14 +66,15 @@ export function buildCsp({
   // Paddle's script still needs this response's nonce: with 'strict-dynamic' a host alone admits nothing.
   const paddle = payments ? ` ${PADDLE_CDN[payments]}` : '';
   const human = turnstile ? ` ${TURNSTILE}` : '';
+  const counter = analytics ? ` ${ANALYTICS_SCRIPT}` : '';
   const directives: Record<string, string> = {
     'default-src': "'self'",
-    'script-src': `'self' 'nonce-${nonce}' 'strict-dynamic'${paddle}${human}${dev ? " 'unsafe-eval'" : ''}`,
+    'script-src': `'self' 'nonce-${nonce}' 'strict-dynamic'${paddle}${human}${counter}${dev ? " 'unsafe-eval'" : ''}`,
     'style-src': `'self' 'unsafe-inline'${paddle}`,
     'img-src': `'self' data: blob:${pictures}${extra}${paddle}`,
     'media-src': `'self'${media}`,
     'font-src': `'self'${paddle}`,
-    'connect-src': `'self'${storage}${payments ? ' https://*.paddle.com' : ''}${dev ? ' ws: wss:' : ''}`,
+    'connect-src': `'self'${storage}${payments ? ' https://*.paddle.com' : ''}${analytics ? ` ${ANALYTICS_REPORT}` : ''}${dev ? ' ws: wss:' : ''}`,
     'worker-src': "'self' blob:",
     'manifest-src': "'self'",
     'frame-src': payments ? PADDLE_CHECKOUT[payments] : turnstile ? TURNSTILE : "'none'",

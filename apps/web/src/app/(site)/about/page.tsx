@@ -1,10 +1,12 @@
 import { Clock, Eye, Globe, Scale } from 'lucide-react';
 import { Container, PageHeading } from '@/components/ui/layout';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'About',
   description: 'Why BUKU exists, and the principles it’s built on.',
-};
+  path: '/about',
+});
 
 const PRINCIPLES = [
   {

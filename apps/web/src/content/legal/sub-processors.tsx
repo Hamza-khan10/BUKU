@@ -31,7 +31,7 @@ export function subProcessors(): LegalDocument {
               ],
               [
                 'Cloudflare',
-                'Hosting this website, keeping the early-access list, and checking a person (not a bot) fills in its form',
+                'Hosting this website, keeping the early-access list, checking a person (not a bot) fills in its form, and counting visits (no cookies)',
                 'Request details (IP address, browser); the early-access list: email, name, city and country, and for businesses their details and WhatsApp number',
                 'Global (the list: one region Cloudflare chooses near us)',
               ],

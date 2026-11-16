@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–b done (2026-11-16)     |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–c built (2026-11-17)    |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -758,6 +758,16 @@ The detailed plan — every page, its data and edge cases, the design system and
   panel, pill buttons; choices stacked, fields grouped, selects with a drawn arrow. Tests: the rules, the hash, the bot check, the list on SQLite with the real
   migration, the table's own refusals (unit); a browser test of both forms, problems in plain
   words, the same answer twice, the five-an-hour limit, the origin checks and WCAG.
+- **3.7c onbuku.com, search and answer engines — ✅ built (D-136).** One address (`APP_URL`
+  in wrangler.jsonc; www and workers.dev redirected, 308); every public page with its own canonical
+  address and share card (`pageMetadata`, one picture `public/og/buku.png` drawn in the brand font);
+  Organization and WebSite data on the home page; questions businesses ask on /for-business with
+  FAQPage data, from the same text as `/llms.txt`; accordion answers kept in the page while closed;
+  Cloudflare Web Analytics behind `CF_WEB_ANALYTICS_TOKEN` (CSP opened only then; privacy notice
+  updated). The owner's dashboard steps: DEVELOPMENT.md → The domain, search engines and Cloudflare
+  settings. Tests: the redirect (and what it never redirects), metadata, escaping, the questions,
+  llms.txt, the token, the CSP (unit); canonical and card on every page, the picture, structured
+  data matching what people see, closed answers in the page, llms.txt (browser).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

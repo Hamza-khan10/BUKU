@@ -1,17 +1,18 @@
 import { ISO_COUNTRY_CODES } from '@buku/validation';
-import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { Container } from '@/components/ui/layout';
 import { EarlyAccessForm, type Tags } from '@/features/early-access/components/early-access-form';
 import type { Kind } from '@/features/early-access/schema';
 import { earlyAccessSettings } from '@/features/early-access/server';
 import { countryOptions } from '@/features/manage/setup';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
+export const metadata = pageMetadata({
   title: 'Get early access',
   description:
     'BUKU takes bookings and runs walk-in queues for barbers, clinics, salons and offices. Join the list and be first when it opens near you.',
-};
+  path: '/early-access',
+});
 
 /** A link's tag, kept only if it's short and plain (anything else is dropped, not stored). */
 const tag = (value: unknown) =>

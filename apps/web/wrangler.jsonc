@@ -6,8 +6,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "buku",
   "main": ".open-next/worker.js",
-  // The site's address until it has a domain (https://buku.<account>.workers.dev). With the domain,
-  // set this to false so the site has one address only.
+  // The workers.dev address stays on, so old links keep working: the site sends every page there to
+  // its one address, APP_URL below (proxy.ts, D-136).
   "workers_dev": true,
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
@@ -19,6 +19,9 @@
   // Plain settings (never secrets). Ones set in the dashboard (like TURNSTILE_SITE_KEY) survive deploys.
   "keep_vars": true,
   "vars": {
+    // The site's one address (D-136): canonical links, the sitemap, share cards. www and workers.dev
+    // are sent here.
+    "APP_URL": "https://onbuku.com",
     "BUKU_SITE_ENV": "production",
     // Cloudflare sets this to the visitor's address itself; a visitor can't forge it.
     "WEB_CLIENT_IP_HEADER": "cf-connecting-ip",

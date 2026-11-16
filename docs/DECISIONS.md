@@ -1355,3 +1355,36 @@ file, then scans the whole build for any value of 16+ characters from a local `.
 refuses to finish if one is found (naming the variable, never its value). A real deploy is built
 where no `.env` exists (Cloudflare's own builds from GitHub, or CI); `cf:preview` only warns, for
 local tries.
+
+**D-136 · One address, onbuku.com, and a site search and answer engines can read (3.7c).** The
+owner bought onbuku.com (Cloudflare Registrar) and attached it to the website's Worker, wanting
+organic visitors through SEO, AEO (answer engines) and GEO (AI assistants). Decided:
+
+- **One address.** `APP_URL` is `https://onbuku.com` in `wrangler.jsonc` (versioned, so a typo in
+  the dashboard can't take the site down again, as on 2026-11-16, #207). On the live site,
+  `proxy.ts` sends a page asked for at `www.` or `*.workers.dev` there for good (308, path and
+  query kept); no other host is ever redirected (no open redirect). The workers.dev address stays
+  on so old links keep working.
+- **Every public page** sets its own title, description, canonical address (link tags such as
+  `?source=` don't make copies) and share card (Open Graph and X) through `pageMetadata()`: Next
+  drops the inherited card when a page sets its own, so each sets all of it. One share picture,
+  `public/og/buku.png`, drawn in the brand font by `scripts/og-image.ts`: a static file costs the
+  Worker nothing, and Next's on-the-fly images carry only a thin fallback font.
+- **Structured data:** Organization and WebSite on the home page; FAQPage on /for-business, from
+  the same plain-text questions people see (`features/marketing/faq.ts`), which also make
+  `/llms.txt` (llmstxt.org), so engines quote what BUKU says about itself, word for word. Answers
+  in accordions stay in the page while closed (hidden, not removed), so engines read them (/help
+  too). The owner rejected the first, plain list ("this design isn't good"): questions are now an
+  open list between hairlines (no box), the question in medium weight at 18px with tightened
+  tracking, the answer at a 62-character measure, a round plus that turns into a filled close mark,
+  answers growing to their height without overshoot (none under reduced motion); on /for-business
+  the heading, a lead and "write to us" stay in view beside them. Every new part of the site goes
+  through the design skills first.
+- **Counting people, not requests.** Cloudflare's own dashboard counts every request, crawlers
+  and scanners included (a new domain is probed from many countries within minutes, because its
+  certificate is public), so it can't say how many people came. Cloudflare Web Analytics can: a
+  small script that only real browsers run, no cookies, loaded with the page's nonce, and allowed
+  by the CSP only when `CF_WEB_ANALYTICS_TOKEN` is set (its automatic injection would be blocked
+  by the CSP). The privacy notice and sub-processors say so.
+- **AI crawlers are welcome** (robots.txt allows them); Cloudflare's own AI-bot blocking stays off
+  for the answer engines, or they can't read the site to recommend it.

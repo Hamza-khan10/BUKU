@@ -6,12 +6,14 @@ import { ErrorState } from '@/components/ui/states';
 import { pricing, type Pricing } from '@/features/pricing/api';
 import { ComparisonTable, PlanCard } from '@/features/pricing/components/plans';
 import { ApiError } from '@/lib/api/errors';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'Pricing',
   description:
     'Booking and queueing with BUKU are free for everyone. Businesses choose a plan: what each includes and what it costs.',
-};
+  path: '/pricing',
+});
 
 /**
  * People who book and queue use BUKU for free, with no limit (D-101). The

@@ -4,11 +4,13 @@ import { Contact } from '@/components/content/legal-doc';
 import { Prose } from '@/components/content/prose';
 import { Container, PageHeading } from '@/components/ui/layout';
 import { siteFacts } from '@/lib/site';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'Security',
   description: 'How BUKU protects accounts and data, in plain words, and how to report a vulnerability.',
-};
+  path: '/security',
+});
 
 /** Each claim is a control that exists and is tested (docs/SECURITY.md, docs/compliance). */
 const CONTROLS: { Icon: LucideIcon; title: string; points: string[] }[] = [

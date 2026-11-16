@@ -11,11 +11,13 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { Container, PageHeading } from '@/components/ui/layout';
 import { Ticket } from '@/components/ui/ticket';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'How it works',
   description: 'Booking an appointment and joining a queue with BUKU, step by step.',
-};
+  path: '/how-it-works',
+});
 
 interface Step {
   Icon: LucideIcon;
