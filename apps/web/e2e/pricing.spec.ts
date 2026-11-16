@@ -1,48 +1,76 @@
+import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { apiAvailable, expectAccessible, useTheme } from './helpers';
 
-/** Pricing and "for businesses": every number from the plan catalog, nothing promised that isn't offered. */
+/** Pricing and categories (D-137): the plans at launch and every kind of place, standing without the API. */
 
 const api = process.env.E2E_API_URL ?? 'http://localhost:8000';
 
-interface Catalog {
-  billingEnabled: boolean;
-  plans: { name: string; free: boolean; prices: { amount: string }[] }[];
-}
+test.describe('Pricing (D-137)', () => {
+  const essential = (page: Page) => page.getByRole('article', { name: 'Essential' });
 
-const catalog = async (audience: string, channel = 'web') =>
-  (
-    (await (await fetch(`${api}/v1/billing/plans?audience=${audience}&channel=${channel}`)).json()) as {
-      data: Catalog;
-    }
-  ).data;
+  test('rupees for a visitor in Pakistan, dollars elsewhere, and either is a click away', async ({
+    page,
+    browser,
+  }) => {
+    await page.setExtraHTTPHeaders({ 'cf-ipcountry': 'PK' });
+    await page.goto('/pricing');
+    await expect(essential(page)).toContainText('Rs 2,499');
+    // As a person does: on the pill's label (the radio inside is for screen readers).
+    await page.locator('label').filter({ hasText: /^USD$/ }).click();
+    await expect(page.getByRole('radio', { name: 'USD' })).toBeChecked();
+    await expect(essential(page)).toContainText('$15');
+    await expect(essential(page)).not.toContainText('Rs');
 
-test.describe('Pricing', () => {
-  test.beforeAll(async () => {
-    test.skip(!(await apiAvailable()), 'the API stack is not running');
+    const elsewhere = await browser.newPage({ extraHTTPHeaders: { 'cf-ipcountry': 'GB' } });
+    await elsewhere.goto('/pricing');
+    await expect(essential(elsewhere)).toContainText('$15');
+    await elsewhere.close();
   });
 
-  test('booking is free: no customer plans, only the catalog’s business plans and prices', async ({
+  test('yearly: twelve months for the price of ten', async ({ page }) => {
+    await page.goto('/pricing?currency=usd');
+    await page.locator('label').filter({ hasText: 'Yearly' }).click();
+    await expect(page.getByRole('radio', { name: /Yearly/ })).toBeChecked();
+    await expect(essential(page)).toContainText('$13');
+    await expect(essential(page)).toContainText('$150 billed yearly');
+    await expect(page.getByRole('article', { name: 'Network' })).toContainText(
+      '$290 billed yearly, a branch',
+    );
+  });
+
+  test('free to start, one plan to try, every plan side by side, free for people who book', async ({
     page,
   }) => {
-    const [user, business] = await Promise.all([catalog('user'), catalog('business')]);
     await page.goto('/pricing');
+    await expect(page.getByRole('article', { name: 'Starter' })).toContainText('Free');
+    await expect(page.getByRole('article', { name: 'Professional' })).toContainText(
+      'Try it free for 30 days',
+    );
+    const table = page.getByRole('table', { name: 'What each plan includes' });
+    for (const plan of ['Starter', 'Essential', 'Professional', 'Network', 'Enterprise'])
+      await expect(table.getByRole('columnheader', { name: plan })).toBeVisible();
     await expect(
       page.getByRole('heading', { name: 'For people booking and queueing: free', level: 2 }),
     ).toBeVisible();
-    for (const p of business.plans) {
-      await expect(page.getByRole('heading', { name: p.name, exact: true }).first()).toBeVisible();
-      if (!p.free) await expect(page.getByText(`$${p.prices[0]!.amount}`).first()).toBeVisible();
-    }
-    if (!business.billingEnabled) {
-      await expect(
-        page.getByText('Right now, everything is included for businesses, at no cost'),
-      ).toBeVisible();
-    }
-    // The customer plans stay in the catalog, unused (D-101): none of them is offered here.
-    for (const p of user.plans.filter((plan) => !plan.free)) {
-      await expect(page.getByRole('heading', { name: p.name, exact: true })).toHaveCount(0);
-    }
+  });
+
+  test('each plan leads on: early access before launch, adding a business after', async ({ page }) => {
+    await page.goto('/pricing');
+    const href = await essential(page).getByRole('link').getAttribute('href');
+    expect(
+      href === '/business/new' || href === '/early-access?as=business&plan=essential&source=pricing',
+    ).toBe(true);
+  });
+
+  test('the answers engines read are the ones on the page', async ({ page }) => {
+    await page.goto('/pricing');
+    const data = (await page.locator('script[type="application/ld+json"]').allTextContents()).map(
+      (t) => JSON.parse(t) as { '@type': string; mainEntity?: { name: string }[] },
+    );
+    const faq = data.find((d) => d['@type'] === 'FAQPage')!;
+    const section = page.getByRole('region', { name: 'Questions about pricing.' });
+    for (const { name } of faq.mainEntity!) await expect(section.getByRole('button', { name })).toBeVisible();
   });
 
   test('the old “your plan” page leads to the account', async ({ request }) => {
@@ -61,6 +89,8 @@ test.describe('Pricing', () => {
     await page.goto('/pricing');
     await expectAccessible(page);
     await useTheme(context, 'dark', baseURL!);
+    await page.goto('/pricing');
+    await expectAccessible(page);
     await page.goto('/for-business');
     await expectAccessible(page);
   });
@@ -70,7 +100,24 @@ test.describe('Pricing', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('A calm front desk');
     await page.getByRole('link', { name: 'See plans and prices' }).click();
     await expect(page).toHaveURL(/\/pricing#businesses$/);
-    await expect(page.getByRole('heading', { name: 'For businesses', level: 2 })).toBeVisible();
+    await expect(essential(page)).toBeVisible();
+  });
+});
+
+test.describe('Categories without the API (D-137)', () => {
+  test('every kind BUKU covers, findable by typing, accessible', async ({ page }) => {
+    await page.goto('/categories');
+    await expect(page.getByText(/\d+ kinds of place in 11 groups/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Beauty & Hair', level: 2 })).toBeVisible();
+    await page.getByLabel('Find a kind of place').fill('passport');
+    await expect(page.getByText('Passport Office').first()).toBeVisible();
+    await expectAccessible(page);
+  });
+});
+
+test.describe('The sitemap', () => {
+  test.beforeAll(async () => {
+    test.skip(!(await apiAvailable()), 'the API stack is not running');
   });
 
   test('the sitemap lists the public pages and every listed business', async ({ request }) => {

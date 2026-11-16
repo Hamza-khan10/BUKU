@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { LogoMark } from '@/components/brand/logo';
 import { Magnetic } from '@/components/motion/magnetic';
 import { Container } from '@/components/ui/layout';
-import { footerNav } from './nav';
+import { prelaunch } from '@/lib/flags';
+import { footerNav, visibleLinks } from './nav';
 
 /**
  * The public site's footer: every public and legal page, reachable from anywhere. Midnight,
@@ -10,6 +11,7 @@ import { footerNav } from './nav';
  * one line, then the links (two columns on phones, short to scan).
  */
 export function SiteFooter() {
+  const early = prelaunch();
   return (
     <footer data-tone="dark" className="scope-dark mt-24 bg-board text-board-ink sm:mt-32">
       <Container className="flex flex-col gap-12 pt-14 pb-10 sm:pt-20">
@@ -24,10 +26,10 @@ export function SiteFooter() {
           </div>
           <Magnetic className="w-fit">
             <Link
-              href="/explore"
+              href={early ? '/early-access?source=footer' : '/explore'}
               className="inline-flex h-12 w-fit items-center rounded-full bg-board-go-fill px-6 font-semibold text-board-on-go transition-transform duration-150 ease-(--ease-out) active:scale-[0.97]"
             >
-              Find a place
+              {early ? 'Get early access' : 'Find a place'}
             </Link>
           </Magnetic>
         </div>
@@ -37,7 +39,7 @@ export function SiteFooter() {
             <nav key={group.title} aria-label={group.title}>
               <h2 className="text-sm font-semibold text-board-ink">{group.title}</h2>
               <ul className="mt-3 flex flex-col">
-                {group.links.map(({ href, label }) => (
+                {visibleLinks(group.links, early).map(({ href, label }) => (
                   <li key={href}>
                     <Link
                       href={href}

@@ -1,4 +1,5 @@
-import { BUSINESS_QUESTIONS } from '@/features/marketing/faq';
+import { BUSINESS_QUESTIONS, PRICING_QUESTIONS } from '@/features/marketing/faq';
+import { ENTERPRISE, LAUNCH_PLANS, money, TRIAL_DAYS } from '@/features/pricing/launch-plans';
 import { prelaunch } from '@/lib/flags';
 import { siteUrl } from '@/lib/site-url';
 
@@ -29,15 +30,38 @@ export function GET(): Response {
       'what a business gets: bookings, the walk-in queue, check-in, the team, its own page',
     ),
     page('/pricing', 'Pricing', 'free for people who book; the plans for businesses'),
+    page(
+      '/categories',
+      'Categories',
+      'every kind of place BUKU covers, from barbers and clinics to passport offices',
+    ),
     page('/how-it-works', 'How it works', 'booking an appointment and joining a queue, step by step'),
     ...(early ? [page('/early-access', 'Early access', 'join the list before BUKU opens')] : []),
     page('/help', 'Help', 'answers about booking, queues, accounts and reviews'),
     page('/about', 'About', 'why BUKU exists and the principles it is built on'),
     page('/security', 'Security', 'how BUKU protects accounts and data'),
     '',
+    `## Prices${early ? ' at launch' : ''}`,
+    '',
+    'Free for people who book and queue, always. For businesses, per branch, per month (before tax); in Pakistan in rupees, elsewhere in US dollars; a year costs ten months:',
+    '',
+    ...LAUNCH_PLANS.map(
+      (p) =>
+        `- ${p.name} (${p.forWhom.toLowerCase()}): ${
+          p.monthly.USD === 0
+            ? 'free'
+            : `${money(p.monthly.PKR, 'PKR')} or ${money(p.monthly.USD, 'USD')}${p.perBranch ? ' a branch' : ''}`
+        }`,
+    ),
+    `- Enterprise (${ENTERPRISE.fromBranches} branches or more): priced with the business`,
+    `- Every business can try Professional free for ${TRIAL_DAYS} days.`,
+    '',
     '## Questions businesses ask',
     '',
-    ...BUSINESS_QUESTIONS.flatMap(({ q, a }) => [`### ${q}`, '', a, '']),
+    ...[
+      ...BUSINESS_QUESTIONS,
+      ...PRICING_QUESTIONS.filter((p) => !BUSINESS_QUESTIONS.some((b) => b.q === p.q)),
+    ].flatMap(({ q, a }) => [`### ${q}`, '', a, '']),
     '## Optional',
     '',
     page('/legal/privacy', 'Privacy notice', 'what BUKU keeps and why'),

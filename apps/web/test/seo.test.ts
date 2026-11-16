@@ -92,6 +92,9 @@ describe('llms.txt (D-136)', () => {
     expect(text).toContain('[Early access](https://onbuku.com/early-access)'); // before launch
     for (const { q } of BUSINESS_QUESTIONS) expect(text).toContain(`### ${q}`);
     expect(text).not.toContain('localhost');
+    // The prices, both currencies, as the pricing page shows them (D-137).
+    expect(text).toContain('- Essential (for barbers, clinics and local shops): Rs 2,499 or $15');
+    expect(text).toContain('[Categories](https://onbuku.com/categories)');
   });
 });
 

@@ -3,20 +3,23 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { StackedCards } from '@/components/motion/stacked-cards';
 import { Container, PageHeading } from '@/components/ui/layout';
-import { ErrorState } from '@/components/ui/states';
+import { Button } from '@/components/ui/button';
 import { CategoryFinder } from '@/features/categories/components/category-finder';
 import { GroupIndex } from '@/features/categories/components/group-index';
 import { groupBlurb } from '@/features/categories/groups';
 import { CategoryIcon } from '@/features/categories/icons';
+import { CATEGORY_SNAPSHOT } from '@/features/categories/snapshot';
 import { categoryTree } from '@/features/search/api';
 import type { CategoryNode } from '@/features/search/types';
-import { ApiError } from '@/lib/api/errors';
+import { apiConfigured, prelaunch } from '@/lib/flags';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'All categories',
   description:
     'Every kind of place on BUKU, from barbers and clinics to padel courts and passport offices, in plain groups.',
-};
+  path: '/categories',
+});
 
 /**
  * Every kind of place, made easy to find (D-102): find one by typing part of its name; jump to
@@ -24,20 +27,10 @@ export const metadata = {
  * kinds in readable rows, laid one over another as the page scrolls where they fit the screen.
  */
 export default async function CategoriesPage() {
-  let tree: CategoryNode[];
-  try {
-    tree = await categoryTree();
-  } catch (e) {
-    return (
-      <Container className="py-16">
-        <ErrorState
-          title="Categories aren’t loading right now"
-          message="Please try again in a moment."
-          reference={e instanceof ApiError ? e.requestId : undefined}
-        />
-      </Container>
-    );
-  }
+  // The API's tree when it answers (it has kinds owners added since); before launch, or if it
+  // doesn't answer, the kinds BUKU starts with, kept in the site (D-137).
+  const tree = apiConfigured() ? await categoryTree().catch(() => CATEGORY_SNAPSHOT) : CATEGORY_SNAPSHOT;
+  const early = prelaunch();
   const groups = tree.filter((g) => g.children.length > 0);
   const kinds = groups.reduce((n, g) => n + g.children.length, 0);
 
@@ -46,10 +39,22 @@ export default async function CategoriesPage() {
       <div className="flex flex-col gap-8">
         <PageHeading
           eyebrow="Categories"
-          title="Every kind of place"
+          title={early ? 'Everything you’ll book on BUKU' : 'Every kind of place'}
           description={`${kinds} kinds of place in ${groups.length} groups. Type what you’re looking for, or pick a group.`}
         />
+        {early && (
+          <div className="flex flex-col gap-4 rounded-xl bg-brand-soft p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <p className="max-w-xl text-ink">
+              <span className="font-semibold">BUKU opens soon.</span> Join the early-access list and we’ll
+              tell you the day you can book these near you.
+            </p>
+            <Button asChild variant="primary" className="shrink-0">
+              <Link href="/early-access?as=customer&source=categories">Get early access</Link>
+            </Button>
+          </div>
+        )}
         <CategoryFinder
+          early={early}
           groups={groups.map((g) => ({
             slug: g.slug,
             name: g.name,
@@ -62,21 +67,22 @@ export default async function CategoriesPage() {
       <StackedCards
         ids={groups.map((g) => g.slug)}
         cards={groups.map((g) => (
-          <GroupCard key={g.slug} group={g} />
+          <GroupCard key={g.slug} group={g} early={early} />
         ))}
       />
 
       <aside className="flex flex-col items-start gap-3 rounded-2xl bg-sunken p-6 sm:p-8">
         <h2 className="type-heading">Run a kind of business that isn’t here?</h2>
         <p className="max-w-2xl text-base leading-relaxed text-ink-2">
-          When you add your business, choose “Something else…” and name your kind. BUKU checks it isn’t
-          already listed under another name, and it can be used straight away.
+          {early
+            ? 'Join the early-access list as a business. When BUKU opens, choose “Something else…” as you add your business and name your kind: BUKU checks it isn’t already listed under another name, and it can be used straight away.'
+            : 'When you add your business, choose “Something else…” and name your kind. BUKU checks it isn’t already listed under another name, and it can be used straight away.'}
         </p>
         <Link
-          href="/business/new"
+          href={early ? '/early-access?as=business&source=categories' : '/business/new'}
           className="inline-flex items-center gap-1.5 font-semibold text-brand-ink underline-offset-4 hover:underline"
         >
-          Add your business
+          {early ? 'Join early as a business' : 'Add your business'}
           <ArrowRight aria-hidden className="size-4" />
         </Link>
       </aside>
@@ -84,7 +90,7 @@ export default async function CategoriesPage() {
   );
 }
 
-function GroupCard({ group }: { group: CategoryNode }) {
+function GroupCard({ group, early }: { group: CategoryNode; early: boolean }) {
   const blurb = groupBlurb(group.slug);
   const heading = `group-${group.slug}`;
   return (
@@ -106,13 +112,15 @@ function GroupCard({ group }: { group: CategoryNode }) {
           </h2>
           {blurb && <p className="text-base leading-relaxed text-ink-2">{blurb}</p>}
         </div>
-        <Link
-          href={`/c/${group.slug}` as Route}
-          className="mt-auto inline-flex items-center gap-1.5 font-semibold text-brand-ink underline-offset-4 hover:underline"
-        >
-          See all places<span className="sr-only"> in {group.name}</span>
-          <ArrowRight aria-hidden className="size-4" />
-        </Link>
+        {!early && (
+          <Link
+            href={`/c/${group.slug}` as Route}
+            className="mt-auto inline-flex items-center gap-1.5 font-semibold text-brand-ink underline-offset-4 hover:underline"
+          >
+            See all places<span className="sr-only"> in {group.name}</span>
+            <ArrowRight aria-hidden className="size-4" />
+          </Link>
+        )}
       </div>
       <div className="flex flex-col gap-2">
         <p className="px-3 text-sm font-medium text-ink-2">
@@ -124,17 +132,25 @@ function GroupCard({ group }: { group: CategoryNode }) {
         >
           {group.children.map((kind) => (
             <li key={kind.slug}>
-              <Link
-                href={`/c/${kind.slug}` as Route}
-                className="group flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-2 text-[0.95rem] leading-snug font-medium text-ink transition-colors hover:bg-sunken sm:gap-3 sm:px-3"
-              >
-                <CategoryIcon slug={kind.slug} className="size-[1.125rem] shrink-0 text-brand-ink" />
-                <span className="min-w-0 flex-1 break-words hyphens-auto">{kind.name}</span>
-                <ChevronRight
-                  aria-hidden
-                  className="size-4 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-                />
-              </Link>
+              {early ? (
+                // Before launch there are no places to list yet: what BUKU covers, not a link.
+                <span className="flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-2 text-[0.95rem] leading-snug font-medium text-ink sm:gap-3 sm:px-3">
+                  <CategoryIcon slug={kind.slug} className="size-[1.125rem] shrink-0 text-brand-ink" />
+                  <span className="min-w-0 flex-1 break-words hyphens-auto">{kind.name}</span>
+                </span>
+              ) : (
+                <Link
+                  href={`/c/${kind.slug}` as Route}
+                  className="group flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-2 text-[0.95rem] leading-snug font-medium text-ink transition-colors hover:bg-sunken sm:gap-3 sm:px-3"
+                >
+                  <CategoryIcon slug={kind.slug} className="size-[1.125rem] shrink-0 text-brand-ink" />
+                  <span className="min-w-0 flex-1 break-words hyphens-auto">{kind.name}</span>
+                  <ChevronRight
+                    aria-hidden
+                    className="size-4 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                  />
+                </Link>
+              )}
             </li>
           ))}
         </ul>

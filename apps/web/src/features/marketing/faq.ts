@@ -64,3 +64,42 @@ export function faqStructuredData(questions: readonly Question[]) {
     })),
   };
 }
+
+/** Questions about pricing, for /pricing (and its structured data and /llms.txt), D-137. */
+export const PRICING_QUESTIONS: readonly Question[] = [
+  {
+    id: 'free',
+    q: 'Is there a free plan?',
+    a: 'Yes. Starter is free for good: bookings, the walk-in queue, check-in and your own page, for one team login and two bookable staff.',
+  },
+  {
+    id: 'trial',
+    q: 'How does the free trial work?',
+    a: 'Every business can try Professional free for 30 days, once. When the trial ends, choose a plan, or carry on with Starter for free.',
+  },
+  {
+    id: 'branch',
+    q: 'What counts as a branch?',
+    a: 'A place with its own address, hours and team. On BUKU each branch is its own business, and you switch between them from one account. With two branches or more, Network prices every branch for less than Professional.',
+  },
+  {
+    id: 'currency',
+    q: 'Why are prices in rupees in Pakistan and in dollars elsewhere?',
+    a: 'Prices follow where a business is: in Pakistan they are in rupees, everywhere else in US dollars. You can see both on this page.',
+  },
+  {
+    id: 'customers',
+    q: 'Do customers pay anything?',
+    a: 'No. Booking and queueing are free for customers, always, and appointments are paid at the business, never through BUKU.',
+  },
+  {
+    id: 'change',
+    q: 'Can I change or cancel my plan?',
+    a: 'Yes, at any time. A cancelled plan stays active until the end of the period you paid for.',
+  },
+  {
+    id: 'tax',
+    q: 'Is tax included?',
+    a: 'Prices are before tax. Tax is added where it applies.',
+  },
+];

@@ -1,71 +1,109 @@
 import { CalendarCheck, Ticket } from 'lucide-react';
+import { headers } from 'next/headers';
 import Link from 'next/link';
-import { Alert } from '@/components/ui/alert';
+import { Accordion, AccordionItem } from '@/components/ui/accordion';
+import { Button } from '@/components/ui/button';
 import { Container, PageHeading } from '@/components/ui/layout';
-import { ErrorState } from '@/components/ui/states';
-import { pricing, type Pricing } from '@/features/pricing/api';
-import { ComparisonTable, PlanCard } from '@/features/pricing/components/plans';
-import { ApiError } from '@/lib/api/errors';
-import { pageMetadata } from '@/lib/seo';
+import { faqStructuredData, PRICING_QUESTIONS } from '@/features/marketing/faq';
+import { LaunchPricing } from '@/features/pricing/components/launch-pricing';
+import { PlanComparison } from '@/features/pricing/components/plan-comparison';
+import {
+  CURRENCIES,
+  currencyFor,
+  ENTERPRISE,
+  MONTHS_PER_YEAR_PAID,
+  type Currency,
+} from '@/features/pricing/launch-plans';
+import { prelaunch } from '@/lib/flags';
+import { jsonLd, pageMetadata } from '@/lib/seo';
 
 export const metadata = pageMetadata({
   title: 'Pricing',
   description:
-    'Booking and queueing with BUKU are free for everyone. Businesses choose a plan: what each includes and what it costs.',
+    'Booking and queueing are free for everyone. Businesses start free with Starter; Essential, Professional and Network grow with the team, in rupees in Pakistan and dollars elsewhere.',
   path: '/pricing',
 });
 
 /**
- * People who book and queue use BUKU for free, with no limit (D-101). The
- * business plans come from the plan catalog (GET /v1/billing/plans), which
- * admins can change at any time (D-065); the page never states a number of
- * its own. While paid plans are switched off, it says so first.
+ * Pricing (D-137): free for people who book (D-101); for businesses, the plans at launch, priced in
+ * rupees in Pakistan and dollars elsewhere, per branch. The plans live in the website itself
+ * (features/pricing/launch-plans.ts), so the page stands without the API, as the site does before
+ * launch.
  */
+export default async function PricingPage({ searchParams }: PageProps<'/pricing'>) {
+  const [query, incoming] = await Promise.all([searchParams, headers()]);
+  const asked = typeof query.currency === 'string' ? query.currency.toUpperCase() : '';
+  const currency: Currency = (CURRENCIES as readonly string[]).includes(asked)
+    ? (asked as Currency)
+    : currencyFor(incoming.get('cf-ipcountry') ?? incoming.get('x-vercel-ip-country'));
+  const early = prelaunch();
+  const nonce = incoming.get('x-nonce') ?? undefined;
 
-function BillingOff({ who }: { who: string }) {
   return (
-    <Alert tone="ok" title={`Right now, everything is included for ${who}, at no cost`}>
-      Paid plans aren’t switched on yet. These are the plans and prices that will apply when they are.
-    </Alert>
-  );
-}
-
-function taxNote(p: Pricing) {
-  const prices = p.plans.flatMap((plan) => plan.prices);
-  if (prices.length === 0) return null;
-  return prices.every((x) => x.taxInclusive)
-    ? 'Prices include tax.'
-    : 'Prices are before tax; Paddle, our payment partner, adds tax where it applies.';
-}
-
-export default async function PricingPage() {
-  const [result] = await Promise.allSettled([pricing('business', 'web')]);
-  if (result.status === 'rejected') {
-    const failure = result.reason as unknown;
-    return (
-      <Container className="py-16">
-        <ErrorState
-          title="Prices aren’t loading right now"
-          message="Please try again in a moment."
-          reference={failure instanceof ApiError ? failure.requestId : undefined}
+    <Container className="flex flex-col gap-20 py-10 sm:gap-28 sm:py-14">
+      <section
+        id="businesses"
+        aria-labelledby="businesses-title"
+        className="flex scroll-mt-24 flex-col gap-10"
+      >
+        <PageHeading
+          eyebrow="Pricing"
+          title="Free to start. Simple as you grow."
+          description={
+            <>
+              Start with Starter at no cost, and try Professional free for 30 days. Every price is per branch.{' '}
+              {early &&
+                'BUKU opens soon: these are the prices at launch, and nothing is charged before then.'}
+            </>
+          }
         />
-      </Container>
-    );
-  }
-  const business = result.value;
+        <h2 id="businesses-title" className="sr-only">
+          Plans for businesses
+        </h2>
+        <LaunchPricing initialCurrency={currency} early={early} />
 
-  return (
-    <Container className="flex flex-col gap-16 py-10 sm:py-14">
-      <PageHeading
-        eyebrow="Pricing"
-        title="Free to book. Simple plans for businesses."
-        description="Appointments are always paid at the business, never through BUKU. The plans below are only for businesses using BUKU."
-      />
+        <aside
+          aria-labelledby="enterprise-title"
+          className="grid grid-cols-1 gap-6 rounded-xl bg-sunken p-6 ring-1 ring-line ring-inset sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] lg:items-center lg:gap-10"
+        >
+          <div className="flex flex-col gap-1.5">
+            <h3 id="enterprise-title" className="text-xl font-semibold tracking-[-0.02em] text-ink">
+              Enterprise
+            </h3>
+            <p className="text-ink-2">
+              For {ENTERPRISE.fromBranches} branches or more: a price made with you.
+            </p>
+          </div>
+          <ul className="flex flex-col gap-1.5 text-[0.95rem] text-ink-2">
+            {ENTERPRISE.includes.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <Button asChild variant="secondary">
+            <Link href="/contact">Talk to us</Link>
+          </Button>
+        </aside>
+
+        <p className="text-sm text-ink-3">
+          Prices are per branch, before tax. A year costs {MONTHS_PER_YEAR_PAID} months. Booking with BUKU is
+          never charged to the business or the customer.
+        </p>
+      </section>
+
+      <section aria-labelledby="compare-title" className="flex flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <h2 id="compare-title" className="type-section">
+            Every plan, side by side.
+          </h2>
+          <p className="text-sm text-ink-2 sm:hidden">Swipe the table to see every plan.</p>
+        </div>
+        <PlanComparison />
+      </section>
 
       <section
         id="customers"
         aria-labelledby="customers-title"
-        className="flex scroll-mt-24 flex-col gap-6 rounded-2xl bg-brand-soft p-6 ring-1 ring-line sm:p-10"
+        className="flex scroll-mt-24 flex-col gap-6 rounded-xl bg-brand-soft p-6 sm:p-10"
       >
         <div className="flex flex-col gap-3">
           <h2 id="customers-title" className="type-section">
@@ -94,49 +132,33 @@ export default async function PricingPage() {
       </section>
 
       <section
-        id="businesses"
-        aria-labelledby="businesses-title"
-        className="flex scroll-mt-24 flex-col gap-6"
+        aria-labelledby="questions"
+        className="reveal-rise grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:gap-20"
       >
-        <h2 id="businesses-title" className="type-section">
-          For businesses
-        </h2>
-        {!business.billingEnabled && <BillingOff who="businesses" />}
-        <ul className="grid gap-4 lg:grid-cols-3">
-          {business.plans.map((p) => (
-            <li key={p.code}>
-              <PlanCard plan={p} trial={business.trial} highlight={business.trial?.plan.code === p.code} />
-            </li>
-          ))}
-        </ul>
-        <ComparisonTable pricing={business} />
-        <div className="flex flex-col gap-1 text-sm text-ink-3">
-          {business.trial && (
-            <p>
-              Try {business.trial.plan.name} free for {business.trial.days} days, once per business.
-            </p>
-          )}
-          {taxNote(business) && <p>{taxNote(business)}</p>}
-        </div>
-      </section>
-
-      <section aria-labelledby="questions" className="flex flex-col gap-3">
-        <h2 id="questions" className="type-heading">
-          Good to know
-        </h2>
-        <ul className="flex max-w-3xl list-disc flex-col gap-2 pl-5 text-ink-2">
-          <li>
-            Businesses can cancel any time and keep their plan until the end of the period they paid for.
-          </li>
-          <li>
-            Subscriptions are sold and billed by Paddle, our payment partner. See{' '}
-            <Link href="/legal/refunds" className="font-medium text-brand-ink underline underline-offset-4">
-              cancellations and refunds
+        <script
+          type="application/ld+json"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: jsonLd(faqStructuredData(PRICING_QUESTIONS)) }}
+        />
+        <div className="flex flex-col gap-5 lg:sticky lg:top-28 lg:self-start">
+          <h2 id="questions" className="type-section">
+            Questions about pricing.
+          </h2>
+          <p className="text-ink-2">
+            Something we haven’t answered?{' '}
+            <Link href="/contact" className="font-medium text-brand-ink underline underline-offset-4">
+              Write to us
             </Link>
             .
-          </li>
-          <li>BUKU never charges you or the business for an appointment itself.</li>
-        </ul>
+          </p>
+        </div>
+        <Accordion type="single" collapsible defaultValue={`price-${PRICING_QUESTIONS[0]!.id}`}>
+          {PRICING_QUESTIONS.map((item) => (
+            <AccordionItem key={item.id} value={`price-${item.id}`} question={item.q}>
+              <p>{item.a}</p>
+            </AccordionItem>
+          ))}
+        </Accordion>
       </section>
     </Container>
   );

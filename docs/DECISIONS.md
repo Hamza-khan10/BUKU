@@ -1388,3 +1388,45 @@ organic visitors through SEO, AEO (answer engines) and GEO (AI assistants). Deci
   by the CSP). The privacy notice and sub-processors say so.
 - **AI crawlers are welcome** (robots.txt allows them); Cloudflare's own AI-bot blocking stays off
   for the answer engines, or they can't read the site to recommend it.
+
+**D-137 · Prices at launch, and pricing and categories on the site before the API (3.7d).** The
+owner asked for pricing "good enough for the system to sustain at the start and run as a startup in
+the whole world", and for /pricing and /categories to work on onbuku.com (which runs without the
+API: both said "aren't loading"). Decided, per branch, per month, before tax:
+
+| Plan         | Pakistan          | Elsewhere       | For                                                                     |
+| ------------ | ----------------- | --------------- | ----------------------------------------------------------------------- |
+| Starter      | free              | free            | one-chair shops, solo practices: 1 login, 2 bookable staff, the queue   |
+| Essential    | Rs 2,499          | $15             | barbers, clinics, local shops: 3 logins, 5 staff, approvals             |
+| Professional | Rs 5,999          | $35             | growing teams: 15 logins, 25 staff, priority support (the 30-day trial) |
+| Network      | Rs 4,999 a branch | $29 a branch    | two branches or more: Professional for each, for less                   |
+| Enterprise   | priced together   | priced together | 20 branches or more                                                     |
+
+A year costs ten months. Two price lists, shown by the visitor's country (Cloudflare's header) and
+switchable: a price that suits Lahore is a giveaway in London, and London's would shut Lahore out
+(Pakistan's is about 60% of the dollar price at ~280 PKR/USD). Why these numbers: comparable tools
+abroad charge roughly $9 to $60 a month (Setmore, SimplyBook.me, Square Appointments), Pakistani
+salon software starts near Rs 1,000; Essential undercuts abroad and sits above the cheapest at home,
+Professional pays for teams. Costs that shaped them: Workers Paid ($5 a month) and the backend's
+hosting are fixed; WhatsApp is the variable one (Pakistan about $0.007 to $0.017 a message, up twice
+in 2026, and from 1 October 2026 even replies in a customer's window are charged), so reminders go by
+app, push and email, and WhatsApp stays capped by the platform's monthly budget (notification
+settings), never promised per plan; payment fees (Paddle 5% + $0.50) favour monthly prices above a
+few dollars. **Starter gets the walk-in queue** (the catalog's Starter has none): it is BUKU's way in
+for barbers and clinics, and free accounts cost almost nothing to run.
+
+Not done yet, needed before billing is switched on: the plan catalog (reference.plans and
+plan_prices) takes these plans and both currencies, with Network and yearly prices and Starter's
+queue (a migration; checkout must charge what this page says), and a payment route for rupees
+(Paddle has no PKR: a local gateway such as JazzCash, Easypaisa, Safepay or PayFast).
+
+Until then the plans live in the site (`features/pricing/launch-plans.ts`, a test checks their
+order and arithmetic), and /pricing is rebuilt with the design skills: two pill switches (monthly
+or yearly, PKR or USD), four plan cards with Professional suggested, Enterprise in a strip, every
+plan side by side in a real table (scrolling sideways on a phone with the features in view), free
+for people who book, and the questions about pricing (FAQPage data; /llms.txt carries the prices).
+/categories reads the API's tree when there is one and otherwise a snapshot of the reference
+migration's 116 kinds (`scripts/category-snapshot.ts`; a test fails if they drift); before launch its
+kinds aren't links (no places yet), one invitation to early access stands at the top, and it is open
+to search engines. Explore needs the API, so before launch it leaves the navigation and the footer's
+button leads to early access. "Join early access" on a plan arrives with that plan chosen.

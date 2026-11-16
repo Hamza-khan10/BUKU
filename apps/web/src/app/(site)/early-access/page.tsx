@@ -2,7 +2,7 @@ import { ISO_COUNTRY_CODES } from '@buku/validation';
 import { headers } from 'next/headers';
 import { Container } from '@/components/ui/layout';
 import { EarlyAccessForm, type Tags } from '@/features/early-access/components/early-access-form';
-import type { Kind } from '@/features/early-access/schema';
+import { PLAN_INTEREST, type Kind } from '@/features/early-access/schema';
 import { earlyAccessSettings } from '@/features/early-access/server';
 import { countryOptions } from '@/features/manage/setup';
 import { pageMetadata } from '@/lib/seo';
@@ -42,6 +42,8 @@ export default async function EarlyAccessPage({ searchParams }: PageProps<'/earl
   const [query, incoming] = await Promise.all([searchParams, headers()]);
   const settings = earlyAccessSettings();
   const kind: Kind = query.as === 'customer' ? 'customer' : 'business';
+  // The plan chosen on the pricing page (?plan=), if it's one of the list's.
+  const plan = PLAN_INTEREST.find((p) => p === query.plan);
   // The visitor's country as the host tells it (Cloudflare, or Vercel until the move is done), to
   // start the list there; "XX" (unknown) and "T1" (Tor) aren't countries, so those start at PK.
   const country = (incoming.get('cf-ipcountry') ?? incoming.get('x-vercel-ip-country'))?.toUpperCase();
@@ -76,6 +78,7 @@ export default async function EarlyAccessPage({ searchParams }: PageProps<'/earl
           siteKey={settings === 'test' ? null : settings.turnstileSiteKey}
           nonce={incoming.get('x-nonce') ?? undefined}
           initialKind={kind}
+          initialPlan={plan}
           initialCountry={country && ISO_COUNTRY_CODES.has(country) ? country : 'PK'}
           countries={countryOptions(ISO_COUNTRY_CODES)}
           tags={tags}
