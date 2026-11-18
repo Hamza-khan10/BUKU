@@ -67,3 +67,7 @@ overrides:
   # it calls minimatch(path, pattern, { dot: true }) alone, unchanged in 11 (whose breaking changes
   # remove makeRe, the AST class and internal methods). Development only (linting).
   '@typescript-eslint/typescript-estree>minimatch': 11.0.8
+  # GHSA-3g3m-2fjr-6pw4 (moderate, glob 9 to 14.0.1) and GHSA-g3hv-75wg-m249 (moderate, minimatch
+  # below 11.0.1, through it): the Cloudflare build tool asks for glob ^13.0.6 and only calls
+  # glob() and globSync(), unchanged in 14; glob 14.0.6 brings minimatch 11. Build time only.
+  '@opennextjs/cloudflare>glob': 14.0.6

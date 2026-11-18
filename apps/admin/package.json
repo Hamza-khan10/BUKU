@@ -14,7 +14,7 @@
   "dependencies": {
     "@buku/web-security": "workspace:*",
     "lucide-react": "1.63.0",
-    "motion": "14.9.0",
+    "motion": "14.14.0",
     "next": "16.4.6",
     "qrcode.react": "4.2.0",
     "react": "19.3.1",
@@ -24,10 +24,10 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
-    "@playwright/test": "1.64.1",
-    "@tailwindcss/postcss": "4.3.3",
+    "@playwright/test": "1.65.1",
+    "@tailwindcss/postcss": "4.3.5",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "tailwindcss": "4.3.3"
+    "tailwindcss": "4.3.5"
   }
 }
