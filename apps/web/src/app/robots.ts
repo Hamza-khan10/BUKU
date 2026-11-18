@@ -22,7 +22,7 @@ export default function robots(): MetadataRoute.Robots {
         '/welcome',
         '/kit',
         // Before launch, pages that need the API would be empty: they wait for launch (D-134).
-        ...(prelaunch() ? ['/explore', '/c/', '/b/', '/signin', '/checkout'] : []),
+        ...(prelaunch() ? ['/explore', '/b/', '/signin', '/checkout'] : []),
       ],
     },
     sitemap: `${siteUrl()}/sitemap.xml`,

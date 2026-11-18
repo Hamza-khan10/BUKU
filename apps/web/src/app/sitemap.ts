@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { LEGAL_SLUGS } from '@/content/legal';
 import { prelaunch } from '@/lib/flags';
+import { CATEGORY_SNAPSHOT } from '@/features/categories/snapshot';
 import { siteUrl } from '@/lib/site-url';
 
 /**
@@ -55,7 +56,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     })),
     ...LEGAL_SLUGS.map((slug) => ({ url: `${site}/legal/${slug}`, changeFrequency: 'monthly' as const })),
   ];
-  if (early) return entries;
+  // Before launch every category's guide stands without the API (D-139): all 127 pages.
+  if (early)
+    return [
+      ...entries,
+      ...CATEGORY_SNAPSHOT.flatMap((g) => [g, ...g.children]).map((c) => ({
+        url: `${site}/c/${c.slug}`,
+        changeFrequency: 'weekly' as const,
+      })),
+    ];
 
   const tree = (await get<Node[]>(api, '/v1/categories')) ?? [];
   for (const c of tree.flatMap((n) => [n, ...n.children])) {

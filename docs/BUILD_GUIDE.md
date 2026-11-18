@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–d built (2026-11-17)    |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–f built (2026-11-18)    |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -779,6 +779,13 @@ The detailed plan — every page, its data and edge cases, the design system and
   formatted the same everywhere, the snapshot against the migration (unit); currency by country and
   by choice, yearly, the table, the plan carried to early access, categories without the API, no
   sideways scroll at 320 px, WCAG (browser).
+- **3.7f A page for every category — ✅ built (D-139).** `/c/<slug>` for all 127 categories: its own
+  words, what people come for, how it works (booked, queued or both), "Run a …?" for businesses,
+  questions with FAQPage data, breadcrumbs, the kinds around it; the guide alone before launch or
+  without the API, the places then the guide after. Linked from /categories, the home page, the
+  footer, robots, the sitemap and `/llms.txt`. Tests: every kind has its own words, names and
+  articles, title and description lengths, questions by how people come, breadcrumbs (unit); a
+  queue kind, a group, links and a 404, WCAG (browser).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

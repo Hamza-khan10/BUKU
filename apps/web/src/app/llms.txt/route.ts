@@ -1,5 +1,6 @@
 import { BUSINESS_QUESTIONS, PRICING_QUESTIONS } from '@/features/marketing/faq';
 import { ENTERPRISE, LAUNCH_PLANS, money, TRIAL_DAYS } from '@/features/pricing/launch-plans';
+import { CATEGORY_SNAPSHOT } from '@/features/categories/snapshot';
 import { prelaunch } from '@/lib/flags';
 import { siteUrl } from '@/lib/site-url';
 
@@ -55,6 +56,12 @@ export function GET(): Response {
     ),
     `- Enterprise (${ENTERPRISE.fromBranches} branches or more): priced with the business`,
     `- Every business can try Professional free for ${TRIAL_DAYS} days.`,
+    '',
+    '## Kinds of place',
+    '',
+    ...CATEGORY_SNAPSHOT.map(
+      (g) => `- [${g.name}](${site}/c/${g.slug}): ${g.children.map((c) => c.name).join(', ')}`,
+    ),
     '',
     '## Questions businesses ask',
     '',

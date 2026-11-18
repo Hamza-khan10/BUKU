@@ -51,6 +51,20 @@ export const footerNav: { title: string; links: NavLink[] }[] = [
     ],
   },
   {
+    // The kinds people look for most, linked from every page (D-139).
+    title: 'Popular',
+    links: [
+      { href: '/c/barbershop' as Route, label: 'Barbershops' },
+      { href: '/c/hair-salon' as Route, label: 'Hair salons' },
+      { href: '/c/dental-clinic' as Route, label: 'Dental clinics' },
+      { href: '/c/general-physician' as Route, label: 'Doctors' },
+      { href: '/c/gym' as Route, label: 'Gyms' },
+      { href: '/c/car-wash' as Route, label: 'Car washes' },
+      { href: '/c/passport-office' as Route, label: 'Passport offices' },
+      { href: '/c/bank-branch' as Route, label: 'Banks' },
+    ],
+  },
+  {
     title: 'Trust',
     links: [
       { href: '/security', label: 'Security' },

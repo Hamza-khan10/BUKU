@@ -14,11 +14,12 @@ import { RiseWords } from '@/components/motion/rise-words';
 import { ScrollMarquee } from '@/components/motion/scroll-marquee';
 import { ScrollStory } from '@/features/home/components/scroll-story';
 import { QueueBoard } from '@/features/home/components/queue-board';
+import { CATEGORY_SNAPSHOT } from '@/features/categories/snapshot';
 import { categoryTree, cities, shelf } from '@/features/search/api';
 import { SearchBox } from '@/features/search/components/search-box';
 import type { CategoryNode, City } from '@/features/search/types';
 import { cn } from '@/lib/cn';
-import { prelaunch } from '@/lib/flags';
+import { apiConfigured, prelaunch } from '@/lib/flags';
 import { jsonLd, pageMetadata } from '@/lib/seo';
 import { siteUrl } from '@/lib/site-url';
 
@@ -130,7 +131,8 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
   const asked = query.city;
   const [cityList, tree] = await Promise.all([
     cities().catch(() => []),
-    categoryTree().catch(() => [] as CategoryNode[]),
+    // Without the API (before launch) the kinds BUKU starts with, so home links every category.
+    apiConfigured() ? categoryTree().catch(() => CATEGORY_SNAPSHOT) : Promise.resolve(CATEGORY_SNAPSHOT),
   ]);
   const chosen =
     cityList.find((c) => typeof asked === 'string' && c.city.toLowerCase() === asked.toLowerCase()) ??

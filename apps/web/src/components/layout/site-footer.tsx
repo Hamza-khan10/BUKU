@@ -34,7 +34,7 @@ export function SiteFooter() {
           </Magnetic>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-6 gap-y-10 border-t border-white/10 pt-10 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-10 border-t border-white/10 pt-10 sm:grid-cols-4">
           {footerNav.map((group) => (
             <nav key={group.title} aria-label={group.title}>
               <h2 className="text-sm font-semibold text-board-ink">{group.title}</h2>

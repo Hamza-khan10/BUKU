@@ -58,13 +58,13 @@ describe('Before launch (D-134)', () => {
     vi.stubEnv('APP_URL', '');
     vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', 'buku-ruo5.vercel.app');
     const rules = robots().rules as { disallow: string[] };
-    expect(rules.disallow).toEqual(
-      expect.arrayContaining(['/explore', '/c/', '/b/', '/business', '/account']),
-    );
+    expect(rules.disallow).toEqual(expect.arrayContaining(['/explore', '/b/', '/business', '/account']));
     expect(robots().sitemap).toBe('https://buku-ruo5.vercel.app/sitemap.xml');
     // The categories and the prices stand without the API (D-137): open to search engines.
     expect(rules.disallow).not.toContain('/categories');
     expect(rules.disallow).not.toContain('/pricing');
+    // Every category's guide stands without the API too (D-139).
+    expect(rules.disallow).not.toContain('/c/');
 
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
@@ -75,6 +75,9 @@ describe('Before launch (D-134)', () => {
     expect(urls).not.toContain('https://buku-ruo5.vercel.app/explore');
     expect(urls).toContain('https://buku-ruo5.vercel.app/categories');
     expect(urls).toContain('https://buku-ruo5.vercel.app/pricing');
+    expect(urls).toContain('https://buku-ruo5.vercel.app/c/barbershop');
+    expect(urls).toContain('https://buku-ruo5.vercel.app/c/health-medical');
+    expect(urls.filter((u) => u.includes('/c/'))).toHaveLength(127);
     expect(urls.some((u) => u.includes('/legal/privacy'))).toBe(true);
   });
 
