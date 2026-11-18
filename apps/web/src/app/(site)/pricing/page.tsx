@@ -15,7 +15,9 @@ import {
   type Currency,
 } from '@/features/pricing/launch-plans';
 import { prelaunch } from '@/lib/flags';
+import { brandGraph } from '@/lib/brand';
 import { jsonLd, pageMetadata } from '@/lib/seo';
+import { siteUrl } from '@/lib/site-url';
 
 export const metadata = pageMetadata({
   title: 'Pricing',
@@ -139,6 +141,14 @@ export default async function PricingPage({ searchParams }: PageProps<'/pricing'
           type="application/ld+json"
           nonce={nonce}
           dangerouslySetInnerHTML={{ __html: jsonLd(faqStructuredData(PRICING_QUESTIONS)) }}
+        />
+        {/* BUKU and its prices, for answer engines asked what it costs (D-138). */}
+        <script
+          type="application/ld+json"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{
+            __html: jsonLd({ '@context': 'https://schema.org', '@graph': brandGraph(siteUrl()) }),
+          }}
         />
         <div className="flex flex-col gap-5 lg:sticky lg:top-28 lg:self-start">
           <h2 id="questions" className="type-section">

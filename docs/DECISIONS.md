@@ -1430,3 +1430,22 @@ migration's 116 kinds (`scripts/category-snapshot.ts`; a test fails if they drif
 kinds aren't links (no places yet), one invitation to early access stands at the top, and it is open
 to search engines. Explore needs the API, so before launch it leaves the navigation and the footer's
 button leads to early access. "Join early access" on a plan arrives with that plan chosen.
+
+**D-138 · Telling BUKU apart from the other "BUKU"s (3.7e).** Two days after launch on
+onbuku.com, Google ranked the site first for "buku booking and queue" but not for anything wider,
+and Gemini's overview described "Booku" (an event-ticketing queue service) and, for "buku" alone,
+Buku.io (a textbook subscription that holds buku.io and buku.app). A new domain has no authority
+yet, and the name is shared: engines can't tell which BUKU a page means unless it says so. Decided:
+the home page's title and description say what BUKU is in the words people search with ("book
+appointments and join walk-in queues online", "near you"); BUKU's structured data names it with the
+other names people use (onbuku, onbuku.com, BUKU app), its slogan, and BUKU's own profiles once they
+exist
+(`lib/brand.ts`, `PROFILES`), and describes the app with its prices in both currencies (on the home
+and pricing pages); `/llms.txt` says plainly that BUKU is not Buku.io or Booku. What code can't do:
+authority comes from other sites linking to and mentioning onbuku.com (profiles, directories,
+press), and ranking for wider searches ("queue app Pakistan", "clinic appointment system") needs
+pages about them and months of time. A trademark search for BUKU (Pakistan's IPO, WIPO) is advised
+before spending on the name. **No country in the copy:** the owner pointed out that "opens in
+Pakistan first" tells everyone else the early-access list isn't for them, so the site says BUKU is
+opening city by city, and the structured data names no area (prices still show rupees in Pakistan
+and dollars elsewhere).

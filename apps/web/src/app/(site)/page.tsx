@@ -20,12 +20,14 @@ import type { CategoryNode, City } from '@/features/search/types';
 import { cn } from '@/lib/cn';
 import { prelaunch } from '@/lib/flags';
 import { jsonLd, pageMetadata } from '@/lib/seo';
+import { brandGraph } from '@/lib/brand';
 import { siteUrl } from '@/lib/site-url';
 
 export const metadata = pageMetadata({
-  title: 'BUKU: book appointments and join queues',
+  // What BUKU is, in the words people search with, so it isn't taken for the other "BUKU"s (D-138).
+  title: 'BUKU: book appointments and join walk-in queues online',
   description:
-    'Book appointments and join walk-in queues at barbers, clinics, salons and offices, free. Businesses take bookings and run their queue with BUKU.',
+    'Book appointments and join walk-in queues at barbers, clinics, salons and offices near you, free. Businesses run their bookings and queue with BUKU.',
   path: '/',
   absoluteTitle: true,
 });
@@ -98,31 +100,9 @@ function acrossGroups(tree: CategoryNode[], n: number): string[] {
   return names;
 }
 
-/** BUKU as an organisation and its website (schema.org), at the site's one address. */
+/** BUKU as an organisation, its website and its app (schema.org), at the site's one address. */
 function siteStructuredData() {
-  const site = siteUrl();
-  return {
-    '@context': 'https://schema.org',
-    '@graph': [
-      {
-        '@type': 'Organization',
-        '@id': `${site}/#organization`,
-        name: 'BUKU',
-        url: site,
-        logo: `${site}/brand/buku-app-icon.svg`,
-        description:
-          'BUKU is an app for booking appointments and joining walk-in queues at local businesses such as barbers, clinics, salons and offices.',
-      },
-      {
-        '@type': 'WebSite',
-        '@id': `${site}/#website`,
-        name: 'BUKU',
-        url: site,
-        inLanguage: 'en',
-        publisher: { '@id': `${site}/#organization` },
-      },
-    ],
-  };
+  return { '@context': 'https://schema.org', '@graph': brandGraph(siteUrl()) };
 }
 
 export default async function HomePage({ searchParams }: PageProps<'/'>) {
