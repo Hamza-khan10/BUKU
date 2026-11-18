@@ -48,7 +48,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = [
   {
     id: 'when',
     q: 'When and where does BUKU open?',
-    a: 'BUKU opens in Pakistan first. Join the early-access list and we’ll email you the day it opens near you; businesses on the list also get help to set up.',
+    a: 'BUKU is opening city by city. Join the early-access list and we’ll email you the day it opens near you; businesses on the list also get help to set up.',
   },
 ];
 

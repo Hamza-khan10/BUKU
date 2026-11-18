@@ -99,14 +99,27 @@ Status legend: ✅ in place and tested (Phase 1) · 🔜 built in the phase show
 
 ## 5. Supply chain
 
-| Control                                                                                             | Status                   |
-| --------------------------------------------------------------------------------------------------- | ------------------------ |
-| pnpm: dependency install scripts blocked unless allow-listed (4 reviewed entries)                   | ✅                       |
-| pnpm: package versions < 24 h old are refused (most malicious releases are pulled within hours)     | ✅                       |
-| Exact version pins + lockfile; `pnpm audit` fails CI on high/critical                               | ✅                       |
-| Security overrides for vulnerable transitive deps, each with a written justification                | ✅ `pnpm-workspace.yaml` |
-| GitHub Actions pinned to commit SHAs; read-only workflow token; Dependabot for npm, actions, Docker | ✅                       |
-| Dependency review on PRs (blocks high-severity and copyleft licences)                               | ✅                       |
+| Control                                                                                                                     | Status                    |
+| --------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| pnpm: dependency install scripts blocked unless allow-listed (4 reviewed entries)                                           | ✅                        |
+| pnpm: package versions < 24 h old are refused (most malicious releases are pulled within hours)                             | ✅                        |
+| Exact version pins + lockfile; `pnpm audit` fails CI on high/critical                                                       | ✅                        |
+| Security overrides for vulnerable transitive deps, each with a written justification                                        | ✅ `pnpm-workspace.yaml`  |
+| GitHub Actions pinned to commit SHAs; read-only workflow token; Dependabot for npm, actions, Docker                         | ✅                        |
+| Dependency review on PRs (blocks high-severity and copyleft licences)                                                       | ✅                        |
+| Audit exceptions only with the owner's approval, a written reason and a daily check that fails the day a fix exists (below) | ✅ `audit-exceptions.yml` |
+
+### Audit exceptions
+
+The audit may ignore an advisory only with the owner's approval, a written reason beside it
+(`pnpm-workspace.yaml`, `auditConfig.ignoreGhsas`), a tracking issue, and the daily **Audit
+exceptions** workflow (`scripts/check-audit-exceptions.ts`). That workflow fails, and GitHub emails
+the owner, the day the advisory is reinstated, a fixed version is listed, or npm publishes a release
+beyond the vulnerable range. Then the package is updated and the exception removed at once.
+
+| Advisory                          | Package           | Why it's ignored                                                                                                                                                          | Since      | Tracking                           |
+| --------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------- |
+| GHSA-fc5q-39xc-vjpf (high, ReDoS) | picomatch ≤ 4.0.7 | Withdrawn by GitHub on 2026-11-18, still in the audit database; no fixed version; build and release tools only, with our own glob patterns (`pnpm audit --prod` is clean) | 2026-11-18 | #226 (due as soon as a fix is out) |
 
 ## Compliance
 

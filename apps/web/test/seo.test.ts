@@ -92,6 +92,8 @@ describe('llms.txt (D-136)', () => {
     expect(text).toContain('[Early access](https://onbuku.com/early-access)'); // before launch
     for (const { q } of BUSINESS_QUESTIONS) expect(text).toContain(`### ${q}`);
     expect(text).not.toContain('localhost');
+    // Told apart from the other BUKUs (D-138).
+    expect(text).toContain('It is not Buku.io or buku.app');
     // The prices, both currencies, as the pricing page shows them (D-137).
     expect(text).toContain('- Essential (for barbers, clinics and local shops): Rs 2,499 or $15');
     expect(text).toContain('[Categories](https://onbuku.com/categories)');

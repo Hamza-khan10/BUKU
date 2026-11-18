@@ -768,7 +768,7 @@ The detailed plan — every page, its data and edge cases, the design system and
   settings. Tests: the redirect (and what it never redirects), metadata, escaping, the questions,
   llms.txt, the token, the CSP (unit); canonical and card on every page, the picture, structured
   data matching what people see, closed answers in the page, llms.txt (browser).
-- **3.7d Prices at launch; pricing and categories without the API — ✅ built (D-137).** Plans per
+- **3.7d Prices at launch; pricing and categories without the API — ✅ done (D-137, #211).** Plans per
   branch, per month: Starter free (with the queue), Essential Rs 2,499 / $15, Professional Rs 5,999
   / $35 (the 30-day trial), Network Rs 4,999 / $29 a branch (two or more), Enterprise priced
   together (20 or more); a year costs ten months; rupees in Pakistan, dollars elsewhere. /pricing
@@ -779,6 +779,12 @@ The detailed plan — every page, its data and edge cases, the design system and
   formatted the same everywhere, the snapshot against the migration (unit); currency by country and
   by choice, yearly, the table, the plan carried to early access, categories without the API, no
   sideways scroll at 320 px, WCAG (browser).
+- **3.7e Telling BUKU apart in search — ✅ done (D-138, #223).** The home title and description say
+  what BUKU is in the words people search with ("book appointments and join walk-in queues online",
+  "near you"); Organization, WebSite and WebApplication data with BUKU's other names, the slogan, the
+  prices in both currencies, and its profiles once they exist (`lib/brand.ts`); `/llms.txt` says
+  BUKU is not Buku.io or Booku; no country in the copy (BUKU opens city by city). Tests: the names,
+  no area, the prices from the plans (unit).
 - **3.7f A page for every category — ✅ built (D-139).** `/c/<slug>` for all 127 categories: its own
   words, what people come for, how it works (booked, queued or both), "Run a …?" for businesses,
   questions with FAQPage data, breadcrumbs, the kinds around it; the guide alone before launch or

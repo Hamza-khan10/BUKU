@@ -4,7 +4,8 @@ import { pageMetadata } from '@/lib/seo';
 
 export const metadata = pageMetadata({
   title: 'About',
-  description: 'Why BUKU exists, and the principles it’s built on.',
+  description:
+    'BUKU (onbuku.com) is an appointment booking and walk-in queue app: why it exists, and the principles it’s built on.',
   path: '/about',
 });
 
@@ -27,7 +28,7 @@ const PRINCIPLES = [
   {
     Icon: Globe,
     title: 'For everyone, everywhere',
-    text: 'Names in any script, prices in local currencies, times in the business’s own timezone. Starting in Pakistan, built to work anywhere.',
+    text: 'Names in any script, prices in local currencies, times in the business’s own timezone. Built to work anywhere.',
   },
 ];
 
