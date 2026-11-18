@@ -32,8 +32,9 @@ export function GroupIndex({ groups }: { groups: { slug: string; name: string; c
   };
   return (
     <nav aria-label="Groups">
-      {/* One row to swipe on a phone; wrapped on wider screens. */}
-      <ul className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+      {/* One row to swipe on a phone; wrapped on wider screens. Its faded right edge doesn't count as
+          in view (scroll padding), so Tab brings a group there fully into sight. */}
+      <ul className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 max-sm:scroll-ps-4 max-sm:scroll-pe-12 [scrollbar-width:none] max-sm:[mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
         {groups.map((g) => (
           <li key={g.slug} className="shrink-0">
             <button

@@ -439,6 +439,7 @@ function PhoneTabs({
   return (
     <nav
       aria-label={business.name}
+      data-bottom-bar
       className="fixed inset-x-0 bottom-0 z-30 border-t border-line/70 bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgb(var(--shadow-color)/0.06)] lg:hidden"
     >
       <ul className="mx-auto grid max-w-lg grid-cols-5">

@@ -30,5 +30,6 @@ export function TabsTrigger({ className, ...props }: ComponentProps<typeof Radix
 }
 
 export function TabsContent({ className, ...props }: ComponentProps<typeof RadixTabs.Content>) {
-  return <RadixTabs.Content className={cn('mt-4 focus-visible:outline-none', className)} {...props} />;
+  // Radix lets Tab reach the panel itself, so it shows the site's focus ring like any control.
+  return <RadixTabs.Content className={cn('mt-4', className)} {...props} />;
 }

@@ -4,7 +4,7 @@ The state of the whole project in one place: what is built, how it is run and wo
 things stand on GitHub, and what comes next. Last updated **2026-11-18**.
 
 Deeper detail lives in the docs this page points to — [BUILD_GUIDE](docs/BUILD_GUIDE.md) (the
-phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-140),
+phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-141),
 [DATABASE](docs/DATABASE.md) (database v2), [ARCHITECTURE](docs/ARCHITECTURE.md),
 [SECURITY](docs/SECURITY.md), [API_REFERENCE](docs/API_REFERENCE.md),
 [DEVELOPMENT](docs/DEVELOPMENT.md) (setting up and running) and [WEB_PLAN](docs/WEB_PLAN.md).
@@ -207,10 +207,9 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    subscriptions), 3.6i plans and prices, 3.6j the economics and 3.6k notification settings are
    done: the operator console is complete. Now 3.7, polish and proof: 3.7a (the business workspace,
    fields that line up, D-133) and 3.7b (the early-access list, the website on Cloudflare Workers
-   with D1, D-134, D-135); next the owner's Cloudflare setup and the domain, the pricing page in
-   the new plan names (Starter free, Essential, Professional, Network, Enterprise; prices in the
-   visitor's currency), then the accessibility audit, Lighthouse budgets, the visual pass at every
-   breakpoint and the copy review.
+   with D1, D-134, D-135), the domain and Cloudflare (D-136, D-140), prices at launch (D-137),
+   search (D-138, D-139) and the accessibility audit by use (3.7g, D-141); next Lighthouse budgets,
+   the visual pass at every breakpoint and the copy review.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
 3. **Phase 5** — production: deployment, PgBouncer, the standby and a second region, backups to
