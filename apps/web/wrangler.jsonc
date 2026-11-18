@@ -28,6 +28,9 @@
     "SUPPORT_EMAIL": "support@onbuku.com",
     "PRIVACY_EMAIL": "privacy@onbuku.com",
     "SECURITY_EMAIL": "security@onbuku.com",
+    // Cloudflare Web Analytics (D-136), set to "JS Snippet installation" in the dashboard so the
+    // site adds the beacon itself, with the page's nonce. Public: it sits in every page.
+    "CF_WEB_ANALYTICS_TOKEN": "62139f9a96e8413f93dffe8153186b26",
     // Cloudflare sets this to the visitor's address itself; a visitor can't forge it.
     "WEB_CLIENT_IP_HEADER": "cf-connecting-ip",
     // The marketing pages may be found on Google; personal pages never are (robots.ts).
