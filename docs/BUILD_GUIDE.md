@@ -752,7 +752,7 @@ The detailed plan — every page, its data and edge cases, the design system and
   Abuse: our own page only, 8 KB, Cloudflare Turnstile, five an hour per address (a keyed hash,
   never the address), the same answer for an email already there. The website is built as a
   Cloudflare Worker (OpenNext) with the list in D1; a guard refuses any build that holds a local
-  `.env` value, and CI builds the Worker and checks its size (2.9 MiB compressed: Workers Paid).
+  `.env` value, and CI builds the Worker and checks its size (3.0 MiB compressed: just under the free plan's 3 MiB; Workers Paid allows 10).
   Going live needs the owner's Cloudflare steps (DEVELOPMENT.md → Deploy the website on
   Cloudflare). The form keeps the site's shape rule (globals.css): 8px fields everywhere, a 16px
   panel, pill buttons; choices stacked, fields grouped, selects with a drawn arrow. Tests: the rules, the hash, the bot check, the list on SQLite with the real

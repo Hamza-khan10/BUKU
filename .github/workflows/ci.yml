@@ -202,7 +202,8 @@ jobs:
       # anywhere. The build refuses to finish if a local secret ended up inside (cf-strip-env.ts).
       - run: pnpm --filter @buku/web cf:build
       # Its size as Cloudflare would take it (no account, nothing uploaded). Workers Paid allows
-      # 10 MiB compressed: this fails at 9, while there's still room to act.
+      # 10 MiB compressed: this fails at 9, while there's still room to act. The account stays on
+      # the free plan (3 MiB) until launch: past that, a warning says the deploy will be refused.
       - name: Worker size
         working-directory: apps/web
         run: |
@@ -210,7 +211,8 @@ jobs:
           pnpm exec wrangler deploy --dry-run --outdir "$RUNNER_TEMP/worker" 2>&1 | tee "$RUNNER_TEMP/dry-run.txt"
           kib=$(grep -oE 'gzip: [0-9.]+ KiB' "$RUNNER_TEMP/dry-run.txt" | grep -oE '[0-9.]+')
           test -n "$kib" || { echo "::error::wrangler didn't report the Worker's size"; exit 1; }
-          echo "Worker: ${kib} KiB compressed (limit 10240, budget 9216)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Worker: ${kib} KiB compressed (limit 10240, budget 9216; free plan 3072)" >> "$GITHUB_STEP_SUMMARY"
+          awk -v k="$kib" 'BEGIN { exit !(k > 3072) }' && echo "::warning::Worker is ${kib} KiB compressed, over the free plan's 3 MiB: Cloudflare will refuse the deploy until the account is on Workers Paid (the live site keeps the last version)"
           awk -v k="$kib" 'BEGIN { exit !(k <= 9216) }' || { echo "::error::Worker is ${kib} KiB compressed, over the 9 MiB budget"; exit 1; }
 
   images:

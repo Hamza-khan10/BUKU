@@ -261,8 +261,10 @@ it refuses any database not on this machine. By hand:
 ### Deploy the website on Cloudflare
 
 The website runs as a Cloudflare Worker (D-135), built by OpenNext; the early-access list
-(D-134) is a D1 database bound to it. Plan: **Workers Paid** ($5 a month; the Worker is too big
-and too busy for the free plan). The Worker, its settings and its database are in
+(D-134) is a D1 database bound to it. Plan: **Free until launch** (the owner's call,
+2026-11-19), then **Workers Paid** ($5 a month). The Worker is about 3.0 MiB compressed, just under
+the free plan's 3 MiB: CI warns once it's over, and Cloudflare then refuses the deploy (the live
+site keeps its last version) until the plan is upgraded. The Worker, its settings and its database are in
 `apps/web/wrangler.jsonc`.
 
 **Never deploy from this machine.** OpenNext copies every `.env*` value into the build, so
@@ -297,7 +299,9 @@ Once, in the Cloudflare dashboard:
    site's address, as `infrastructure/s3/init.sh` does in development), the `LEGAL_*` /
    `*_EMAIL` details, Google sign-in; and `PRELAUNCH` removed at launch. Then **Retry
    deployment** (or push to `main`): until these are set, the list says it opens soon.
-4. **The plan:** Workers Paid (Workers & Pages → Plans), before the site gets visitors.
+4. **The plan:** Workers Paid (Workers & Pages → Plans) at launch, or sooner when CI warns that the
+   Worker is over the free plan's 3 MiB, visitors see Error 1102 (CPU limit) or 1027 (daily
+   limit), or the site's own email starts (Cloudflare Email Sending needs it, D-140).
 5. **The domain:** buy it in Cloudflare Registrar (at cost), then `buku` → Settings →
    Domains & Routes → add it (and `www`); Cloudflare issues the certificate. Set `APP_URL` to it.
 6. **Google:** Search Console → add the domain (DNS record, added in Cloudflare in one click) or
@@ -350,11 +354,12 @@ unless it says otherwise), once:
    sends HSTS; don't add preload yet). Security → WAF → Rate limiting rules (one on this plan):
    path equals `/api/early-access` and method `POST`, 5 requests per 10 seconds per IP → Block.
 7. **Email (done 2026-11-18, D-140):** routing for hello@, support@, business@, privacy@, security@,
-   welcome@ to the owner's Gmail, catch-all off; DMARC quarantine; DNSSEC on. Still to do: Brevo (sending)
-   and its DNS records, then DMARC `p=reject`. Originally: Email → Email Routing → enable, then addresses `hello@`, `support@`, `privacy@`,
+   welcome@ to the owner's Gmail, catch-all off; DMARC quarantine; DNSSEC on. Sending (D-140): the owner's
+   replies go through Resend's free SMTP until launch, then Cloudflare Email Sending; DMARC moves to
+   `p=reject` once that mail is seen passing. Originally: Email → Email Routing → enable, then addresses `hello@`, `support@`, `privacy@`,
    `security@` forwarding to the owner's inbox (Cloudflare adds the MX and SPF records). Then
    Email → DMARC Management → enable (`p=reject` is safe while nothing sends as onbuku.com; change
-   it with SPF and DKIM when a sender such as Brevo is added). Then the Worker's text variables
+   it with SPF and DKIM when a sender is added). Then the Worker's text variables
    `SUPPORT_EMAIL`, `PRIVACY_EMAIL`, `SECURITY_EMAIL` (the legal pages show them).
 8. **Google:** Search Console → Add property → **Domain** `onbuku.com` → verify (it offers to add
    the DNS record in Cloudflare itself) → Sitemaps → `https://onbuku.com/sitemap.xml` → URL

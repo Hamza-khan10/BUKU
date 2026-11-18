@@ -1478,7 +1478,7 @@ in search now carries over:
   Next, after launch: a page per kind and city ("barbers in Lahore") once real places fill them;
   before then they would be empty and hurt the site.
 
-**D-140 · Email at onbuku.com: free forwarding now, Brevo for sending.** The owner wants addresses
+**D-140 · Email at onbuku.com: free forwarding now; sending through Resend, then Cloudflare (updated 2026-11-19).** The owner wants addresses
 on the domain at no cost. Receiving: Cloudflare Email Routing forwards `hello@` (official),
 `support@`, `business@`, `privacy@`, `security@` and `welcome@` to the owner's mailbox; the
 catch-all is off (mail to any other address is dropped). Sending: Cloudflare has no SMTP (the
@@ -1489,3 +1489,10 @@ as onbuku.com yet) and moves to `reject` once Brevo's mail is seen passing. DNSS
 shows the support, privacy and security addresses (wrangler.jsonc), and
 `/.well-known/security.txt` (RFC 9116) names security@onbuku.com. Set up through a short-lived,
 narrowly scoped Cloudflare API token kept in a private file, never in the repository or the chat.
+**Correction (2026-11-19):** Cloudflare does send now. Email Sending has SMTP in beta since
+June 2026 (`smtp.mx.cloudflare.net:465`) and needs Workers Paid for any recipient (3,000 a month
+included, then $0.35 per 1,000), as the owner had said. The owner keeps the free plan until launch,
+and Brevo's sign-up wouldn't respond, so until then the owner's replies go through Resend's free
+SMTP (100 a day, 3,000 a month; sign-in with GitHub), its records on `send.onbuku.com` and
+`resend._domainkey`. At launch, with Workers Paid, sending moves to Cloudflare Email Sending (one
+provider, the app's email from the Worker too) and Resend's records are removed.
