@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
+<style>
+  /* Facebook 1640x624 and X 1500x500: phones crop the sides (Facebook) and the profile photo covers
+     the lower left (X), so everything stays centred in the middle two thirds. */
+  body { background: var(--midnight); color: #edf3f0; position: relative; display: grid; place-items: center; text-align: center; }
+  .glow { width: 160vh; height: 160vh; left: 50%; top: -60vh; transform: translateX(-50%); }
+  .text { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4.5vh; }
+  .logo { height: 10vh; width: auto; }
+  .headline { font-size: 14vh; white-space: nowrap; }
+  .headline span { color: var(--mint); }
+  .line { font-size: 5vh; color: #b4c4bc; }
+  .url { font-weight: 600; color: var(--mint); }
+</style></head>
+<body><div class="glow"></div>
+  <div class="text">
+    <img class="logo" src="../../apps/web/public/brand/buku-logo-reversed.svg" alt="">
+    <div class="headline">Book the time. <span>Skip the wait.</span></div>
+    <div class="line">Bookings and walk-in queues, from your phone · <span class="url">onbuku.com</span></div>
+  </div>
+</body></html>

@@ -20,6 +20,8 @@ export default tseslint.config(
       'apps/*/test-results/**',
       'apps/*/playwright-report/**',
       '.changeset/**',
+      // The marketing workspace (this branch only, never merged): content tools, not product code.
+      'marketing/**',
     ],
   },
   js.configs.recommended,
