@@ -792,6 +792,18 @@ The detailed plan — every page, its data and edge cases, the design system and
   footer, robots, the sitemap and `/llms.txt`. Tests: every kind has its own words, names and
   articles, title and description lengths, questions by how people come, breadcrumbs (unit); a
   queue kind, a group, links and a 404, WCAG (browser).
+- **3.7g Accessibility beyond markup — ✅ done (D-141).** axe already checked every page's markup
+  (99 checks); a new browser suite uses the pages the way a person does, on a computer (light) and
+  a phone (dark): Tab through every control on 13 public pages, each photographed focused and not
+  (they must differ: WCAG 2.4.7) and checked uncovered (2.4.11); one h1 and no skipped heading
+  level (1.3.1); nothing moving under reduced motion (2.3.3, 2.2.2); no text cut off at wider
+  letter, word, line and paragraph spacing (1.4.12); and, against the stack, the workspace's phone
+  tabs never covering a focused field. Fixed from what it found: the home page's tab panel hid its
+  focus ring; on a phone, a focused field could scroll in under a bar fixed to the bottom (the
+  workspace's tabs, the booking bar,
+  "Back to the search"), so `[data-bottom-bar]` now reserves room at the bottom whenever focus
+  scrolls (proven: without it, settings fields sit fully under the tabs); and a group button on
+  /categories could take focus 2 px in view under the row's fade (scroll padding on the row).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

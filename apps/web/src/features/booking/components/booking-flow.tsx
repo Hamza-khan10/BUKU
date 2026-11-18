@@ -353,7 +353,10 @@ export function BookingFlow({
       </aside>
 
       {slot && date && !summaryInView && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 py-3 shadow-lift backdrop-blur lg:hidden">
+        <div
+          data-bottom-bar
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 py-3 shadow-lift backdrop-blur lg:hidden"
+        >
           <div className="mx-auto flex max-w-xl items-center gap-3">
             <p className="min-w-0 flex-1 text-sm text-ink-2">
               <span className="font-semibold text-ink tabular">{clockLabel(slot.time)}</span>,{' '}

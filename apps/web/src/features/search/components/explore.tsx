@@ -397,6 +397,7 @@ function BackToTop({
     <button
       type="button"
       onClick={onClick}
+      data-bottom-bar
       className={cn(
         'fixed right-4 bottom-5 z-30 inline-flex h-11 items-center gap-2 rounded-full bg-ink px-4 text-sm font-semibold text-canvas shadow-lift transition-[opacity,transform] duration-300 ease-(--ease-out) sm:right-6 sm:bottom-6',
         shown ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-3 opacity-0',

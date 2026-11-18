@@ -273,6 +273,13 @@
     scroll-padding-top: 5rem;
   }
 
+  /* Something fixed to the bottom of the screen (the workspace's tabs and the booking bar on a
+     phone, the search's "Back to the search") never covers the control that has focus (WCAG
+     2.4.11): scrolling to it stops above. Where a bar is hidden, that's only a little air. */
+  html:has([data-bottom-bar]) {
+    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+
   body {
     @apply bg-canvas font-sans text-ink antialiased;
     font-feature-settings: 'kern';

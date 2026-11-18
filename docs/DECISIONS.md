@@ -1496,3 +1496,13 @@ and Brevo's sign-up wouldn't respond, so until then the owner's replies go throu
 SMTP (100 a day, 3,000 a month; sign-in with GitHub), its records on `send.onbuku.com` and
 `resend._domainkey`. At launch, with Workers Paid, sending moves to Cloudflare Email Sending (one
 provider, the app's email from the Worker too) and Resend's records are removed.
+
+**D-141 · Accessibility is tested by use, not only by markup (3.7g).** axe reads markup; it can't
+tell whether a person tabbing through a page can see where they are, or whether a fixed bar hides
+the field they're typing in. So `e2e/a11y.spec.ts` uses each public page the way a person does
+and runs in CI with the rest: focus is photographed on and off for every control (a difference
+means a visible indicator, wherever the ring is drawn), each control must be uncovered when
+focused, headings must form an outline, nothing may move under reduced motion, and text must
+survive WCAG's wider spacing. Anything fixed to the bottom of the screen carries `data-bottom-bar`,
+which reserves room at the bottom whenever focus scrolls (`globals.css`); a scrolling row with a
+faded edge sets scroll padding so a control under the fade scrolls fully into view.
