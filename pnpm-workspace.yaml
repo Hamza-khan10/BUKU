@@ -71,3 +71,14 @@ overrides:
   # below 11.0.1, through it): the Cloudflare build tool asks for glob ^13.0.6 and only calls
   # glob() and globSync(), unchanged in 14; glob 14.0.6 brings minimatch 11. Build time only.
   '@opennextjs/cloudflare>glob': 14.0.6
+
+auditConfig:
+  ignoreGhsas:
+    # picomatch <=4.0.7 ReDoS (GHSA-fc5q-39xc-vjpf). Ignored with the owner's approval on 2026-11-18
+    # because: GitHub withdrew the advisory that day (micromatch/picomatch#235) but the audit
+    # database still listed it; no fixed version exists (4.0.7 is the latest); only build and release
+    # tools reach picomatch (changesets, tinyglobby, Vite, the Cloudflare build), always with our own
+    # glob patterns, and `pnpm audit --prod` is clean. A DUE TASK: the daily "Audit exceptions"
+    # workflow fails the day a fixed picomatch is published or the advisory is reinstated; then
+    # update picomatch and remove this entry at once (see SECURITY.md, Audit exceptions).
+    - GHSA-fc5q-39xc-vjpf
