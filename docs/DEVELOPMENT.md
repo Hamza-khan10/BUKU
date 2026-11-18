@@ -349,7 +349,9 @@ unless it says otherwise), once:
    SSL/TLS → Edge Certificates: Always Use HTTPS on, Minimum TLS 1.2, TLS 1.3 on (the site already
    sends HSTS; don't add preload yet). Security → WAF → Rate limiting rules (one on this plan):
    path equals `/api/early-access` and method `POST`, 5 requests per 10 seconds per IP → Block.
-7. **Email:** Email → Email Routing → enable, then addresses `hello@`, `support@`, `privacy@`,
+7. **Email (done 2026-11-18, D-140):** routing for hello@, support@, business@, privacy@, security@,
+   welcome@ to the owner's Gmail, catch-all off; DMARC quarantine; DNSSEC on. Still to do: Brevo (sending)
+   and its DNS records, then DMARC `p=reject`. Originally: Email → Email Routing → enable, then addresses `hello@`, `support@`, `privacy@`,
    `security@` forwarding to the owner's inbox (Cloudflare adds the MX and SPF records). Then
    Email → DMARC Management → enable (`p=reject` is safe while nothing sends as onbuku.com; change
    it with SPF and DKIM when a sender such as Brevo is added). Then the Worker's text variables
