@@ -1,6 +1,6 @@
 /**
  * An audit exception must not outlive its reason (SECURITY.md, "Audit exceptions"). For every
- * advisory the dependency audit ignores (pnpm-workspace.yaml, auditConfig.ignoreGhsas), ask GitHub
+ * reviewed exception (EXCEPTIONS below, the same as pnpm-workspace.yaml's ignoreGhsas), ask GitHub
  * whether it is still withdrawn and whether a fixed version exists, and ask npm whether a release
  * beyond the vulnerable range is out. Exits 1 (so the daily "Audit exceptions" workflow fails and
  * GitHub emails the owner) as soon as anything means the exception should go:
@@ -20,11 +20,19 @@ interface Advisory {
   }[];
 }
 
+/**
+ * The reviewed exceptions: the only advisories the audit may ignore. Each needs the owner's approval
+ * and a tracking issue (SECURITY.md). The requests below are built from this list alone.
+ */
+const EXCEPTIONS: { id: string; approved: string; issue: number }[] = [
+  { id: 'GHSA-fc5q-39xc-vjpf', approved: '2026-11-18', issue: 226 },
+];
+
+// The config may ignore nothing else: an ignore that isn't in the list above was never reviewed.
 const workspace = readFileSync(new URL('../pnpm-workspace.yaml', import.meta.url), 'utf8');
-const section = workspace.slice(workspace.indexOf('auditConfig:'));
-const ignored = workspace.includes('auditConfig:')
-  ? [...section.matchAll(/^\s+-\s+(GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4})\s*$/gm)].map((m) => m[1]!)
-  : [];
+const section = workspace.includes('auditConfig:') ? workspace.slice(workspace.indexOf('auditConfig:')) : '';
+const configured = [...section.matchAll(/^\s+-\s+(GHSA-[0-9a-z-]+)\s*$/gm)].map((m) => m[1]!);
+const reviewed = new Set<string>(EXCEPTIONS.map((e) => e.id));
 
 /** "4.0.7" > "4.0.6"; pre-releases and odd versions count as not newer. */
 function newer(a: string, b: string): boolean {
@@ -54,8 +62,14 @@ const github = {
   ...(process.env.GITHUB_TOKEN ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
 };
 
-for (const id of ignored) {
+for (const id of configured.filter((c) => !reviewed.has(c)))
+  problems.push(`${id} is ignored in pnpm-workspace.yaml but isn't a reviewed exception (SECURITY.md).`);
+for (const id of [...reviewed].filter((r) => !configured.includes(r)))
+  problems.push(`${id} is listed as an exception but no longer ignored: remove it from the list too.`);
+
+for (const { id, approved, issue } of EXCEPTIONS) {
   const advisory = await json<Advisory>(`https://api.github.com/advisories/${id}`, github);
+  console.log(`(approved ${approved}, issue #${issue})`);
   const lines = [`${id}: ${advisory.summary}`];
   if (!advisory.withdrawn_at)
     problems.push(
@@ -84,6 +98,6 @@ for (const id of ignored) {
   console.log(lines.join('\n'));
 }
 
-if (ignored.length === 0) console.log('No audit exceptions.');
+if (EXCEPTIONS.length === 0) console.log('No audit exceptions.');
 for (const p of problems) console.log(`::error::${p}`);
 process.exit(problems.length > 0 ? 1 : 0);
