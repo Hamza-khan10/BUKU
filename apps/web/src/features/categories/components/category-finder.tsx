@@ -16,8 +16,8 @@ export interface FinderGroup {
 /**
  * "Find a kind of place": type part of a name and the kinds that match appear at once, each
  * with its group, so nobody has to read 116 names to find theirs. Nothing found: a way on to
- * searching every place instead. Before launch (`early`) the kinds aren't links yet: there are no
- * places to show, so the page shows what BUKU covers, and a kind it doesn't is an invitation.
+ * searching every place instead. Every kind leads to its own page (before launch, its guide: D-139);
+ * before launch (`early`) a kind BUKU doesn't cover yet is an invitation to join as a business.
  */
 export function CategoryFinder({ groups, early = false }: { groups: FinderGroup[]; early?: boolean }) {
   const id = useId();
@@ -77,16 +77,12 @@ export function CategoryFinder({ groups, early = false }: { groups: FinderGroup[
             );
             return (
               <li key={k.slug}>
-                {early ? (
-                  <span className="flex min-h-12 items-center gap-3 rounded-xl px-3 py-2">{inside}</span>
-                ) : (
-                  <Link
-                    href={`/c/${k.slug}` as Route}
-                    className="flex min-h-12 items-center gap-3 rounded-xl px-3 py-2 hover:bg-sunken"
-                  >
-                    {inside}
-                  </Link>
-                )}
+                <Link
+                  href={`/c/${k.slug}` as Route}
+                  className="flex min-h-12 items-center gap-3 rounded-xl px-3 py-2 hover:bg-sunken"
+                >
+                  {inside}
+                </Link>
               </li>
             );
           })}

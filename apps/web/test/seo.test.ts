@@ -97,6 +97,7 @@ describe('llms.txt (D-136)', () => {
     // The prices, both currencies, as the pricing page shows them (D-137).
     expect(text).toContain('- Essential (for barbers, clinics and local shops): Rs 2,499 or $15');
     expect(text).toContain('[Categories](https://onbuku.com/categories)');
+    expect(text).toContain('- [Health & Medical](https://onbuku.com/c/health-medical): Dental Clinic, ');
   });
 });
 

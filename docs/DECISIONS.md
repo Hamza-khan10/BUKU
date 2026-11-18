@@ -1449,3 +1449,31 @@ before spending on the name. **No country in the copy:** the owner pointed out t
 Pakistan first" tells everyone else the early-access list isn't for them, so the site says BUKU is
 opening city by city, and the structured data names no area (prices still show rupees in Pakistan
 and dollars elsewhere).
+
+**D-139 · A page for every category, found by what people search (3.7f).** The owner wants
+BUKU to show up for searches like "barber near me" and for every kind of place, not only for its
+name. Single words ("booking", "queue") belong to sites with decades of links and aren't a goal;
+the searches a new site can win name a service and an intent ("book a dentist online", "join the
+passport office queue", "barbershop booking"), and "near me" is won by a page per kind (later per
+city) that lists real places. So every one of the 127 categories (11 groups, 116 kinds) has its own
+page at `/c/<slug>`, the address its list of places will use after launch, so what the page earns
+in search now carries over:
+
+- **Its own words** (`features/categories/guide-content.ts`): what the place is and what people come
+  for, written for each kind (search engines pass over near-identical pages; a test checks every kind
+  has its own and no two open the same way), and how people mostly come: booked ahead, walked in and
+  queued, or both. That decides the wording of the title ("Dental Clinic appointments online",
+  "Passport Office queue online: skip the wait"), the lead, the steps, the business panel and the
+  questions.
+- **The guide** (`components/category-guide.tsx`, built with the design skills from the site's own
+  parts): what people come for, the early-access band (before launch), how it works in three
+  numbered steps, "Run a …?" for businesses (Starter is free), questions with FAQPage data, the other
+  kinds in the group; a group page lists its kinds. BreadcrumbList data on every page.
+- **Before launch, or with no API answering,** the page is the guide (from the catalog BUKU starts
+  with); after launch, the places and then the guide. Names keep their capitals and articles ("an ENT
+  specialist", "a union council office"); titles and descriptions fit search results (a test).
+- **Linked from everywhere:** /categories (every kind and the finder link to their pages again), the
+  home page (from the catalog when there's no API), a "Popular" column in the footer, robots and the
+  sitemap (all 127 before launch), and `/llms.txt` (every group with its kinds).
+  Next, after launch: a page per kind and city ("barbers in Lahore") once real places fill them;
+  before then they would be empty and hurt the site.

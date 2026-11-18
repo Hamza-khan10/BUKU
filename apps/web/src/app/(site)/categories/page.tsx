@@ -112,15 +112,15 @@ function GroupCard({ group, early }: { group: CategoryNode; early: boolean }) {
           </h2>
           {blurb && <p className="text-base leading-relaxed text-ink-2">{blurb}</p>}
         </div>
-        {!early && (
-          <Link
-            href={`/c/${group.slug}` as Route}
-            className="mt-auto inline-flex items-center gap-1.5 font-semibold text-brand-ink underline-offset-4 hover:underline"
-          >
-            See all places<span className="sr-only"> in {group.name}</span>
-            <ArrowRight aria-hidden className="size-4" />
-          </Link>
-        )}
+        <Link
+          href={`/c/${group.slug}` as Route}
+          className="mt-auto inline-flex items-center gap-1.5 font-semibold text-brand-ink underline-offset-4 hover:underline"
+        >
+          {early ? 'About' : 'See all places'}
+          <span className="sr-only"> in {group.name}</span>
+          {early && <span> {group.name}</span>}
+          <ArrowRight aria-hidden className="size-4" />
+        </Link>
       </div>
       <div className="flex flex-col gap-2">
         <p className="px-3 text-sm font-medium text-ink-2">
@@ -132,25 +132,18 @@ function GroupCard({ group, early }: { group: CategoryNode; early: boolean }) {
         >
           {group.children.map((kind) => (
             <li key={kind.slug}>
-              {early ? (
-                // Before launch there are no places to list yet: what BUKU covers, not a link.
-                <span className="flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-2 text-[0.95rem] leading-snug font-medium text-ink sm:gap-3 sm:px-3">
-                  <CategoryIcon slug={kind.slug} className="size-[1.125rem] shrink-0 text-brand-ink" />
-                  <span className="min-w-0 flex-1 break-words hyphens-auto">{kind.name}</span>
-                </span>
-              ) : (
-                <Link
-                  href={`/c/${kind.slug}` as Route}
-                  className="group flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-2 text-[0.95rem] leading-snug font-medium text-ink transition-colors hover:bg-sunken sm:gap-3 sm:px-3"
-                >
-                  <CategoryIcon slug={kind.slug} className="size-[1.125rem] shrink-0 text-brand-ink" />
-                  <span className="min-w-0 flex-1 break-words hyphens-auto">{kind.name}</span>
-                  <ChevronRight
-                    aria-hidden
-                    className="size-4 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-                  />
-                </Link>
-              )}
+              {/* Every kind has its own page: before launch its guide, after it the places (D-139). */}
+              <Link
+                href={`/c/${kind.slug}` as Route}
+                className="group flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-2 text-[0.95rem] leading-snug font-medium text-ink transition-colors hover:bg-sunken sm:gap-3 sm:px-3"
+              >
+                <CategoryIcon slug={kind.slug} className="size-[1.125rem] shrink-0 text-brand-ink" />
+                <span className="min-w-0 flex-1 break-words hyphens-auto">{kind.name}</span>
+                <ChevronRight
+                  aria-hidden
+                  className="size-4 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                />
+              </Link>
             </li>
           ))}
         </ul>
