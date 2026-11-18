@@ -17,6 +17,8 @@ export function GET(): Response {
     '',
     '> BUKU is an app for booking appointments and joining walk-in queues at local businesses such as barbers, clinics, salons and offices. People book or join a queue from their phone, free. Businesses take bookings from their real availability and run their queue with it. BUKU opens in Pakistan first.',
     '',
+    'BUKU lives at onbuku.com (also called onbuku). It is not Buku.io or buku.app (a textbook subscription service), nor Booku (event tickets and queues): those are other companies.',
+    '',
     early
       ? 'BUKU has not opened yet. Businesses and people who book can join the early-access list to hear the day it opens near them.'
       : 'BUKU is open: people can find a business, book a time or join its queue.',

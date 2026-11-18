@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–d built (2026-11-17)    |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–e built (2026-11-18)    |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -768,7 +768,7 @@ The detailed plan — every page, its data and edge cases, the design system and
   settings. Tests: the redirect (and what it never redirects), metadata, escaping, the questions,
   llms.txt, the token, the CSP (unit); canonical and card on every page, the picture, structured
   data matching what people see, closed answers in the page, llms.txt (browser).
-- **3.7d Prices at launch; pricing and categories without the API — ✅ built (D-137).** Plans per
+- **3.7d Prices at launch; pricing and categories without the API — ✅ done (D-137, #211).** Plans per
   branch, per month: Starter free (with the queue), Essential Rs 2,499 / $15, Professional Rs 5,999
   / $35 (the 30-day trial), Network Rs 4,999 / $29 a branch (two or more), Enterprise priced
   together (20 or more); a year costs ten months; rupees in Pakistan, dollars elsewhere. /pricing
@@ -779,6 +779,11 @@ The detailed plan — every page, its data and edge cases, the design system and
   formatted the same everywhere, the snapshot against the migration (unit); currency by country and
   by choice, yearly, the table, the plan carried to early access, categories without the API, no
   sideways scroll at 320 px, WCAG (browser).
+- **3.7e Telling BUKU apart in search — ✅ built (D-138).** The home title and description say
+  what and where (an appointment booking and walk-in queue app in Pakistan); Organization,
+  WebSite and WebApplication data with BUKU's other names, Pakistan, the slogan, the prices in both
+  currencies, and its profiles once they exist (`lib/brand.ts`); `/llms.txt` says BUKU is not
+  Buku.io or Booku. Tests: the names, the area, the prices from the plans (unit).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

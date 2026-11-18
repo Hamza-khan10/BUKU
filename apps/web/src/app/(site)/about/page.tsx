@@ -4,7 +4,8 @@ import { pageMetadata } from '@/lib/seo';
 
 export const metadata = pageMetadata({
   title: 'About',
-  description: 'Why BUKU exists, and the principles it’s built on.',
+  description:
+    'BUKU (onbuku.com) is an appointment booking and walk-in queue app, starting in Pakistan: why it exists, and the principles it’s built on.',
   path: '/about',
 });
 
