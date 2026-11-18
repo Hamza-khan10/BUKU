@@ -22,9 +22,9 @@ const jetbrains = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrai
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
-  title: { default: 'BUKU: appointment booking and walk-in queue app in Pakistan', template: '%s · BUKU' },
+  title: { default: 'BUKU: book appointments and join walk-in queues online', template: '%s · BUKU' },
   description:
-    'Book appointments and join walk-in queues at barbers, clinics, salons and offices in Pakistan, free. Businesses run their bookings and queue with BUKU.',
+    'Book appointments and join walk-in queues at barbers, clinics, salons and offices near you, free. Businesses run their bookings and queue with BUKU.',
   applicationName: 'BUKU',
   // The share card of pages that don't set their own (public pages do, through pageMetadata).
   openGraph: {

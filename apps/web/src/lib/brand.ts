@@ -3,7 +3,8 @@ import { CURRENCIES, LAUNCH_PLANS } from '@/features/pricing/launch-plans';
 /**
  * Who BUKU is, for search and answer engines (D-138). "BUKU" alone is a crowded name (a textbook
  * service holds buku.io and buku.app; "Booku" sells event queues), so every description says what
- * BUKU is, where it serves, and the other names people use for it, and links its own profiles.
+ * BUKU is, in the words people search with, and the other names people use for it, and links its own
+ * profiles. It names no country: BUKU opens city by city, and nobody should read it as not for them.
  */
 
 /** BUKU's own profiles elsewhere (social, directories): add each once it exists and links back. */
@@ -12,7 +13,7 @@ export const PROFILES: readonly string[] = [];
 export const ALSO_KNOWN_AS = ['onbuku', 'onbuku.com', 'BUKU app'] as const;
 
 export const BRAND_DESCRIPTION =
-  'BUKU (onbuku.com) is an appointment booking and walk-in queue app, starting in Pakistan: people book a time or join a queue at barbers, clinics, salons and offices from their phone, free, and businesses run their bookings and queue with it.';
+  'BUKU (onbuku.com) is an appointment booking and walk-in queue app: people book a time or join a queue at barbers, clinics, salons and offices from their phone, free, and businesses run their bookings and queue with it.';
 
 /** BUKU as an organisation, its website, and the app with its prices (schema.org @graph nodes). */
 export function brandGraph(site: string) {
@@ -27,7 +28,6 @@ export function brandGraph(site: string) {
       logo: `${site}/brand/buku-app-icon.svg`,
       slogan: 'Book the time. Skip the wait.',
       description: BRAND_DESCRIPTION,
-      areaServed: { '@type': 'Country', name: 'Pakistan' },
       knowsAbout: ['appointment booking', 'queue management', 'walk-in queues', 'online scheduling'],
       ...(PROFILES.length > 0 && { sameAs: [...PROFILES] }),
     },

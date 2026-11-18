@@ -24,10 +24,10 @@ import { brandGraph } from '@/lib/brand';
 import { siteUrl } from '@/lib/site-url';
 
 export const metadata = pageMetadata({
-  // What BUKU is and where, so it isn't taken for the other "BUKU"s in search (D-138).
-  title: 'BUKU: appointment booking and walk-in queue app in Pakistan',
+  // What BUKU is, in the words people search with, so it isn't taken for the other "BUKU"s (D-138).
+  title: 'BUKU: book appointments and join walk-in queues online',
   description:
-    'Book appointments and join walk-in queues at barbers, clinics, salons and offices in Pakistan, free. Businesses run their bookings and queue with BUKU.',
+    'Book appointments and join walk-in queues at barbers, clinics, salons and offices near you, free. Businesses run their bookings and queue with BUKU.',
   path: '/',
   absoluteTitle: true,
 });
