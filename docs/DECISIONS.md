@@ -1477,3 +1477,15 @@ in search now carries over:
   sitemap (all 127 before launch), and `/llms.txt` (every group with its kinds).
   Next, after launch: a page per kind and city ("barbers in Lahore") once real places fill them;
   before then they would be empty and hurt the site.
+
+**D-140 · Email at onbuku.com: free forwarding now, Brevo for sending.** The owner wants addresses
+on the domain at no cost. Receiving: Cloudflare Email Routing forwards `hello@` (official),
+`support@`, `business@`, `privacy@`, `security@` and `welcome@` to the owner's mailbox; the
+catch-all is off (mail to any other address is dropped). Sending: Cloudflare has no SMTP (the
+Workers Paid plan doesn't add one), so replies and the app's own email will go through Brevo's free
+SMTP (300 a day) with the domain authenticated, so recipients see support@onbuku.com, never a
+personal address, and the mail passes SPF, DKIM and DMARC. DMARC is at `quarantine` (nothing sends
+as onbuku.com yet) and moves to `reject` once Brevo's mail is seen passing. DNSSEC is on. The site
+shows the support, privacy and security addresses (wrangler.jsonc), and
+`/.well-known/security.txt` (RFC 9116) names security@onbuku.com. Set up through a short-lived,
+narrowly scoped Cloudflare API token kept in a private file, never in the repository or the chat.

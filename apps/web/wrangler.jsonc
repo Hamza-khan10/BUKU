@@ -23,6 +23,11 @@
     // are sent here.
     "APP_URL": "https://onbuku.com",
     "BUKU_SITE_ENV": "production",
+    // Where people reach BUKU (Cloudflare Email Routing forwards each to the owner, D-140); the
+    // contact, legal and security pages show them. Public addresses, not secrets.
+    "SUPPORT_EMAIL": "support@onbuku.com",
+    "PRIVACY_EMAIL": "privacy@onbuku.com",
+    "SECURITY_EMAIL": "security@onbuku.com",
     // Cloudflare sets this to the visitor's address itself; a visitor can't forge it.
     "WEB_CLIENT_IP_HEADER": "cf-connecting-ip",
     // The marketing pages may be found on Google; personal pages never are (robots.ts).

@@ -128,7 +128,8 @@ The SOC 2 readiness report, policies, risk register and runbooks are in
 
 ## Reporting a vulnerability
 
-Email security@buku.app (to be created before launch). Do not open a public issue.
+Email **security@onbuku.com** (also in https://onbuku.com/.well-known/security.txt). Do not open a
+public issue. Reports are answered within 24 hours.
 
 ## Known limitations (tracked)
 

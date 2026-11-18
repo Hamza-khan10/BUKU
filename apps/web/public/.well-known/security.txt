@@ -1,0 +1,6 @@
+# How to report a security problem with BUKU (RFC 9116).
+Contact: mailto:security@onbuku.com
+Expires: 2027-11-18T00:00:00.000Z
+Preferred-Languages: en, ur
+Canonical: https://onbuku.com/.well-known/security.txt
+Policy: https://onbuku.com/security
