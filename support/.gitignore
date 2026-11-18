@@ -1,0 +1,5 @@
+# People's messages and the replies drafted for them stay on this machine (personal data).
+tickets/*
+replies/*
+!tickets/README.md
+!replies/README.md
