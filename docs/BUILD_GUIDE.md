@@ -13,7 +13,7 @@ where this guide deviates from it, the reason is in [DECISIONS.md](DECISIONS.md)
 | ----- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | 1     | Foundation: monorepo, shared packages, database, events, infrastructure, security baseline, CI | ✅ **Done** — `pnpm verify` → 34/34              |
 | 2     | Backend services (MVP core first), ending with a SOC 2 compliance review                       | 🚧 In progress                                   |
-| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–f built (2026-11-18)    |
+| 3     | Web app (Next.js): public site, booking, user + business dashboards, admin                     | ▶ 3.5 and 3.6 done; 3.7a–f done (2026-11-18)     |
 | 3D    | Database v2 (docs/DATABASE.md): IDs, shard registry, partitions, indexes, security, backups    | ✅ D1–D4 done, on `main`; D5 (scale proof) later |
 | 4     | Mobile app (Expo, iOS + Android)                                                               | Planned                                          |
 | 5     | Production: deployment, observability, backups, load + security testing                        | Planned                                          |
@@ -785,7 +785,7 @@ The detailed plan — every page, its data and edge cases, the design system and
   prices in both currencies, and its profiles once they exist (`lib/brand.ts`); `/llms.txt` says
   BUKU is not Buku.io or Booku; no country in the copy (BUKU opens city by city). Tests: the names,
   no area, the prices from the plans (unit).
-- **3.7f A page for every category — ✅ built (D-139).** `/c/<slug>` for all 127 categories: its own
+- **3.7f A page for every category — ✅ done (D-139, #225).** `/c/<slug>` for all 127 categories: its own
   words, what people come for, how it works (booked, queued or both), "Run a …?" for businesses,
   questions with FAQPage data, breadcrumbs, the kinds around it; the guide alone before launch or
   without the API, the places then the guide after. Linked from /categories, the home page, the
