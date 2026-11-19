@@ -4,13 +4,13 @@
 
 | Platform                  | Handle     | Link                                | Status                                                              |
 | ------------------------- | ---------- | ----------------------------------- | ------------------------------------------------------------------- |
-| Facebook                  | onbuku     | https://www.facebook.com/onbuku     | Live (2026-11-19)                                                   |
+| Facebook                  | onbukuapp  | https://www.facebook.com/onbukuapp  | Live (2026-11-19)                                                   |
 | X                         | @onbukuapp | https://x.com/onbukuapp             | Live (2026-11-19); @onbuku was taken. Display name should be "BUKU" |
 | Instagram                 | @onbukuapp | https://www.instagram.com/onbukuapp | Live (2026-11-19); @onbuku was taken                                |
-| LinkedIn, TikTok, YouTube | not yet    |                                     | Use onbukuapp (matches X and Instagram)                             |
+| LinkedIn, TikTok, YouTube | not yet    |                                     | Use onbukuapp (matches the others)                                  |
 
-Mention BUKU as @onbukuapp on X and Instagram, and as onbuku on Facebook. **@onbukuapp is now the
-handle to promote**: create LinkedIn, TikTok and YouTube as onbukuapp too, so one name finds BUKU everywhere.
+BUKU is onbukuapp on Facebook, X and Instagram: **@onbukuapp is the handle to promote**. Create
+LinkedIn, TikTok and YouTube as onbukuapp too, so one name finds BUKU everywhere.
 
 Handle everywhere: **@onbuku**. If one platform has it taken, use **@onbukuapp** there (letters
 only, so it's valid everywhere, X included). Never `@buku.app` or `@buku`: buku.app is another
@@ -31,7 +31,7 @@ Two-step sign-in with an authenticator app on every account. Profile picture: `e
   ```
 - Link: `https://onbuku.com/early-access?source=instagram`
 
-**Facebook** (onbuku, Page, category "App page" or "Software"; cover `exports/facebook-cover-1640x624.png`)
+**Facebook** (onbukuapp, Page, category "App page" or "Software"; cover `exports/facebook-cover-1640x624.png`)
 
 - Bio / Intro (94/101): `Book appointments and join walk-in queues from your phone. Free for you. Opening city by city.`
 - Website: `https://onbuku.com/early-access?source=facebook`
