@@ -1,5 +1,16 @@
 # Social profiles: what to enter when creating each account
 
+## Accounts that exist (update as they change)
+
+| Platform                  | Handle            | Link                            | Status                                                                      |
+| ------------------------- | ----------------- | ------------------------------- | --------------------------------------------------------------------------- |
+| Facebook                  | onbuku            | https://www.facebook.com/onbuku | Live (2026-11-19)                                                           |
+| X                         | @onbukuapp        | https://x.com/onbukuapp         | Live (2026-11-19); @onbuku was taken. Display name should be "BUKU"         |
+| Instagram                 | on.\_.buku (temp) | (none yet)                      | Under Instagram's review; rename to `onbuku` (or `onbukuapp`) once approved |
+| LinkedIn, TikTok, YouTube | not yet           |                                 | YouTube's @onbuku was free on 2026-11-19                                    |
+
+Mention BUKU as @onbukuapp on X and @onbuku elsewhere. Never link the temporary Instagram name.
+
 Handle everywhere: **@onbuku**. If one platform has it taken, use **@onbukuapp** there (letters
 only, so it's valid everywhere, X included). Never `@buku.app` or `@buku`: buku.app is another
 company, and dots aren't allowed on X. Same handle on every platform wherever possible.
