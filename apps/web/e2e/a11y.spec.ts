@@ -174,13 +174,24 @@ test.describe('Accessibility beyond markup (3.7g)', () => {
     const problems: string[] = [];
     for (const path of PAGES) {
       await page.goto(path);
+      await page.waitForLoadState('networkidle');
+      // Only headings that are rendered: while a page streams in, React holds the next part in a
+      // hidden holder until it swaps it in, and nobody (eyes or screen reader) meets those.
       const levels = await page
         .locator('h1, h2, h3, h4, h5, h6')
         .evaluateAll((hs) =>
-          hs.map((h) => ({ level: Number(h.tagName[1]), text: (h.textContent ?? '').trim().slice(0, 40) })),
+          hs
+            .filter((h) => h.checkVisibility())
+            .map((h) => ({ level: Number(h.tagName[1]), text: (h.textContent ?? '').trim().slice(0, 40) })),
         );
       const ones = levels.filter((h) => h.level === 1).length;
-      if (ones !== 1) problems.push(`${path}: ${ones} h1`);
+      if (ones !== 1)
+        problems.push(
+          `${path}: ${ones} h1 (${levels
+            .filter((h) => h.level === 1)
+            .map((h) => `"${h.text}"`)
+            .join(', ')})`,
+        );
       levels.forEach((h, i) => {
         const before = i === 0 ? 1 : levels[i - 1]!.level;
         if (h.level > before + 1) problems.push(`${path}: h${before} → h${h.level} "${h.text}"`);
@@ -206,9 +217,11 @@ test.describe('Accessibility beyond markup (3.7g)', () => {
           Promise.all([...document.images].map((i) => i.decode().catch(() => undefined))),
         );
         await page.waitForTimeout(600);
-        const first = await page.screenshot();
+        // The bot check is Cloudflare's own frame, animating while it checks: not the page's motion.
+        const frames = { mask: [page.locator('iframe')] };
+        const first = await page.screenshot(frames);
         await page.waitForTimeout(1500);
-        const second = await page.screenshot();
+        const second = await page.screenshot(frames);
         if (!first.equals(second)) problems.push(`${path} at ${Math.round(at * 100)}%: still moving`);
       }
     }
