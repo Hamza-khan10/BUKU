@@ -1,6 +1,8 @@
 # Social profiles: what to enter when creating each account
 
-Handle everywhere: **@onbuku** (if taken, `@onbuku.app`, then `@buku.app`, in that order).
+Handle everywhere: **@onbuku**. If one platform has it taken, use **@onbukuapp** there (letters
+only, so it's valid everywhere, X included). Never `@buku.app` or `@buku`: buku.app is another
+company, and dots aren't allowed on X. Same handle on every platform wherever possible.
 Display name: **BUKU**. Email: the official address (hello@onbuku.com). Phone: the BUKU SIM.
 Two-step sign-in with an authenticator app on every account. Profile picture: `exports/profile-1080.png`.
 
