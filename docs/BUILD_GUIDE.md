@@ -784,7 +784,7 @@ The detailed plan — every page, its data and edge cases, the design system and
   "near you"); Organization, WebSite and WebApplication data with BUKU's other names, the slogan, the
   prices in both currencies, and its profiles once they exist (`lib/brand.ts`); `/llms.txt` says
   BUKU is not Buku.io or Booku; no country in the copy (BUKU opens city by city). Tests: the names,
-  no area, the prices from the plans (unit). Profiles since 2026-11-19: facebook.com/onbuku,
+  no area, the prices from the plans (unit). Profiles since 2026-11-19: facebook.com/onbukuapp,
   x.com/onbukuapp and instagram.com/onbukuapp (`sameAs`; X named on the share cards), shown as the
   platforms' own marks (Simple Icons, CC0) at the foot of every page and as "Follow BUKU" on
   /contact, from the same list (`features/marketing/social.ts`); a new profile needs its mark.

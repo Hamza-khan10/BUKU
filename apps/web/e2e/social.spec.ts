@@ -43,9 +43,9 @@ test.describe('BUKU on social media', () => {
         'href',
         'https://www.instagram.com/onbukuapp',
       );
-      await expect(band.getByRole('link', { name: /^Facebook onbuku/ })).toHaveAttribute(
+      await expect(band.getByRole('link', { name: /^Facebook onbukuapp/ })).toHaveAttribute(
         'href',
-        'https://www.facebook.com/onbuku',
+        'https://www.facebook.com/onbukuapp',
       );
       await expect(band.getByRole('link', { name: /^X @onbukuapp/ })).toHaveAttribute(
         'href',
