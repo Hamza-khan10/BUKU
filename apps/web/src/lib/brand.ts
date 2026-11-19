@@ -10,10 +10,10 @@ import { CURRENCIES, LAUNCH_PLANS } from '@/features/pricing/launch-plans';
 /**
  * BUKU's own profiles elsewhere (social, directories): add each once it exists and links back, with
  * its final handle (a renamed profile leaves a dead link). The handle is @onbuku, or @onbukuapp where
- * that was taken (X, Instagram).
+ * that was taken (Facebook, X, Instagram: all three are onbukuapp).
  */
 export const PROFILES: readonly string[] = [
-  'https://www.facebook.com/onbuku',
+  'https://www.facebook.com/onbukuapp',
   'https://x.com/onbukuapp',
   'https://www.instagram.com/onbukuapp',
 ];

@@ -12,13 +12,13 @@ describe('BUKU’s social profiles on the site', () => {
   it('handles as people search for them; in the platforms’ order', () => {
     const shown = socialProfiles([
       'https://x.com/onbukuapp',
-      'https://www.facebook.com/onbuku',
+      'https://www.facebook.com/onbukuapp',
       'https://www.instagram.com/onbukuapp/',
       'https://www.youtube.com/@onbukuapp',
     ]);
     expect(shown.map((p) => [p.name, p.handle])).toEqual([
       ['Instagram', '@onbukuapp'],
-      ['Facebook', 'onbuku'],
+      ['Facebook', 'onbukuapp'],
       ['YouTube', '@onbukuapp'],
       ['X', '@onbukuapp'],
     ]);
