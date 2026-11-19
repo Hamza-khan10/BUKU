@@ -10,9 +10,13 @@ import { CURRENCIES, LAUNCH_PLANS } from '@/features/pricing/launch-plans';
 /**
  * BUKU's own profiles elsewhere (social, directories): add each once it exists and links back, with
  * its final handle (a renamed profile leaves a dead link). The handle is @onbuku, or @onbukuapp where
- * that was taken (X). Instagram joins once its review is over and it has its final name.
+ * that was taken (X, Instagram).
  */
-export const PROFILES: readonly string[] = ['https://www.facebook.com/onbuku', 'https://x.com/onbukuapp'];
+export const PROFILES: readonly string[] = [
+  'https://www.facebook.com/onbuku',
+  'https://x.com/onbukuapp',
+  'https://www.instagram.com/onbukuapp',
+];
 
 /** BUKU on X: named on the share cards, so a link to onbuku.com shared there credits it. */
 export const X_HANDLE = '@onbukuapp';
