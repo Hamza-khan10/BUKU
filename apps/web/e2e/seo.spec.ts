@@ -24,6 +24,7 @@ test.describe('Search and answer engines', () => {
     const image = await page.locator('meta[property="og:image"]').getAttribute('content');
     expect(new URL(image!).pathname).toBe('/og/buku.png');
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image');
+    await expect(page.locator('meta[name="twitter:site"]')).toHaveAttribute('content', '@onbukuapp');
   });
 
   test('the share card is a real picture of the right size', async ({ request }) => {

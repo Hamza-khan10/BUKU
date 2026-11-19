@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LAUNCH_PLANS } from '../src/features/pricing/launch-plans';
-import { ALSO_KNOWN_AS, brandGraph, PROFILES } from '../src/lib/brand';
+import { ALSO_KNOWN_AS, brandGraph, PROFILES, X_HANDLE } from '../src/lib/brand';
 
 describe('Who BUKU is, for search and answer engines (D-138)', () => {
   const graph = brandGraph('https://onbuku.com');
@@ -16,6 +16,27 @@ describe('Who BUKU is, for search and answer engines (D-138)', () => {
     expect(String(org.description)).toContain('onbuku.com');
     // Profiles only once they exist: an empty sameAs says nothing.
     expect('sameAs' in org).toBe(PROFILES.length > 0);
+  });
+
+  it('profiles are BUKU’s own: https, a known platform, the onbuku handle; X’s matches the cards', () => {
+    for (const url of PROFILES) {
+      const { protocol, hostname, pathname, search } = new URL(url);
+      expect(protocol).toBe('https:');
+      expect([
+        'www.facebook.com',
+        'x.com',
+        'www.instagram.com',
+        'www.linkedin.com',
+        'www.tiktok.com',
+        'www.youtube.com',
+      ]).toContain(hostname);
+      // The handle, never a temporary one (on._.buku while Instagram reviews) or another BUKU's.
+      expect(pathname).toMatch(/^\/(company\/|@)?onbuku(app)?\/?$/);
+      expect(search).toBe('');
+    }
+    expect(new Set(PROFILES).size).toBe(PROFILES.length);
+    const x = PROFILES.find((u) => new URL(u).hostname === 'x.com');
+    expect(x && `@${new URL(x).pathname.slice(1)}`).toBe(X_HANDLE);
   });
 
   it('the app’s prices are the plans’, in both currencies', () => {

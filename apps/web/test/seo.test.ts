@@ -51,7 +51,11 @@ describe('Page metadata (D-136)', () => {
     expect(m.title).toBe('Pricing');
     expect(m.alternates?.canonical).toBe('/pricing');
     expect(m.openGraph).toMatchObject({ title: 'Pricing · BUKU', description: 'Plans.', url: '/pricing' });
-    expect(m.twitter).toMatchObject({ card: 'summary_large_image', title: 'Pricing · BUKU' });
+    expect(m.twitter).toMatchObject({
+      card: 'summary_large_image',
+      site: '@onbukuapp',
+      title: 'Pricing · BUKU',
+    });
     // Its own card still carries the picture (Next drops the inherited one when a page sets its own).
     expect(m.openGraph?.images).toEqual([expect.objectContaining({ url: '/og/buku.png', width: 1200 })]);
     const home = pageMetadata({ title: 'BUKU: book', description: 'd', path: '/', absoluteTitle: true });

@@ -7,8 +7,15 @@ import { CURRENCIES, LAUNCH_PLANS } from '@/features/pricing/launch-plans';
  * profiles. It names no country: BUKU opens city by city, and nobody should read it as not for them.
  */
 
-/** BUKU's own profiles elsewhere (social, directories): add each once it exists and links back. */
-export const PROFILES: readonly string[] = [];
+/**
+ * BUKU's own profiles elsewhere (social, directories): add each once it exists and links back, with
+ * its final handle (a renamed profile leaves a dead link). The handle is @onbuku, or @onbukuapp where
+ * that was taken (X). Instagram joins once its review is over and it has its final name.
+ */
+export const PROFILES: readonly string[] = ['https://www.facebook.com/onbuku', 'https://x.com/onbukuapp'];
+
+/** BUKU on X: named on the share cards, so a link to onbuku.com shared there credits it. */
+export const X_HANDLE = '@onbukuapp';
 
 export const ALSO_KNOWN_AS = ['onbuku', 'onbuku.com', 'BUKU app'] as const;
 

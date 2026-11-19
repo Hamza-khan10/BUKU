@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { X_HANDLE } from './brand';
 
 /** The site's share card (public/og/buku.png, drawn by scripts/og-image.ts). */
 export const SHARE_IMAGE = {
@@ -39,7 +40,13 @@ export function pageMetadata({
       url: path,
       images: [SHARE_IMAGE],
     },
-    twitter: { card: 'summary_large_image', title: shown, description, images: [SHARE_IMAGE] },
+    twitter: {
+      card: 'summary_large_image',
+      site: X_HANDLE,
+      title: shown,
+      description,
+      images: [SHARE_IMAGE],
+    },
   };
 }
 

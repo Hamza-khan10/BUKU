@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Instrument_Sans, JetBrains_Mono } from 'next/font/google';
 import { cookies, headers } from 'next/headers';
 import Script from 'next/script';
+import { X_HANDLE } from '@/lib/brand';
 import { SHARE_IMAGE } from '@/lib/seo';
 import { siteUrl } from '@/lib/site-url';
 import { THEME_COOKIE, themeFrom } from '@/lib/theme';
@@ -35,7 +36,7 @@ export const metadata: Metadata = {
       'Book appointments and join queues at local businesses, get reminded, and see your place in line as it moves.',
     images: [SHARE_IMAGE],
   },
-  twitter: { card: 'summary_large_image', images: [SHARE_IMAGE] },
+  twitter: { card: 'summary_large_image', site: X_HANDLE, images: [SHARE_IMAGE] },
   // Not indexed until launch (ALLOW_INDEXING=true on the production domain).
   robots: process.env.ALLOW_INDEXING === 'true' ? undefined : { index: false, follow: false },
   formatDetection: { telephone: false, email: false, address: false },
