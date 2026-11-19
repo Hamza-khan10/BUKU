@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Contact } from '@/components/content/legal-doc';
 import { Container, PageHeading } from '@/components/ui/layout';
+import { FollowBuku } from '@/features/marketing/components/social-links';
 import { siteFacts } from '@/lib/site';
 import { pageMetadata } from '@/lib/seo';
 
@@ -62,6 +63,7 @@ export default function ContactPage() {
           </p>
         </Way>
       </ul>
+      <FollowBuku />
       {facts.legalName && (
         <p className="text-sm text-ink-3">
           BUKU is run by {facts.legalName}

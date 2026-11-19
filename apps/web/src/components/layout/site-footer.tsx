@@ -2,13 +2,14 @@ import Link from 'next/link';
 import { LogoMark } from '@/components/brand/logo';
 import { Magnetic } from '@/components/motion/magnetic';
 import { Container } from '@/components/ui/layout';
+import { SocialIcons } from '@/features/marketing/components/social-links';
 import { prelaunch } from '@/lib/flags';
 import { footerNav, visibleLinks } from './nav';
 
 /**
  * The public site's footer: every public and legal page, reachable from anywhere. Midnight,
  * like the board and the story, so every page ends on the same note (D-095): the promise in
- * one line, then the links (two columns on phones, short to scan).
+ * one line, then the links (two columns on phones, short to scan), then BUKU's profiles.
  */
 export function SiteFooter() {
   const early = prelaunch();
@@ -54,10 +55,11 @@ export function SiteFooter() {
           ))}
         </div>
 
-        <p className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-6 text-sm text-board-ink-2">
-          <span>© {new Date().getFullYear()} BUKU</span>
-          <span>Appointments and queues, without the wait.</span>
-        </p>
+        {/* The last line: who, and where else to find BUKU (its profiles, as marks). */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-6">
+          <p className="text-sm text-board-ink-2">© {new Date().getFullYear()} BUKU</p>
+          <SocialIcons />
+        </div>
       </Container>
     </footer>
   );
