@@ -1,15 +1,11 @@
 'use client';
 
-import { useGSAP } from '@gsap/react';
-import gsap from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
+import type { ScrollTrigger as ScrollTriggerPlugin } from 'gsap/ScrollTrigger';
 import { useLenis } from 'lenis/react';
-import { useRef, useState } from 'react';
+import { startTransition, useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from '@/components/motion/use-reduced-motion';
 import { cn } from '@/lib/cn';
 import { FittedPhone, SCREEN_COUNT, START, type Act, type Demo } from './story-phone';
-
-gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 /**
  * "Two ways to stop waiting", told on a phone as you scroll (D-094, reworked in D-095).
@@ -21,6 +17,12 @@ gsap.registerPlugin(ScrollTrigger, useGSAP);
  * slot as tall as the longest, so the phone never changes size between steps. The screens
  * are an illustration (labelled as one); the captions carry the words for everyone. Under
  * reduced motion nothing is pinned or scrubbed: the five screens sit one after another.
+ *
+ * The still version is also what every visitor gets first. It becomes the cinematic one once the
+ * visitor has started moving through the page (a scroll, a tap, a key) and the story is within half
+ * a screen, with GSAP fetched at that first move: the page loads without the swap (a re-render of
+ * five phone screens), GSAP or its set-up, however near the top the story sits, and a visitor who
+ * never scrolls never pays for any of them (3.7h).
  */
 
 const STEPS = [
@@ -32,6 +34,11 @@ const STEPS = [
 ] as const;
 
 if (STEPS.length !== SCREEN_COUNT) throw new Error('Every step needs a screen.');
+
+/** GSAP and its scroll plugin, fetched once, the first time they're wanted. */
+const fetchGsap = () => Promise.all([import('gsap'), import('gsap/ScrollTrigger')]);
+let gsapLoad: ReturnType<typeof fetchGsap> | null = null;
+const loadGsap = () => (gsapLoad ??= fetchGsap());
 
 /** One segment per step: how far along, at a glance. */
 function Progress({ step, className }: { step: number; className?: string }) {
@@ -59,66 +66,115 @@ export function ScrollStory() {
   // What the visitor picked by tapping the phone (D-099).
   const [demo, setDemo] = useState<Demo>(START);
   const lenis = useLenis();
-  // The cinematic version only where motion is welcome. The server assumes "less motion",
-  // so the first paint is the still version and the browser upgrades it.
-  const cinematic = !reduce;
+  // GSAP's ScrollTrigger, once it has arrived (taps on the phone scroll through it).
+  const trigger = useRef<typeof ScrollTriggerPlugin | null>(null);
+  // Within half a screen of view: time to get the cinematic version ready.
+  const [near, setNear] = useState(false);
+  // The visitor has started to move through the page.
+  const [moved, setMoved] = useState(false);
+  // The cinematic version only where motion is welcome, once the visitor moves and the story is
+  // near. The server assumes "less motion", so the first paint is the still version.
+  const cinematic = !reduce && near && moved;
 
-  useGSAP(
-    () => {
-      if (!cinematic) return;
-      ScrollTrigger.config({ ignoreMobileResize: true });
-      let lastStep = -1;
-      let lastServing = -1;
+  // The visitor has started to move through the page (a scroll, a tap, a key): fetch GSAP now, so
+  // it's here before the story is. A visitor who only looks at the top never downloads it.
+  useEffect(() => {
+    if (reduce || moved) return;
+    const events = ['scroll', 'pointerdown', 'keydown'] as const;
+    const off = () => events.forEach((e) => window.removeEventListener(e, warm));
+    const warm = () => {
+      off();
+      void loadGsap();
+      startTransition(() => setMoved(true));
+    };
+    events.forEach((e) => window.addEventListener(e, warm, { passive: true }));
+    return off;
+  }, [reduce, moved]);
 
-      // The story: pinned for five screens' worth of scrolling, one step per screen.
-      ScrollTrigger.create({
-        id: 'story',
-        trigger: '[data-story-stage]',
-        start: 'top top',
-        end: () => `+=${window.innerHeight * STEPS.length * 0.8}`,
-        pin: true,
-        anticipatePin: 1,
-        invalidateOnRefresh: true,
-        onUpdate: (self) => {
-          const at = self.progress * STEPS.length;
-          const i = Math.min(STEPS.length - 1, Math.floor(at));
-          if (i !== lastStep) setStep((lastStep = i));
-          // While on "take a number", the line moves with the scroll: 7, 8, 9.
-          const n = i < 3 ? 7 : i > 3 ? 10 : 7 + Math.min(2, Math.floor((at - 3) * 3));
-          if (n !== lastServing) setServing((lastServing = n));
-        },
-      });
+  useEffect(() => {
+    const el = root.current;
+    if (!el || near) return;
+    const watch = new IntersectionObserver(
+      (seen) => {
+        if (!seen.some((s) => s.isIntersecting)) return;
+        watch.disconnect();
+        // Not urgent: React may pause this swap for anything the visitor does meanwhile.
+        startTransition(() => setNear(true));
+      },
+      { rootMargin: '50% 0px' },
+    );
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [near]);
 
-      // On the way in, the phone rises into place (and sinks back on the way out). Movement
-      // only: it is never see-through, so its text keeps its full contrast.
-      gsap.fromTo(
-        '[data-story-phone]',
-        { yPercent: 14 },
-        {
-          yPercent: 0,
-          ease: 'none',
-          scrollTrigger: { trigger: '[data-story-stage]', start: 'top 90%', end: 'top 15%', scrub: 0.6 },
-        },
-      );
+  useEffect(() => {
+    if (!cinematic) return;
+    let gone = false;
+    let undo: (() => void) | undefined;
+    void loadGsap().then(([{ gsap }, { ScrollTrigger }]) => {
+      if (gone || !root.current) return;
+      gsap.registerPlugin(ScrollTrigger);
+      trigger.current = ScrollTrigger;
+      const ctx = gsap.context(() => {
+        ScrollTrigger.config({ ignoreMobileResize: true });
+        let lastStep = -1;
+        let lastServing = -1;
 
-      // Wide screens only: the stage opens out to the edges as it arrives. On a phone it is
-      // already full-width, so nothing narrows or closes in.
-      const mm = gsap.matchMedia();
-      mm.add('(min-width: 1024px)', () => {
+        // The story: pinned for five screens' worth of scrolling, one step per screen.
+        ScrollTrigger.create({
+          id: 'story',
+          trigger: '[data-story-stage]',
+          start: 'top top',
+          end: () => `+=${window.innerHeight * STEPS.length * 0.8}`,
+          pin: true,
+          anticipatePin: 1,
+          invalidateOnRefresh: true,
+          onUpdate: (self) => {
+            const at = self.progress * STEPS.length;
+            const i = Math.min(STEPS.length - 1, Math.floor(at));
+            if (i !== lastStep) setStep((lastStep = i));
+            // While on "take a number", the line moves with the scroll: 7, 8, 9.
+            const n = i < 3 ? 7 : i > 3 ? 10 : 7 + Math.min(2, Math.floor((at - 3) * 3));
+            if (n !== lastServing) setServing((lastServing = n));
+          },
+        });
+
+        // On the way in, the phone rises into place (and sinks back on the way out). Movement
+        // only: it is never see-through, so its text keeps its full contrast.
         gsap.fromTo(
-          '[data-story-panel]',
-          { clipPath: 'inset(0% 3% 0% 3% round 40px)' },
+          '[data-story-phone]',
+          { yPercent: 14 },
           {
-            clipPath: 'inset(0% 0% 0% 0% round 0px)',
+            yPercent: 0,
             ease: 'none',
-            scrollTrigger: { trigger: '[data-story-stage]', start: 'top 80%', end: 'top top', scrub: 0.6 },
+            scrollTrigger: { trigger: '[data-story-stage]', start: 'top 90%', end: 'top 15%', scrub: 0.6 },
           },
         );
-      });
-      return () => mm.revert();
-    },
-    { scope: root, dependencies: [cinematic] },
-  );
+
+        // Wide screens only: the stage opens out to the edges as it arrives. On a phone it is
+        // already full-width, so nothing narrows or closes in.
+        const mm = gsap.matchMedia();
+        mm.add('(min-width: 1024px)', () => {
+          gsap.fromTo(
+            '[data-story-panel]',
+            { clipPath: 'inset(0% 3% 0% 3% round 40px)' },
+            {
+              clipPath: 'inset(0% 0% 0% 0% round 0px)',
+              ease: 'none',
+              scrollTrigger: { trigger: '[data-story-stage]', start: 'top 80%', end: 'top top', scrub: 0.6 },
+            },
+          );
+        });
+        return () => mm.revert();
+      }, root);
+      undo = () => ctx.revert();
+    });
+    return () => {
+      gone = true;
+      trigger.current = null;
+      undo?.();
+    };
+  }, [cinematic]);
 
   /**
    * A tap on the phone: keep the pick, and when it leads to another step, scroll there, so the
@@ -128,7 +184,7 @@ export function ScrollStory() {
     if (a.set) setDemo((d) => ({ ...d, ...a.set }));
     if (a.go === undefined) return;
     if (a.go === 0) setDemo(START);
-    const st = ScrollTrigger.getById('story');
+    const st = trigger.current?.getById('story');
     if (!st) return;
     const y = st.start + (st.end - st.start) * ((a.go + 0.45) / STEPS.length);
     if (lenis) lenis.scrollTo(y, { duration: 1.1 });
@@ -137,7 +193,7 @@ export function ScrollStory() {
 
   if (!cinematic) {
     return (
-      <section aria-labelledby="how" className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
+      <section ref={root} aria-labelledby="how" className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-10 rounded-2xl bg-board p-6 text-board-ink sm:p-10">
           <h2
             id="how"

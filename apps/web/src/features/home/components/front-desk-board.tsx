@@ -65,7 +65,9 @@ export function FrontDeskBoard({ className }: { className?: string }) {
           <span
             aria-hidden
             className={cn(
-              'inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-[background-color,color,transform] duration-300 ease-(--ease-out) sm:h-11 sm:px-5',
+              // Only the press is animated: fading the colours passed through a half-way pair too
+              // faint to read (both ends are clear), so they change at once (3.7h).
+              'inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-transform duration-300 ease-(--ease-out) sm:h-11 sm:px-5',
               now.called
                 ? 'scale-[0.97] bg-board-go-fill/20 text-board-go'
                 : 'bg-board-go-fill text-board-on-go',

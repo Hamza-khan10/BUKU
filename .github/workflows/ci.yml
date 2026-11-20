@@ -184,6 +184,36 @@ jobs:
             apps/admin/playwright-report
           retention-days: 14
 
+  # Lighthouse budgets (3.7h, D-142): the public pages as Google measures them (a phone on a slow
+  # connection, simulated), each held to its scores and its JavaScript budget
+  # (apps/web/scripts/lighthouse-budgets.ts). Beside the browser tests, so neither waits.
+  web-lighthouse:
+    name: Website · Lighthouse budgets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      APP_URL: http://localhost:3000
+      # As onbuku.com runs today: before launch, without the API. Indexable here only so SEO is
+      # measured in full (robots.txt is built from it); the live site keeps its own setting.
+      PRELAUNCH: 'true'
+      ALLOW_INDEXING: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @buku/web build
+      - name: Install the browser Lighthouse drives
+        run: pnpm --filter @buku/web exec playwright install --with-deps chromium
+      - name: Lighthouse budgets (seven public pages, three runs each)
+        run: |
+          pnpm --filter @buku/web start > "$RUNNER_TEMP/web.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:3000/ && break; sleep 2; done
+          node apps/web/scripts/lighthouse-budgets.ts http://localhost:3000
+
   web-cloudflare:
     name: Website on Cloudflare · build · size
     runs-on: ubuntu-24.04

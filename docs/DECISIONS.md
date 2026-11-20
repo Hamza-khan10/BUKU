@@ -1478,7 +1478,8 @@ in search now carries over:
   Next, after launch: a page per kind and city ("barbers in Lahore") once real places fill them;
   before then they would be empty and hurt the site.
 
-**D-140 · Email at onbuku.com: free forwarding now; sending through Resend, then Cloudflare (updated 2026-11-19).** The owner wants addresses
+**D-140 · Email at onbuku.com: free forwarding now; sending through Resend, then Cloudflare
+(updated 2026-11-19).** The owner wants addresses
 on the domain at no cost. Receiving: Cloudflare Email Routing forwards `hello@` (official),
 `support@`, `business@`, `privacy@`, `security@` and `welcome@` to the owner's mailbox; the
 catch-all is off (mail to any other address is dropped). Sending: Cloudflare has no SMTP (the
@@ -1506,3 +1507,22 @@ focused, headings must form an outline, nothing may move under reduced motion, a
 survive WCAG's wider spacing. Anything fixed to the bottom of the screen carries `data-bottom-bar`,
 which reserves room at the bottom whenever focus scrolls (`globals.css`); a scrolling row with a
 faded edge sets scroll padding so a control under the fade scrolls fully into view.
+
+**D-142 · Lighthouse budgets, and a lighter home page (3.7h).** Measured on onbuku.com in phone
+mode, every public page scored 100 for best practices and SEO, loaded its main content in about
+a second and never jumped; the home page's performance was 90 (the plan says 95), /for-business's
+accessibility 96, and every page carried 330 KiB of JavaScript. Three causes, fixed at the root:
+the client set-up imported all of Zod to set one switch (32 KiB on every page; now only
+`config` from `zod/v4/core`, the same setting); the home story swapped its still version for the
+cinematic one in a synchronous re-render right after hydration, with GSAP's set-up, for a section
+two screens down (now it upgrades only as it comes within half a screen, as a transition, and GSAP
+is fetched once the visitor first scrolls, taps or types; visitors who don't scroll never download
+it; `@gsap/react` dropped); and a status pill on /for-business faded its colours through a pair too
+faint to read (now only its press is animated). Measured on the production build: home 97 to 98
+(blocking time 340 to 190 ms, JavaScript 423 to 334 KiB), other pages 96 to 100, accessibility and
+best practices 100 everywhere. `scripts/lighthouse-budgets.ts` now holds every public page to it
+in CI (Website · Lighthouse budgets): the middle of three runs, phone, pre-launch as live, with
+performance at least 90 (its simulated phone runs at the speed of whichever machine CI gets: the
+same code scored 99 to 100 on one and 92 to 97 on another, so 95 is judged on onbuku.com), 100 for
+accessibility, best practices and SEO, LCP 2.5 s, CLS 0.1, and a JavaScript budget per page about
+10% over today's size, the steadiest guard because sizes don't wobble between runs.
