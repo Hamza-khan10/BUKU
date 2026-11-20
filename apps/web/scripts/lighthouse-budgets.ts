@@ -32,8 +32,8 @@ const PAGES: { path: string; jsKiB: number }[] = [
   { path: '/contact', jsKiB: 315 },
 ];
 
-/** Lowest score allowed per category (0 to 100). */
-const FLOORS = { performance: 90, accessibility: 100, 'best-practices': 100, seo: 100 } as const;
+/** Lowest score allowed per category (0 to 100): performance as the plan says (CI measures 98 to 100). */
+const FLOORS = { performance: 95, accessibility: 100, 'best-practices': 100, seo: 100 } as const;
 const LCP_MS = 2500;
 const CLS = 0.1;
 
@@ -49,24 +49,36 @@ const lighthouse = join(import.meta.dirname, '..', 'node_modules', '.bin', 'ligh
 const chrome = chromium.executablePath();
 const out = mkdtempSync(join(tmpdir(), 'lighthouse-'));
 
+/**
+ * One Lighthouse run. Lighthouse sometimes fails to record its own trace (NO_NAVSTART and the like,
+ * "please run Lighthouse again"): that run is taken again, twice at most; a page that can't be
+ * measured three times in a row fails.
+ */
 function measure(path: string, run: number): Report {
   const file = join(out, `${path.replaceAll('/', '_') || '_'}-${run}.json`);
-  const result = spawnSync(
-    lighthouse,
-    [
-      `${base}${path}`,
-      '--quiet',
-      '--output=json',
-      `--output-path=${file}`,
-      `--only-categories=${Object.keys(FLOORS).join(',')}`,
-      '--chrome-flags=--headless=new --no-sandbox',
-    ],
-    // From the temporary folder: on WSL, Chrome's launcher takes itself for Windows and makes its
-    // throwaway profile under a Windows-style name, relative to where it runs.
-    { cwd: out, env: { ...process.env, CHROME_PATH: chrome }, stdio: ['ignore', 'ignore', 'inherit'] },
-  );
-  if (result.status !== 0) throw new Error(`Lighthouse failed on ${path} (exit ${String(result.status)})`);
-  return JSON.parse(readFileSync(file, 'utf8')) as Report;
+  for (let attempt = 1; ; attempt++) {
+    const result = spawnSync(
+      lighthouse,
+      [
+        `${base}${path}`,
+        '--quiet',
+        '--output=json',
+        `--output-path=${file}`,
+        `--only-categories=${Object.keys(FLOORS).join(',')}`,
+        '--chrome-flags=--headless=new --no-sandbox',
+      ],
+      // From the temporary folder: on WSL, Chrome's launcher takes itself for Windows and makes its
+      // throwaway profile under a Windows-style name, relative to where it runs.
+      { cwd: out, env: { ...process.env, CHROME_PATH: chrome }, stdio: ['ignore', 'ignore', 'inherit'] },
+    );
+    const report =
+      result.status === 0
+        ? (JSON.parse(readFileSync(file, 'utf8')) as Report & { runtimeError?: unknown })
+        : null;
+    if (report && !report.runtimeError) return report;
+    if (attempt === 3) throw new Error(`Lighthouse couldn't measure ${path} (three tries)`);
+    console.log(`Lighthouse didn't record ${path} (try ${attempt}); measuring it again`);
+  }
 }
 
 const score = (r: Report, k: keyof typeof FLOORS) => Math.round((r.categories[k].score ?? 0) * 100);

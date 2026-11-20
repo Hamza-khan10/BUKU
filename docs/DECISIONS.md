@@ -1521,5 +1521,6 @@ faint to read (now only its press is animated). Measured on the production build
 (blocking time 340 to 190 ms, JavaScript 423 to 334 KiB), other pages 96 to 100, accessibility and
 best practices 100 everywhere. `scripts/lighthouse-budgets.ts` now holds every public page to it
 in CI (Website · Lighthouse budgets): the middle of three runs, phone, pre-launch as live, with
-floors for each score, LCP 2.5 s, CLS 0.1, and a JavaScript budget per page about 10% over today's
+performance at least 95 (the plan's figure; GitHub's machines measure 98 to 100), 100 for
+accessibility, best practices and SEO, LCP 2.5 s, CLS 0.1, and a JavaScript budget per page about 10% over today's
 size, the steadiest guard because sizes don't wobble between runs.
