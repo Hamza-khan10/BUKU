@@ -1526,3 +1526,25 @@ performance at least 90 (its simulated phone runs at the speed of whichever mach
 same code scored 99 to 100 on one and 92 to 97 on another, so 95 is judged on onbuku.com), 100 for
 accessibility, best practices and SEO, LCP 2.5 s, CLS 0.1, and a JavaScript budget per page about
 10% over today's size, the steadiest guard because sizes don't wobble between runs.
+
+**D-143 · Brand Identity v1.0, its tagline, and interactions people can try (3.7i).** The owner
+made a new identity (a design canvas and 11 SVGs): "U is for you", a thick Emerald U holding a
+Saffron dot (your place, held) and a lowercase stroke wordmark whose last u holds the same dot.
+Reviewed and tested before adopting: at a real 16 px tab, in a squint and in greyscale it reads
+where the ticket-and-check mark turned into a blob. The palette and Instrument Sans stay. On the
+site: one definition (components/brand/mark.ts, logo.tsx) whose colours follow the ground
+(--logo-u, --logo-dot: Emerald and Saffron 400 #E28A0A on light, white and Saffron on dark), the
+favicon, app icons, share cards and the console's mark; Saffron is kept for the one "you" on a
+screen, so section labels' dots turn Emerald. Of ten taglines the owner offered, "No one should
+wait to be seen." serves both audiences in one line (the person in the waiting room; the owner
+whose reputation it is) without promising an outcome BUKU can't guarantee; /for-business, which
+speaks to owners only, leads with "Full books. Empty waiting rooms." Each ends in the held dot,
+the logo's dot as a full stop (a decorative shape, so never faint text). From a review of
+Originkit, Motionsites, Supahero and Fontshare, five interactions where the visitor does
+something: the hero board gives them a number and calls them in (its status light is the logo,
+the dot dropping into the cup); owners see their own page as they type their business's name,
+and early access opens filled in (the link's values pass the form's text rules or are dropped);
+the header floats as a pill once the page moves (only its glass changes shape); the theme spreads
+from its switch; search hints type two real searches, then rest. Not taken: countdowns, entry
+pop-ups, autoplay video walls, 3D, custom cursors. Every page stays within its Lighthouse budget
+(home 336 of 370 KiB, /for-business 299 of 325; accessibility, best practices and SEO 100).

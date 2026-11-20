@@ -815,6 +815,16 @@ The detailed plan — every page, its data and edge cases, the design system and
   pages three times each (phone, pre-launch) and fails on a score below its floor, LCP over 2.5 s,
   CLS over 0.1, or a page's JavaScript over its budget. Tests: the story stays still until near and
   then plays, and stays still under reduced motion (browser).
+- **3.7i The new identity, its tagline, and interactions people can try — ✅ done (D-143).** Brand
+  Identity v1.0 everywhere: the U-and-dot mark and lowercase wordmark (theme-aware), favicon, app
+  icons, share cards, console mark; "No one should wait to be seen." (home, footer, slogan, share
+  card) and "Full books. Empty waiting rooms." (/for-business), each ending in the held dot.
+  Interactions: "Take a number" on the hero board (the logo's dot drops in on your turn); "See your
+  place on BUKU" for owners, with early access filled in from it (checked); the floating pill
+  header; the theme spreading from its switch; typed search hints, and the category finder on the
+  home page. One security.txt (generated). Tests: e2e/interactions.spec.ts (the board, the preview
+  and its prefill, a hostile link, the header, the theme, the hint, still under reduced motion);
+  every page within its Lighthouse budget.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request
