@@ -822,7 +822,11 @@ The detailed plan — every page, its data and edge cases, the design system and
   Interactions: "Take a number" on the hero board (the logo's dot drops in on your turn); "See your
   place on BUKU" for owners, with early access filled in from it (checked); the floating pill
   header; the theme spreading from its switch; typed search hints, and the category finder on the
-  home page. One security.txt (generated). Tests: e2e/interactions.spec.ts (the board, the preview
+  home page. One ticket everywhere (the app, How it works and the story's phone: its layout
+  and type follow its own width, the BUKU mark in its band); Enterprise on /pricing as a Midnight
+  band whose "Talk to us" opens early access with Enterprise and 20+ branches chosen; the
+  footer's logo aligned with its words; the symbol alone in the header under 360 px wide. One
+  security.txt (generated). Tests: e2e/interactions.spec.ts (the board, the preview
   and its prefill, a hostile link, the header, the theme, the hint, still under reduced motion);
   every page within its Lighthouse budget.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and

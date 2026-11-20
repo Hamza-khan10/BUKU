@@ -4,7 +4,7 @@ import { isBusinessKind } from '@/features/early-access/kinds';
 import { headers } from 'next/headers';
 import { Container } from '@/components/ui/layout';
 import { EarlyAccessForm, type Tags } from '@/features/early-access/components/early-access-form';
-import { PLAN_INTEREST, type Kind } from '@/features/early-access/schema';
+import { BRANCHES, PLAN_INTEREST, type Kind } from '@/features/early-access/schema';
 import { earlyAccessSettings } from '@/features/early-access/server';
 import { countryOptions } from '@/features/manage/setup';
 import { pageMetadata } from '@/lib/seo';
@@ -52,6 +52,8 @@ export default async function EarlyAccessPage({ searchParams }: PageProps<'/earl
   const businessName =
     typed.length >= 2 && typed.length <= 80 && !textProblem(typed, 'title') ? typed : undefined;
   const businessType = isBusinessKind(query.type) ? query.type : undefined;
+  // How many branches, from the pricing page's Enterprise band (one of the form's own choices).
+  const branches = BRANCHES.find((b) => b === query.branches);
   // The visitor's country as the host tells it (Cloudflare, or Vercel until the move is done), to
   // start the list there; "XX" (unknown) and "T1" (Tor) aren't countries, so those start at PK.
   const country = (incoming.get('cf-ipcountry') ?? incoming.get('x-vercel-ip-country'))?.toUpperCase();
@@ -88,6 +90,7 @@ export default async function EarlyAccessPage({ searchParams }: PageProps<'/earl
           initialKind={kind}
           initialPlan={plan}
           initialBusiness={{ name: businessName, type: businessType }}
+          initialBranches={branches}
           initialCountry={country && ISO_COUNTRY_CODES.has(country) ? country : 'PK'}
           countries={countryOptions(ISO_COUNTRY_CODES)}
           tags={tags}

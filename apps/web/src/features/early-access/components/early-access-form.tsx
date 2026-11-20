@@ -74,6 +74,7 @@ export function EarlyAccessForm({
   initialKind,
   initialPlan = 'not_sure',
   initialBusiness,
+  initialBranches = '1',
   initialCountry,
   countries,
   tags,
@@ -85,6 +86,8 @@ export function EarlyAccessForm({
   initialPlan?: (typeof PLAN_INTEREST)[number];
   /** The name and kind typed into "See your place on BUKU", already checked by the page. */
   initialBusiness?: { name?: string | undefined; type?: string | undefined };
+  /** How many branches, when the pricing page's Enterprise band sent them here. */
+  initialBranches?: (typeof BRANCHES)[number] | undefined;
   initialCountry: string;
   /** Countries by name, named on the server (the browser's names can differ: see countryOptions). */
   countries: Option[];
@@ -93,7 +96,7 @@ export function EarlyAccessForm({
   const [kind, setKind] = useState<Kind>(initialKind);
   const [values, setValues] = useState<Values>({
     country: initialCountry,
-    branches: '1',
+    branches: initialBranches,
     planInterest: initialPlan,
     ...(initialBusiness?.name && { businessName: initialBusiness.name }),
     ...(initialBusiness?.type && { businessType: initialBusiness.type }),

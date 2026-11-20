@@ -1,24 +1,27 @@
 import { QRCodeSVG } from 'qrcode.react';
 import type { ReactNode } from 'react';
+import { MARK } from '@/components/brand/mark';
 import { cn } from '@/lib/cn';
 
 /**
- * BUKU's signature: a receipt or queue ticket that looks like a real one:
- * the main part says what and when, a perforated stub carries the code (and
- * the QR the front desk scans), a band on top says where things stand.
- * People already trust paper tickets; this borrows that trust (WEB_PLAN §2).
+ * BUKU's signature: a receipt or queue ticket that looks like a real one: a band that says where
+ * things stand (with the BUKU mark, Brand Identity v1.0's "ticket edge"), the main part saying what,
+ * where and when, a perforation with half-circle notches, and a stub with the code (and the QR the
+ * front desk scans). People already trust paper tickets; this borrows that trust (WEB_PLAN §2).
  *
- * Stacks vertically on narrow screens (stub at the bottom), side by side from
- * `sm`. The QR encodes exactly the code shown, nothing more. Place it on the
- * page background: the notches are cut in that colour.
+ * One ticket everywhere (3.7i): the app, How it works and the phone in the home page's story. Its
+ * layout and type follow its own width (container queries), not the screen's: stacked, with the stub
+ * below, when narrow (a phone, the story's phone); side by side from 28rem. The QR encodes exactly
+ * the code shown, nothing more. Place it on the page background: the notches are cut in that colour.
  */
 
+/** The band's colours, and the mark's dot on it (Saffron; Emerald on a Saffron band, as the kit says). */
 const tones = {
-  ok: 'bg-ok text-surface',
-  wait: 'bg-wait text-on-wait',
-  brand: 'bg-brand text-on-brand',
-  neutral: 'bg-ink-2 text-surface',
-  danger: 'bg-danger text-surface',
+  ok: 'bg-ok text-surface [--ticket-dot:#ffad52]',
+  wait: 'bg-wait text-on-wait [--ticket-dot:#056549]',
+  brand: 'bg-brand text-on-brand [--ticket-dot:#ffad52]',
+  neutral: 'bg-ink-2 text-surface [--ticket-dot:#ffad52]',
+  danger: 'bg-danger text-surface [--ticket-dot:#ffffff]',
 } as const;
 
 export interface TicketProps {
@@ -39,6 +42,8 @@ export interface TicketProps {
   qr?: boolean;
   /** Play the "printing" entrance (a booking that was just confirmed). */
   fresh?: boolean;
+  /** The title's element: a heading on a page, plain text inside an illustration (the story's phone). */
+  titleAs?: 'h3' | 'p';
   className?: string;
 }
 
@@ -52,54 +57,91 @@ export function Ticket({
   status,
   qr,
   fresh,
+  titleAs: Title = 'h3',
   className,
 }: TicketProps) {
   return (
     <article
       className={cn(
-        'relative isolate w-full max-w-xl overflow-hidden rounded-xl bg-surface shadow-lift',
+        '@container relative isolate w-full max-w-xl overflow-hidden rounded-2xl bg-surface shadow-lift ring-1 ring-line/50',
         fresh && 'animate-print',
         className,
       )}
     >
-      <div className={cn('flex items-center gap-2 px-5 py-2 text-sm font-semibold', tones[status.tone])}>
-        {status.live && <span aria-hidden className="size-2 rounded-full bg-current animate-live" />}
+      <div
+        className={cn(
+          'flex items-center gap-2 px-5 py-2.5 text-sm font-semibold @md:px-6',
+          tones[status.tone],
+        )}
+      >
+        {/* The BUKU mark, as on a printed ticket: the U in the band's ink, its dot the kit's colour. */}
+        <svg viewBox="0 0 60 60" aria-hidden className="size-4 shrink-0">
+          <path
+            d={MARK.cup}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={MARK.cupWidth}
+            strokeLinecap="round"
+          />
+          <circle {...MARK.dot} fill="var(--ticket-dot)" />
+        </svg>
         <span role="status">{status.label}</span>
+        {status.live && <span aria-hidden className="ml-auto size-2 rounded-full bg-current animate-live" />}
       </div>
 
-      <div className="flex flex-col sm:flex-row">
-        <div className="flex min-w-0 flex-1 flex-col gap-3 p-5">
-          <p className="text-sm font-medium text-ink-3">{place}</p>
-          <h3 className="text-[1.65rem] leading-[1.1] font-semibold tracking-[-0.025em]">{title}</h3>
-          <p className="tabular text-lg font-medium text-ink">{when}</p>
-          {details && <div className="flex flex-col gap-1 text-sm text-ink-2">{details}</div>}
+      <div className="flex flex-col @md:flex-row">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 p-5 @md:p-7">
+          <p className="text-[0.8rem] font-medium text-ink-3 @md:text-sm">{place}</p>
+          <Title className="text-[1.3rem] leading-[1.08] font-semibold tracking-[-0.03em] @xs:text-[1.5rem] @md:text-[1.85rem]">
+            {title}
+          </Title>
+          <p className="tabular mt-1.5 text-[0.95rem] font-semibold text-ink @xs:text-base @md:text-[1.15rem]">
+            {when}
+          </p>
+          {details && (
+            <div className="flex flex-col gap-1 text-[0.8rem] text-ink-2 @md:text-sm">{details}</div>
+          )}
         </div>
 
         {/* The perforation: a dashed line with half-circle notches cut out of the ticket's edges
-            (left and right on phones; top and bottom, over the band too, from `sm`). */}
+            (left and right when stacked; top and bottom, over the band too, side by side). */}
         <div aria-hidden className="relative flex items-center">
-          <span className="absolute -left-3 size-6 rounded-full bg-canvas sm:hidden" />
-          <span className="h-px w-full border-t-2 border-dashed border-line sm:h-full sm:w-px sm:border-t-0 sm:border-l-2" />
-          <span className="absolute -right-3 size-6 rounded-full bg-canvas sm:hidden" />
+          <span className="absolute -left-3 size-6 rounded-full bg-canvas @md:hidden" />
+          <span className="mx-5 h-px w-full border-t-2 border-dashed border-line @md:mx-0 @md:h-full @md:w-px @md:border-t-0 @md:border-l-2" />
+          <span className="absolute -right-3 size-6 rounded-full bg-canvas @md:hidden" />
         </div>
 
-        <div className="flex flex-col items-center justify-center gap-2 p-5 sm:w-48">
-          <p className="text-xs font-medium text-ink-3">{codeLabel}</p>
-          <p className="font-mono text-2xl font-bold tracking-wider text-ink">{code}</p>
+        <div className="flex items-center justify-between gap-4 p-5 @md:w-52 @md:flex-col @md:justify-center @md:gap-3 @md:p-6 @md:text-center">
+          <div className="flex flex-col gap-1">
+            <p className="text-[0.7rem] font-semibold tracking-[0.08em] text-ink-3 uppercase">{codeLabel}</p>
+            <p className="font-mono text-xl font-bold tracking-wider text-ink @xs:text-2xl @md:text-[1.65rem]">
+              {code}
+            </p>
+          </div>
           {qr && (
-            <div role="img" aria-label={`QR code for ${code}`} className="rounded-md bg-white p-2">
-              <QRCodeSVG value={code} size={112} level="M" aria-hidden />
+            <div
+              role="img"
+              aria-label={`QR code for ${code}`}
+              className="shrink-0 rounded-lg bg-white p-1.5 ring-1 ring-line @md:p-2"
+            >
+              <QRCodeSVG
+                value={code}
+                size={112}
+                level="M"
+                aria-hidden
+                className="size-16 @xs:size-20 @md:size-28"
+              />
             </div>
           )}
         </div>
       </div>
       <span
         aria-hidden
-        className="absolute -top-3 right-[calc(12rem-0.75rem)] hidden size-6 rounded-full bg-canvas sm:block"
+        className="absolute -top-3 right-[calc(13rem-0.75rem)] hidden size-6 rounded-full bg-canvas @md:block"
       />
       <span
         aria-hidden
-        className="absolute -bottom-3 right-[calc(12rem-0.75rem)] hidden size-6 rounded-full bg-canvas sm:block"
+        className="absolute -bottom-3 right-[calc(13rem-0.75rem)] hidden size-6 rounded-full bg-canvas @md:block"
       />
     </article>
   );

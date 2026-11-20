@@ -37,6 +37,21 @@ test.describe('Interactions', () => {
     await expect(page.getByLabel(/What kind of business/)).toHaveValue('Clinic');
   });
 
+  test('Enterprise: easy to find, and its way in arrives with Enterprise and 20+ branches chosen', async ({
+    page,
+  }) => {
+    await page.goto('/pricing');
+    const band = page.getByRole('complementary', { name: /20 branches or more/ });
+    await expect(band).toBeVisible();
+    const href = await band.getByRole('link', { name: 'Talk to us' }).getAttribute('href');
+    // Before launch it's the business list; after, the contact page.
+    if (href?.startsWith('/early-access')) {
+      await page.goto(href);
+      await expect(page.getByLabel(/Which plan/)).toHaveValue('enterprise');
+      await expect(page.getByLabel(/How many branches|branches/i).first()).toHaveValue('21+');
+    } else expect(href).toBe('/contact');
+  });
+
   test('a link carrying anything the form wouldn’t take fills in nothing', async ({ page }) => {
     await page.goto(
       '/early-access?as=business&name=%3Cscript%3Ealert(1)%3C%2Fscript%3E%F0%9F%98%80%E2%80%8B&type=Hacker',

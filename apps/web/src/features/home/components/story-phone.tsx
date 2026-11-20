@@ -1,9 +1,9 @@
 'use client';
 
 import { Bell, ChevronLeft, Search, Star } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { LogoMark } from '@/components/brand/logo';
+import { Ticket } from '@/components/ui/ticket';
 import { SplitFlap } from '@/components/motion/split-flap';
 import { cn } from '@/lib/cn';
 
@@ -334,35 +334,19 @@ function TicketScreen({ demo, act }: ScreenProps) {
         </span>
       </div>
 
-      {/* The same ticket as the app's: a band, the visit, a perforation with notches, the stub. */}
-      <div className="story-print relative overflow-hidden rounded-[20px] bg-surface shadow-lift">
-        <div className="bg-brand px-4 py-2 text-[12px] font-semibold text-on-brand">Confirmed</div>
-        <div className="flex flex-col gap-1 px-4 pt-3.5 pb-4">
-          <span className="text-[12px] text-ink-3">
-            {place.name} · {place.km} km
-          </span>
-          <span className="text-[21px] leading-tight font-semibold tracking-[-0.025em]">{place.service}</span>
-          <span className="tabular text-[13.5px] font-medium">
-            {day[0]} {day[1]} Oct · {demo.time} to {after(demo.time, 30)}
-          </span>
-          <span className="text-[12px] text-ink-2">Pay at the venue · {place.price}</span>
-        </div>
-        <div aria-hidden className="relative flex items-center">
-          <span className="absolute -left-2.5 size-5 rounded-full bg-canvas" />
-          <span className="mx-4 h-0 flex-1 border-t-2 border-dashed border-line" />
-          <span className="absolute -right-2.5 size-5 rounded-full bg-canvas" />
-        </div>
-        <div className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-4">
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-ink-3">Booking code</span>
-            <span className="font-mono text-[18px] font-bold tracking-wider">BK-7KQ2MX</span>
-            <span className="text-[11px] text-ink-3">Show it at the front desk</span>
-          </span>
-          <span className="rounded-[10px] bg-white p-1.5 ring-1 ring-line">
-            <QRCodeSVG value="BK-7KQ2MX" size={58} level="M" />
-          </span>
-        </div>
-      </div>
+      {/* The app's own ticket (components/ui/ticket.tsx), at the phone's width: one ticket everywhere. */}
+      <Ticket
+        qr
+        titleAs="p"
+        className="story-print"
+        status={{ label: 'Confirmed', tone: 'ok' }}
+        place={`${place.name} · ${place.km} km`}
+        title={place.service}
+        when={`${day[0]} ${day[1]} Oct · ${demo.time} to ${after(demo.time, 30)}`}
+        details={<span>Pay at the venue · {place.price}</span>}
+        code="BK-7KQ2MX"
+        codeLabel="Booking code"
+      />
 
       <div
         className="story-in flex items-center gap-2.5 rounded-[16px] bg-wait-soft p-3 text-[12.5px] leading-snug text-wait-ink"

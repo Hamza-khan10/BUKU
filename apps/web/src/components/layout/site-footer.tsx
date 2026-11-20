@@ -19,10 +19,14 @@ export function SiteFooter() {
       <Container className="flex flex-col gap-12 pt-14 pb-10 sm:pt-20">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex flex-col gap-5">
-            <Logo title="BUKU" className="h-9" />
-            <p className="type-section max-w-xl">
-              No one should wait <span className="text-board-ink-2">to be seen</span>
-              <HeldDot still />
+            {/* Pinned left with the words (an image in a column otherwise stretches and centres). */}
+            <Logo title="BUKU" className="h-9 self-start" />
+            <p className="type-section">
+              <span className="block">No one should wait</span>{' '}
+              <span className="block text-board-ink-2">
+                to be seen
+                <HeldDot still />
+              </span>
             </p>
           </div>
           <Magnetic className="w-fit">
