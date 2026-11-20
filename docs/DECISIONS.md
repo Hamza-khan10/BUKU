@@ -1478,7 +1478,8 @@ in search now carries over:
   Next, after launch: a page per kind and city ("barbers in Lahore") once real places fill them;
   before then they would be empty and hurt the site.
 
-**D-140 · Email at onbuku.com: free forwarding now; sending through Resend, then Cloudflare (updated 2026-11-19).** The owner wants addresses
+**D-140 · Email at onbuku.com: free forwarding now; sending through Resend, then Cloudflare
+(updated 2026-11-19).** The owner wants addresses
 on the domain at no cost. Receiving: Cloudflare Email Routing forwards `hello@` (official),
 `support@`, `business@`, `privacy@`, `security@` and `welcome@` to the owner's mailbox; the
 catch-all is off (mail to any other address is dropped). Sending: Cloudflare has no SMTP (the
@@ -1522,5 +1523,5 @@ faint to read (now only its press is animated). Measured on the production build
 best practices 100 everywhere. `scripts/lighthouse-budgets.ts` now holds every public page to it
 in CI (Website · Lighthouse budgets): the middle of three runs, phone, pre-launch as live, with
 performance at least 95 (the plan's figure; GitHub's machines measure 98 to 100), 100 for
-accessibility, best practices and SEO, LCP 2.5 s, CLS 0.1, and a JavaScript budget per page about 10% over today's
-size, the steadiest guard because sizes don't wobble between runs.
+accessibility, best practices and SEO, LCP 2.5 s, CLS 0.1, and a JavaScript budget per page about
+10% over today's size, the steadiest guard because sizes don't wobble between runs.
