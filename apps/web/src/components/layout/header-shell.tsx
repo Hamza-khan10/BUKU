@@ -6,11 +6,13 @@ import { cn } from '@/lib/cn';
 /**
  * The header's glass, aware of what's under it: over a Midnight section (anything marked
  * `data-tone="dark"`, like the scroll story or the footer) it turns dark too, the way a
- * phone's bar adapts, instead of a light glass going grey over a dark stage.
+ * phone's bar adapts, instead of a light glass going grey over a dark stage. Once the page
+ * has moved, it floats as a pill (`data-condensed`, globals.css .site-glass).
  */
 export function HeaderShell({ className, children }: { className?: string; children: ReactNode }) {
   const header = useRef<HTMLElement>(null);
   const [overDark, setOverDark] = useState(false);
+  const [condensed, setCondensed] = useState(false);
 
   useEffect(() => {
     let frame = 0;
@@ -22,6 +24,7 @@ export function HeaderShell({ className, children }: { className?: string; child
         return r.top <= line && r.bottom >= line;
       });
       setOverDark(dark);
+      setCondensed(window.scrollY > 24);
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(check);
@@ -40,6 +43,7 @@ export function HeaderShell({ className, children }: { className?: string; child
     <header
       ref={header}
       data-over={overDark ? 'dark' : undefined}
+      data-condensed={condensed ? '' : undefined}
       className={cn(className, overDark && 'text-ink')}
     >
       {children}

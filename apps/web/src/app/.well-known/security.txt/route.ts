@@ -13,7 +13,7 @@ export function GET(): Response {
   const body = [
     `Contact: mailto:${contact}`,
     `Expires: ${expires}`,
-    'Preferred-Languages: en',
+    'Preferred-Languages: en, ur',
     ...(site ? [`Canonical: ${site}/.well-known/security.txt`, `Policy: ${site}/security`] : []),
     '',
   ].join('\n');

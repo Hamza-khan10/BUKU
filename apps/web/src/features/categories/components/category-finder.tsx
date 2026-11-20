@@ -4,6 +4,7 @@ import { ArrowRight, Search } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { useDeferredValue, useId, useMemo, useState } from 'react';
+import { useTypedHint } from '@/components/motion/use-typed-hint';
 import { CategoryIcon } from '../icons';
 import { searchKey } from '../groups';
 
@@ -19,9 +20,26 @@ export interface FinderGroup {
  * searching every place instead. Every kind leads to its own page (before launch, its guide: D-139);
  * before launch (`early`) a kind BUKU doesn't cover yet is an invitation to join as a business.
  */
-export function CategoryFinder({ groups, early = false }: { groups: FinderGroup[]; early?: boolean }) {
+const EXAMPLES = ['dental', 'passport'] as const;
+
+export function CategoryFinder({
+  groups,
+  early = false,
+  label = 'Find a kind of place',
+}: {
+  groups: FinderGroup[];
+  early?: boolean;
+  label?: string;
+}) {
   const id = useId();
   const [text, setText] = useState('');
+  const [focused, setFocused] = useState(false);
+  // Two real searches typed as the hint, then the usual one (3.7i).
+  const { ref: hintRef, hint } = useTypedHint(
+    EXAMPLES,
+    'Try dental, padel or passport',
+    !focused && text === '',
+  );
   const query = searchKey(useDeferredValue(text));
   const all = useMemo(
     () =>
@@ -36,7 +54,7 @@ export function CategoryFinder({ groups, early = false }: { groups: FinderGroup[
   return (
     <div className="flex max-w-2xl flex-col gap-3">
       <label htmlFor={id} className="text-base font-semibold text-ink">
-        Find a kind of place
+        {label}
       </label>
       <div className="relative">
         <Search
@@ -47,8 +65,11 @@ export function CategoryFinder({ groups, early = false }: { groups: FinderGroup[
           id={id}
           type="search"
           value={text}
+          ref={hintRef}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Try dental, padel or passport"
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder={hint}
           autoComplete="off"
           enterKeyHint="search"
           maxLength={60}

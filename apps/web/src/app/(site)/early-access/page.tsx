@@ -1,4 +1,6 @@
 import { ISO_COUNTRY_CODES } from '@buku/validation';
+import { normalizeText, textProblem } from '@buku/validation';
+import { isBusinessKind } from '@/features/early-access/kinds';
 import { headers } from 'next/headers';
 import { Container } from '@/components/ui/layout';
 import { EarlyAccessForm, type Tags } from '@/features/early-access/components/early-access-form';
@@ -44,6 +46,12 @@ export default async function EarlyAccessPage({ searchParams }: PageProps<'/earl
   const kind: Kind = query.as === 'customer' ? 'customer' : 'business';
   // The plan chosen on the pricing page (?plan=), if it's one of the list's.
   const plan = PLAN_INTEREST.find((p) => p === query.plan);
+  // A business's name and kind from "See your place on BUKU" (/for-business), kept only when they
+  // pass the form's own rules; anything else is ignored, never shown.
+  const typed = typeof query.name === 'string' ? normalizeText(query.name, 'title') : '';
+  const businessName =
+    typed.length >= 2 && typed.length <= 80 && !textProblem(typed, 'title') ? typed : undefined;
+  const businessType = isBusinessKind(query.type) ? query.type : undefined;
   // The visitor's country as the host tells it (Cloudflare, or Vercel until the move is done), to
   // start the list there; "XX" (unknown) and "T1" (Tor) aren't countries, so those start at PK.
   const country = (incoming.get('cf-ipcountry') ?? incoming.get('x-vercel-ip-country'))?.toUpperCase();
@@ -79,6 +87,7 @@ export default async function EarlyAccessPage({ searchParams }: PageProps<'/earl
           nonce={incoming.get('x-nonce') ?? undefined}
           initialKind={kind}
           initialPlan={plan}
+          initialBusiness={{ name: businessName, type: businessType }}
           initialCountry={country && ISO_COUNTRY_CODES.has(country) ? country : 'PK'}
           countries={countryOptions(ISO_COUNTRY_CODES)}
           tags={tags}

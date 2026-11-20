@@ -11,6 +11,7 @@ import { HeldDot } from '@/components/brand/held-dot';
 import { StackedCards } from '@/components/motion/stacked-cards';
 import { Container, SectionHeading } from '@/components/ui/layout';
 import { FrontDeskBoard } from '@/features/home/components/front-desk-board';
+import { YourPlace } from '@/features/marketing/components/your-place';
 import { pricing } from '@/features/pricing/api';
 import { prelaunch } from '@/lib/flags';
 import { BUSINESS_QUESTIONS, faqStructuredData } from '@/features/marketing/faq';
@@ -131,6 +132,11 @@ export default async function ForBusinessPage() {
         <BoardGlow>
           <FrontDeskBoard className="w-full" />
         </BoardGlow>
+      </Container>
+
+      {/* The owner's own page, as they type (3.7i). */}
+      <Container>
+        <YourPlace early={prelaunch()} />
       </Container>
 
       <Container>

@@ -2,7 +2,8 @@
 
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { ToggleGroup } from 'radix-ui';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { cn } from '@/lib/cn';
 import { THEME_COOKIE, type Theme } from '@/lib/theme';
 
@@ -19,21 +20,47 @@ function shownTheme(fallback: Theme): Theme {
   return value === 'light' || value === 'dark' ? value : 'system';
 }
 
-/** Light / dark / device. Applies at once and is remembered for a year. */
+/**
+ * Light / dark / device. Applies at once and is remembered for a year. Where the browser can
+ * (View Transitions) and motion is welcome, the new look spreads in a circle from the switch that
+ * was pressed (3.7i): the change starts where its cause is. Elsewhere it simply switches.
+ */
 export function ThemeToggle({ initial, className }: { initial: Theme; className?: string }) {
   const [theme, setTheme] = useState<Theme>(() => shownTheme(initial));
+  // Where the last press landed; a keyboard press spreads from the focused switch instead.
+  const press = useRef<{ x: number; y: number } | null>(null);
 
   const choose = (next: string) => {
     if (next !== 'system' && next !== 'light' && next !== 'dark') return;
-    setTheme(next);
     const root = document.documentElement;
-    if (next === 'system') root.removeAttribute('data-theme');
-    else root.setAttribute('data-theme', next);
+    const apply = () => {
+      flushSync(() => setTheme(next));
+      if (next === 'system') root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', next);
+    };
     const secure = location.protocol === 'https:' ? '; Secure' : '';
     document.cookie =
       next === 'system'
         ? `${THEME_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax${secure}`
         : `${THEME_COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+
+    if (!document.startViewTransition || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      apply();
+      return;
+    }
+    const from =
+      press.current ??
+      (() => {
+        const r = (document.activeElement ?? root).getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })();
+    press.current = null;
+    const reach = Math.hypot(Math.max(from.x, innerWidth - from.x), Math.max(from.y, innerHeight - from.y));
+    root.style.setProperty('--reveal-x', `${from.x}px`);
+    root.style.setProperty('--reveal-y', `${from.y}px`);
+    root.style.setProperty('--reveal-r', `${reach}px`);
+    root.classList.add('theme-reveal');
+    void document.startViewTransition(apply).finished.finally(() => root.classList.remove('theme-reveal'));
   };
 
   return (
@@ -41,6 +68,9 @@ export function ThemeToggle({ initial, className }: { initial: Theme; className?
       type="single"
       value={theme}
       onValueChange={choose}
+      onPointerDown={(e) => {
+        press.current = { x: e.clientX, y: e.clientY };
+      }}
       aria-label="Colour theme"
       className={cn('inline-flex gap-0.5 rounded-full bg-sunken p-1', className)}
     >

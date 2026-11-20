@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
 import { Container, SectionHeading } from '@/components/ui/layout';
+import { CategoryFinder } from '@/features/categories/components/category-finder';
 import { CategoryIcon } from '@/features/categories/icons';
 import { PlacesRail } from '@/features/home/components/places-rail';
 import { BoardGlow } from '@/components/motion/board';
@@ -172,7 +173,14 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
           )}
         </div>
         <BoardGlow>
-          <QueueBoard className="w-full" />
+          <QueueBoard
+            className="w-full"
+            cta={
+              prelaunch()
+                ? { href: '/early-access?as=customer&source=board', label: 'Get early access' }
+                : { href: '/explore', label: 'Find a place' }
+            }
+          />
         </BoardGlow>
       </Container>
 
@@ -255,6 +263,18 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
               eyebrow="Categories"
               title="Every kind of place."
               description="Barbers and clinics, government offices and garages. If you’d normally wait there, it can be on BUKU."
+            />
+            {/* Straight to any of the kinds by name (3.7i), the groups below for browsing. */}
+            <CategoryFinder
+              early={prelaunch()}
+              label="Where do you wait?"
+              groups={tree
+                .filter((g) => g.children.length > 0)
+                .map((g) => ({
+                  slug: g.slug,
+                  name: g.name,
+                  kinds: g.children.map((k) => ({ slug: k.slug, name: k.name })),
+                }))}
             />
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {tree.map((c, i) => (

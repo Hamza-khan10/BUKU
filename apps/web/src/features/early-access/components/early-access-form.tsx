@@ -1,6 +1,7 @@
 'use client';
 
 import { CalendarCheck, CircleCheck, Store } from 'lucide-react';
+import { KINDS_OF_BUSINESS } from '../kinds';
 import Link from 'next/link';
 import Script from 'next/script';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -22,18 +23,7 @@ declare global {
 }
 
 /** The kinds of business people name most; any other can be typed. */
-const KINDS_OF_BUSINESS = [
-  'Barbershop',
-  'Beauty salon',
-  'Clinic',
-  'Dental clinic',
-  'Hospital',
-  'Veterinary clinic',
-  'Spa',
-  'Gym',
-  'Laboratory',
-  'Bank or office',
-];
+// The kinds the field suggests: features/early-access/kinds.ts (shared with /for-business).
 
 const BRANCH_LABEL: Record<(typeof BRANCHES)[number], string> = {
   '1': 'One',
@@ -83,6 +73,7 @@ export function EarlyAccessForm({
   nonce,
   initialKind,
   initialPlan = 'not_sure',
+  initialBusiness,
   initialCountry,
   countries,
   tags,
@@ -92,6 +83,8 @@ export function EarlyAccessForm({
   initialKind: Kind;
   /** The plan someone chose on the pricing page, if they came from there. */
   initialPlan?: (typeof PLAN_INTEREST)[number];
+  /** The name and kind typed into "See your place on BUKU", already checked by the page. */
+  initialBusiness?: { name?: string | undefined; type?: string | undefined };
   initialCountry: string;
   /** Countries by name, named on the server (the browser's names can differ: see countryOptions). */
   countries: Option[];
@@ -102,6 +95,8 @@ export function EarlyAccessForm({
     country: initialCountry,
     branches: '1',
     planInterest: initialPlan,
+    ...(initialBusiness?.name && { businessName: initialBusiness.name }),
+    ...(initialBusiness?.type && { businessType: initialBusiness.type }),
   });
   const [consent, setConsent] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});

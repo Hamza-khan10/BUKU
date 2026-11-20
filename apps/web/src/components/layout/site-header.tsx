@@ -15,7 +15,7 @@ import { DesktopNav, MobileNav } from './site-nav';
  */
 export function SiteHeader({ theme, signedIn }: { theme: Theme; signedIn: boolean }) {
   return (
-    <HeaderShell className="material-bar sticky top-0 z-30 border-b border-line/60">
+    <HeaderShell className="site-glass">
       <Container className="flex h-16 items-center justify-between gap-4">
         <div className="flex items-center gap-6">
           <Link href="/" aria-label="BUKU home" className="rounded-md">
