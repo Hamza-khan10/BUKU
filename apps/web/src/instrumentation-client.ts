@@ -1,4 +1,6 @@
-import { z } from 'zod';
+// Only Zod's settings, from its core (the same settings the full library reads): importing all
+// of 'zod' here put its 32 KiB on every page, forms or not (3.7h).
+import { config } from 'zod/v4/core';
 
 /**
  * Runs in the browser before any of the site's own code (Next's instrumentation-client).
@@ -9,4 +11,4 @@ import { z } from 'zod';
  * CSP violation on every page with a form. Told it may not compile (`jitless`), Zod never tries.
  * Set here, before any schema is created, because each schema decides when it's made.
  */
-z.config({ jitless: true });
+config({ jitless: true });

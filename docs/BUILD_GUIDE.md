@@ -807,6 +807,14 @@ The detailed plan — every page, its data and edge cases, the design system and
   "Back to the search"), so `[data-bottom-bar]` now reserves room at the bottom whenever focus
   scrolls (proven: without it, settings fields sit fully under the tabs); and a group button on
   /categories could take focus 2 px in view under the row's fade (scroll padding on the row).
+- **3.7h Lighthouse budgets and a lighter home page — ✅ done (D-142).** Every page sheds 43 KiB
+  (Zod's client import narrowed to its one setting); the home story upgrades to its cinematic
+  version only near view, fetching GSAP once the visitor moves (home 423 to 334 KiB, blocking time
+  340 to 190 ms, performance 90 to 97); /for-business's pill no longer fades through unreadable
+  colours (accessibility 96 to 100). CI's Website · Lighthouse budgets job measures seven public
+  pages three times each (phone, pre-launch) and fails on a score below its floor, LCP over 2.5 s,
+  CLS over 0.1, or a page's JavaScript over its budget. Tests: the story stays still until near and
+  then plays, and stays still under reduced motion (browser).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

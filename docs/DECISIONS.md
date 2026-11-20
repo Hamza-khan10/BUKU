@@ -1506,3 +1506,20 @@ focused, headings must form an outline, nothing may move under reduced motion, a
 survive WCAG's wider spacing. Anything fixed to the bottom of the screen carries `data-bottom-bar`,
 which reserves room at the bottom whenever focus scrolls (`globals.css`); a scrolling row with a
 faded edge sets scroll padding so a control under the fade scrolls fully into view.
+
+**D-142 · Lighthouse budgets, and a lighter home page (3.7h).** Measured on onbuku.com in phone
+mode, every public page scored 100 for best practices and SEO, loaded its main content in about
+a second and never jumped; the home page's performance was 90 (the plan says 95), /for-business's
+accessibility 96, and every page carried 330 KiB of JavaScript. Three causes, fixed at the root:
+the client set-up imported all of Zod to set one switch (32 KiB on every page; now only
+`config` from `zod/v4/core`, the same setting); the home story swapped its still version for the
+cinematic one in a synchronous re-render right after hydration, with GSAP's set-up, for a section
+two screens down (now it upgrades only as it comes within half a screen, as a transition, and GSAP
+is fetched once the visitor first scrolls, taps or types; visitors who don't scroll never download
+it; `@gsap/react` dropped); and a status pill on /for-business faded its colours through a pair too
+faint to read (now only its press is animated). Measured on the production build: home 97 to 98
+(blocking time 340 to 190 ms, JavaScript 423 to 334 KiB), other pages 96 to 100, accessibility and
+best practices 100 everywhere. `scripts/lighthouse-budgets.ts` now holds every public page to it
+in CI (Website · Lighthouse budgets): the middle of three runs, phone, pre-launch as live, with
+floors for each score, LCP 2.5 s, CLS 0.1, and a JavaScript budget per page about 10% over today's
+size, the steadiest guard because sizes don't wobble between runs.
