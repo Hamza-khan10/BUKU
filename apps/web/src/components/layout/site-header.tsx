@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Logo } from '@/components/brand/logo';
+import { Logo, LogoMark } from '@/components/brand/logo';
 import { Container } from '@/components/ui/layout';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -15,11 +15,14 @@ import { DesktopNav, MobileNav } from './site-nav';
  */
 export function SiteHeader({ theme, signedIn }: { theme: Theme; signedIn: boolean }) {
   return (
-    <HeaderShell className="material-bar sticky top-0 z-30 border-b border-line/60">
+    <HeaderShell className="site-glass">
       <Container className="flex h-16 items-center justify-between gap-4">
         <div className="flex items-center gap-6">
+          {/* The full logo from 360 px; on the narrowest phones the symbol alone (the kit: below
+              the lockup's 120 px minimum, use the symbol), so the header always fits. */}
           <Link href="/" aria-label="BUKU home" className="rounded-md">
-            <Logo />
+            <Logo className="hidden min-[360px]:block" />
+            <LogoMark className="size-9 min-[360px]:hidden" />
           </Link>
           <DesktopNav early={prelaunch()} />
         </div>

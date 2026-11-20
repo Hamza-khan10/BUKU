@@ -1,4 +1,4 @@
-import { CalendarCheck, Ticket } from 'lucide-react';
+import { CalendarCheck, Check, Ticket } from 'lucide-react';
 import { headers } from 'next/headers';
 import Link from 'next/link';
 import { Accordion, AccordionItem } from '@/components/ui/accordion';
@@ -17,6 +17,7 @@ import {
 import { prelaunch } from '@/lib/flags';
 import { brandGraph } from '@/lib/brand';
 import { jsonLd, pageMetadata } from '@/lib/seo';
+import { siteFacts } from '@/lib/site';
 import { siteUrl } from '@/lib/site-url';
 
 export const metadata = pageMetadata({
@@ -39,6 +40,7 @@ export default async function PricingPage({ searchParams }: PageProps<'/pricing'
     ? (asked as Currency)
     : currencyFor(incoming.get('cf-ipcountry') ?? incoming.get('x-vercel-ip-country'));
   const early = prelaunch();
+  const facts = siteFacts();
   const nonce = incoming.get('x-nonce') ?? undefined;
 
   return (
@@ -64,26 +66,65 @@ export default async function PricingPage({ searchParams }: PageProps<'/pricing'
         </h2>
         <LaunchPricing initialCurrency={currency} early={early} />
 
+        {/* Enterprise (3.7i): the one plan you ask for, so the ask is easy to find. On Midnight
+            like the board, with the way in up front: before launch, the business list with
+            Enterprise and more than 20 branches already chosen; and a direct address. */}
         <aside
           aria-labelledby="enterprise-title"
-          className="grid grid-cols-1 gap-6 rounded-xl bg-sunken p-6 ring-1 ring-line ring-inset sm:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto] lg:items-center lg:gap-10"
+          data-tone="dark"
+          className="scope-dark relative isolate overflow-hidden rounded-[1.75rem] bg-board p-7 text-board-ink sm:p-10 lg:grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-center lg:gap-14"
         >
-          <div className="flex flex-col gap-1.5">
-            <h3 id="enterprise-title" className="text-xl font-semibold tracking-[-0.02em] text-ink">
-              Enterprise
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -top-40 -right-24 -z-10 size-[30rem] rounded-full bg-[radial-gradient(closest-side,rgb(6_127_93/0.45),transparent)]"
+          />
+          <div className="flex flex-col gap-5">
+            <p className="text-sm font-semibold tracking-[0.08em] text-board-go uppercase">Enterprise</p>
+            <h3
+              id="enterprise-title"
+              className="text-[2rem] leading-[1.05] font-semibold tracking-[-0.04em] sm:text-[2.6rem]"
+            >
+              {ENTERPRISE.fromBranches} branches or more?{' '}
+              <span className="text-board-ink-2">We’ll plan it with you.</span>
             </h3>
-            <p className="text-ink-2">
-              For {ENTERPRISE.fromBranches} branches or more: a price made with you.
+            <p className="max-w-[44ch] text-board-ink-2">
+              One price for every branch, made together, and someone at BUKU who knows your business.
             </p>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3 pt-1">
+              <Button asChild variant="primary" size="lg">
+                <Link
+                  href={
+                    early
+                      ? '/early-access?as=business&plan=enterprise&branches=21%2B&source=pricing-enterprise'
+                      : '/contact'
+                  }
+                >
+                  Talk to us
+                </Link>
+              </Button>
+              {facts.email.business && (
+                <a
+                  href={`mailto:${facts.email.business}?subject=BUKU%20Enterprise`}
+                  className="text-board-ink-2 underline underline-offset-4 transition-colors hover:text-board-ink"
+                >
+                  or email {facts.email.business}
+                </a>
+              )}
+            </div>
           </div>
-          <ul className="flex flex-col gap-1.5 text-[0.95rem] text-ink-2">
+          <ul className="mt-8 flex flex-col gap-3 lg:mt-0">
             {ENTERPRISE.includes.map((line) => (
-              <li key={line}>{line}</li>
+              <li
+                key={line}
+                className="flex items-start gap-3 rounded-2xl bg-white/5 p-4 ring-1 ring-white/10"
+              >
+                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-board-go-fill text-board-on-go">
+                  <Check aria-hidden className="size-4" strokeWidth={2.6} />
+                </span>
+                <span className="pt-0.5">{line}</span>
+              </li>
             ))}
           </ul>
-          <Button asChild variant="secondary">
-            <Link href="/contact">Talk to us</Link>
-          </Button>
         </aside>
 
         <p className="text-sm text-ink-3">

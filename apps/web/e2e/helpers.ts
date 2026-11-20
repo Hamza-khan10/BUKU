@@ -38,6 +38,10 @@ export async function expectAccessible(page: Page) {
         .map((a) => a.finished.catch(() => undefined)),
     ),
   );
+  // The header scans in place (not stuck to the top): whatever has scrolled under a sticky header
+  // at this moment is covered only until the next scroll, so it says nothing about the page, and
+  // axe would count it as a too-small target. Put back right after.
+  const unstick = await page.addStyleTag({ content: 'header.site-glass{position:static!important}' });
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
     // Decorative illustrations (hidden from screen readers, labelled "an example"): their text
@@ -45,6 +49,7 @@ export async function expectAccessible(page: Page) {
     // still be mid-fade here. Their colours are the site's own tokens, checked numerically.
     .exclude('[data-illustration]')
     .analyze();
+  await unstick.evaluate((el) => (el as Element).remove());
   const summary = results.violations.map(
     (v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`,
   );

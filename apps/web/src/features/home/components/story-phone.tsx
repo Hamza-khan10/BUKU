@@ -1,9 +1,9 @@
 'use client';
 
 import { Bell, ChevronLeft, Search, Star } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { LogoMark } from '@/components/brand/logo';
+import { Ticket } from '@/components/ui/ticket';
 import { SplitFlap } from '@/components/motion/split-flap';
 import { cn } from '@/lib/cn';
 
@@ -334,35 +334,19 @@ function TicketScreen({ demo, act }: ScreenProps) {
         </span>
       </div>
 
-      {/* The same ticket as the app's: a band, the visit, a perforation with notches, the stub. */}
-      <div className="story-print relative overflow-hidden rounded-[20px] bg-surface shadow-lift">
-        <div className="bg-brand px-4 py-2 text-[12px] font-semibold text-on-brand">Confirmed</div>
-        <div className="flex flex-col gap-1 px-4 pt-3.5 pb-4">
-          <span className="text-[12px] text-ink-3">
-            {place.name} · {place.km} km
-          </span>
-          <span className="text-[21px] leading-tight font-semibold tracking-[-0.025em]">{place.service}</span>
-          <span className="tabular text-[13.5px] font-medium">
-            {day[0]} {day[1]} Oct · {demo.time} to {after(demo.time, 30)}
-          </span>
-          <span className="text-[12px] text-ink-2">Pay at the venue · {place.price}</span>
-        </div>
-        <div aria-hidden className="relative flex items-center">
-          <span className="absolute -left-2.5 size-5 rounded-full bg-canvas" />
-          <span className="mx-4 h-0 flex-1 border-t-2 border-dashed border-line" />
-          <span className="absolute -right-2.5 size-5 rounded-full bg-canvas" />
-        </div>
-        <div className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-4">
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[11px] text-ink-3">Booking code</span>
-            <span className="font-mono text-[18px] font-bold tracking-wider">BK-7KQ2MX</span>
-            <span className="text-[11px] text-ink-3">Show it at the front desk</span>
-          </span>
-          <span className="rounded-[10px] bg-white p-1.5 ring-1 ring-line">
-            <QRCodeSVG value="BK-7KQ2MX" size={58} level="M" />
-          </span>
-        </div>
-      </div>
+      {/* The app's own ticket (components/ui/ticket.tsx), at the phone's width: one ticket everywhere. */}
+      <Ticket
+        qr
+        titleAs="p"
+        className="story-print"
+        status={{ label: 'Confirmed', tone: 'ok' }}
+        place={`${place.name} · ${place.km} km`}
+        title={place.service}
+        when={`${day[0]} ${day[1]} Oct · ${demo.time} to ${after(demo.time, 30)}`}
+        details={<span>Pay at the venue · {place.price}</span>}
+        code="BK-7KQ2MX"
+        codeLabel="Booking code"
+      />
 
       <div
         className="story-in flex items-center gap-2.5 rounded-[16px] bg-wait-soft p-3 text-[12.5px] leading-snug text-wait-ink"
@@ -468,7 +452,7 @@ function TurnScreen({ act }: ScreenProps) {
       {/* The nudge arrives the way a phone shows one: dropping in from the top. */}
       <div className="story-drop absolute inset-x-2.5 top-1 flex items-start gap-2.5 rounded-[20px] bg-white/90 p-3 text-left text-ink shadow-lift backdrop-blur">
         <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-logo">
-          <LogoMark reversed className="size-7" />
+          <LogoMark reversed className="size-[1.35rem]" />
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="flex justify-between text-[11.5px] text-ink-3">
@@ -479,7 +463,7 @@ function TurnScreen({ act }: ScreenProps) {
         </span>
       </div>
       <span className="story-pulse grid size-24 place-items-center rounded-[28px] bg-white/12">
-        <LogoMark reversed className="size-16" />
+        <LogoMark reversed className="size-14" />
       </span>
       <span className="text-[30px] leading-tight font-semibold tracking-[-0.035em]">It’s your turn.</span>
       <span className="text-[14px] opacity-90">Number 10 · Go to the counter</span>

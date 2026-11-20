@@ -1,6 +1,6 @@
 import { isIdOrSlug } from '@buku/validation';
 import { ImageResponse } from 'next/og';
-import { BRAND, MARK } from '@/components/brand/mark';
+import { BRAND, MARK, WORDMARK } from '@/components/brand/mark';
 import type { BusinessProfile } from '@/features/business/types';
 
 export const size = { width: 1200, height: 630 };
@@ -45,13 +45,35 @@ export default async function Image({ params }: { params: Promise<{ idOrSlug: st
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <svg width="72" height="72" viewBox="0 0 48 48">
-          <path d={MARK.ticket} fill={BRAND.emerald} />
-          <path d={MARK.hour} stroke={BRAND.white} strokeWidth={MARK.hourWidth} strokeLinecap="round" />
-          <path d={MARK.minute} stroke={BRAND.white} strokeWidth={MARK.minuteWidth} strokeLinecap="round" />
-          <circle cx={MARK.pivot.cx} cy={MARK.pivot.cy} r={MARK.pivot.r} fill={BRAND.saffron} />
+        {/* The reversed lockup (D-143): white U and wordmark, Saffron dots. */}
+        <svg width="250" height="64" viewBox="0 0 390 100">
+          <g transform="translate(0 10) scale(1.5)">
+            <path
+              d={MARK.cup}
+              fill="none"
+              stroke={BRAND.white}
+              strokeWidth={MARK.cupWidth}
+              strokeLinecap="round"
+            />
+            <circle cx={MARK.dot.cx} cy={MARK.dot.cy} r={MARK.dot.r} fill={BRAND.saffron} />
+          </g>
+          <g transform="translate(124 0)">
+            <g
+              fill="none"
+              stroke={BRAND.white}
+              strokeWidth={WORDMARK.width}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d={WORDMARK.strokes[0]} />
+              <circle cx={WORDMARK.bowl.cx} cy={WORDMARK.bowl.cy} r={WORDMARK.bowl.r} />
+              {WORDMARK.strokes.slice(1).map((d) => (
+                <path key={d} d={d} />
+              ))}
+            </g>
+            <circle cx={WORDMARK.dot.cx} cy={WORDMARK.dot.cy} r={WORDMARK.dot.r} fill={BRAND.saffron} />
+          </g>
         </svg>
-        <span style={{ fontSize: 44, fontWeight: 700, letterSpacing: -1.5 }}>BUKU</span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <span style={{ fontSize: 30, color: '#79d7b1' }}>{line}</span>

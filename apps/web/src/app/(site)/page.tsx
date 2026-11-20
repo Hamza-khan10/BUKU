@@ -5,11 +5,13 @@ import Link from 'next/link';
 import type { CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
 import { Container, SectionHeading } from '@/components/ui/layout';
+import { CategoryFinder } from '@/features/categories/components/category-finder';
 import { CategoryIcon } from '@/features/categories/icons';
 import { PlacesRail } from '@/features/home/components/places-rail';
 import { BoardGlow } from '@/components/motion/board';
 import { CountUp } from '@/components/motion/count-up';
 import { Magnetic } from '@/components/motion/magnetic';
+import { HeldDot } from '@/components/brand/held-dot';
 import { RiseWords } from '@/components/motion/rise-words';
 import { ScrollMarquee } from '@/components/motion/scroll-marquee';
 import { ScrollStory } from '@/features/home/components/scroll-story';
@@ -141,12 +143,18 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
       {/* ── What BUKU is ── */}
       <Container className="grid grid-cols-1 items-center gap-9 pt-7 sm:gap-14 sm:pt-16 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
         <div className="flex flex-col gap-5 sm:gap-7">
-          <h1 className="text-[3.1rem] leading-[1] font-semibold tracking-[-0.045em] sm:text-[4.5rem] xl:text-[5.25rem]">
-            <RiseWords text="Book the time." /> <RiseWords text="Skip the wait." from={3} />
+          {/* Two lines, each fitting its column (measured: "wait to be seen." is 498 px at 76 px). */}
+          <h1 className="text-[3.1rem] leading-[1] font-semibold tracking-[-0.045em] sm:text-[4.25rem] xl:text-[4.75rem]">
+            <span className="block">
+              <RiseWords text="No one should" />
+            </span>{' '}
+            <span className="block">
+              <RiseWords text="wait to be seen" from={3} />
+              <HeldDot after={7} />
+            </span>
           </h1>
           <p className="rise-in max-w-[34rem] text-lg leading-relaxed text-ink-2 sm:text-[1.35rem]">
-            Appointments and walk-in queues at barbers, clinics, salons and offices near you, all from your
-            phone.
+            Book a time or take a number from your phone, at barbers, clinics, salons and offices near you.
           </p>
           {prelaunch() ? (
             // Before launch (D-134) there's nothing to search yet: the door is the early-access list.
@@ -165,7 +173,14 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
           )}
         </div>
         <BoardGlow>
-          <QueueBoard className="w-full" />
+          <QueueBoard
+            className="w-full"
+            cta={
+              prelaunch()
+                ? { href: '/early-access?as=customer&source=board', label: 'Get early access' }
+                : { href: '/explore', label: 'Find a place' }
+            }
+          />
         </BoardGlow>
       </Container>
 
@@ -248,6 +263,18 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
               eyebrow="Categories"
               title="Every kind of place."
               description="Barbers and clinics, government offices and garages. If you’d normally wait there, it can be on BUKU."
+            />
+            {/* Straight to any of the kinds by name (3.7i), the groups below for browsing. */}
+            <CategoryFinder
+              early={prelaunch()}
+              label="Where do you wait?"
+              groups={tree
+                .filter((g) => g.children.length > 0)
+                .map((g) => ({
+                  slug: g.slug,
+                  name: g.name,
+                  kinds: g.children.map((k) => ({ slug: k.slug, name: k.name })),
+                }))}
             />
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {tree.map((c, i) => (

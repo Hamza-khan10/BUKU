@@ -12,7 +12,7 @@ const facts = {
   legalName: null,
   legalAddress: null,
   jurisdiction: null,
-  email: { support: null, privacy: null, security: null },
+  email: { support: null, privacy: null, security: null, business: null },
   legalReviewed: false,
 };
 

@@ -7,9 +7,11 @@ import { Button } from '@/components/ui/button';
 import { BoardGlow } from '@/components/motion/board';
 import { Magnetic } from '@/components/motion/magnetic';
 import { RiseWords } from '@/components/motion/rise-words';
+import { HeldDot } from '@/components/brand/held-dot';
 import { StackedCards } from '@/components/motion/stacked-cards';
-import { Container, Eyebrow, SectionHeading } from '@/components/ui/layout';
+import { Container, SectionHeading } from '@/components/ui/layout';
 import { FrontDeskBoard } from '@/features/home/components/front-desk-board';
+import { YourPlace } from '@/features/marketing/components/your-place';
 import { pricing } from '@/features/pricing/api';
 import { prelaunch } from '@/lib/flags';
 import { BUSINESS_QUESTIONS, faqStructuredData } from '@/features/marketing/faq';
@@ -96,11 +98,17 @@ export default async function ForBusinessPage() {
   const [plans, incoming] = await Promise.all([pricing('business').catch(() => null), headers()]);
   return (
     <div className="flex flex-col gap-20 pb-8 sm:gap-36">
-      <Container className="grid grid-cols-1 items-center gap-12 pt-8 sm:gap-14 sm:pt-20 lg:min-h-[calc(88dvh-4rem)] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
+      <Container className="grid grid-cols-1 items-center gap-12 pt-8 sm:gap-14 sm:pt-20 lg:min-h-[calc(88dvh-4rem)] lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:gap-16 lg:pt-0">
         <div className="flex flex-col gap-5 sm:gap-7">
-          <Eyebrow className="rise-in [--i:-4]">For businesses</Eyebrow>
-          <h1 className="text-[2.75rem] leading-[1.02] font-semibold tracking-[-0.045em] sm:text-[4.25rem] xl:text-[4.75rem]">
-            <RiseWords text="A calm front desk," /> <RiseWords text="a full day." from={4} />
+          {/* Two lines, each fitting its column (measured: "Empty waiting rooms." is 528 px at 56 px). */}
+          <h1 className="text-[2.5rem] leading-[1.02] font-semibold tracking-[-0.045em] sm:text-[3.5rem] lg:text-[3.2rem] xl:text-[3.6rem]">
+            <span className="block">
+              <RiseWords text="Full books." />
+            </span>{' '}
+            <span className="block">
+              <RiseWords text="Empty waiting rooms" from={2} />
+              <HeldDot after={5} />
+            </span>
           </h1>
           <p className="rise-in max-w-[34rem] text-lg leading-relaxed text-ink-2 sm:text-xl">
             BUKU takes your bookings and runs your walk-in queue, so customers know exactly when and your team
@@ -124,6 +132,11 @@ export default async function ForBusinessPage() {
         <BoardGlow>
           <FrontDeskBoard className="w-full" />
         </BoardGlow>
+      </Container>
+
+      {/* The owner's own page, as they type (3.7i). */}
+      <Container>
+        <YourPlace early={prelaunch()} />
       </Container>
 
       <Container>

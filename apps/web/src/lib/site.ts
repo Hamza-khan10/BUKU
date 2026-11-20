@@ -25,6 +25,7 @@ export function siteFacts() {
       support: email(e.SUPPORT_EMAIL),
       privacy: email(e.PRIVACY_EMAIL),
       security: email(e.SECURITY_EMAIL),
+      business: email(e.BUSINESS_EMAIL),
     },
     /** A lawyer has reviewed the legal pages (until then they are drafts). */
     legalReviewed: e.LEGAL_REVIEWED === 'true',

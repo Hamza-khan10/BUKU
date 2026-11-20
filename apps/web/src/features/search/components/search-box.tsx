@@ -5,6 +5,7 @@ import { Building2, Search, Tag, Wrench } from 'lucide-react';
 import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { createElement, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useTypedHint } from '@/components/motion/use-typed-hint';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api/client';
 import type { Suggestions } from '../types';
@@ -49,6 +50,8 @@ function optionsFrom(s: Suggestions): Option[] {
  * one (or searches the words), Escape closes. Underneath it's a plain form
  * to /explore, so it works before scripts load too.
  */
+const HINT_EXAMPLES = ['haircut', 'dentist'] as const;
+
 export function SearchBox({
   defaultValue = '',
   city,
@@ -66,6 +69,12 @@ export function SearchBox({
   const [value, setValue] = useState(defaultValue);
   const [options, setOptions] = useState<Option[]>([]);
   const [open, setOpen] = useState(false);
+  // Two real searches typed as the hint, then the usual one (3.7i); not where the box takes focus.
+  const { ref: hintRef, hint } = useTypedHint(
+    HINT_EXAMPLES,
+    'Haircut, dentist…',
+    !open && value === '' && !autoFocus,
+  );
   const [active, setActive] = useState(-1);
   const blurTimer = useRef<number | undefined>(undefined);
 
@@ -161,7 +170,8 @@ export function SearchBox({
           maxLength={100}
           // Only where searching is the page's whole purpose (the explore page).
           autoFocus={autoFocus}
-          placeholder="Haircut, dentist…"
+          ref={hintRef}
+          placeholder={hint}
           value={value}
           onChange={(e) => {
             setValue(removeDisallowed(e.target.value, 'line'));
