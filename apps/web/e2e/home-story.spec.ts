@@ -3,17 +3,19 @@ import { expect, test } from './fixtures';
 /**
  * The home page's story, "Two ways to stop waiting" (D-095), loads light (3.7h): every visitor
  * gets the still version first, and it becomes the cinematic one (pinned, step by step as you
- * scroll) only as the visitor comes near it; with less motion asked for, it stays still.
+ * scroll) only once the visitor moves and comes near it, however near the top it sits; with less
+ * motion asked for, it stays still.
  */
 
 const story = '[aria-labelledby="how"]';
 const scrollTo = (y: number) => (window as Window).scrollTo(0, y);
 
 test.describe('The home page story', () => {
-  test('still until the visitor comes near, then plays step by step as they scroll', async ({ page }) => {
+  test('still until the visitor moves and comes near, then plays step by step', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    // Loaded, not yet scrolled: the still version (no stage), nothing fetched for the cinematic one.
+    // Loaded and not yet touched: the still version (no stage), whatever the page's length.
+    await page.waitForTimeout(500);
     await expect(page.locator('[data-story-stage]')).toHaveCount(0);
     await expect(page.locator(`${story} li h3`)).toHaveCount(5);
 

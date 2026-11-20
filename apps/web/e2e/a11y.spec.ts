@@ -219,10 +219,45 @@ test.describe('Accessibility beyond markup (3.7g)', () => {
         await page.waitForTimeout(600);
         // The bot check is Cloudflare's own frame, animating while it checks: not the page's motion.
         const frames = { mask: [page.locator('iframe')] };
+        // Anything that changes meanwhile is written down, so a failure says what moved.
+        await page.evaluate(() => {
+          const w = window as unknown as { __changes: string[]; __watch?: MutationObserver };
+          w.__changes = [];
+          w.__watch?.disconnect();
+          w.__watch = new MutationObserver((ms) => {
+            for (const m of ms) {
+              const t = m.target instanceof Element ? m.target : m.target.parentElement;
+              const name = t ? `${t.tagName.toLowerCase()}.${[...t.classList].slice(0, 3).join('.')}` : '?';
+              w.__changes.push(`${m.type} ${name}${m.attributeName ? ` [${m.attributeName}]` : ''}`);
+            }
+          });
+          w.__watch.observe(document.body, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            characterData: true,
+          });
+        });
         const first = await page.screenshot(frames);
         await page.waitForTimeout(1500);
         const second = await page.screenshot(frames);
-        if (!first.equals(second)) problems.push(`${path} at ${Math.round(at * 100)}%: still moving`);
+        if (!first.equals(second)) {
+          const what = await page.evaluate(() => {
+            const w = window as unknown as { __changes: string[] };
+            const running = document
+              .getAnimations()
+              .filter((x) => x.playState === 'running')
+              .map(
+                (x) =>
+                  `animation on ${(x.effect as KeyframeEffect | null)?.target?.className.toString().slice(0, 40) ?? '?'}`,
+              );
+            return (
+              [...new Set([...w.__changes, ...running])].slice(0, 5).join('; ') ||
+              'nothing in the page (a repaint)'
+            );
+          });
+          problems.push(`${path} at ${Math.round(at * 100)}%: still moving (${what})`);
+        }
       }
     }
     expect(problems).toEqual([]);

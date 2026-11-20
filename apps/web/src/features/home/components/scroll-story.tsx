@@ -18,10 +18,11 @@ import { FittedPhone, SCREEN_COUNT, START, type Act, type Demo } from './story-p
  * are an illustration (labelled as one); the captions carry the words for everyone. Under
  * reduced motion nothing is pinned or scrubbed: the five screens sit one after another.
  *
- * The still version is also what every visitor gets first. It becomes the cinematic one only as
- * the story comes within half a screen of view, with GSAP fetched once the visitor starts moving
- * through the page: the page loads without the swap (a re-render of five phone screens), GSAP or
- * its set-up, and a visitor who never scrolls never pays for any of them (3.7h).
+ * The still version is also what every visitor gets first. It becomes the cinematic one once the
+ * visitor has started moving through the page (a scroll, a tap, a key) and the story is within half
+ * a screen, with GSAP fetched at that first move: the page loads without the swap (a re-render of
+ * five phone screens), GSAP or its set-up, however near the top the story sits, and a visitor who
+ * never scrolls never pays for any of them (3.7h).
  */
 
 const STEPS = [
@@ -69,23 +70,26 @@ export function ScrollStory() {
   const trigger = useRef<typeof ScrollTriggerPlugin | null>(null);
   // Within half a screen of view: time to get the cinematic version ready.
   const [near, setNear] = useState(false);
-  // The cinematic version only where motion is welcome and the story is near. The server assumes
-  // "less motion", so the first paint is the still version and the browser upgrades it.
-  const cinematic = !reduce && near;
+  // The visitor has started to move through the page.
+  const [moved, setMoved] = useState(false);
+  // The cinematic version only where motion is welcome, once the visitor moves and the story is
+  // near. The server assumes "less motion", so the first paint is the still version.
+  const cinematic = !reduce && near && moved;
 
   // The visitor has started to move through the page (a scroll, a tap, a key): fetch GSAP now, so
   // it's here before the story is. A visitor who only looks at the top never downloads it.
   useEffect(() => {
-    if (reduce) return;
+    if (reduce || moved) return;
     const events = ['scroll', 'pointerdown', 'keydown'] as const;
     const off = () => events.forEach((e) => window.removeEventListener(e, warm));
     const warm = () => {
       off();
       void loadGsap();
+      startTransition(() => setMoved(true));
     };
     events.forEach((e) => window.addEventListener(e, warm, { passive: true }));
     return off;
-  }, [reduce]);
+  }, [reduce, moved]);
 
   useEffect(() => {
     const el = root.current;
