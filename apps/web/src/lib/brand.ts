@@ -37,7 +37,7 @@ export function brandGraph(site: string) {
       alternateName: [...ALSO_KNOWN_AS],
       url: site,
       logo: `${site}/brand/buku-app-icon.svg`,
-      slogan: 'Book the time. Skip the wait.',
+      slogan: 'No one should wait to be seen.',
       description: BRAND_DESCRIPTION,
       knowsAbout: ['appointment booking', 'queue management', 'walk-in queues', 'online scheduling'],
       ...(PROFILES.length > 0 && { sameAs: [...PROFILES] }),

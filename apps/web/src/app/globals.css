@@ -48,6 +48,9 @@
   --wait-soft: #ffe9d3;
   --spark: #ffad52; /* Saffron, the spark: the moments that matter */
   --focus: #067f5d;
+  /* The logo (D-143): Emerald U, deep Saffron dot on light grounds. */
+  --logo-u: #067f5d;
+  --logo-dot: #e28a0a;
   --danger: #c51d28; /* Crimson: errors only */
   --danger-soft: #ffe6e4;
   --shadow-color: 19 26 23; /* shadows tinted to the page, never black */
@@ -82,6 +85,8 @@
     --wait-soft: #2a1c08;
     --spark: #ffad52;
     --focus: #2bbc8e;
+    --logo-u: #ffffff;
+    --logo-dot: #ffad52;
     --danger: #ffa69e;
     --danger-soft: #3a1614;
     --shadow-color: 0 0 0;
@@ -114,6 +119,8 @@
   --wait-soft: #2a1c08;
   --spark: #ffad52;
   --focus: #2bbc8e;
+  --logo-u: #ffffff;
+  --logo-dot: #ffad52;
   --danger: #ffa69e;
   --danger-soft: #3a1614;
   --shadow-color: 0 0 0;
@@ -512,6 +519,36 @@
   }
 }
 
+/* The held dot (D-143): the logo's Saffron dot as a full stop. Sits on the baseline like a full
+   stop; in a headline it drops in after the last word, landing with a small bounce, the way the
+   dot settles into the cup (a landing is the one place a bounce is earned). */
+.held-dot {
+  display: inline-block;
+  width: 0.17em;
+  height: 0.17em;
+  margin-left: 0.05em;
+  border-radius: 999px;
+  background: var(--logo-dot);
+  animation: dot-drop 760ms cubic-bezier(0.34, 1.45, 0.64, 1) both;
+  animation-delay: calc(var(--i, 0) * 85ms + 300ms);
+}
+.held-dot-still {
+  animation: none;
+}
+@keyframes dot-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-0.9em);
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* Things rise in as they scroll into view: pure CSS (scroll-driven animations), so where a
    browser lacks them, or motion is unwelcome, everything simply sits in place. */
 @supports (animation-timeline: view()) {
@@ -571,6 +608,8 @@
   --wait-ink: #fed1a5;
   --wait-soft: #2a1c08;
   --focus: #2bbc8e;
+  --logo-u: #ffffff;
+  --logo-dot: #ffad52;
   --danger: #ffa69e;
   --danger-soft: #3a1614;
   --shadow-color: 0 0 0;
@@ -586,6 +625,8 @@
 /* The app's light look inside an illustration (the phone in the scroll story), in both themes. */
 .scope-light {
   color-scheme: light;
+  --logo-u: #067f5d;
+  --logo-dot: #e28a0a;
   --canvas: #f4f8f6;
   --surface: #fcfefd;
   --sunken: #eaeeec;

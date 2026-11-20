@@ -8,13 +8,13 @@ export function Container({ className, ...props }: ComponentProps<'div'>) {
 }
 
 /**
- * The small label above a heading. Its Saffron dot is the logo's pivot: the one mark that
- * says "BUKU" on every page (D-095).
+ * The small label above a heading, with an Emerald dot. Saffron is kept for the one "you" on a
+ * screen (the held dot, a ticket's number: Brand Identity v1.0, D-143).
  */
 export function Eyebrow({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <p className={cn('flex items-center gap-2 text-sm font-medium text-brand-ink', className)}>
-      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-spark" />
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-brand" />
       {children}
     </p>
   );

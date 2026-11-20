@@ -468,7 +468,7 @@ function TurnScreen({ act }: ScreenProps) {
       {/* The nudge arrives the way a phone shows one: dropping in from the top. */}
       <div className="story-drop absolute inset-x-2.5 top-1 flex items-start gap-2.5 rounded-[20px] bg-white/90 p-3 text-left text-ink shadow-lift backdrop-blur">
         <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-logo">
-          <LogoMark reversed className="size-7" />
+          <LogoMark reversed className="size-[1.35rem]" />
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="flex justify-between text-[11.5px] text-ink-3">
@@ -479,7 +479,7 @@ function TurnScreen({ act }: ScreenProps) {
         </span>
       </div>
       <span className="story-pulse grid size-24 place-items-center rounded-[28px] bg-white/12">
-        <LogoMark reversed className="size-16" />
+        <LogoMark reversed className="size-14" />
       </span>
       <span className="text-[30px] leading-tight font-semibold tracking-[-0.035em]">It’s your turn.</span>
       <span className="text-[14px] opacity-90">Number 10 · Go to the counter</span>

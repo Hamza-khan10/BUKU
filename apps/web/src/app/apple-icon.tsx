@@ -4,16 +4,23 @@ import { BRAND, MARK } from '@/components/brand/mark';
 export const size = { width: 180, height: 180 };
 export const contentType = 'image/png';
 
-/** Home-screen icon (iPhone): the app icon, a white ticket on Emerald (public/brand/buku-app-icon.svg). */
+/**
+ * Home-screen icon (iPhone): the app icon (D-143), a white U holding a Saffron dot on Emerald
+ * (public/brand/buku-app-icon.svg). Square: iOS rounds the corners itself.
+ */
 export default function AppleIcon() {
   return new ImageResponse(
     <div style={{ width: '100%', height: '100%', display: 'flex', background: BRAND.emerald }}>
-      <svg width="180" height="180" viewBox="0 0 48 48">
-        <g transform="translate(6 6) scale(.75)">
-          <path d={MARK.ticket} fill={BRAND.white} />
-          <path d={MARK.hour} stroke={BRAND.emerald} strokeWidth={MARK.hourWidth} strokeLinecap="round" />
-          <path d={MARK.minute} stroke={BRAND.emerald} strokeWidth={MARK.minuteWidth} strokeLinecap="round" />
-          <circle cx={MARK.pivot.cx} cy={MARK.pivot.cy} r={MARK.pivot.r} fill={BRAND.saffron} />
+      <svg width="180" height="180" viewBox="0 0 100 100">
+        <g transform="translate(24 23) scale(.866)">
+          <path
+            d={MARK.cup}
+            fill="none"
+            stroke={BRAND.white}
+            strokeWidth={MARK.cupWidth}
+            strokeLinecap="round"
+          />
+          <circle cx={MARK.dot.cx} cy={MARK.dot.cy} r={MARK.dot.r} fill={BRAND.saffron} />
         </g>
       </svg>
     </div>,

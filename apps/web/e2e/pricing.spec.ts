@@ -97,7 +97,7 @@ test.describe('Pricing (D-137)', () => {
 
   test('for businesses: leads to the business plans', async ({ page }) => {
     await page.goto('/for-business');
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('A calm front desk');
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Full books. Empty waiting rooms');
     await page.getByRole('link', { name: 'See plans and prices' }).click();
     await expect(page).toHaveURL(/\/pricing#businesses$/);
     await expect(essential(page)).toBeVisible();

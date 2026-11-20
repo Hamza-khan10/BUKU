@@ -25,7 +25,7 @@ const CARD = `
   <img src="/brand/buku-logo-reversed.svg" alt="" style="height:64px;width:auto;align-self:flex-start;position:relative">
   <div style="display:flex;flex-direction:column;gap:26px;position:relative">
     <div style="font-size:104px;line-height:.98;font-weight:650;letter-spacing:-.045em;font-stretch:96%">
-      Book the time.<br><span style="color:#79d7b1">Skip the wait.</span>
+      No one should wait<br><span style="color:#79d7b1">to be seen</span><span style="display:inline-block;width:.17em;height:.17em;margin-left:.05em;border-radius:50%;background:#ffad52"></span>
     </div>
     <div style="font-size:34px;line-height:1.3;color:#b4c4bc;max-width:900px">
       Bookings and walk-in queues for barbers, clinics, salons and offices.
