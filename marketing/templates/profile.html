@@ -1,7 +1,8 @@
 <!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_base.css">
 <style>
-  /* Profile picture: shown as a circle, so the mark sits in the middle 60%. */
+  /* Profile picture: shown as a circle; the mark stays well inside it. */
   body { background: var(--emerald); display: grid; place-items: center; }
-  img { width: 62vmin; height: 62vmin; }
+  /* The kit's app-icon rule: the symbol fills 52% and sits one unit above centre (its weight is low). */
+  img { width: 52vmin; height: 52vmin; transform: translateY(-1vmin); }
 </style></head>
-<body><img src="../../apps/web/public/brand/buku-mark-reversed.svg" alt=""></body></html>
+<body><img src="../brand/logos/buku-symbol-reversed.svg" alt=""></body></html>

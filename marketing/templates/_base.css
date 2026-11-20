@@ -36,3 +36,13 @@ body {
   background: radial-gradient(closest-side, rgba(6, 127, 93, 0.55), rgba(6, 127, 93, 0));
   pointer-events: none;
 }
+
+/* The held dot (Brand Identity v1.0): the logo's Saffron dot as a full stop, once per layout. */
+.dot {
+  display: inline-block;
+  width: 0.17em;
+  height: 0.17em;
+  margin-left: 0.05em;
+  border-radius: 50%;
+  background: var(--saffron, #ffad52);
+}

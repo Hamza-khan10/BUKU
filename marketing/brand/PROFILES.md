@@ -23,9 +23,9 @@ Two-step sign-in with an authenticator app on every account. Profile picture: `e
 **Instagram** (@onbukuapp, Business account, category "App page")
 
 - Name (searchable, 30 max): `BUKU · Book & Queue`
-- Bio (136/150):
+- Bio (137/150):
   ```
-  Book the time. Skip the wait.
+  No one should wait to be seen.
   Book appointments or join walk-in queues from your phone. Free for you.
   Opening city by city. Join early ↓
   ```
@@ -38,7 +38,7 @@ Two-step sign-in with an authenticator app on every account. Profile picture: `e
 
 **X** (@onbukuapp; header `exports/x-header-1500x500.png`; display name `BUKU`)
 
-- Bio (139/160): `Book the time. Skip the wait. Appointments and walk-in queues for barbers, clinics, salons and more, from your phone. Opening city by city.`
+- Bio (140/160): `No one should wait to be seen. Appointments and walk-in queues for barbers, clinics, salons and more, from your phone. Opening city by city.`
 - Website: `https://onbuku.com/?source=x`; location: leave empty
 
 **TikTok** (onbukuapp, Business account; the website link may need 1,000 followers)
