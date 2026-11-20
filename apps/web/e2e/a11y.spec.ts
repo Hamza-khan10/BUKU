@@ -108,6 +108,59 @@ function focusedStop(index: number): Stop | null {
   };
 }
 
+/**
+ * How two photos of the page differ: how many pixels, and what sits where they do (decoded in the
+ * page, which already has a canvas). A handful at a glyph's edge is the browser re-drawing more
+ * sharply after a scroll; motion moves hundreds.
+ */
+async function difference(page: Page, a: Buffer, b: Buffer): Promise<{ pixels: number; at: string }> {
+  return page.evaluate(
+    async ([A, B]) => {
+      const load = (b64: string) =>
+        new Promise<HTMLImageElement>((done) => {
+          const img = new Image();
+          img.onload = () => done(img);
+          img.src = `data:image/png;base64,${b64}`;
+        });
+      const [ia, ib] = await Promise.all([load(A), load(B)]);
+      const c = document.createElement('canvas');
+      c.width = ia.width;
+      c.height = ia.height;
+      const x = c.getContext('2d')!;
+      x.drawImage(ia, 0, 0);
+      const da = x.getImageData(0, 0, c.width, c.height).data;
+      x.clearRect(0, 0, c.width, c.height);
+      x.drawImage(ib, 0, 0);
+      const db = x.getImageData(0, 0, c.width, c.height).data;
+      let pixels = 0;
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -1;
+      let maxY = -1;
+      for (let p = 0; p < da.length; p += 4) {
+        if (da[p] === db[p] && da[p + 1] === db[p + 1] && da[p + 2] === db[p + 2]) continue;
+        const k = p / 4;
+        const px = k % c.width;
+        const py = Math.floor(k / c.width);
+        pixels++;
+        minX = Math.min(minX, px);
+        maxX = Math.max(maxX, px);
+        minY = Math.min(minY, py);
+        maxY = Math.max(maxY, py);
+      }
+      const el = pixels
+        ? document.elementFromPoint(
+            (minX + maxX) / 2 / devicePixelRatio,
+            (minY + maxY) / 2 / devicePixelRatio,
+          )
+        : null;
+      const at = el ? `${el.tagName.toLowerCase()}.${[...el.classList].slice(0, 3).join('.')}` : 'nowhere';
+      return { pixels, at };
+    },
+    [a.toString('base64'), b.toString('base64')] as const,
+  );
+}
+
 /** Tab through the page, up to `limit` controls; every problem found, by control. */
 async function tabThrough(page: Page, limit: number): Promise<{ problems: string[]; stops: number }> {
   const problems: string[] = [];
@@ -206,8 +259,12 @@ test.describe('Accessibility beyond markup (3.7g)', () => {
     for (const path of ['/', '/how-it-works', '/for-business', '/pricing', '/early-access']) {
       await page.goto(path);
       await page.waitForLoadState('networkidle');
-      // In development, Next's own badge animates while it compiles: not part of the site.
-      await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
+      // Not the site's own motion: Next's badge in development (it animates while compiling), and a
+      // phone's overlay scrollbar, which shows while scrolling and fades a moment later.
+      await page.addStyleTag({
+        content:
+          'nextjs-portal { display: none !important; } * { scrollbar-width: none !important; } *::-webkit-scrollbar { display: none !important; }',
+      });
       const height = await page.evaluate(() => document.documentElement.scrollHeight);
       for (const at of [0, 0.33, 0.66, 1]) {
         await page.evaluate((y) => window.scrollTo(0, y), Math.round(height * at));
@@ -227,6 +284,8 @@ test.describe('Accessibility beyond markup (3.7g)', () => {
           w.__watch = new MutationObserver((ms) => {
             for (const m of ms) {
               const t = m.target instanceof Element ? m.target : m.target.parentElement;
+              // Playwright hides the text cursor for each photo by styling every field: not the page.
+              if (m.attributeName === 'style' && t?.matches('input, textarea, [contenteditable]')) continue;
               const name = t ? `${t.tagName.toLowerCase()}.${[...t.classList].slice(0, 3).join('.')}` : '?';
               w.__changes.push(`${m.type} ${name}${m.attributeName ? ` [${m.attributeName}]` : ''}`);
             }
@@ -241,7 +300,8 @@ test.describe('Accessibility beyond markup (3.7g)', () => {
         const first = await page.screenshot(frames);
         await page.waitForTimeout(1500);
         const second = await page.screenshot(frames);
-        if (!first.equals(second)) {
+        const changed = first.equals(second) ? null : await difference(page, first, second);
+        if (changed && changed.pixels > 64) {
           const what = await page.evaluate(() => {
             const w = window as unknown as { __changes: string[] };
             const running = document
@@ -256,7 +316,9 @@ test.describe('Accessibility beyond markup (3.7g)', () => {
               'nothing in the page (a repaint)'
             );
           });
-          problems.push(`${path} at ${Math.round(at * 100)}%: still moving (${what})`);
+          problems.push(
+            `${path} at ${Math.round(at * 100)}%: still moving (${changed.pixels} pixels around ${changed.at}; ${what})`,
+          );
         }
       }
     }
