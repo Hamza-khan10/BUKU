@@ -847,7 +847,8 @@ The detailed plan — every page, its data and edge cases, the design system and
   Network for 2 to 5 branches and Enterprise from 6, priced by tier from Network's price (D-146):
   the band, the plans' wording, the FAQ, the early-access plan labels; "Talk to us" opens on
   "6 to 9".
-- **3.7k Enterprise at the 6th branch — next (D-146).** The owner cap follows the plan (five; none
+- **3.7k Enterprise at the 6th branch — 🟡 in progress (D-146).** Done: Network in the plan list
+  (`20261122200000_network_plan`: hidden, Professional's limits, no price yet). Still to do: the owner cap follows the plan (five; none
   on Enterprise, the 100 ceiling gone); adding a sixth business celebrates it and offers "Request
   Enterprise" instead of an error; the console approves it for the whole chain (every branch to
   Enterprise); the new branch's free ad as a credit until ads exist, only for chains moving up from Network. Tests: the cap by plan

@@ -584,7 +584,7 @@ describe('the reference data on a business shard (DB-015)', () => {
       await shardAdmin.$disconnect();
     }
     expect(await count(owner.$queryRawUnsafe(COUNT))).toBe(await count(directory.$queryRawUnsafe(COUNT)));
-    expect(await app.plan.count()).toBe(8);
+    expect(await app.plan.count()).toBe(9); // the seeded eight and Network (20261122200000_network_plan)
 
     // A kind added and renamed on the directory shows up here.
     const id = ids.next();

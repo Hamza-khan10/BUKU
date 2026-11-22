@@ -331,7 +331,12 @@ it yet, and every copy costs a replication slot (adding one is a flag in `SHARD_
 - **The source:** `reference.*` on the directory, seeded by migration with v1's final data and
   fixed IDs (127 kinds of business, 8 plans, 6 prices, the billing and notification settings), plus
   38 currencies with their ISO 4217 minor units. Later rows (an owner's suggested kind, D-098) get
-  snowflake IDs. Admins change it there, with every rule in a CHECK.
+  snowflake IDs. Admins change it there, with every rule in a CHECK. A ninth plan came later by
+  migration (`20261122200000_network_plan`, D-146): Network, id 9, Professional's limits and
+  features, hidden from sale (`is_public` false, no price) until billing's catalog step sets the
+  launch prices; Enterprise's `sort_order` moved from 3 to 4 to make room. The six seeded prices
+  are still v1's (Essential $24.99, Professional $49.99, Enterprise $99.99): that catalog step
+  replaces them with D-137's.
 - **Published** as `buku_reference`. A new reference table is added to it in its own migration (a
   test fails otherwise), and the same columns are added to the copies (a test compares the columns
   of every copy with the source).
