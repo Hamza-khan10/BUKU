@@ -5,9 +5,32 @@ import { useId, useState, type FormEvent } from 'react';
 import { fieldText, post } from '@admin/lib/client';
 import { Button, inputClass } from './ui';
 
+/** What an Enterprise approval did to the owner's chain (D-147). */
+interface ChainMoved {
+  moved: { id: string; name: string }[];
+  left: { id: string; name: string; reason: string }[];
+  gift: boolean;
+}
+
+/** The approval, said in a line or two: the whole chain, its gift, what was left as it was. */
+function chainSaid(chain: ChainMoved): string {
+  const n = chain.moved.length;
+  if (n === 0 && chain.left.length === 0 && !chain.gift) return 'Approved: the plan is theirs.';
+  return [
+    `Approved: Enterprise for the whole chain${n > 0 ? `, ${n} more ${n === 1 ? 'business' : 'businesses'} moved` : ''}.`,
+    chain.gift &&
+      'They moved up from Network: one free ad is owed for their new branch (written on the grant).',
+    chain.left.length > 0 &&
+      `Left as they are: ${chain.left.map((l) => `${l.name} (${l.reason})`).join('; ')}.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 /**
  * Approve a plan request (3.6h): the plan they asked for, or another; free for good or until a
- * date; a note for the record. Opens in place; the API's answer is said right there.
+ * date; a note for the record. Opens in place; the API's answer is said right there, with what an
+ * Enterprise approval did to the whole chain (D-147).
  */
 export function ApproveRequest({
   id,
@@ -34,7 +57,7 @@ export function ApproveRequest({
     const note = fieldText(form, 'note');
     setBusy(true);
     setSaid(null);
-    const result = await post(`/api/billing/requests/${id}/approve`, {
+    const result = await post<{ chain?: ChainMoved }>(`/api/billing/requests/${id}/approve`, {
       ...(planCode && planCode !== asked && { planCode }),
       ...(until && { until }),
       ...(note && { note }),
@@ -42,7 +65,10 @@ export function ApproveRequest({
     setBusy(false);
     if (result.ok) {
       setOpen(false);
-      setSaid({ ok: true, text: 'Approved: the plan is theirs.' });
+      setSaid({
+        ok: true,
+        text: result.data.chain ? chainSaid(result.data.chain) : 'Approved: the plan is theirs.',
+      });
       router.refresh();
     } else
       setSaid({

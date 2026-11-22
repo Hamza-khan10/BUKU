@@ -20,6 +20,7 @@ import type { CategoryNode } from '@/features/search/types';
 import { ApiError } from '@/lib/api/errors';
 import { BUSINESS_TERMS_VERSION } from '@/lib/legal-versions';
 import { createBusiness, MINE_KEY, suggestCategory, type NewBusiness } from '../api';
+import { accountFullFrom, EnterpriseStep, type AccountFull } from './enterprise-step';
 import {
   cleanPhone,
   coordinatesLabel,
@@ -141,6 +142,8 @@ export function NewBusinessForm({
   });
   const [errors, setErrors] = useState<Errors>({});
   const [problem, setProblem] = useState<Problem | undefined>();
+  // The account is full (D-146): the way to Enterprise instead of a plain refusal.
+  const [full, setFull] = useState<AccountFull | null>(null);
   const [busy, setBusy] = useState(false);
   const [locating, setLocating] = useState(false);
 
@@ -289,7 +292,9 @@ export function NewBusinessForm({
         const field = API_FIELD[issue.path] ?? (issue.path as keyof Draft);
         if (field in draft || field === 'location') mapped[field] ??= issue.message;
       }
+      const atCap = accountFullFrom(err);
       if (Object.keys(mapped).length > 0) setErrors(mapped);
+      else if (atCap) setFull(atCap);
       else
         setProblem(
           problemFrom(
@@ -306,6 +311,7 @@ export function NewBusinessForm({
   return (
     <form noValidate onSubmit={(e) => void submit(e)} className="flex max-w-2xl flex-col gap-10">
       <ProblemAlert problem={problem} />
+      {full && <EnterpriseStep full={full} branch={{ name: draft.name, city: draft.city }} />}
 
       <Step number={1} title="About the business">
         <div className="flex flex-col gap-5">

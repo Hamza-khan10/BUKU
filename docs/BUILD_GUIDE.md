@@ -847,15 +847,20 @@ The detailed plan — every page, its data and edge cases, the design system and
   Network for 2 to 5 branches and Enterprise from 6, priced by tier from Network's price (D-146):
   the band, the plans' wording, the FAQ, the early-access plan labels; "Talk to us" opens on
   "6 to 9".
-- **3.7k Enterprise at the 6th branch — 🟡 in progress (D-146).** Done: Network in the plan list
-  (`20261122200000_network_plan`: hidden, Professional's limits, no price yet); the backend (D-147):
-  the cap by the chain's plan with the app's details, one approval moving the whole chain with the
-  gift on its grant, a sweeper moving later branches. Still to do: the app's milestone screen and
-  request, the console's view of the chain. Planned in full: the owner cap follows the plan (five; none
-  on Enterprise, the 100 ceiling gone); adding a sixth business celebrates it and offers "Request
-  Enterprise" instead of an error; the console approves it for the whole chain (every branch to
-  Enterprise); the new branch's free ad as a credit until ads exist, only for chains moving up from Network. Tests: the cap by plan
-  (unit, integration), the request and the approval end to end.
+- **3.7k Enterprise at the 6th branch — ✅ done (D-146, D-147).** Network in the plan list
+  (`20261122200000_network_plan`: hidden, Professional's limits, no price yet). The owner cap
+  follows the chain's plan, read from its subscriptions: none on Enterprise; anyone else at it is
+  refused with the details the app needs. A Network chain adding its sixth branch gets the
+  milestone instead of an error ("Your sixth branch", the logo's dot landing on it, the free ad
+  for the new branch once ads open, nothing typed lost) and asks for Enterprise in one press;
+  anyone else at the cap, the plain way up. One approval in the console moves the whole chain
+  (what moved, what was left and why, the gift owed, said on approving); branches added later
+  follow by billing's sweeper. Open for the owner: creating businesses is limited to five an hour
+  a person (anti-abuse), so an Enterprise chain adding many branches at once is slowed. Tests: the
+  chain's standing (unit); the cap's details, the milestone, no cap on Enterprise (business
+  integration); the whole chain approved, the gift, a store-paid branch left, the sweeper (billing
+  integration); the milestone and the plain step, focus, accessibility, the request reaching
+  billing (browser).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request
