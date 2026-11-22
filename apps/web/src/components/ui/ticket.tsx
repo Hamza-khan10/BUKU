@@ -113,7 +113,7 @@ export function Ticket({
 
         <div className="flex items-center justify-between gap-4 p-5 @md:w-52 @md:flex-col @md:justify-center @md:gap-3 @md:p-6 @md:text-center">
           <div className="flex flex-col gap-1">
-            <p className="text-[0.7rem] font-semibold tracking-[0.08em] text-ink-3 uppercase">{codeLabel}</p>
+            <p className="text-xs font-semibold text-ink-3">{codeLabel}</p>
             <p className="font-mono text-xl font-bold tracking-wider text-ink @xs:text-2xl @md:text-[1.65rem]">
               {code}
             </p>

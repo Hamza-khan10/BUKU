@@ -16,7 +16,7 @@ export function privacy(facts: SiteFacts): LegalDocument {
     version: '1.0',
     inShort: [
       'We collect what booking and queueing need: your name and email from Google or Apple, your bookings and queue tickets, and a phone number only if you add one.',
-      'Businesses see your name, your booking and a reliability label — never your contact details or your picture.',
+      'Businesses see your name, your booking and a reliability label, never your contact details or your picture.',
       'We don’t sell personal data, and the website uses no advertising or analytics cookies.',
       'You can download everything we hold about you, and delete your account at any time (with 30 days to change your mind).',
     ],
@@ -61,7 +61,7 @@ export function privacy(facts: SiteFacts): LegalDocument {
                 'Contract; legitimate interest',
               ],
               [
-                'Your location, only when you search nearby or join a queue — used at that moment, not stored',
+                'Your location, only when you search nearby or join a queue: used at that moment, not stored',
                 'Showing places near you; checking you’re close enough to join a queue',
                 'Consent (your browser or phone asks you)',
               ],
@@ -139,7 +139,7 @@ export function privacy(facts: SiteFacts): LegalDocument {
           <>
             <p>
               <strong>Businesses you book with or queue at</strong> see your name, the booking or ticket, any
-              note you write for them, and a reliability label such as “Shows up 95%” or “New customer” — not
+              note you write for them, and a reliability label such as “Shows up 95%” or “New customer”, not
               your history with other businesses.
             </p>
             <p>

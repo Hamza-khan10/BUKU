@@ -162,17 +162,20 @@ before adjectives. Sentence case, no all-caps labels, no em dashes.
 
 ### Logo
 
-Redrawn 2026-10-11 (D-094) so it explains itself: **a ticket whose two clock hands make a
-check.** The ticket is the queue (take a number) and the booking (your ticket); the hands are the
-time; together they read "your time, confirmed". Emerald ticket, white hands, a saffron pivot.
+Brand Identity v1.0 (the owner's, D-143, replacing D-094's ticket-and-clock): **"U is for
+you"**, a thick Emerald U holding a Saffron dot (your place, held), and a lowercase stroke
+wordmark, "buku", whose last u holds the same dot. In running text the name is "BUKU".
 
-- Drawn on a 48-unit grid (`src/components/brand/mark.ts` holds the geometry; `Logo` and
-  `LogoMark` draw it; favicon, app icons and share images use the same paths).
-- Reusable files in `apps/web/public/brand/`: the mark (colour, reversed for dark backgrounds,
-  one-colour), the lockup with the wordmark outlined (colour and reversed), and app icons
-  (emerald tile, maskable, midnight).
-- Clear space: half the mark's height on every side. Smallest size: 16 px for the mark, 80 px
-  wide for the lockup. Never recoloured outside these versions, never on a busy picture.
+- One definition (`src/components/brand/mark.ts` holds the geometry; `Logo`, `LogoMark` and
+  `AppIcon` draw it). Its colours follow the ground: `--logo-u` and `--logo-dot` (Emerald and
+  Saffron 400 on light, white and Saffron on dark); favicon, app icons, share cards and the
+  console's mark use the same paths.
+- The held dot (`HeldDot`): the logo's dot as a full stop, once per layout, on the line that
+  matters (the tagline, a heading at a milestone). Saffron is kept for that one "you".
+- Reusable files in `apps/web/public/brand/`; the owner's full kit (canvas, exports) in the
+  vault, `~/BUKU-Brain/Brand/identity-v1`.
+- The symbol alone where the lockup won't fit (the header under 360 px wide). Never recoloured
+  outside these versions, never on a busy picture.
 
 ## 3. Pages (information architecture)
 

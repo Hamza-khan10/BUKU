@@ -213,8 +213,9 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    public site (3.7j, D-144), Enterprise from 6 branches, priced by tier (D-145, D-146), and the
    6th branch as a milestone in the app (3.7k, D-147, with sixty new businesses an hour for
    Enterprise, D-148), notifications on their own bell (3.7l, D-149), the visual pass of the
-   signed-in screens (3.7j); next the copy review, and billing's catalog step (the workspace's Plan
-   page still shows v1's prices).
+   signed-in screens (3.7j), the copy review (3.7m): 3.7 is done. Next billing's catalog step (the
+   workspace's Plan page still shows v1's prices; a database change for the owner's go), then D5,
+   proof at scale.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
 3. **Phase 5** — production: deployment, PgBouncer, the standby and a second region, backups to

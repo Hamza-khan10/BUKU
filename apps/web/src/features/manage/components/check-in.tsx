@@ -121,7 +121,7 @@ export function CodeCheckIn({
             <span className="font-semibold">
               {done.visit.customer.name} {done.already ? 'was already checked in' : 'is checked in'}
             </span>
-            {' — '}
+            {': '}
             {done.visit.service.name} at {done.visit.local.startTime}
             {done.visit.staff && <> with {done.visit.staff.displayName}</>}.
           </p>

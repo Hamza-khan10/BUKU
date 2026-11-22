@@ -292,8 +292,8 @@ function QueueBoardView({ business }: { business: ManagedBusiness }) {
         >
           Open the waiting-room screen
           <ExternalLink aria-hidden className="size-4" />
-        </Link>{' '}
-        — ticket numbers only, for a TV or tablet people can see. It needs no sign-in.
+        </Link>
+        : ticket numbers only, for a TV or tablet people can see. It needs no sign-in.
       </p>
     </div>
   );

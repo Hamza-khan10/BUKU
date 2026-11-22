@@ -875,6 +875,15 @@ The detailed plan — every page, its data and edge cases, the design system and
   avatar: a bell beside the account in both headers, with the unread count, its name in words, a
   tooltip, and marked on the notifications page (Jakob's law). Tests: e2e/notifications.spec.ts
   (the bell's count, it leads to the notifications, and empties once read).
+- **3.7m The copy review — ✅ done.** Every visible string held to WEB_PLAN's voice (plain, warm,
+  specific; sentence case; no all-caps labels; no em dashes): the em dashes left in the app (the
+  check-in confirmation, the hours page, the queue's waiting-room link, the legal pages' "Draft"
+  label) and in the legal drafts (punctuation only, every word kept, for the lawyer's review to
+  see unchanged in meaning) are gone; the ticket's code label and the Enterprise band's label are
+  in sentence case. About's heading was a looser first draft of the tagline ("Nobody should wait
+  without knowing how long"): it is now the tagline itself, with its held dot (D-143). Errors were
+  read for blame and next steps (they say it's on BUKU's side, and what to do). WEB_PLAN's logo
+  section brought up to Brand Identity v1.0.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

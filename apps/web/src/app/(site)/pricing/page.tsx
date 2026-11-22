@@ -81,7 +81,7 @@ export default async function PricingPage({ searchParams }: PageProps<'/pricing'
             className="pointer-events-none absolute -top-40 -right-24 -z-10 size-[30rem] rounded-full bg-[radial-gradient(closest-side,rgb(6_127_93/0.45),transparent)]"
           />
           <div className="flex flex-col gap-5">
-            <p className="text-sm font-semibold tracking-[0.08em] text-board-go uppercase">Enterprise</p>
+            <p className="text-sm font-semibold text-board-go">Enterprise</p>
             <h3
               id="enterprise-title"
               className="text-[2rem] leading-[1.05] font-semibold tracking-[-0.04em] sm:text-[2.6rem]"

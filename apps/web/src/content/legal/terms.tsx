@@ -14,7 +14,7 @@ export function terms(facts: SiteFacts): LegalDocument {
       'A booking is an agreement between you and the business; BUKU makes it easy to make and keep.',
       'BUKU is free for you: book and queue as often as you like.',
       'Appointments are paid at the business, never through BUKU.',
-      'Cancel before the business’s notice period if you can’t come — late cancellations and no-shows count towards the reliability label businesses see.',
+      'Cancel before the business’s notice period if you can’t come: late cancellations and no-shows count towards the reliability label businesses see.',
       'Reviews are for real visits: one per completed visit, within 30 days.',
     ],
     sections: [
@@ -88,8 +88,8 @@ export function terms(facts: SiteFacts): LegalDocument {
         body: (
           <ul>
             <li>
-              You can join a business’s queue from nearby — within a distance the business sets (5 km unless
-              it chooses otherwise). Your browser or phone asks before sharing your location.
+              You can join a business’s queue from nearby, within a distance the business sets (5 km unless it
+              chooses otherwise). Your browser or phone asks before sharing your location.
             </li>
             <li>You can hold one queue ticket at a time, anywhere on BUKU.</li>
             <li>
@@ -157,7 +157,7 @@ export function terms(facts: SiteFacts): LegalDocument {
         body: (
           <p>
             Please follow the <Link href="/legal/acceptable-use">acceptable use rules</Link>. We may limit or
-            close accounts that break them — for example, fake bookings or reviews — and we’ll tell you why
+            close accounts that break them (for example, fake bookings or reviews), and we’ll tell you why
             unless the law prevents it.
           </p>
         ),

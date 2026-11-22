@@ -61,7 +61,7 @@ test.describe('Information pages', () => {
     isMobile,
   }) => {
     await page.goto('/legal/privacy');
-    await expect(page.getByText('Draft — not yet in effect')).toBeVisible();
+    await expect(page.getByText('Draft, not yet in effect')).toBeVisible();
     await expect(page.getByText('This is a draft')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'In short' })).toBeVisible();
     if (!isMobile) {

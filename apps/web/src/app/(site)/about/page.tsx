@@ -1,5 +1,6 @@
 import { Clock, Eye, Globe, Scale } from 'lucide-react';
 import { Container, PageHeading } from '@/components/ui/layout';
+import { HeldDot } from '@/components/brand/held-dot';
 import { pageMetadata } from '@/lib/seo';
 
 export const metadata = pageMetadata({
@@ -37,7 +38,12 @@ export default function AboutPage() {
     <Container className="flex flex-col gap-16 py-12 sm:py-16">
       <PageHeading
         eyebrow="About BUKU"
-        title="Nobody should wait without knowing how long"
+        title={
+          <>
+            No one should wait to be seen
+            <HeldDot />
+          </>
+        }
         description="Getting a haircut, seeing a doctor or renewing a document often means calling around or standing in line. BUKU replaces that with a time you choose, or a place in line you can see from wherever you are."
       />
       <section aria-labelledby="principles" className="flex flex-col gap-8">
