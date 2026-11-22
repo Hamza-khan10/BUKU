@@ -213,6 +213,11 @@ export class BusinessService {
    * What the owner's chain is on (D-146), from the live plan of each business on their own list:
    * read business by business (each on its shard, inside that business), never by sweeping shards.
    */
+  /** What the owner's chain is on (D-146): Enterprise lifts the cap and the hourly limit (D-148). */
+  chainStandingOf(ownerId: bigint): Promise<ChainStanding> {
+    return this.chainOf(ownerId);
+  }
+
   private async chainOf(ownerId: bigint): Promise<ChainStanding> {
     const own = await (
       await this.plane.user(ownerId)
