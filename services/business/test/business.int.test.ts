@@ -289,12 +289,55 @@ describe('Registering a business', () => {
     expect(pub.body.data.name).toBe('BEST Cuts');
   });
 
-  it('caps businesses per owner (anti-abuse)', async () => {
+  it('caps businesses per owner (anti-abuse), saying what lifts the cap', async () => {
     const owner = await person();
     for (let i = 0; i < 3; i++) await createBusiness(owner);
     const res = await request(app).post('/v1/businesses').set(owner.auth).send(validBusiness());
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('PLAN_LIMIT_REACHED');
+    expect(res.body.error.details).toEqual({
+      limit: 'businesses',
+      max: 3,
+      used: 3,
+      upgrade: 'business_enterprise',
+      fromNetwork: false,
+    });
+  });
+
+  /** Puts a business on a plan as billing's grant would (D-146). */
+  const onPlan = async (businessPublicId: string, code: string) => {
+    const businessId = await idOf(businessPublicId);
+    const plan = await curator.plan.findUniqueOrThrow({ where: { code } });
+    await world.inBusiness(businessId, (tx) =>
+      tx.subscription.create({
+        data: {
+          id: world.id(),
+          businessId,
+          planId: plan.id,
+          provider: 'manual',
+          status: 'active',
+          currentPeriodStart: new Date(),
+        },
+      }),
+    );
+  };
+
+  it('a Network chain reaching the cap is told it is the milestone (D-146)', async () => {
+    const owner = await person();
+    const first = await createBusiness(owner);
+    for (let i = 0; i < 2; i++) await createBusiness(owner);
+    await onPlan(first.id, 'business_network');
+    const res = await request(app).post('/v1/businesses').set(owner.auth).send(validBusiness());
+    expect(res.status).toBe(409);
+    expect(res.body.error.details).toMatchObject({ fromNetwork: true, upgrade: 'business_enterprise' });
+  });
+
+  it('an Enterprise chain has no cap (D-146)', async () => {
+    const owner = await person();
+    const first = await createBusiness(owner);
+    for (let i = 0; i < 2; i++) await createBusiness(owner);
+    await onPlan(first.id, 'business_enterprise');
+    for (let i = 0; i < 2; i++) await createBusiness(owner); // the 4th and 5th, past the cap of 3
   });
 
   it('requires signing in', async () => {

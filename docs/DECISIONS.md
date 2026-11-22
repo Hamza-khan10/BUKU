@@ -1613,3 +1613,25 @@ celebration and the request in the workspace, the whole chain approved at once i
 the ad credit. On the site now: "6 branches or more?", Network "For two to five branches", the
 band's "a price a branch that falls as you grow", the FAQ, the early-access plan labels and
 /llms.txt; early access already splits at six (6 to 9).
+
+**D-147 · How a chain moves to Enterprise in the backend (3.7k).** Three pieces, no new tables. (1)
+**A chain's plan is read from its subscriptions, not its entitlements.** With billing switched off
+everyone is entitled to everything, yet a chain is still on the plan it was given; so
+`chainStanding` (`@buku/billing`) looks at the live subscription of every business the owner holds:
+one live Enterprise plan anywhere makes the chain Enterprise, otherwise one live Network plan makes
+it a Network chain. Business-service reads it at the cap, business by business from the owner's
+own list (never sweeping the shards on a customer's request): an Enterprise chain has no cap, and
+anyone else at it is refused with `PLAN_LIMIT_REACHED` and the details the app needs (`limit`,
+`max`, `used`, `upgrade: business_enterprise`, `fromNetwork`: the milestone and its gift). (2)
+**One approval moves the whole chain.** Approving an Enterprise request grants Enterprise to every
+business the owner holds; one paid in a store is left (a grant can't replace it) and reported in
+the approval's `chain` (`moved`, `left`, `gift`). A chain moving up from Network gets its free ad
+written at the start of the approved branch's grant note, the only record until ads exist. (3)
+**Branches added later follow, by a sweeper, not an event.** Billing has no Kafka connection;
+adding one (settings, wiring, health) for this was more than needed. Its existing pattern, an
+idempotent sweep on a timer, now has a second job every two minutes: every business of a chain
+holding a live, manual Enterprise grant, and with no live plan of its own, gets the same grant (its
+end date, its approver; the audit log names no person). A chain paying for Enterprise in a store is
+never extended: a free grant would give a paid branch away. While billing is off the two-minute
+gap limits nobody. Fixed on the way: an approval's note may be 500 characters but a grant's holds
+300, so a long note failed the approval; the grant now keeps the first 300 and the request all 500.
