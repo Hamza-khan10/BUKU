@@ -199,9 +199,10 @@ function Switcher({ business }: { business: ManagedBusiness }) {
         <BusinessMark business={business} className="size-8" />
         <span className="flex min-w-0 flex-col leading-tight">
           <span className="truncate text-sm font-semibold text-ink">{business.name}</span>
-          <span className="flex items-center gap-1.5 text-xs text-ink-3">
+          <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-3">
             <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', standing.dot)} />
-            {standing.label}
+            {/* One line, trimmed on the narrowest phones (the dot still says it). */}
+            <span className="truncate">{standing.label}</span>
           </span>
         </span>
         <ChevronsUpDown aria-hidden className="size-4 shrink-0 text-ink-3" />
@@ -442,7 +443,14 @@ function PhoneTabs({
       data-bottom-bar
       className="fixed inset-x-0 bottom-0 z-30 border-t border-line/70 bg-surface pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_24px_rgb(var(--shadow-color)/0.06)] lg:hidden"
     >
-      <ul className="mx-auto grid max-w-lg grid-cols-5">
+      {/* Each tab as wide as its word needs: "Appointments" takes a larger share than "Today",
+          so no label runs into the next on a narrow phone, whichever tabs this role has. */}
+      <ul
+        className="mx-auto grid max-w-lg"
+        style={{
+          gridTemplateColumns: [...tabs.map((t) => (t.label.length > 9 ? '1.4fr' : '1fr')), '1fr'].join(' '),
+        }}
+      >
         {tabs.map(({ href, label, icon: Icon }) => {
           const active = pathname === href;
           return (
@@ -451,13 +459,13 @@ function PhoneTabs({
                 href={href as Route}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'relative flex h-16 flex-col items-center justify-center gap-1 text-[0.7rem] font-medium transition-transform active:scale-95',
+                  'relative flex h-16 flex-col items-center justify-center gap-1 text-[0.62rem] font-medium transition-transform active:scale-95 min-[360px]:text-[0.7rem]',
                   active ? 'text-brand-ink' : 'text-ink-2',
                 )}
               >
                 {lit(active)}
                 <Icon aria-hidden className="relative mt-0.5 size-5" strokeWidth={active ? 2.1 : 1.8} />
-                <span className="relative">{label}</span>
+                <span className="relative whitespace-nowrap">{label}</span>
               </Link>
             </li>
           );
@@ -466,7 +474,7 @@ function PhoneTabs({
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger
               className={cn(
-                'relative flex h-16 w-full flex-col items-center justify-center gap-1 text-[0.7rem] font-medium transition-transform active:scale-95',
+                'relative flex h-16 w-full flex-col items-center justify-center gap-1 text-[0.62rem] font-medium transition-transform active:scale-95 min-[360px]:text-[0.7rem]',
                 elsewhere ? 'text-brand-ink' : 'text-ink-2',
               )}
             >

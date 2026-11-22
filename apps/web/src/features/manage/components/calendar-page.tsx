@@ -135,7 +135,7 @@ export function CalendarPage({
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
           <Button
             variant="secondary"
             size="sm"
@@ -160,7 +160,7 @@ export function CalendarPage({
           >
             <ChevronRight aria-hidden className="size-4" />
           </Button>
-          <h2 className="ml-2 text-lg font-semibold tracking-tight" aria-live="polite">
+          <h2 className="text-lg font-semibold tracking-tight whitespace-nowrap sm:ml-2" aria-live="polite">
             {weekLabel(start)}
           </h2>
         </div>
@@ -228,7 +228,7 @@ export function CalendarPage({
 
           {/* Wider screens: the week as a grid of hours. */}
           <div className="hidden overflow-x-auto rounded-2xl border border-line bg-surface md:block">
-            <div className="grid min-w-[52rem] grid-cols-[3.5rem_repeat(7,minmax(0,1fr))]">
+            <div className="grid min-w-[44rem] grid-cols-[3.5rem_repeat(7,minmax(0,1fr))]">
               <div className="sticky top-0 z-10 border-b border-line bg-surface" />
               {days.map((d) => (
                 <div

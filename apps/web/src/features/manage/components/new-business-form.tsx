@@ -489,7 +489,12 @@ export function NewBusinessForm({
               </p>
             ) : null}
             <div>
-              <Button type="button" onClick={locate} disabled={locating}>
+              <Button
+                type="button"
+                onClick={locate}
+                disabled={locating}
+                className="h-auto min-h-11 py-2.5 text-left whitespace-normal"
+              >
                 {locating ? <Spinner className="size-4" /> : <LocateFixed aria-hidden />}
                 {draft.place ? 'Use where I am now instead' : 'I’m at the business: use where I am'}
               </Button>

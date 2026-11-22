@@ -115,7 +115,7 @@ function Header({ business: b }: { business: ManagedBusiness }) {
     <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div className="flex min-w-0 flex-col gap-2">
         <p className="text-sm font-medium text-ink-3">{today}</p>
-        <h1 className="type-app-title truncate">{b.name}</h1>
+        <h1 className="type-app-title text-balance break-words">{b.name}</h1>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-ink-2">
           <span>
             {b.category.name}, {b.address.city}
