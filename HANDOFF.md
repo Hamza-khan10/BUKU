@@ -210,9 +210,9 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    with D1, D-134, D-135), the domain and Cloudflare (D-136, D-140), prices at launch (D-137),
    search (D-138, D-139) and the accessibility audit by use (3.7g, D-141), Lighthouse budgets and a lighter
    home page (3.7h, D-142), the new identity and interactions (3.7i, D-143), the visual pass of the
-   public site (3.7j, D-144), Enterprise from 6 branches, priced by tier (D-145, D-146); next
-   Enterprise at the 6th branch in the app (3.7k), the signed-in screens' visual pass and the copy
-   review.
+   public site (3.7j, D-144), Enterprise from 6 branches, priced by tier (D-145, D-146), and the
+   6th branch as a milestone in the app (3.7k, D-147); next the signed-in screens' visual pass and
+   the copy review.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
 3. **Phase 5** — production: deployment, PgBouncer, the standby and a second region, backups to
