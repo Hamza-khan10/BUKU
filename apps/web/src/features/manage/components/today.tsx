@@ -126,7 +126,7 @@ export function TodayBoard({ business, aside }: { business: ManagedBusiness; asi
         </Alert>
       )}
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_23rem]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_23rem]">
         <div className="order-2 min-w-0 lg:order-1">
           {day.isPending ? (
             <Skeleton className="h-60 rounded-2xl" />

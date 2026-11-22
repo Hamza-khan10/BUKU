@@ -163,7 +163,7 @@ export function SetupFlow({ id }: { id: string }) {
             <Button asChild variant="primary">
               <Link href={`/b/${b.slug}` as Route}>See your page</Link>
             </Button>
-            <Button asChild>
+            <Button asChild className="h-auto min-h-11 py-2.5 text-center whitespace-normal">
               <Link href={`/business/${b.id}` as Route}>Go to {b.name}</Link>
             </Button>
           </div>

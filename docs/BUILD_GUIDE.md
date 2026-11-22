@@ -830,8 +830,7 @@ The detailed plan — every page, its data and edge cases, the design system and
   security.txt (generated). Tests: e2e/interactions.spec.ts (the board, the preview
   and its prefill, a hostile link, the header, the theme, the hint, still under reduced motion);
   every page within its Lighthouse budget.
-- **3.7j The visual pass at every breakpoint — 🟡 the public site done (D-144); the signed-in screens
-  next.** Every public page (19, before launch as live) checked by machine at 12 widths from 320 to
+- **3.7j The visual pass at every breakpoint — ✅ done (D-144).** Every public page (19, before launch as live) checked by machine at 12 widths from 320 to
   1920 px, light and dark (sideways scroll, anything past the edge, wrapped buttons, a heading's
   last word alone, clipped text, broken images), then by eye at 390, 768 and 1024 px. Fixed: the
   hero glow pushed the home page and /for-business sideways from 1024 to ~1300 px (now inside the
@@ -847,6 +846,17 @@ The detailed plan — every page, its data and edge cases, the design system and
   Network for 2 to 5 branches and Enterprise from 6, priced by tier from Network's price (D-146):
   the band, the plans' wording, the FAQ, the early-access plan labels; "Talk to us" opens on
   "6 to 9".
+  The signed-in screens (33: the customer's account, visits, booking, ticket and reviews; the whole
+  business workspace; the waiting-room screen), with a real owner and customer, at the same 12
+  widths in both themes and by eye at 320, 390, 1024 and 1280 px. Fixed: the business's name cut
+  off as the Today heading (now it wraps), Today wider than a 320 px phone (its grid now has one
+  column that fits), the calendar's week squeezed beside its buttons and Sunday scrolled out of view
+  at 1024 px (all seven days fit from a tablet up), long labels spilling out of buttons (setup's
+  "Go to …", adding a business's "use where I am"), the waiting-room screen's clock past a phone's
+  edge, the workspace switcher's status breaking into three lines, and the bottom tabs'
+  "Appointments" running into "Check-in" (each tab now as wide as its word). Open: the workspace's
+  Plan page reads the plan catalog, whose prices are still v1's ($24.99, $49.99, $99.99) against the
+  site's D-137 prices: billing's catalog step fixes it (a database change for the owner's go).
 - **3.7k Enterprise at the 6th branch — ✅ done (D-146, D-147).** Network in the plan list
   (`20261122200000_network_plan`: hidden, Professional's limits, no price yet). The owner cap
   follows the chain's plan, read from its subscriptions: none on Enterprise; anyone else at it is

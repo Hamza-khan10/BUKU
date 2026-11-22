@@ -42,12 +42,12 @@ export function QueueScreen({
 
   return (
     <div className="flex min-h-dvh flex-col gap-8 bg-board p-6 text-board-ink sm:p-10 lg:p-14">
-      <header className="flex items-start justify-between gap-6">
-        <div className="flex flex-col gap-1">
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+        <div className="flex min-w-0 flex-col gap-1">
           <p className="text-lg text-board-ink-2">The queue at</p>
-          <h1 className="text-3xl font-semibold tracking-[-0.02em] sm:text-5xl">{name}</h1>
+          <h1 className="text-3xl font-semibold tracking-[-0.02em] break-words sm:text-5xl">{name}</h1>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-4">
           <p className="tabular text-3xl font-semibold text-board-ink-2 sm:text-4xl" suppressHydrationWarning>
             {clock}
           </p>
