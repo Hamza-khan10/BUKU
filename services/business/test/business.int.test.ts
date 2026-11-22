@@ -332,12 +332,25 @@ describe('Registering a business', () => {
     expect(res.body.error.details).toMatchObject({ fromNetwork: true, upgrade: 'business_enterprise' });
   });
 
-  it('an Enterprise chain has no cap (D-146)', async () => {
+  it('an Enterprise chain has no cap, and may add more than five an hour (D-146, D-148)', async () => {
     const owner = await person();
     const first = await createBusiness(owner);
     for (let i = 0; i < 2; i++) await createBusiness(owner);
     await onPlan(first.id, 'business_enterprise');
-    for (let i = 0; i < 2; i++) await createBusiness(owner); // the 4th and 5th, past the cap of 3
+    // The 4th to the 7th: past the cap of 3, and past the five an hour everyone else has.
+    for (let i = 0; i < 4; i++) await createBusiness(owner);
+  });
+
+  it('anyone else is held to five tries an hour, cap refusals included (D-148)', async () => {
+    const owner = await person();
+    for (let i = 0; i < 3; i++) await createBusiness(owner);
+    for (let i = 0; i < 2; i++) {
+      const atCap = await request(app).post('/v1/businesses').set(owner.auth).send(validBusiness());
+      expect(atCap.status).toBe(409);
+    }
+    const sixth = await request(app).post('/v1/businesses').set(owner.auth).send(validBusiness());
+    expect(sixth.status).toBe(429);
+    expect(sixth.body.error.code).toBe('RATE_LIMITED');
   });
 
   it('requires signing in', async () => {

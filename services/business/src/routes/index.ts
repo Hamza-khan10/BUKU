@@ -11,7 +11,7 @@ import {
   type JwtVerifier,
   type RevocationStore,
 } from '@buku/common';
-import { Router, type Express } from 'express';
+import { Router, type Express, type RequestHandler } from 'express';
 import { requireBusinessPermissionOnShard, type DataPlane } from '@buku/database';
 import type { Redis } from 'ioredis';
 import type { AdminService } from '../businesses/admin-service.js';
@@ -70,6 +70,26 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
     durationSeconds: 3600,
     redis: deps.redis,
   });
+  // An Enterprise chain sets up many branches at once (D-148): past the five, its own sixty an hour.
+  const enterpriseCreateLimit = rateLimit({
+    keyPrefix: 'rl:biz:create:enterprise',
+    points: 60,
+    durationSeconds: 3600,
+    redis: deps.redis,
+  });
+  /**
+   * Five new businesses an hour a person (anti-abuse), sixty for an Enterprise chain (D-148). The
+   * chain's plan is looked up only once the five are used, so everyone else's requests cost no more.
+   */
+  const createLimitByPlan: RequestHandler = async (req, res, next) => {
+    try {
+      await createLimit(req, res, next);
+    } catch (err) {
+      if (!(err instanceof AppError && err.code === ErrorCodes.RATE_LIMITED)) throw err;
+      if ((await deps.businesses.chainStandingOf(requireActor(req).id)) !== 'enterprise') throw err;
+      await enterpriseCreateLimit(req, res, next);
+    }
+  };
   const writeLimit = rateLimit({
     keyPrefix: 'rl:biz:write',
     points: 60,
@@ -125,7 +145,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
   r.post(
     '/',
     auth,
-    createLimit,
+    createLimitByPlan,
     deps.plane.switches.guard('business_signup'),
     validated({ body: CreateBusinessBody }, async ({ body }, req, res) => {
       const actor = requireActor(req);
