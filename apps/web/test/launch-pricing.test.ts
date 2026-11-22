@@ -15,13 +15,14 @@ import {
 } from '../src/features/pricing/launch-plans';
 
 describe('Prices at launch (D-137)', () => {
-  it('Enterprise starts at 10 branches, and the early-access answers split exactly there (D-145)', () => {
-    expect(ENTERPRISE.fromBranches).toBe(10);
+  it('Network is 2 to 5 branches, Enterprise starts at 6, and the early-access answers split there (D-146)', () => {
+    expect(ENTERPRISE.fromBranches).toBe(6);
     // An answer starts at Enterprise's line, so no answer holds both sides of it (as "6 to 20" did
     // when Enterprise began at 20); "Talk to us" opens the form on it.
-    expect(enterpriseBranchAnswer(BRANCHES)).toBe('10-20');
+    expect(enterpriseBranchAnswer(BRANCHES)).toBe('6-9');
     const network = LAUNCH_PLANS.find((p) => p.id === 'network')!;
-    expect(network.perBranch).toBe(true); // Network stays open at any size: Enterprise is an offer
+    expect(network.perBranch).toBe(true);
+    expect(network.forWhom).toBe('For two to five branches'); // where Enterprise takes over
   });
 
   it('rupees for Pakistan, dollars for everyone else', () => {

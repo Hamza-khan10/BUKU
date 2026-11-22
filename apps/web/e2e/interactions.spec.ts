@@ -37,18 +37,18 @@ test.describe('Interactions', () => {
     await expect(page.getByLabel(/What kind of business/)).toHaveValue('Clinic');
   });
 
-  test('Enterprise: easy to find, and its way in arrives with Enterprise and 10 to 20 branches chosen', async ({
+  test('Enterprise: easy to find, and its way in arrives with Enterprise and 6 to 9 branches chosen', async ({
     page,
   }) => {
     await page.goto('/pricing');
-    const band = page.getByRole('complementary', { name: /10 branches or more/ });
+    const band = page.getByRole('complementary', { name: /6 branches or more/ });
     await expect(band).toBeVisible();
     const href = await band.getByRole('link', { name: 'Talk to us' }).getAttribute('href');
     // Before launch it's the business list; after, the contact page.
     if (href?.startsWith('/early-access')) {
       await page.goto(href);
       await expect(page.getByLabel(/Which plan/)).toHaveValue('enterprise');
-      await expect(page.getByLabel(/How many branches|branches/i).first()).toHaveValue('10-20');
+      await expect(page.getByLabel(/How many branches|branches/i).first()).toHaveValue('6-9');
     } else expect(href).toBe('/contact');
   });
 

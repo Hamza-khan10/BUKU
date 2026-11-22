@@ -1589,3 +1589,27 @@ The early-access form's branch question follows the line: 1 / 2-5 / 6-9 / 10-20 
 allowed in the list). Rolled out database first: migrations/0002 widens the list's check (the
 table rebuilt, every row kept with its id, as one transaction), then the website sends the new
 answers, so no sign-up fails between the two deploys (`cf:release` deploys before it migrates).
+
+**D-146 · Network for 2 to 5 branches, Enterprise from 6 priced by tier, and the 6th branch as a
+milestone.** The owner's call, a day after D-145. Network covers two to five branches, sold online;
+from six, Enterprise, through BUKU. Self-serve stops where the platform does: today an owner can
+hold five businesses, every branch is billed on its own, and nothing ties a chain's branches
+together (the multi-branch check of 22 November 2026), so a chain of six or more comes through a
+conversation that raises the cap, sends one invoice and sets up every branch. Enterprise makes
+everything unlimited and is priced a branch by size tier: it starts at Network's price for the
+smallest chains and lower a branch for bigger ones, because one person running a chain costs BUKU
+less time a branch. A discount is offered only when a chain asks, by its tier's rules and in
+return for a commitment, and never below the tier's floor (what a branch costs BUKU plus a healthy
+margin). This replaces D-145's floor ("never below Network's price"). The figures (tiers, floors,
+discounts, costs, taxes, contract terms) live in the owner's private pricing guide and are never
+committed to this public repository. The 6th branch is a milestone, not an error: when an owner on
+Network with five businesses adds a sixth, the app celebrates it and offers "Request Enterprise"
+(a plan request). An operator approves; every branch moves to Enterprise at the smallest tier's
+price, the cap lifts, and the new branch gets a free ad, recorded as an ad credit until ads exist
+(the ads service is still a skeleton). The ad is only for chains moving up from Network; a chain
+that comes to Enterprise directly gets its tier's starting price. Built next (3.7k): the cap
+following the owner's plan (five, or none on Enterprise, where today's ceiling of 100 goes), the
+celebration and the request in the workspace, the whole chain approved at once in the console,
+the ad credit. On the site now: "6 branches or more?", Network "For two to five branches", the
+band's "a price a branch that falls as you grow", the FAQ, the early-access plan labels and
+/llms.txt; early access already splits at six (6 to 9).

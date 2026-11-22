@@ -72,7 +72,8 @@ export const LAUNCH_PLANS: readonly LaunchPlan[] = [
   {
     id: 'network',
     name: 'Network',
-    forWhom: 'For two branches or more',
+    // Up to five: from six, Enterprise (D-146).
+    forWhom: 'For two to five branches',
     monthly: { PKR: 4999, USD: 29 },
     perBranch: true,
     // Its first line, what each branch saves against Professional, is worked out from the prices.
@@ -81,12 +82,13 @@ export const LAUNCH_PLANS: readonly LaunchPlan[] = [
 ];
 
 /**
- * Enterprise: 10 branches or more (D-145), priced with the business, and never less a branch than
- * Network's list price (monthly or yearly): a deal adds things (below), it doesn't take price off.
- * Network stays open at any size, so Enterprise is an offer, not a gate.
+ * Enterprise: from 6 branches, where Network stops (D-146). Everything unlimited, priced a branch by
+ * size tier, starting at Network's price and lower a branch for bigger chains; a discount only when
+ * a chain asks, never below the tier's floor. The figures live in the owner's private pricing
+ * guide, not in this public repository.
  */
 export const ENTERPRISE = {
-  fromBranches: 10,
+  fromBranches: 6,
   includes: [
     'Unlimited team logins, staff, services and photos',
     'Help to set up every branch',
