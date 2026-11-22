@@ -1,10 +1,14 @@
 import {
   businessEntitlementsOnShard,
+  chainStanding,
   customerEntitlements,
+  ENTERPRISE_PLAN,
+  ENTITLED,
+  liveSubscriptionOnShard,
   type Audience,
   type Entitlements,
 } from '@buku/billing';
-import { AppError, ErrorCodes, type Actor } from '@buku/common';
+import { AppError, ErrorCodes, logger, type Actor } from '@buku/common';
 import {
   constraintNameOf,
   isUniqueViolation,
@@ -41,6 +45,23 @@ import { auditByPerson, LIVE } from './shared.js';
 
 /** Sources we manage ourselves; store subscriptions are changed in the store. */
 const OURS = ['manual', 'trial'];
+
+/** A grant's note fits its column (VARCHAR(300)); the request keeps the operator's whole note (500). */
+const GRANT_NOTE_MAX = 300;
+
+/** What a chain moving up from Network at its 6th branch is owed (D-146), kept until ads exist. */
+const NETWORK_GIFT = 'Moved up from Network: one free ad for the new branch (a credit until ads launch)';
+
+/** Who did it, for work no request asked for. */
+const SWEEPER_CTX: RequestContext = { ip: null, userAgent: 'billing-sweeper', requestId: null };
+
+/** A business of an owner's chain, as it stands: its live plan, if any. */
+interface ChainBusiness {
+  id: bigint;
+  publicId: string;
+  name: string;
+  planCode: string | null;
+}
 
 const TRIAL_REFUSALS: Record<string, string> = {
   billing_off: 'Everything is included right now; there is nothing to try',
@@ -242,7 +263,12 @@ export class AccountService {
       .map((r) => r.view);
   }
 
-  /** Approve: the business gets the plan as a grant (replacing a grant or trial it may have). */
+  /**
+   * Approve: the business gets the plan as a grant (replacing a grant or trial it may have). An
+   * Enterprise approval moves the owner's whole chain (D-146): every other business they hold gets
+   * the same grant, and one paid in a store is left for an operator and reported. A chain moving up
+   * from Network is owed a free ad for its new branch, written on the grant until ads exist.
+   */
   async approveRequest(
     requestId: bigint,
     adminId: bigint,
@@ -250,21 +276,27 @@ export class AccountService {
     ctx: RequestContext,
   ) {
     const businessId = await this.businessOfRequest(requestId);
-    let given = '';
+    // The chain as it stands before this approval changes it.
+    const before = await this.chainOf(businessId);
+    // Set inside the business's transaction, read after it.
+    const outcome = { given: '', gift: false };
     const view = await this.plane.inBusiness(businessId, async (tx) => {
       const request = await tx.planRequest.findFirst({ where: { id: requestId, status: 'pending' } });
       if (!request) throw AppError.notFound('Open plan request');
       const requested = await this.plane.directory.plan.findUnique({ where: { id: request.planId } });
       const planCode = input.planCode ?? requested?.code;
       if (!planCode) throw AppError.notFound('Plan');
-      given = planCode;
+      outcome.given = planCode;
+      outcome.gift =
+        planCode === ENTERPRISE_PLAN && chainStanding(before.map((b) => b.planCode)) === 'network';
+      const note = input.note ?? `Approved plan request ${request.id}`;
       const grant = await this.createGrant(
         tx,
         {
           planCode,
           businessId,
           until: input.until,
-          note: input.note ?? `Approved plan request ${request.id}`,
+          note: (outcome.gift ? `${NETWORK_GIFT}. ${note}` : note).slice(0, GRANT_NOTE_MAX),
           replace: true,
         },
         adminId,
@@ -286,19 +318,163 @@ export class AccountService {
         action: 'billing.plan_request_approved',
         resourceType: 'plan_request',
         resourceId: requestId,
-        newValues: { plan: planCode, until: input.until ?? null },
+        newValues: { plan: planCode, until: input.until ?? null, ...(outcome.gift && { gift: 'ad_credit' }) },
         ...auditCtx(ctx),
       });
       return this.requestView(tx, requestId);
     });
+    const chain =
+      outcome.given === ENTERPRISE_PLAN
+        ? await this.moveChain(
+            before,
+            businessId,
+            input.until,
+            `Enterprise for the whole chain: plan request ${requestId}`,
+            adminId,
+            ctx,
+          )
+        : null;
     // The same step on the admin's own record, for the console's audit log (D-132).
     await auditByPerson(this.plane, adminId, ctx, {
       action: 'admin.plan_request_approved',
       resourceType: 'plan_request',
       resourceId: requestId,
-      newValues: { plan: given, until: input.until ?? null, ...(input.note && { reason: input.note }) },
+      newValues: {
+        plan: outcome.given,
+        until: input.until ?? null,
+        ...(input.note && { reason: input.note }),
+        ...(chain && { chainMoved: chain.moved.length, chainLeft: chain.left.length }),
+        ...(outcome.gift && { gift: 'ad_credit' }),
+      },
     });
-    return view;
+    return chain ? { ...view, chain: { ...chain, gift: outcome.gift } } : view;
+  }
+
+  /**
+   * Every business an owner holds, found from one of them, each with its live plan: the chain
+   * (D-146). Read across the business shards: an operator's step or the sweeper's, never a
+   * customer's.
+   */
+  private async chainOf(businessId: bigint): Promise<ChainBusiness[]> {
+    const owner = await this.plane.inBusiness(businessId, (tx) =>
+      tx.business.findUnique({ where: { id: businessId }, select: { ownerUserId: true } }),
+    );
+    if (!owner) return [];
+    const perShard = await this.plane.acrossBusinesses(async (tx) => {
+      const rows = await tx.business.findMany({
+        where: { ownerUserId: owner.ownerUserId, deletedAt: null },
+        select: { id: true, publicId: true, name: true },
+      });
+      return Promise.all(
+        rows.map(async (b) => ({
+          ...b,
+          planCode: (await liveSubscriptionOnShard(tx, b.id))?.planCode ?? null,
+        })),
+      );
+    });
+    return perShard.flat();
+  }
+
+  /**
+   * The rest of a chain to Enterprise, after its request was approved (D-146): each business on
+   * its own shard, so one that can't move (a plan paid in a store) is reported, not fatal.
+   */
+  private async moveChain(
+    chain: ChainBusiness[],
+    approvedId: bigint,
+    until: string | undefined,
+    note: string,
+    adminId: bigint,
+    ctx: RequestContext,
+  ) {
+    const moved: { id: string; name: string }[] = [];
+    const left: { id: string; name: string; reason: string }[] = [];
+    for (const b of chain) {
+      if (b.id === approvedId || b.planCode === ENTERPRISE_PLAN) continue;
+      try {
+        await this.plane.inBusiness(b.id, (tx) =>
+          this.createGrant(
+            tx,
+            { planCode: ENTERPRISE_PLAN, businessId: b.id, until, note, replace: true },
+            adminId,
+            ctx,
+          ),
+        );
+        moved.push({ id: b.publicId, name: b.name });
+      } catch (err) {
+        if (!(err instanceof AppError)) throw err;
+        left.push({ id: b.publicId, name: b.name, reason: err.message });
+      }
+    }
+    return { moved, left };
+  }
+
+  /**
+   * Branches an Enterprise chain adds later get Enterprise too (D-146). Every business of an owner
+   * whose chain holds a live Enterprise grant, and which has no live plan of its own, gets the same
+   * grant: its end date, its approver. A chain paying for Enterprise in a store is left to an
+   * operator (a free grant there would give a paid branch away). Idempotent; run by a sweeper.
+   */
+  async extendEnterpriseChains(now = new Date()): Promise<number> {
+    const enterprise = await this.plane.directory.plan.findUnique({ where: { code: ENTERPRISE_PLAN } });
+    if (!enterprise) return 0;
+    const live = {
+      status: { in: [...ENTITLED] },
+      OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: now } }],
+    };
+    const grants = (
+      await this.plane.acrossBusinesses((tx) =>
+        tx.subscription.findMany({
+          where: { planId: enterprise.id, provider: 'manual', grantedById: { not: null }, ...live },
+          select: { currentPeriodEnd: true, grantedById: true, business: { select: { ownerUserId: true } } },
+        }),
+      )
+    ).flat();
+    // One grant per chain to copy: the one that lasts longest (open-ended first).
+    const chains = new Map<bigint, { until: Date | null; grantedById: bigint }>();
+    for (const g of grants) {
+      const owner = g.business.ownerUserId;
+      const held = chains.get(owner);
+      const longer =
+        !held || (held.until !== null && (g.currentPeriodEnd === null || g.currentPeriodEnd > held.until));
+      if (longer) chains.set(owner, { until: g.currentPeriodEnd, grantedById: g.grantedById! });
+    }
+    if (chains.size === 0) return 0;
+    const bare = (
+      await this.plane.acrossBusinesses((tx) =>
+        tx.business.findMany({
+          where: { ownerUserId: { in: [...chains.keys()] }, deletedAt: null, subscriptions: { none: live } },
+          select: { id: true, ownerUserId: true },
+        }),
+      )
+    ).flat();
+    let given = 0;
+    for (const b of bare) {
+      const chain = chains.get(b.ownerUserId)!;
+      try {
+        await this.plane.inBusiness(b.id, (tx) =>
+          this.createGrant(
+            tx,
+            {
+              planCode: ENTERPRISE_PLAN,
+              businessId: b.id,
+              until: chain.until?.toISOString(),
+              note: 'Enterprise for the whole chain: a branch added after the chain moved to Enterprise',
+              replace: false,
+            },
+            chain.grantedById,
+            SWEEPER_CTX,
+            null,
+          ),
+        );
+        given++;
+      } catch (err) {
+        // A plan of its own appeared meanwhile: nothing to do. Anything else is worth a look.
+        if (err instanceof AppError && err.httpStatus === 409) continue;
+        logger.error({ err, businessId: b.id.toString() }, 'extending Enterprise to a new branch failed');
+      }
+    }
+    return given;
   }
 
   async declineRequest(requestId: bigint, adminId: bigint, note: string, ctx: RequestContext) {
@@ -496,6 +672,8 @@ export class AccountService {
     input: Omit<GrantInput, 'businessId' | 'userId'> & { businessId: bigint },
     adminId: bigint,
     ctx: RequestContext,
+    /** Who the audit log names: the admin, or nobody for the sweeper's work (`null`). */
+    auditUserId: bigint | null = adminId,
   ) {
     const plan = await this.plane.directory.plan.findUnique({ where: { code: input.planCode } });
     if (!plan) throw AppError.notFound('Plan');
@@ -537,7 +715,7 @@ export class AccountService {
         },
       });
       await recordShardAudit(tx, this.plane.id(), {
-        userId: adminId,
+        userId: auditUserId,
         action: 'billing.plan_granted',
         resourceType: 'subscription',
         resourceId: sub.id,

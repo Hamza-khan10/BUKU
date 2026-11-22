@@ -126,7 +126,8 @@ export async function lockForLimit(
 // ── Database v2 (D3) ───────────────────────────────────────────────────────
 
 /** Statuses that still give access (past_due: the store is retrying the payment). */
-const ENTITLED = ['active', 'trialing', 'past_due'] as const;
+/** Subscription statuses that give a business its plan (with an end date still ahead, or none). */
+export const ENTITLED = ['active', 'trialing', 'past_due'] as const;
 
 /**
  * A business's entitlements on database v2: the rules above, read on the business's own shard —

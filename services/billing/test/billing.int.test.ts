@@ -733,3 +733,132 @@ describe('Any plan for any business: requests and grants', () => {
     expect((await x.subscriptions(b))[0]!.status).toBe('expired');
   });
 });
+
+describe('Enterprise chains (D-146)', () => {
+  const planIdOf = async (code: string) =>
+    (await h.world.directory.plan.findUniqueOrThrow({ where: { code } })).id;
+  /** The code of a business's live plan, or null. */
+  const livePlan = async (b: Shop) => {
+    const live = (await x.subscriptions(b)).find((s) =>
+      ['active', 'trialing', 'past_due'].includes(s.status),
+    );
+    return live
+      ? (await h.world.directory.plan.findUniqueOrThrow({ where: { id: live.planId } })).code
+      : null;
+  };
+  /** A plan paid through a store (Paddle): billing must never replace it with a free grant. */
+  const paidInAStore = async (b: Shop, code: string) => {
+    const planId = await planIdOf(code);
+    await x.inShop(b, (tx) =>
+      tx.subscription.create({
+        data: {
+          id: h.world.id(),
+          businessId: b.id,
+          planId,
+          provider: 'paddle',
+          channel: 'web',
+          status: 'active',
+          currentPeriodStart: new Date(),
+          externalSubscriptionId: `sub_${randomUUID()}`,
+        },
+      }),
+    );
+  };
+  const askForEnterprise = (b: Shop) =>
+    send('post', `/v1/businesses/${b.publicId}/billing/plan-requests`, b.owner, {
+      planCode: 'business_enterprise',
+      message: 'Opening our sixth branch',
+    });
+
+  it('approving Enterprise for a Network chain moves every branch and records its free ad; a plan paid in a store is left and reported', async () => {
+    const owner = await x.person();
+    const a = await x.business(owner);
+    const b = await x.business(owner);
+    const c = await x.business(owner);
+    const d = await x.business(owner); // no plan of its own
+    expect((await grant(a, 'business_network', 'Network chain')).status).toBe(201);
+    expect((await grant(b, 'business_network', 'Network chain')).status).toBe(201);
+    await paidInAStore(c, 'business_professional');
+
+    const asked = await askForEnterprise(a);
+    expect(asked.status).toBe(201);
+    const approved = await send(
+      'post',
+      `/v1/admin/billing/plan-requests/${asked.body.data.id}/approve`,
+      admin(),
+      {
+        note: 'Six branches in Lahore',
+      },
+    );
+    expect(approved.status).toBe(200);
+    const chain = approved.body.data.chain as {
+      gift: boolean;
+      moved: { id: string }[];
+      left: { id: string; name: string; reason: string }[];
+    };
+    expect(chain.gift).toBe(true);
+    expect(chain.moved.map((m) => m.id).sort()).toEqual([b.publicId, d.publicId].sort());
+    expect(chain.left).toEqual([{ id: c.publicId, name: c.name, reason: expect.stringContaining('paddle') }]);
+    for (const s of [a, b, d]) expect(await livePlan(s)).toBe('business_enterprise');
+    expect(await livePlan(c)).toBe('business_professional');
+    // The gift is written where an operator sees it, on the approved branch's grant only.
+    expect((await x.subscriptions(a))[0]!.grantNote).toBe(
+      'Moved up from Network: one free ad for the new branch (a credit until ads launch). Six branches in Lahore',
+    );
+    expect((await x.subscriptions(b))[0]!.grantNote).not.toMatch(/free ad/);
+    expect(approved.body.data.decisionNote).toBe('Six branches in Lahore');
+  });
+
+  it('a chain that wasn’t on Network moves without the gift; a long note still fits the grant', async () => {
+    const owner = await x.person();
+    const a = await x.business(owner);
+    const b = await x.business(owner);
+    const asked = await askForEnterprise(a);
+    // Up to 500 characters are accepted (and trimmed); a grant's note holds 300.
+    const note = `Hospital group. ${'Twelve branches across Punjab and Sindh. '.repeat(11)}`
+      .slice(0, 480)
+      .trim();
+    const approved = await send(
+      'post',
+      `/v1/admin/billing/plan-requests/${asked.body.data.id}/approve`,
+      admin(),
+      {
+        note,
+      },
+    );
+    expect(approved.status).toBe(200);
+    expect(approved.body.data.chain).toMatchObject({ gift: false, moved: [{ id: b.publicId }], left: [] });
+    expect(approved.body.data.decisionNote).toBe(note); // the request keeps all of it
+    expect((await x.subscriptions(a))[0]!.grantNote).toBe(note.slice(0, 300));
+  });
+
+  it('a branch added later gets Enterprise from the sweeper, once, until the chain’s end date; nothing else does', async () => {
+    const owner = await x.person();
+    const a = await x.business(owner);
+    const until = new Date(Date.now() + 200 * 86_400_000).toISOString();
+    expect((await grant(a, 'business_enterprise', 'Hospital group', { until })).status).toBe(201);
+    const later = await x.business(owner);
+    const ownPlan = await x.business(owner);
+    expect((await grant(ownPlan, 'business_essential', 'A plan of its own')).status).toBe(201);
+    // A chain paying for Enterprise in a store isn't extended: a free grant would give a paid branch away.
+    const payer = await x.person();
+    await paidInAStore(await x.business(payer), 'business_enterprise');
+    const unpaid = await x.business(payer);
+
+    const sweeper = new AccountService(h.plane);
+    await sweeper.extendEnterpriseChains();
+    const subs = await x.subscriptions(later);
+    expect(subs).toHaveLength(1);
+    expect(subs[0]).toMatchObject({
+      provider: 'manual',
+      status: 'active',
+      currentPeriodEnd: new Date(until),
+    });
+    expect(await livePlan(later)).toBe('business_enterprise');
+    expect(await livePlan(ownPlan)).toBe('business_essential');
+    expect(await livePlan(unpaid)).toBeNull();
+
+    await sweeper.extendEnterpriseChains();
+    expect(await x.subscriptions(later)).toHaveLength(1);
+  });
+});

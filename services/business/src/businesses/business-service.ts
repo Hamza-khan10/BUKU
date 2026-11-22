@@ -8,6 +8,7 @@ import {
   type BusinessTx,
   type DataPlane,
 } from '@buku/database';
+import { chainStanding, ENTERPRISE_PLAN, liveSubscriptionOnShard, type ChainStanding } from '@buku/billing';
 import { createEvent, enqueueShardEvent, TOPICS, type Topic } from '@buku/kafka';
 import { auditCtx, type RequestContext } from '../http/context.js';
 import type { CategoryService } from '../categories/category-service.js';
@@ -90,11 +91,25 @@ export class BusinessService {
     const ownerShard = await plane.user(owner.id);
     const owned = await ownerShard.userBusinessRole.count({ where: { userId: owner.id, role: 'owner' } });
     if (owned >= settings.maxBusinessesPerOwner) {
-      throw new AppError(
-        `You can register up to ${settings.maxBusinessesPerOwner} businesses`,
-        ErrorCodes.PLAN_LIMIT_REACHED,
-        409,
-      );
+      // The limit is Network's (two to five branches); a chain on Enterprise has none (D-146).
+      const standing = await this.chainOf(owner.id);
+      if (standing !== 'enterprise') {
+        throw new AppError(
+          `An account holds up to ${settings.maxBusinessesPerOwner} businesses; more is Enterprise`,
+          ErrorCodes.PLAN_LIMIT_REACHED,
+          409,
+          {
+            details: {
+              limit: 'businesses',
+              max: settings.maxBusinessesPerOwner,
+              used: owned,
+              upgrade: ENTERPRISE_PLAN,
+              // A Network chain growing past it: the milestone, celebrated, with its gift.
+              fromNetwork: standing === 'network',
+            },
+          },
+        );
+      }
     }
     await this.categories.assertUsable(input.categoryId);
 
@@ -192,6 +207,30 @@ export class BusinessService {
       if (written) await plane.inBusiness(id, (tx) => tx.business.deleteMany({ where: { id } }));
       throw err;
     }
+  }
+
+  /**
+   * What the owner's chain is on (D-146), from the live plan of each business on their own list:
+   * read business by business (each on its shard, inside that business), never by sweeping shards.
+   */
+  private async chainOf(ownerId: bigint): Promise<ChainStanding> {
+    const own = await (
+      await this.plane.user(ownerId)
+    ).userBusinessRole.findMany({
+      where: { userId: ownerId, role: 'owner', status: 'active' },
+      select: { businessId: true },
+    });
+    const codes = await Promise.all(
+      own.map(({ businessId }) =>
+        this.plane
+          .inBusiness(businessId, async (tx) => (await liveSubscriptionOnShard(tx, businessId))?.planCode)
+          .catch((err: unknown) => {
+            if (err instanceof ShardNotFoundError) return null; // a business gone since
+            throw err;
+          }),
+      ),
+    );
+    return chainStanding(codes);
   }
 
   /** Businesses I own or work at, with my role in each (my own list, checked against each business). */

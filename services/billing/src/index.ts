@@ -87,12 +87,28 @@ const expiry = setInterval(
 );
 expiry.unref();
 
+// Branches an Enterprise chain adds after its approval get Enterprise too (D-146): the gap is the
+// sweeper's interval, and while billing is off nobody is limited meanwhile. Idempotent.
+const chains = setInterval(
+  () => {
+    accounts
+      .extendEnterpriseChains()
+      .then(
+        (n) => n > 0 && logger.info({ extended: n }, 'new branches of Enterprise chains moved to Enterprise'),
+      )
+      .catch((err: unknown) => logger.error({ err }, 'extending Enterprise chains failed'));
+  },
+  2 * 60 * 1000,
+);
+chains.unref();
+
 // Hooks run in REVERSE order on shutdown.
 const hooks: ShutdownHook[] = [
   {
     name: 'expiry',
     fn: () => {
       clearInterval(expiry);
+      clearInterval(chains);
       return Promise.resolve();
     },
   },
