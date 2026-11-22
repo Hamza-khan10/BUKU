@@ -47,7 +47,7 @@ export function LegalDoc({
             <p className="text-sm font-medium text-brand-ink">Legal</p>
             <h1 className="type-app-title">{title}</h1>
             <p className="text-sm text-ink-3">
-              Version {version} · {reviewed ? 'In effect' : 'Draft — not yet in effect'}
+              Version {version} · {reviewed ? 'In effect' : 'Draft, not yet in effect'}
             </p>
           </header>
 

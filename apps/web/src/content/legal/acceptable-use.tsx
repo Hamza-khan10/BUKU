@@ -11,7 +11,7 @@ export function acceptableUse(facts: SiteFacts): LegalDocument {
     inShort: [
       'Be real: real bookings, real reviews of real visits, real business details.',
       'Be respectful: no harassment, hate or threats, in reviews, replies or anywhere else.',
-      'Don’t attack, overload or copy BUKU — and if you find a security problem, tell us.',
+      'Don’t attack, overload or copy BUKU, and if you find a security problem, tell us.',
     ],
     sections: [
       {

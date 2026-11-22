@@ -13,7 +13,7 @@ export function businessTerms(facts: SiteFacts): LegalDocument {
     inShort: [
       'Your profile shows “Not verified” until BUKU has checked your business documents.',
       'You set your services, prices, hours and rules; customers rely on them, so keep them accurate.',
-      'You see what you need to serve customers — their name, booking and a reliability label — and use it only for that.',
+      'You see what you need to serve customers (their name, booking and a reliability label) and use it only for that.',
       'You can reply to reviews and report ones that break the rules, but not remove them.',
     ],
     sections: [
@@ -52,8 +52,8 @@ export function businessTerms(facts: SiteFacts): LegalDocument {
         body: (
           <ul>
             <li>
-              The owner can create accounts for the team, with roles — manager, front desk, staff — that
-              decide what each person can do.
+              The owner can create accounts for the team, with roles (manager, front desk, staff) that decide
+              what each person can do.
             </li>
             <li>
               You are responsible for what your team does in BUKU. Removing someone from the team ends their
@@ -74,7 +74,7 @@ export function businessTerms(facts: SiteFacts): LegalDocument {
             </li>
             <li>Honour the bookings you confirm. If you must cancel one, give the customer the reason.</li>
             <li>Appointments are paid at your business; BUKU does not collect or hold that money.</li>
-            <li>The waiting-room screen shows ticket numbers only — never customers’ names.</li>
+            <li>The waiting-room screen shows ticket numbers only, never customers’ names.</li>
           </ul>
         ),
       },

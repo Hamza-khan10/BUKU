@@ -12,7 +12,7 @@ export function cookies(): LegalDocument {
     version: '1.0',
     inShort: [
       'The website uses only the cookies it needs to work: keeping you signed in, and remembering your colour theme.',
-      'No advertising, analytics or tracking cookies, and none from other companies — so there’s no cookie banner to click through.',
+      'No advertising, analytics or tracking cookies, and none from other companies, so there’s no cookie banner to click through.',
     ],
     sections: [
       {

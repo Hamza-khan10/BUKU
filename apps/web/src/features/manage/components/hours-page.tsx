@@ -139,7 +139,7 @@ function ClosedDays({ business }: { business: ManagedBusiness }) {
         </h2>
         <p className="text-ink-2">
           Holidays, half days, a day off for everyone: no free times are offered then. Bookings already made
-          for those days stay — look at them in Appointments.
+          for those days stay: look at them in Appointments.
         </p>
       </div>
       <ScheduleList
