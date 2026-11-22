@@ -46,10 +46,17 @@ test.describe('Notifications', () => {
       )
       .toBeGreaterThan(0);
 
-    await page.goto('/account/notifications');
-    await expect(
-      page.getByRole('button', { name: /^Account: Nadia Inbox, \d+ unread notification/ }),
-    ).toBeVisible();
+    // The bell beside the account, where people look for notifications (D-149): its count in
+    // words, and it leads to them.
+    await page.goto('/');
+    const bell = page.getByRole('link', { name: /^Notifications, \d+ unread$/ });
+    await expect(bell).toBeVisible();
+    await bell.click();
+    await expect(page).toHaveURL((url) => url.pathname === '/account/notifications');
+    await expect(page.getByRole('link', { name: /^Notifications, \d+ unread$/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
     const message = page.getByRole('link', { name: /Booking confirmed/ });
     await expect(message).toContainText(booked.code);
     await expect(message).toContainText('(unread)');
@@ -71,6 +78,9 @@ test.describe('Notifications', () => {
       .toBe(0);
     await page.goto('/account/notifications');
     await expect(page.getByText('All read.')).toBeVisible();
+    await expect(
+      page.getByRole('banner').getByRole('link', { name: 'Notifications', exact: true }),
+    ).toBeVisible();
     await expect(page.getByRole('link', { name: /Booking confirmed/ })).not.toContainText('(unread)');
 
     await page.getByRole('button', { name: 'Remove “Booking confirmed” from your inbox' }).click();
