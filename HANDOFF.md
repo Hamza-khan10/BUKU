@@ -4,7 +4,7 @@ The state of the whole project in one place: what is built, how it is run and wo
 things stand on GitHub, and what comes next. Last updated **2026-11-18**.
 
 Deeper detail lives in the docs this page points to — [BUILD_GUIDE](docs/BUILD_GUIDE.md) (the
-phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-147),
+phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-149),
 [DATABASE](docs/DATABASE.md) (database v2), [ARCHITECTURE](docs/ARCHITECTURE.md),
 [SECURITY](docs/SECURITY.md), [API_REFERENCE](docs/API_REFERENCE.md),
 [DEVELOPMENT](docs/DEVELOPMENT.md) (setting up and running) and [WEB_PLAN](docs/WEB_PLAN.md).
@@ -211,8 +211,9 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    search (D-138, D-139) and the accessibility audit by use (3.7g, D-141), Lighthouse budgets and a lighter
    home page (3.7h, D-142), the new identity and interactions (3.7i, D-143), the visual pass of the
    public site (3.7j, D-144), Enterprise from 6 branches, priced by tier (D-145, D-146), and the
-   6th branch as a milestone in the app (3.7k, D-147); next the signed-in screens' visual pass and
-   the copy review.
+   6th branch as a milestone in the app (3.7k, D-147, with sixty new businesses an hour for
+   Enterprise, D-148), notifications on their own bell (3.7l, D-149); next the signed-in screens'
+   visual pass and the copy review.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.
 3. **Phase 5** — production: deployment, PgBouncer, the standby and a second region, backups to

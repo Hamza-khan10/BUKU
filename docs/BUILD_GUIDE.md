@@ -855,12 +855,16 @@ The detailed plan — every page, its data and edge cases, the design system and
   for the new branch once ads open, nothing typed lost) and asks for Enterprise in one press;
   anyone else at the cap, the plain way up. One approval in the console moves the whole chain
   (what moved, what was left and why, the gift owed, said on approving); branches added later
-  follow by billing's sweeper. Open for the owner: creating businesses is limited to five an hour
-  a person (anti-abuse), so an Enterprise chain adding many branches at once is slowed. Tests: the
+  follow by billing's sweeper. Creating businesses stays limited to five an hour a person
+  (anti-abuse); an Enterprise chain gets sixty (D-148). Tests: the
   chain's standing (unit); the cap's details, the milestone, no cap on Enterprise (business
   integration); the whole chain approved, the gift, a store-paid branch left, the sweeper (billing
   integration); the milestone and the plain step, focus, accessibility, the request reaching
   billing (browser).
+- **3.7l Notifications on their own bell — ✅ done (D-149).** Out of the account menu and off the
+  avatar: a bell beside the account in both headers, with the unread count, its name in words, a
+  tooltip, and marked on the notifications page (Jakob's law). Tests: e2e/notifications.spec.ts
+  (the bell's count, it leads to the notifications, and empties once read).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

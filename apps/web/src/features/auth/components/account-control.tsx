@@ -19,8 +19,10 @@ import { useEffect, useState } from 'react';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip } from '@/components/ui/tooltip';
 import { toast } from '@/components/ui/toaster';
 import { ApiError } from '@/lib/api/errors';
+import { cn } from '@/lib/cn';
 import { fetchUnreadCount, UNREAD_KEY } from '@/features/notifications/api';
 import { fetchMe, ME_KEY, mustChangePassword, signOut } from '../api';
 
@@ -85,86 +87,105 @@ export function AccountControl({ signedIn }: { signedIn: boolean }) {
   };
 
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger
-        className="flex items-center gap-2 rounded-full py-1 pr-1 pl-1 hover:bg-sunken sm:pr-3"
-        aria-label={`Account: ${user.name}${count > 0 ? `, ${count} unread ${count === 1 ? 'notification' : 'notifications'}` : ''}`}
-      >
-        <span className="relative">
-          <Avatar name={user.name} src={user.avatarUrl} size={34} />
-          {count > 0 && (
-            // The count is drawn from the attribute (the button's name says it in words), so the
-            // button's visible text stays the person's name (WCAG 2.5.3, label in name).
-            <span
-              aria-hidden
-              data-count={count > 9 ? '9+' : String(count)}
-              className="absolute -top-1 -right-1 grid h-4.5 min-w-4.5 place-items-center rounded-full bg-brand px-1 text-[0.65rem] font-bold text-on-brand ring-2 ring-canvas before:content-[attr(data-count)]"
-            />
-          )}
-        </span>
-        <span className="hidden max-w-32 truncate text-sm font-medium text-ink sm:inline">{first}</span>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="end"
-          sideOffset={8}
-          className="z-50 min-w-64 rounded-lg border border-line bg-surface p-1.5 shadow-lift animate-rise"
+    <div className="flex items-center gap-1">
+      {user.account.type === 'personal' && <NotificationsBell count={count} />}
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger
+          className="flex items-center gap-2 rounded-full py-1 pr-1 pl-1 hover:bg-sunken sm:pr-3"
+          aria-label={`Account: ${user.name}`}
         >
-          <DropdownMenu.Label className="flex flex-col px-3 py-2">
-            <span className="font-medium text-ink">{user.name}</span>
-            {user.email && <span className="truncate text-sm text-ink-3">{user.email}</span>}
-          </DropdownMenu.Label>
-          <DropdownMenu.Separator className="my-1 h-px bg-line" />
-          {user.account.type === 'personal' &&
-            (
-              [
-                { href: '/account', label: 'Your account', Icon: UserRound },
-                { href: '/account/appointments', label: 'Your visits', Icon: CalendarDays },
-                {
-                  href: '/account/notifications',
-                  label: count > 0 ? `Notifications (${count} unread)` : 'Notifications',
-                  Icon: Bell,
-                },
-                { href: '/business', label: 'Your businesses', Icon: Store },
-                { href: '/account/settings', label: 'Settings', Icon: Settings },
-              ] as const
-            ).map(({ href, label, Icon }) => (
-              <DropdownMenu.Item key={href} asChild>
+          <Avatar name={user.name} src={user.avatarUrl} size={34} />
+          <span className="hidden max-w-32 truncate text-sm font-medium text-ink sm:inline">{first}</span>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="end"
+            sideOffset={8}
+            className="z-50 min-w-64 rounded-lg border border-line bg-surface p-1.5 shadow-lift animate-rise"
+          >
+            <DropdownMenu.Label className="flex flex-col px-3 py-2">
+              <span className="font-medium text-ink">{user.name}</span>
+              {user.email && <span className="truncate text-sm text-ink-3">{user.email}</span>}
+            </DropdownMenu.Label>
+            <DropdownMenu.Separator className="my-1 h-px bg-line" />
+            {user.account.type === 'personal' &&
+              (
+                [
+                  { href: '/account', label: 'Your account', Icon: UserRound },
+                  { href: '/account/appointments', label: 'Your visits', Icon: CalendarDays },
+                  { href: '/business', label: 'Your businesses', Icon: Store },
+                  { href: '/account/settings', label: 'Settings', Icon: Settings },
+                ] as const
+              ).map(({ href, label, Icon }) => (
+                <DropdownMenu.Item key={href} asChild>
+                  <Link
+                    href={href}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-sm text-ink outline-none data-[highlighted]:bg-sunken"
+                  >
+                    <Icon className="size-4 text-ink-3" aria-hidden /> {label}
+                  </Link>
+                </DropdownMenu.Item>
+              ))}
+            {user.account.type === 'personal' && <DropdownMenu.Separator className="my-1 h-px bg-line" />}
+            {mustChangePassword(user) && (
+              <DropdownMenu.Item asChild>
                 <Link
-                  href={href}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-sm text-ink outline-none data-[highlighted]:bg-sunken"
+                  href="/signin/new-password"
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium text-brand-ink outline-none data-[highlighted]:bg-sunken"
                 >
-                  <Icon className="size-4 text-ink-3" aria-hidden /> {label}
+                  <KeyRound className="size-4" aria-hidden /> Choose your own password
                 </Link>
               </DropdownMenu.Item>
-            ))}
-          {user.account.type === 'personal' && <DropdownMenu.Separator className="my-1 h-px bg-line" />}
-          {mustChangePassword(user) && (
+            )}
             <DropdownMenu.Item asChild>
               <Link
-                href="/signin/new-password"
-                className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-sm font-medium text-brand-ink outline-none data-[highlighted]:bg-sunken"
+                href="/signout"
+                className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-sm text-ink outline-none data-[highlighted]:bg-sunken"
               >
-                <KeyRound className="size-4" aria-hidden /> Choose your own password
+                <MonitorSmartphone className="size-4 text-ink-3" aria-hidden /> Sign out of every device…
               </Link>
             </DropdownMenu.Item>
-          )}
-          <DropdownMenu.Item asChild>
-            <Link
-              href="/signout"
+            <DropdownMenu.Item
+              onSelect={() => void leave()}
               className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-sm text-ink outline-none data-[highlighted]:bg-sunken"
             >
-              <MonitorSmartphone className="size-4 text-ink-3" aria-hidden /> Sign out of every device…
-            </Link>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            onSelect={() => void leave()}
-            className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2.5 text-sm text-ink outline-none data-[highlighted]:bg-sunken"
+              <LogOut className="size-4 text-ink-3" aria-hidden /> Sign out
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
+  );
+}
+
+/**
+ * Notifications on their own, beside the account rather than inside its menu (D-149): where
+ * people look for them in every other app they use (Jakob's law), with the unread count on the
+ * bell and its name saying it in words. Marked while you're on the notifications page.
+ */
+function NotificationsBell({ count }: { count: number }) {
+  const here = usePathname() === '/account/notifications';
+  return (
+    <Tooltip content="Notifications">
+      <Link
+        href="/account/notifications"
+        aria-label={count > 0 ? `Notifications, ${count} unread` : 'Notifications'}
+        aria-current={here ? 'page' : undefined}
+        className={cn(
+          'relative grid size-10 place-items-center rounded-full text-ink-2 transition-colors hover:bg-sunken hover:text-ink',
+          here && 'bg-sunken text-ink',
+        )}
+      >
+        <Bell aria-hidden className="size-5" />
+        {count > 0 && (
+          <span
+            aria-hidden
+            className="tabular absolute top-0.5 right-0.5 grid h-4.5 min-w-4.5 place-items-center rounded-full bg-brand px-1 text-[0.65rem] leading-none font-bold text-on-brand ring-2 ring-canvas"
           >
-            <LogOut className="size-4 text-ink-3" aria-hidden /> Sign out
-          </DropdownMenu.Item>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+            {count > 9 ? '9+' : count}
+          </span>
+        )}
+      </Link>
+    </Tooltip>
   );
 }

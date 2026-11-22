@@ -1635,3 +1635,19 @@ end date, its approver; the audit log names no person). A chain paying for Enter
 never extended: a free grant would give a paid branch away. While billing is off the two-minute
 gap limits nobody. Fixed on the way: an approval's note may be 500 characters but a grant's holds
 300, so a long note failed the approval; the grant now keeps the first 300 and the request all 500.
+
+**D-148 · An Enterprise chain may add sixty businesses an hour.** Creating a business is limited to
+five an hour a person (anti-abuse), counting refused tries; an Enterprise chain setting up a dozen
+branches at once was slowed to five an hour. The owner's call: Enterprise only, everyone else keeps
+five. Business-service checks the five first, as before, for everyone; only once they're used does
+it look up the chain's plan (D-147's `chainStanding`), and an Enterprise chain then draws on its
+own sixty an hour (`rl:biz:create:enterprise`): about one a minute, still a guard against a
+runaway script. Nobody else's request costs a lookup.
+
+**D-149 · Notifications get their own bell in the header.** They were a count on the avatar and an
+item inside the account menu. People look for notifications as a bell beside their account in
+every other app they use (Jakob's law), so it now stands on its own in both headers (the site's and
+the business workspace's), for personal accounts: the unread count on the bell (9+ past nine), its
+name saying it in words ("Notifications, 3 unread"), a tooltip on hover and keyboard focus, and
+marked while you're on the notifications page. The avatar opens the account menu and nothing else;
+"Notifications" left that menu so it lives in one place.
