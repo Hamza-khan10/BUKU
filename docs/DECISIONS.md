@@ -1568,3 +1568,22 @@ cheaper Professional and as if the first branch were billed apart. It now says "
 branches: $58 a month." and leads with what each branch saves against Professional, worked out from
 the prices. Also: "Continue with Google" on one line at 320 px; business questions on /contact go
 to business@ (support@ if unset).
+
+**D-145 · Enterprise from 10 branches, never below Network's price (3.7j).** The owner moved
+Enterprise from 20 branches to 10. Chains of 10 to 19 branches (a city's labs, dental or salon
+chains: most of the chains in BUKU's first market) rarely sign up on their own: rolling software
+out to a dozen branches, they want a person, a demo and help moving each branch in, and at 20 they
+only saw the self-serve card. A 12-branch chain on Network is $348 (Rs 59,988) a month, about ten
+single-shop Professional plans, so the conversation is worth having. Three rules come with it.
+**Network stays open at any size** ("two branches or more"): Enterprise is an offer, not a gate,
+and a chain that wants to sign up by itself can. **The price floor: Enterprise is never less a
+branch than Network's list price** ($29, Rs 4,999 a month, or its yearly equal); an Enterprise
+deal adds things (unlimited logins and staff, help setting up every branch, a named contact, a
+yearly invoice), it never takes price off, so the biggest customers don't pay less than
+self-serve ones. And the time it costs: setting up every branch is days of work for a solo
+founder, the first thing to watch as more chains qualify. The early-access form's branch question
+follows the line: 1 / 2-5 / 6-9 / 10-20 / more than 20 (it was 1 / 2-5 / 6-20 / 21+, where a
+20-branch Enterprise business answered "6 to 20"); earlier answers are kept as given ('6-20' stays
+allowed in the list). Rolled out database first: migrations/0002 widens the list's check (the
+table rebuilt, every row kept with its id, as one transaction), then the website sends the new
+answers, so no sign-up fails between the two deploys (`cf:release` deploys before it migrates).
