@@ -1548,3 +1548,23 @@ the header floats as a pill once the page moves (only its glass changes shape); 
 from its switch; search hints type two real searches, then rest. Not taken: countdowns, entry
 pop-ups, autoplay video walls, 3D, custom cursors. Every page stays within its Lighthouse budget
 (home 336 of 370 KiB, /for-business 299 of 325; accessibility, best practices and SEO 100).
+
+**D-144 · The visual pass of the public site, and Network's price said plainly (3.7j).** Every
+public page was checked by machine at 12 widths (320 to 1920 px) in both themes, then by eye at
+phone and tablet widths, where the earlier passes had looked least. Fixes stay in the existing
+language. The hero glow reached 80 px past the board, past the page's edge between 1024 and about
+1300 px wide, so the page scrolled sideways: its right side now stops at the gutter until there's
+room. On /categories (the owner's report), the group panel stretched beside a long list (an empty
+block of colour) and its link was two pieces side by side ("About" | "Government & Public"); the
+panel now holds to its words and the link is one run of text that wraps like a sentence, keeping
+the group's name in its words (anchor text tells people and search engines where a link leads,
+and the name is the keyword the guide ranks for); the kinds' columns follow the list's own width
+(one in a narrow card, so "Driving Licence Office" no longer breaks into three lines on a phone).
+Network: the owner asked why it costs less than Professional when it includes it. It is a
+multi-branch price, $29 (Rs 4,999) for each branch from two, so its smallest bill ($58, Rs 9,998)
+is above one Professional ($35): no single branch buys Professional for less. The card showed a
+bare "$29 / month" beside Professional's $35 and "A branch, from your second", which read as a
+cheaper Professional and as if the first branch were billed apart. It now says "Per branch. Two
+branches: $58 a month." and leads with what each branch saves against Professional, worked out from
+the prices. Also: "Continue with Google" on one line at 320 px; business questions on /contact go
+to business@ (support@ if unset).

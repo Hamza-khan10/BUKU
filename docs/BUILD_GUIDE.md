@@ -829,6 +829,16 @@ The detailed plan — every page, its data and edge cases, the design system and
   security.txt (generated). Tests: e2e/interactions.spec.ts (the board, the preview
   and its prefill, a hostile link, the header, the theme, the hint, still under reduced motion);
   every page within its Lighthouse budget.
+- **3.7j The visual pass at every breakpoint — 🟡 the public site done (D-144); the signed-in screens
+  next.** Every public page (19, before launch as live) checked by machine at 12 widths from 320 to
+  1920 px, light and dark (sideways scroll, anything past the edge, wrapped buttons, a heading's
+  last word alone, clipped text, broken images), then by eye at 390, 768 and 1024 px. Fixed: the
+  hero glow pushed the home page and /for-business sideways from 1024 to ~1300 px (now inside the
+  gutter); the categories page's group cards (the colour panel holds to its words, the group link
+  one run of text with the group's name in it, list columns by the list's own width, one on a
+  phone); Network's card says its price is per branch, its smallest bill and what each branch saves
+  against Professional; "Continue with Google" on one line at 320 px; business questions on the
+  contact page go to business@. Tests: e2e/pricing.spec.ts (Network's wording).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

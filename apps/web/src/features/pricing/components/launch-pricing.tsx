@@ -65,7 +65,7 @@ export function LaunchPricing({
           <li key={plan.id} className="flex">
             <PlanCard
               plan={plan}
-              previous={i > 0 ? LAUNCH_PLANS[i - 1]!.name : null}
+              previous={i > 0 ? LAUNCH_PLANS[i - 1]! : null}
               currency={currency}
               period={period}
               early={early}
@@ -85,7 +85,7 @@ function PlanCard({
   early,
 }: {
   plan: LaunchPlan;
-  previous: string | null;
+  previous: LaunchPlan | null;
   currency: Currency;
   period: Period;
   early: boolean;
@@ -93,6 +93,17 @@ function PlanCard({
   const free = plan.monthly[currency] === 0;
   const { perMonth, billed } = priceFor(plan, currency, period);
   const heading = `plan-${plan.id}`;
+  // Network's price is for each branch, from two: what the smallest bill is, and what each branch
+  // saves against the plan before it (Professional) on its own, so $29 never reads as a cheaper
+  // Professional.
+  const saving = plan.perBranch && previous ? priceFor(previous, currency, period).billed - billed : 0;
+  const includes =
+    saving > 0
+      ? [
+          `Each branch ${money(saving, currency)} a ${period} less than ${previous!.name} on its own`,
+          ...plan.includes,
+        ]
+      : plan.includes;
   const href = (
     early ? `/early-access?as=business&plan=${plan.id}&source=pricing` : '/business/new'
   ) as Route;
@@ -126,13 +137,20 @@ function PlanCard({
           {!free && <span className="text-sm whitespace-nowrap text-ink-2">/ month</span>}
         </p>
         <p className="text-sm text-ink-3">
-          {free
-            ? 'For good, no card needed'
-            : period === 'year'
-              ? `${money(billed, currency)} billed yearly${plan.perBranch ? ', a branch' : ''}`
-              : plan.perBranch
-                ? 'A branch, from your second'
-                : 'Billed monthly'}
+          {free ? (
+            'For good, no card needed'
+          ) : plan.perBranch ? (
+            <>
+              {period === 'year' ? 'Per branch, billed yearly.' : 'Per branch.'}{' '}
+              <span className="whitespace-nowrap">
+                Two branches: {money(billed * 2, currency)} a {period}.
+              </span>
+            </>
+          ) : period === 'year' ? (
+            `${money(billed, currency)} billed yearly`
+          ) : (
+            'Billed monthly'
+          )}
         </p>
       </div>
 
@@ -144,9 +162,9 @@ function PlanCard({
       </Button>
 
       <div className="flex flex-col gap-3 border-t border-line pt-5">
-        {previous && <p className="text-sm font-medium text-ink">Everything in {previous}, plus:</p>}
+        {previous && <p className="text-sm font-medium text-ink">Everything in {previous.name}, plus:</p>}
         <ul className="flex flex-col gap-2.5">
-          {plan.includes.map((line) => (
+          {includes.map((line) => (
             <li key={line} className="flex gap-2.5 text-[0.95rem] leading-snug text-ink-2">
               <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-brand-ink" strokeWidth={2.5} />
               {line}

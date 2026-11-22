@@ -134,14 +134,15 @@ export function BoardLive({ still, label = 'Live' }: { still: boolean; label?: s
 
 /**
  * The still glow behind a board (emerald light, a touch of saffron): depth without more motion.
- * It stays inside the page's gutters on phones, so nothing scrolls sideways.
+ * It stays inside the page's gutters, so nothing scrolls sideways: on its right, where the board
+ * meets the gutter (lg, a 2rem gutter, up to ~1300 px wide), it reaches only as far as the gutter.
  */
 export function BoardGlow({ className, children }: { className?: string; children: ReactNode }) {
   return (
     <div className={cn('relative isolate mx-auto w-full max-w-[30rem] lg:mr-0', className)}>
       <div
         aria-hidden
-        className="absolute -inset-x-4 -inset-y-16 -z-10 bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--color-brand)_20%,transparent),transparent)] lg:-inset-x-20 lg:-inset-y-24"
+        className="absolute -inset-x-4 -inset-y-16 -z-10 bg-[radial-gradient(closest-side,color-mix(in_oklab,var(--color-brand)_20%,transparent),transparent)] lg:-inset-y-24 lg:-left-20 lg:-right-8 xl:-right-20"
       />
       <div
         aria-hidden
