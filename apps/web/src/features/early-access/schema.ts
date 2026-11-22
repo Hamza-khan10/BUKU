@@ -12,7 +12,9 @@ export const KINDS = ['business', 'customer'] as const;
 export type Kind = (typeof KINDS)[number];
 
 /** How many branches (locations) a business has, in ranges people can answer without counting. */
-export const BRANCHES = ['1', '2-5', '6-20', '21+'] as const;
+// Split at 10, where Enterprise starts (D-145). Earlier sign-ups' '6-20' stays in the list's data
+// (migrations/0002), but isn't offered any more.
+export const BRANCHES = ['1', '2-5', '6-9', '10-20', '21+'] as const;
 
 /** The plans BUKU will offer (D-134), and "not sure": what a business would consider. */
 export const PLAN_INTEREST = [

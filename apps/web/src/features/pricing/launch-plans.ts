@@ -80,15 +80,27 @@ export const LAUNCH_PLANS: readonly LaunchPlan[] = [
   },
 ];
 
-/** Enterprise: 20 branches or more, priced with the business. */
+/**
+ * Enterprise: 10 branches or more (D-145), priced with the business, and never less a branch than
+ * Network's list price (monthly or yearly): a deal adds things (below), it doesn't take price off.
+ * Network stays open at any size, so Enterprise is an offer, not a gate.
+ */
 export const ENTERPRISE = {
-  fromBranches: 20,
+  fromBranches: 10,
   includes: [
     'Unlimited team logins, staff, services and photos',
     'Help to set up every branch',
     'A named contact at BUKU',
   ],
 };
+
+/**
+ * The early-access branch answer where Enterprise begins ("10-20"): the form's options are split at
+ * Enterprise's line, so "Talk to us" opens it on the first answer that is Enterprise.
+ */
+export function enterpriseBranchAnswer<T extends string>(answers: readonly T[]): T | undefined {
+  return answers.find((a) => Number.parseInt(a, 10) === ENTERPRISE.fromBranches);
+}
 
 export const TRIAL_DAYS = 30;
 /** A year costs this many months. */

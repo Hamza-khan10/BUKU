@@ -2,16 +2,28 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { categoriesFrom, MIGRATION } from '../scripts/category-snapshot';
 import { CATEGORY_SNAPSHOT } from '../src/features/categories/snapshot';
+import { BRANCHES } from '../src/features/early-access/schema';
 import {
   COMPARISON,
   currencyFor,
   CURRENCIES,
+  ENTERPRISE,
+  enterpriseBranchAnswer,
   LAUNCH_PLANS,
   money,
   priceFor,
 } from '../src/features/pricing/launch-plans';
 
 describe('Prices at launch (D-137)', () => {
+  it('Enterprise starts at 10 branches, and the early-access answers split exactly there (D-145)', () => {
+    expect(ENTERPRISE.fromBranches).toBe(10);
+    // An answer starts at Enterprise's line, so no answer holds both sides of it (as "6 to 20" did
+    // when Enterprise began at 20); "Talk to us" opens the form on it.
+    expect(enterpriseBranchAnswer(BRANCHES)).toBe('10-20');
+    const network = LAUNCH_PLANS.find((p) => p.id === 'network')!;
+    expect(network.perBranch).toBe(true); // Network stays open at any size: Enterprise is an offer
+  });
+
   it('rupees for Pakistan, dollars for everyone else', () => {
     expect(currencyFor('PK')).toBe('PKR');
     expect(currencyFor(' pk ')).toBe('PKR');
