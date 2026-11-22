@@ -771,11 +771,12 @@ The detailed plan — every page, its data and edge cases, the design system and
 - **3.7d Prices at launch; pricing and categories without the API — ✅ done (D-137, #211).** Plans per
   branch, per month: Starter free (with the queue), Essential Rs 2,499 / $15, Professional Rs 5,999
   / $35 (the 30-day trial), Network Rs 4,999 / $29 a branch (two or more), Enterprise priced
-  together (20 or more); a year costs ten months; rupees in Pakistan, dollars elsewhere. /pricing
+  together (20 or more; 10 or more since D-145); a year costs ten months; rupees in Pakistan, dollars elsewhere. /pricing
   rebuilt with the design skills (switches, cards, a real comparison table, free for people who
   book, pricing questions with FAQPage data); /categories from the API or a checked snapshot of the
   reference migration; Explore out of the navigation before launch. Before billing is switched on:
-  the catalog migration to these plans and a rupee payment route. Tests: plans, rounding, prices
+  the catalog migration to these plans (an Enterprise price never below Network's a branch, D-145)
+  and a rupee payment route. Tests: plans, rounding, prices
   formatted the same everywhere, the snapshot against the migration (unit); currency by country and
   by choice, yearly, the table, the plan carried to early access, categories without the API, no
   sideways scroll at 320 px, WCAG (browser).
@@ -838,7 +839,11 @@ The detailed plan — every page, its data and edge cases, the design system and
   one run of text with the group's name in it, list columns by the list's own width, one on a
   phone); Network's card says its price is per branch, its smallest bill and what each branch saves
   against Professional; "Continue with Google" on one line at 320 px; business questions on the
-  contact page go to business@. Tests: e2e/pricing.spec.ts (Network's wording).
+  contact page go to business@. Tests: e2e/pricing.spec.ts (Network's wording). Then Enterprise
+  from 10 branches (D-145, the owner's call): the band, "Talk to us" opening early access on
+  "10 to 20", the form's branch answers split at 10 (1 / 2-5 / 6-9 / 10-20 / 21+), the list's check
+  widened first (migrations/0002, earlier answers kept), and the price floor written down: never
+  below Network a branch. Tests: the rebuild keeps every earlier signup (unit), the split.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

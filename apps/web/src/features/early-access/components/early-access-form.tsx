@@ -28,7 +28,8 @@ declare global {
 const BRANCH_LABEL: Record<(typeof BRANCHES)[number], string> = {
   '1': 'One',
   '2-5': '2 to 5',
-  '6-20': '6 to 20',
+  '6-9': '6 to 9',
+  '10-20': '10 to 20',
   '21+': 'More than 20',
 };
 

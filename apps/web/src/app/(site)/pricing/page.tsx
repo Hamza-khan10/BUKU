@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Accordion, AccordionItem } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Container, PageHeading } from '@/components/ui/layout';
+import { BRANCHES } from '@/features/early-access/schema';
 import { faqStructuredData, PRICING_QUESTIONS } from '@/features/marketing/faq';
 import { LaunchPricing } from '@/features/pricing/components/launch-pricing';
 import { PlanComparison } from '@/features/pricing/components/plan-comparison';
@@ -11,6 +12,7 @@ import {
   CURRENCIES,
   currencyFor,
   ENTERPRISE,
+  enterpriseBranchAnswer,
   MONTHS_PER_YEAR_PAID,
   type Currency,
 } from '@/features/pricing/launch-plans';
@@ -68,7 +70,7 @@ export default async function PricingPage({ searchParams }: PageProps<'/pricing'
 
         {/* Enterprise (3.7i): the one plan you ask for, so the ask is easy to find. On Midnight
             like the board, with the way in up front: before launch, the business list with
-            Enterprise and more than 20 branches already chosen; and a direct address. */}
+            Enterprise and 10 to 20 branches already chosen (D-145); and a direct address. */}
         <aside
           aria-labelledby="enterprise-title"
           data-tone="dark"
@@ -95,7 +97,7 @@ export default async function PricingPage({ searchParams }: PageProps<'/pricing'
                 <Link
                   href={
                     early
-                      ? '/early-access?as=business&plan=enterprise&branches=21%2B&source=pricing-enterprise'
+                      ? `/early-access?as=business&plan=enterprise&branches=${enterpriseBranchAnswer(BRANCHES) ?? ''}&source=pricing-enterprise`
                       : '/contact'
                   }
                 >

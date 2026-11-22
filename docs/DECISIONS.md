@@ -1581,7 +1581,9 @@ branch than Network's list price** ($29, Rs 4,999 a month, or its yearly equal);
 deal adds things (unlimited logins and staff, help setting up every branch, a named contact, a
 yearly invoice), it never takes price off, so the biggest customers don't pay less than
 self-serve ones. And the time it costs: setting up every branch is days of work for a solo
-founder, the first thing to watch as more chains qualify. The early-access form's branch question
+founder, the first thing to watch as more chains qualify. (A grant, the console's plan given free
+for a while to win a customer, is a separate, deliberate gesture with an end date, not a price.)
+When billing's catalog takes these plans, an Enterprise price is checked against Network's. The early-access form's branch question
 follows the line: 1 / 2-5 / 6-9 / 10-20 / more than 20 (it was 1 / 2-5 / 6-20 / 21+, where a
 20-branch Enterprise business answered "6 to 20"); earlier answers are kept as given ('6-20' stays
 allowed in the list). Rolled out database first: migrations/0002 widens the list's check (the

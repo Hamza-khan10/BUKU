@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EarlyAccessInput, fieldProblems } from '../src/features/early-access/schema';
@@ -27,11 +27,19 @@ const business = {
 };
 
 /**
- * D1 is SQLite: the real migration, on Node's own SQLite, behind the few D1 calls the site uses.
+ * D1 is SQLite: the real migrations, in order, on Node's own SQLite, behind the few D1 calls the
+ * site uses. `upTo` stops after a given migration (to test the next one on data already there).
  */
-function d1(): { db: Db; sqlite: DatabaseSync } {
+const MIGRATIONS = readdirSync(new URL('../migrations/', import.meta.url))
+  .filter((f) => f.endsWith('.sql'))
+  .sort();
+const migrate = (sqlite: DatabaseSync, files: string[]) => {
+  for (const f of files) sqlite.exec(readFileSync(new URL(`../migrations/${f}`, import.meta.url), 'utf8'));
+};
+
+function d1(upTo?: string): { db: Db; sqlite: DatabaseSync } {
   const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec(readFileSync(new URL('../migrations/0001_waitlist.sql', import.meta.url), 'utf8'));
+  migrate(sqlite, upTo ? MIGRATIONS.slice(0, MIGRATIONS.indexOf(upTo) + 1) : MIGRATIONS);
   const db: Db = {
     prepare: (sql) => ({
       bind: (...values) => {
@@ -105,6 +113,12 @@ describe('Early access: what’s accepted', () => {
     expect(problems.branches).toBe('Choose one of these.');
     // Hidden characters (a zero-width space) aren't let in either.
     expect(EarlyAccessInput.safeParse({ ...business, city: 'Lah\u200Bore' }).success).toBe(false);
+  });
+
+  it('asks branches split where Enterprise starts (D-145); the old "6 to 20" isn’t offered any more', () => {
+    for (const branches of ['1', '2-5', '6-9', '10-20', '21+'])
+      expect(EarlyAccessInput.safeParse({ ...business, branches }).success, branches).toBe(true);
+    expect(EarlyAccessInput.safeParse({ ...business, branches: '6-20' }).success).toBe(false);
   });
 });
 
@@ -223,9 +237,48 @@ describe('Early access: on the server', () => {
       { whatsapp: '0300-1234567' },
       { kind: 'business' }, // a business without its details
       { branches: '3' },
+      { branches: '6-19' },
       { ip_hash: 'not-a-hash' },
     ])
       expect(insert({ email: `x${Math.random()}@example.com`, ...bad }), JSON.stringify(bad)).toThrow();
+  });
+
+  it('0002 keeps every earlier signup as it was given, and takes the new branch answers (D-145)', () => {
+    const { sqlite } = d1('0001_waitlist.sql');
+    const add = (email: string, branches: string) =>
+      sqlite
+        .prepare(
+          `INSERT INTO waitlist (email, kind, name, business_name, business_type, branches, city, country, plan_interest)
+           VALUES (?, 'business', 'Ali', 'Ali Cuts', 'Barbershop', ?, 'Lahore', 'PK', 'network')`,
+        )
+        .run(email, branches);
+    add('one@example.com', '6-20');
+    add('two@example.com', '21+');
+    sqlite.prepare(`DELETE FROM waitlist WHERE email = 'one@example.com'`).run();
+    add('three@example.com', '6-20');
+    expect(() => add('early@example.com', '10-20')).toThrow(); // what the old list refused
+    const before = sqlite.prepare('SELECT * FROM waitlist ORDER BY id').all();
+
+    migrate(sqlite, ['0002_waitlist_branches.sql']);
+    expect(sqlite.prepare('SELECT * FROM waitlist ORDER BY id').all()).toEqual(before);
+    add('four@example.com', '10-20');
+    add('five@example.com', '6-9');
+    // Ids carry on after the highest ever given (1 was deleted, 3 is the last), never reused.
+    expect(sqlite.prepare(`SELECT id FROM waitlist WHERE email = 'four@example.com'`).get()).toEqual({
+      id: 4,
+    });
+    expect(() => add('six@example.com', '6-19')).toThrow();
+    expect(() => add('two@example.com', '1')).toThrow(); // one per email and kind, still
+    const left = sqlite
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE tbl_name LIKE 'waitlist%' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+      )
+      .all();
+    expect(left).toEqual([
+      { name: 'waitlist' },
+      { name: 'waitlist_created' },
+      { name: 'waitlist_ip_recent' },
+    ]);
   });
 
   it('the tests’ store follows the same rules: one per email and kind, five an hour from one address', () => {
