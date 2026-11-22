@@ -92,7 +92,7 @@ const matches = async (businessId: bigint, words: string) => {
 describe('the catalog (DB-041)', () => {
   it('has the whole reference copy, read-only', async () => {
     expect(await catalog.category.count()).toBe(await directory.category.count());
-    expect(await catalog.plan.count()).toBe(8);
+    expect(await catalog.plan.count()).toBe(9); // the seeded eight and Network (20261122200000_network_plan)
     await expect(
       catalog.$executeRawUnsafe(`DELETE FROM reference.currencies WHERE code = 'PKR'`),
     ).rejects.toThrow(/permission denied/);
