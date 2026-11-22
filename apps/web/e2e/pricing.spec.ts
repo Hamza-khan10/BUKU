@@ -34,9 +34,9 @@ test.describe('Pricing (D-137)', () => {
     await expect(page.getByRole('radio', { name: /Yearly/ })).toBeChecked();
     await expect(essential(page)).toContainText('$13');
     await expect(essential(page)).toContainText('$150 billed yearly');
-    await expect(page.getByRole('article', { name: 'Network' })).toContainText(
-      '$290 billed yearly, a branch',
-    );
+    const network = page.getByRole('article', { name: 'Network' });
+    await expect(network).toContainText('Per branch, billed yearly. Two branches: $580 a year.');
+    await expect(network).toContainText('Each branch $60 a year less than Professional on its own');
   });
 
   test('free to start, one plan to try, every plan side by side, free for people who book', async ({

@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronRight } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import { StackedCards } from '@/components/motion/stacked-cards';
@@ -90,14 +90,22 @@ export default async function CategoriesPage() {
   );
 }
 
+/** "Government & Public" → { rest: "Government & ", last: "Public" }: the last word, to keep an arrow with it. */
+function lastWordAside(name: string) {
+  const i = name.lastIndexOf(' ');
+  return { rest: name.slice(0, i + 1), last: name.slice(i + 1) };
+}
+
 function GroupCard({ group, early }: { group: CategoryNode; early: boolean }) {
   const blurb = groupBlurb(group.slug);
   const heading = `group-${group.slug}`;
+  const name = lastWordAside(group.name);
   return (
     <section
       aria-labelledby={heading}
-      className="grid gap-6 rounded-2xl bg-surface p-4 shadow-lift ring-1 ring-line sm:p-6 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] lg:gap-8"
+      className="grid gap-6 rounded-2xl bg-surface p-4 shadow-lift ring-1 ring-line sm:p-6 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] lg:items-start lg:gap-8"
     >
+      {/* The group's own panel holds to its words beside a long list (no empty colour below). */}
       <div className="flex flex-col gap-4 rounded-xl bg-brand-soft p-5">
         <span className="grid size-12 place-items-center rounded-full bg-surface text-brand-ink">
           <CategoryIcon slug={group.slug} className="size-6" />
@@ -112,37 +120,41 @@ function GroupCard({ group, early }: { group: CategoryNode; early: boolean }) {
           </h2>
           {blurb && <p className="text-base leading-relaxed text-ink-2">{blurb}</p>}
         </div>
+        {/* The group's name stays in the link's words (they tell people and search engines where
+            it leads), as one run of text that wraps like a sentence in a narrow panel, never in
+            pieces side by side; the arrow stays with the last word. */}
         <Link
           href={`/c/${group.slug}` as Route}
-          className="mt-auto inline-flex items-center gap-1.5 font-semibold text-brand-ink underline-offset-4 hover:underline"
+          className="font-semibold text-pretty text-brand-ink underline-offset-4 hover:underline"
         >
-          {early ? 'About' : 'See all places'}
-          <span className="sr-only"> in {group.name}</span>
-          {early && <span> {group.name}</span>}
-          <ArrowRight aria-hidden className="size-4" />
+          {early ? 'About' : 'All places in'} {name.rest}
+          <span className="whitespace-nowrap">
+            {name.last}
+            <ArrowRight aria-hidden className="ml-1.5 inline size-4 align-[-0.125em]" />
+          </span>
         </Link>
       </div>
-      <div className="flex flex-col gap-2">
-        <p className="px-3 text-sm font-medium text-ink-2">
+      {/* Columns follow the room the list has, not the window: one in a narrow card, so a long
+          name ("Driving Licence Office") stays on a line or two, two from 28rem, three from 44rem. */}
+      <div className="@container flex flex-col gap-2">
+        <p className="px-2 text-sm font-medium text-ink-2 sm:px-3">
           {group.children.length} {group.children.length === 1 ? 'kind' : 'kinds'} of place
         </p>
         <ul
           aria-label={`Kinds of place in ${group.name}`}
-          className="grid gap-x-1 gap-y-0.5 min-[22.5rem]:grid-cols-2 sm:gap-x-2 xl:grid-cols-3"
+          className="grid gap-x-2 gap-y-0.5 @md:grid-cols-2 @[44rem]:grid-cols-3"
         >
           {group.children.map((kind) => (
             <li key={kind.slug}>
               {/* Every kind has its own page: before launch its guide, after it the places (D-139). */}
               <Link
                 href={`/c/${kind.slug}` as Route}
-                className="group flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-2 text-[0.95rem] leading-snug font-medium text-ink transition-colors hover:bg-sunken sm:gap-3 sm:px-3"
+                className="flex min-h-11 items-center gap-2.5 rounded-lg px-2 py-2 text-[0.95rem] leading-snug font-medium text-ink transition-colors hover:bg-sunken sm:gap-3 sm:px-3"
               >
                 <CategoryIcon slug={kind.slug} className="size-[1.125rem] shrink-0 text-brand-ink" />
+                {/* No arrow held in reserve for hover: the row's own colour says it's a link,
+                    and the room goes to the name. */}
                 <span className="min-w-0 flex-1 break-words hyphens-auto">{kind.name}</span>
-                <ChevronRight
-                  aria-hidden
-                  className="size-4 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-                />
               </Link>
             </li>
           ))}

@@ -25,10 +25,11 @@ export function GoogleButton({
   return (
     <a
       href={href}
-      // May wrap on a narrow phone instead of spilling out of its box.
+      // Less room at its sides on a narrow phone, so "Continue with Google" stays on one line down
+      // to 320 px; a longer label may still wrap instead of spilling out of its box.
       className={cn(
         buttonStyles({ variant: 'secondary', size: 'lg', block: true }),
-        'h-auto min-h-13 py-3 text-center whitespace-normal',
+        'h-auto min-h-13 px-4 py-3 text-center whitespace-normal sm:px-7',
       )}
     >
       <GoogleMark className="size-5" />

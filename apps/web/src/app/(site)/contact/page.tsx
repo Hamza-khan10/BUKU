@@ -47,7 +47,7 @@ export default function ContactPage() {
         <Way Icon={Building2} title="Businesses">
           <p>
             Questions about listing your business, verification or plans:{' '}
-            <Contact value={facts.email.support} kind="email" />.
+            <Contact value={facts.email.business ?? facts.email.support} kind="email" />.
           </p>
         </Way>
         <Way Icon={Lock} title="Privacy">

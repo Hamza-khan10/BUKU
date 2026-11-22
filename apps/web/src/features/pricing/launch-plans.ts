@@ -75,11 +75,8 @@ export const LAUNCH_PLANS: readonly LaunchPlan[] = [
     forWhom: 'For two branches or more',
     monthly: { PKR: 4999, USD: 29 },
     perBranch: true,
-    includes: [
-      'Professional for every branch, for less',
-      'One account for all your branches',
-      'Each branch with its own hours, team and queue',
-    ],
+    // Its first line, what each branch saves against Professional, is worked out from the prices.
+    includes: ['One account for all your branches', 'Each branch with its own hours, team and queue'],
   },
 ];
 
