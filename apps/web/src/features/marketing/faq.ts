@@ -38,7 +38,7 @@ export const BUSINESS_QUESTIONS: readonly Question[] = [
   {
     id: 'branches',
     q: 'Does BUKU work for a business with several branches?',
-    a: 'Yes. Each branch is its own business on BUKU, with its own hours, team, services and queue, and you switch between them from one account.',
+    a: 'Yes. Each branch is its own business on BUKU, with its own hours, team, services and queue, and you switch between them from one account. Two to five branches are on Network; six or more on Enterprise.',
   },
   {
     id: 'payments',
@@ -80,7 +80,7 @@ export const PRICING_QUESTIONS: readonly Question[] = [
   {
     id: 'branch',
     q: 'What counts as a branch?',
-    a: 'A place with its own address, hours and team. On BUKU each branch is its own business, and you switch between them from one account. With two branches or more, Network prices every branch for less than Professional.',
+    a: 'A place with its own address, hours and team. On BUKU each branch is its own business, and you switch between them from one account. With two to five branches, Network prices every branch for less than Professional; from six, Enterprise makes everything unlimited, with a price a branch that falls as the chain grows, help setting up every branch and a named contact.',
   },
   {
     id: 'currency',

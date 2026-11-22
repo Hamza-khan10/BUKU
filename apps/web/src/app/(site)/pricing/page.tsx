@@ -70,7 +70,7 @@ export default async function PricingPage({ searchParams }: PageProps<'/pricing'
 
         {/* Enterprise (3.7i): the one plan you ask for, so the ask is easy to find. On Midnight
             like the board, with the way in up front: before launch, the business list with
-            Enterprise and 10 to 20 branches already chosen (D-145); and a direct address. */}
+            Enterprise and its first branch answer (6 to 9) already chosen (D-146); and a direct address. */}
         <aside
           aria-labelledby="enterprise-title"
           data-tone="dark"
@@ -90,7 +90,8 @@ export default async function PricingPage({ searchParams }: PageProps<'/pricing'
               <span className="text-board-ink-2">We’ll plan it with you.</span>
             </h3>
             <p className="max-w-[44ch] text-board-ink-2">
-              One price for every branch, made together, and someone at BUKU who knows your business.
+              Everything unlimited, a price a branch that falls as you grow, and someone at BUKU who sets up
+              every branch with you.
             </p>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-3 pt-1">
               <Button asChild variant="primary" size="lg">

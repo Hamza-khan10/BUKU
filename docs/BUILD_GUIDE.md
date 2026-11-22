@@ -843,7 +843,15 @@ The detailed plan — every page, its data and edge cases, the design system and
   from 10 branches (D-145, the owner's call): the band, "Talk to us" opening early access on
   "10 to 20", the form's branch answers split at 10 (1 / 2-5 / 6-9 / 10-20 / 21+), the list's check
   widened first (migrations/0002, earlier answers kept), and the price floor written down: never
-  below Network a branch. Tests: the rebuild keeps every earlier signup (unit), the split.
+  below Network a branch. Tests: the rebuild keeps every earlier signup (unit), the split. Then
+  Network for 2 to 5 branches and Enterprise from 6, priced by tier from Network's price (D-146):
+  the band, the plans' wording, the FAQ, the early-access plan labels; "Talk to us" opens on
+  "6 to 9".
+- **3.7k Enterprise at the 6th branch — next (D-146).** The owner cap follows the plan (five; none
+  on Enterprise, the 100 ceiling gone); adding a sixth business celebrates it and offers "Request
+  Enterprise" instead of an error; the console approves it for the whole chain (every branch to
+  Enterprise); the new branch's free ad as a credit until ads exist, only for chains moving up from Network. Tests: the cap by plan
+  (unit, integration), the request and the approval end to end.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request
