@@ -43,7 +43,7 @@
     "@opennextjs/cloudflare": "1.20.17",
     "@playwright/test": "1.65.1",
     "@tailwindcss/postcss": "4.3.5",
-    "@types/react": "19.3.0",
+    "@types/react": "19.3.2",
     "@types/react-dom": "19.3.0",
     "lighthouse": "13.6.0",
     "tailwindcss": "4.3.5",
