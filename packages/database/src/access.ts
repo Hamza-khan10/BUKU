@@ -414,8 +414,15 @@ export const CATALOG_ACCESS: Readonly<Record<ServiceName, Access>> = {
 };
 
 /**
+ * Directory schemas no service may even look into unless a table of its own is there
+ * (DIRECTORY_REFERENCE_ACCESS): `sales`, Enterprise's confidential rate card and deals (D-151).
+ */
+export const PRIVATE_SCHEMAS = ['sales'] as const;
+
+/**
  * Reference data each service edits on the directory (DB-015), besides what every service may do
- * there (DIRECTORY_ACCESS). Every change reaches the copies by replication.
+ * there (DIRECTORY_ACCESS). Every change reaches the copies by replication; a table in a private
+ * schema (PRIVATE_SCHEMAS) isn't copied anywhere.
  */
 export const DIRECTORY_REFERENCE_ACCESS: Readonly<Partial<Record<ServiceName, Access>>> = {
   billing: {
@@ -425,6 +432,10 @@ export const DIRECTORY_REFERENCE_ACCESS: Readonly<Partial<Record<ServiceName, Ac
       'reference.billing_settings',
       'reference.billing_channel_fees',
       'reference.billing_cost_items',
+      // Enterprise's rate card and deals (D-151): confidential, billing's alone (PRIVATE_SCHEMAS).
+      'sales.enterprise_rates',
+      'sales.enterprise_terms',
+      'sales.enterprise_deals',
     ],
   },
   // Owners add kinds of business BUKU doesn't list yet (D-098); admins review them.

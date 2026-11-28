@@ -339,6 +339,11 @@ it yet, and every copy costs a replication slot (adding one is a flag in `SHARD_
   ids 7 to 18, rupees and dollars, a month and a year, for Essential, Professional and Network
   (now on sale); Enterprise has no price (priced for each chain, D-146), and Starter has the
   walk-in queue.
+- **Not reference data:** Enterprise's rate card and deals (D-151) are in the directory's own
+  `sales` schema (`20261128140000_enterprise_sales`): `enterprise_rates` (a tier a currency),
+  `enterprise_terms` (a currency's terms) and `enterprise_deals` (one live deal an owner, a partial
+  unique index). Confidential: only billing-service has a right on them, the schema is closed to
+  every other service (`PRIVATE_SCHEMAS`), nothing is published, and no figure is seeded.
 - **Published** as `buku_reference`. A new reference table is added to it in its own migration (a
   test fails otherwise), and the same columns are added to the copies (a test compares the columns
   of every copy with the source).

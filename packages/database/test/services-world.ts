@@ -172,7 +172,9 @@ export async function buildServicesWorld(): Promise<void> {
   const owner = createDatabaseClient({ url: migratorUrl, applicationName: 'test-setup', maxConnections: 1 });
   try {
     await owner.$executeRawUnsafe('DROP PUBLICATION IF EXISTS buku_reference');
-    await owner.$executeRawUnsafe('DROP SCHEMA IF EXISTS registry, ids, lookup, reference, ops CASCADE');
+    await owner.$executeRawUnsafe(
+      'DROP SCHEMA IF EXISTS registry, ids, lookup, reference, ops, sales CASCADE',
+    );
     await owner.$executeRawUnsafe('DROP TABLE IF EXISTS public._prisma_migrations');
   } finally {
     await owner.$disconnect();

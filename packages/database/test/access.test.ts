@@ -87,6 +87,21 @@ describe('what each service may do in the directory database', () => {
     );
     expect(directoryAccessStatements('buku_directory', {})).toEqual([]);
   });
+
+  it('opens the private sales schema to billing alone (D-151)', () => {
+    const billing = directoryAccessStatements('buku_directory', { billing: 'p'.repeat(32) });
+    const auth = directoryAccessStatements('buku_directory', { auth: 'p'.repeat(32) });
+    expect(billing).toContain('GRANT USAGE ON SCHEMA "sales" TO "buku_svc_billing"');
+    expect(billing).toContain(
+      'GRANT SELECT, INSERT, UPDATE, DELETE ON "sales"."enterprise_deals" TO "buku_svc_billing"',
+    );
+    expect(auth).toContain('REVOKE ALL ON SCHEMA "sales" FROM "buku_svc_auth"');
+    expect(auth.some((s) => s.includes('"sales"') && s.startsWith('GRANT'))).toBe(false);
+    // Revoked before anything is granted, so a right taken out of the code goes on the next run.
+    expect(billing.indexOf('REVOKE ALL ON SCHEMA "sales" FROM "buku_svc_billing"')).toBeLessThan(
+      billing.indexOf('GRANT USAGE ON SCHEMA "sales" TO "buku_svc_billing"'),
+    );
+  });
 });
 
 // ═════════════════════════════ DATABASE v2 (D2d) ═════════════════════════════

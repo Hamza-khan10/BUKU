@@ -3,6 +3,7 @@ import {
   CROSS_BUSINESS,
   DIRECTORY_ACCESS,
   DIRECTORY_REFERENCE_ACCESS,
+  PRIVATE_SCHEMAS,
   REFERENCE_TABLES,
   roleOf,
   SERVICES,
@@ -68,6 +69,12 @@ export function directoryAccessStatements(
       `REVOKE ALL ON ALL SEQUENCES IN SCHEMA "registry", "ids", "lookup", "reference" FROM ${r}`,
       `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA "registry", "ids", "lookup" FROM ${r}`,
       `REVOKE ALL ON SCHEMA "ids" FROM ${r}`,
+      // A private schema: nothing in it, not even its use, unless the service has a table there.
+      ...PRIVATE_SCHEMAS.flatMap((p) => [
+        `REVOKE ALL ON ALL TABLES IN SCHEMA ${ident(p)} FROM ${r}`,
+        `REVOKE ALL ON SCHEMA ${ident(p)} FROM ${r}`,
+      ]),
+      ...privateSchemasOf(service).map((p) => `GRANT USAGE ON SCHEMA ${ident(p)} TO ${r}`),
       `GRANT USAGE ON SCHEMA ${[...DIRECTORY_ACCESS.schemas, 'reference'].map(ident).join(', ')} TO ${r}`,
       `GRANT SELECT ON ${DIRECTORY_ACCESS.reads.map(qualified).join(', ')} TO ${r}`,
       `GRANT EXECUTE ON FUNCTION ${DIRECTORY_ACCESS.executes.map(qualified).join(', ')} TO ${r}`,
@@ -77,6 +84,20 @@ export function directoryAccessStatements(
     );
   }
   return out;
+}
+
+/** The private schemas a service has tables in (DIRECTORY_REFERENCE_ACCESS). */
+function privateSchemasOf(service: ServiceName): string[] {
+  const a = DIRECTORY_REFERENCE_ACCESS[service];
+  if (!a) return [];
+  const tables = [
+    ...a.owns,
+    ...Object.keys(a.reads ?? {}),
+    ...(a.inserts ?? []),
+    ...Object.keys(a.updates ?? {}),
+    ...(a.deletes ?? []),
+  ];
+  return PRIVATE_SCHEMAS.filter((p) => tables.some((t) => schemaOf(t) === p));
 }
 
 /** A table name as SQL: "users" → "users", "reference.plans" → "reference"."plans". */

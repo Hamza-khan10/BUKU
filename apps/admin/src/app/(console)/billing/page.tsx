@@ -3,6 +3,9 @@ import Link from 'next/link';
 import { Receipt, Inbox } from 'lucide-react';
 import { AddCost } from '@admin/components/add-cost';
 import { ApproveRequest } from '@admin/components/approve-request';
+import { DealActions } from '@admin/components/deal-actions';
+import { EnterpriseDesk } from '@admin/components/enterprise-desk';
+import { RateCardEditor } from '@admin/components/enterprise-rate-card';
 import { BillingSettings } from '@admin/components/billing-settings';
 import { EconomicsCalculator } from '@admin/components/economics-calculator';
 import { Empty } from '@admin/components/empty';
@@ -11,7 +14,7 @@ import { GivePlan } from '@admin/components/give-plan';
 import { NewPrice } from '@admin/components/new-price';
 import { RowActions } from '@admin/components/row-actions';
 import { Tabs } from '@admin/components/tabs';
-import { Card, Initials, Notice, PageTitle, Pill, SectionTitle, beat } from '@admin/components/ui';
+import { Card, Initials, Notice, PageTitle, Pill, SectionTitle, Stat, beat } from '@admin/components/ui';
 import { requireAdmin } from '@admin/lib/admin';
 import {
   CHANNELS,
@@ -25,6 +28,7 @@ import {
   type Settings,
   type Subscription,
 } from '@admin/lib/billing';
+import { money, TERMS, type Deals, type RateCard } from '@admin/lib/enterprise';
 import { callApi } from '@admin/lib/gateway';
 
 export const metadata: Metadata = { title: 'Billing' };
@@ -33,6 +37,7 @@ const VIEWS = [
   { value: 'requests', label: 'Plan requests' },
   { value: 'subscriptions', label: 'Subscriptions' },
   { value: 'plans', label: 'Plans and prices' },
+  { value: 'enterprise', label: 'Enterprise' },
   { value: 'economics', label: 'Economics' },
 ] as const;
 const REQUEST_STATUSES = [
@@ -95,6 +100,8 @@ export default async function BillingPage({ searchParams }: PageProps<'/billing'
         <Subscriptions status={query.status} page={query.page} call={call} plans={businessPlans} />
       ) : view === 'economics' ? (
         <EconomicsView call={call} incoming={gate} />
+      ) : view === 'enterprise' ? (
+        <EnterpriseView call={call} />
       ) : !plans.ok ? (
         <Notice tone="danger" title={plans.error.message} />
       ) : (
@@ -644,6 +651,162 @@ async function EconomicsView({
           )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Enterprise (D-151): what the deals bring in a month, quoting a chain and recording its deal, the
+ * deals (each following its chain's branches), and the rate card quotes come from. The rate card is
+ * the owner's: kept here and in the database, never in the code, never sent to a customer.
+ */
+async function EnterpriseView({ call }: { call: Call }) {
+  const [card, list] = await Promise.all([
+    call<RateCard>('/v1/admin/billing/enterprise/rate-card'),
+    call<Deals>('/v1/admin/billing/enterprise/deals'),
+  ]);
+  if (!card.ok) return <Notice tone="danger" title={card.error.message} />;
+  if (!list.ok) return <Notice tone="danger" title={list.error.message} />;
+  const ready = card.data.currencies.filter((c) => c.tiers.length > 0 && c.terms).map((c) => c.currency);
+  const live = list.data.deals.filter((d) => d.status === 'active');
+  const toQuote = live.filter((d) => d.quoteAgain).length;
+  return (
+    <div className="flex flex-col gap-8">
+      <section aria-labelledby="enterprise-month" className="flex flex-col gap-4">
+        <SectionTitle
+          id="enterprise-month"
+          title="Enterprise a month"
+          description="What the live deals bring in now: each one’s price a branch, for every branch its chain has today."
+        />
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {list.data.totals.length === 0 ? (
+            <Stat
+              label="Enterprise revenue"
+              value="None yet"
+              hint="Record a deal below once a chain agrees."
+            />
+          ) : (
+            list.data.totals.map((t, i) => (
+              <Stat
+                key={t.currency}
+                label={`In ${t.currency === 'PKR' ? 'rupees' : t.currency === 'USD' ? 'dollars' : t.currency}`}
+                value={money(t.monthly, t.currency)}
+                hint={`${t.deals} ${t.deals === 1 ? 'deal' : 'deals'}, ${t.branches} ${t.branches === 1 ? 'branch' : 'branches'}`}
+                style={beat(i)}
+              />
+            ))
+          )}
+          <Stat
+            label="To quote again"
+            value={toQuote}
+            tone={toQuote > 0 ? 'wait' : 'neutral'}
+            hint="Chains that moved into another tier since they signed"
+          />
+        </div>
+      </section>
+
+      <section aria-labelledby="enterprise-quote" className="flex flex-col gap-4">
+        <SectionTitle
+          id="enterprise-quote"
+          title="Quote a chain"
+          description="Worked out from the rate card: nothing is saved until you record the deal."
+        />
+        <EnterpriseDesk currencies={ready} />
+      </section>
+
+      <section aria-labelledby="enterprise-deals" className="flex flex-col gap-4">
+        <SectionTitle
+          id="enterprise-deals"
+          title="Deals"
+          description="A deal bills every branch its chain has: opened ones join the bill, closed ones leave it."
+        />
+        {list.data.deals.length === 0 ? (
+          <Empty title="No deals yet" text="A chain’s deal shows here once it’s recorded." />
+        ) : (
+          // `relative`: the screen-reader words inside scroll with the table instead of widening the page.
+          <div className="panel relative overflow-x-auto">
+            <table className="data-table min-w-[62rem]">
+              <caption className="sr-only">Every Enterprise deal, live first</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Chain</th>
+                  <th scope="col">A branch a month</th>
+                  <th scope="col">Branches now</th>
+                  <th scope="col">A month</th>
+                  <th scope="col">Invoiced</th>
+                  <th scope="col">Since</th>
+                  <th scope="col">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.data.deals.map((d) => (
+                  <tr key={d.id}>
+                    <td>
+                      <p className="font-medium text-ink">{d.name}</p>
+                      <p className="text-xs text-ink-3">
+                        {d.business ? (
+                          <>
+                            {d.business.name} · <span className="font-mono">{d.business.publicId}</span>
+                          </>
+                        ) : (
+                          'Its branch is gone'
+                        )}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {d.status === 'ended' ? (
+                          <Pill>Ended</Pill>
+                        ) : d.quoteAgain ? (
+                          <Pill tone="wait">Quote again</Pill>
+                        ) : (
+                          <Pill tone="ok">Live</Pill>
+                        )}
+                      </div>
+                    </td>
+                    <td className="tabular-nums">{money(d.pricePerBranch, d.currency)}</td>
+                    <td className="tabular-nums">
+                      {d.branchesNow}
+                      <span className="block text-xs text-ink-3">{d.branchesAtSigning} when signed</span>
+                    </td>
+                    <td className="font-medium tabular-nums">
+                      {d.status === 'ended' ? (
+                        <span className="text-ink-3">Not counted</span>
+                      ) : (
+                        money(d.monthly, d.currency)
+                      )}
+                    </td>
+                    <td className="tabular-nums">
+                      {TERMS[d.term]}
+                      {d.status === 'active' && d.term !== 'month' && (
+                        <span className="block text-xs text-ink-3">{money(d.invoice, d.currency)} each</span>
+                      )}
+                    </td>
+                    <td className="text-ink-2">
+                      {day(d.startsOn)}
+                      {d.endsOn && <span className="block text-xs text-ink-3">to {day(d.endsOn)}</span>}
+                    </td>
+                    <td className="min-w-[12rem]">{d.status === 'active' && <DealActions deal={d} />}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section aria-labelledby="enterprise-card" className="flex flex-col gap-4">
+        <SectionTitle
+          id="enterprise-card"
+          title="Rate card"
+          description="The owner’s figures: kept here, never in the code, never sent to a customer."
+        />
+        <div className="grid grid-cols-1 items-start gap-6 2xl:grid-cols-2">
+          {card.data.currencies.map((c) => (
+            <RateCardEditor key={`${c.currency}-${c.updatedAt ?? 'new'}`} card={c} />
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
