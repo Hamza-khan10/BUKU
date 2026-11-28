@@ -884,6 +884,21 @@ The detailed plan — every page, its data and edge cases, the design system and
   without knowing how long"): it is now the tagline itself, with its held dot (D-143). Errors were
   read for blame and next steps (they say it's on BUKU's side, and what to do). WEB_PLAN's logo
   section brought up to Brand Identity v1.0.
+- **3.7n The browser tests in CI, against the stack — ✅ done.** The tests that need the API
+  (30 of the spec files: booking, the queue, the whole business workspace, billing, settings,
+  notifications, the 6th branch) skipped themselves in CI, where the website runs with no API
+  behind it, so they ran only on a laptop. A second job, **Web app · browser tests against the
+  stack**, starts the whole development stack as a laptop does (`scripts/setup-dev.sh`'s
+  throwaway secrets, every service, the gateway, the seed), waits until the seeded businesses
+  can be found, builds the website for production and runs them on desktop and phone; a failure
+  keeps the report and prints the services' logs. The website's own settings go to its own
+  steps only (Compose would hand a Paddle client token to billing, which refuses it alone). Its
+  first run found a real bug: the production site prefetches "See your page" as soon as a page
+  goes live, keeping the answer from before the photo step, so an owner could open their page
+  and not see the photo they had just added. The kept answers about businesses now carry a tag
+  that an owner's successful change expires at once (`changesBusinessPages`,
+  `src/lib/api/bff-rules.ts`). Not a required check yet: it becomes one once it has run
+  steadily.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

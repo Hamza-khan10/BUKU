@@ -5,6 +5,7 @@ import { cache } from 'react';
 import { env } from '../env';
 import { clientIpFrom } from '../http/client-ip';
 import { REQUEST_ID_HEADER } from '../http/request-id';
+import { aboutBusinesses, BUSINESS_ANSWERS_TAG } from './bff-rules';
 import { ApiError, apiErrorFrom, NETWORK_MESSAGE } from './errors';
 import { gatewayHeaders, withQuery } from './gateway-headers';
 
@@ -67,8 +68,12 @@ const answerFor = cache(async (target: string, revalidate: number): Promise<Publ
     visitor: clientIpFrom(incoming, env().WEB_CLIENT_IP_HEADER),
   };
   if (revalidate === 0) return ask(target, asker);
-  // The key is the address alone; who asked (in the closure) is deliberately not part of it.
-  return unstable_cache(() => ask(target, asker), ['public-api', target], { revalidate })();
+  // The key is the address alone; who asked (in the closure) is deliberately not part of it. An
+  // owner's change expires the answers about businesses (the /api/v1 route, changesBusinessPages).
+  return unstable_cache(() => ask(target, asker), ['public-api', target], {
+    revalidate,
+    tags: aboutBusinesses(target) ? [BUSINESS_ANSWERS_TAG] : [],
+  })();
 });
 
 export function getPublic<T, M = unknown>(

@@ -35,6 +35,23 @@ export function endsSession(method: string, path: string): boolean {
   );
 }
 
+const BUSINESSES = /^\/v1\/businesses(?=[/?]|$)/;
+
+/** API addresses about businesses: a business's page, its services, team and reviews, the search lists. */
+export const aboutBusinesses = (address: string) => BUSINESSES.test(address);
+
+/** The tag on the web server's kept copies of answers about businesses (src/lib/api/public.ts). */
+export const BUSINESS_ANSWERS_TAG = 'public-api:businesses';
+
+/**
+ * Successful calls that change what a business's page shows (its details, hours, logo, photos,
+ * services, team). After one, the kept copies go, so an owner who opens their page sees the change
+ * at once, not up to a minute later. The call names the business by its id and the page by its
+ * link, so it's every kept answer about businesses, not only this one's: a minute's worth at most.
+ */
+export const changesBusinessPages = (method: string, path: string) =>
+  method !== 'GET' && aboutBusinesses(path);
+
 /** The most a pass-through request body may be (the gateway's own limit is 128 KB). */
 export const MAX_BODY_BYTES = 128 * 1024;
 

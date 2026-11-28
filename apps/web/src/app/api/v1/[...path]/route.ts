@@ -1,5 +1,8 @@
+import { revalidateTag } from 'next/cache';
 import { NextResponse, type NextRequest } from 'next/server';
 import {
+  BUSINESS_ANSWERS_TAG,
+  changesBusinessPages,
   checkSameOrigin,
   endsSession,
   FORWARDED_REQUEST_HEADERS,
@@ -159,6 +162,10 @@ async function handle(request: NextRequest, ctx: RouteContext<'/api/v1/[...path]
   }
 
   if (upstream.ok && endsSession(method, target.path)) sessionEnded = true;
+  // Stale copies are never served after an owner's change ({ expire: 0 }): the next visit asks the API.
+  if (upstream.ok && changesBusinessPages(method, target.path)) {
+    revalidateTag(BUSINESS_ANSWERS_TAG, { expire: 0 });
+  }
   if (signedIn) {
     setSession(response, signedIn);
     clearChallenge(response);

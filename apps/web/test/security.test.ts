@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { checkSameOrigin, endsSession, gatewayPath } from '../src/lib/api/bff-rules';
+import {
+  aboutBusinesses,
+  BUSINESS_ANSWERS_TAG,
+  changesBusinessPages,
+  checkSameOrigin,
+  endsSession,
+  gatewayPath,
+} from '../src/lib/api/bff-rules';
 import { gatewayHeaders, withQuery } from '../src/lib/api/gateway-headers';
 import { clientIpFrom } from '../src/lib/http/client-ip';
 import { requestIdFrom } from '../src/lib/http/request-id';
@@ -122,6 +129,25 @@ describe('API pass-through: which gateway path', () => {
     expect(endsSession('POST', '/v1/auth/password')).toBe(true);
     expect(endsSession('DELETE', '/v1/auth/me')).toBe(true);
     expect(endsSession('GET', '/v1/auth/me')).toBe(false);
+  });
+
+  it('knows which successful calls change what a business page shows', () => {
+    expect(changesBusinessPages('POST', '/v1/businesses/OwaGGq61Zn64/photos/uploads/u1/complete')).toBe(true);
+    expect(changesBusinessPages('PUT', '/v1/businesses/OwaGGq61Zn64/hours')).toBe(true);
+    expect(changesBusinessPages('PATCH', '/v1/businesses/OwaGGq61Zn64/services/s1')).toBe(true);
+    expect(changesBusinessPages('DELETE', '/v1/businesses/OwaGGq61Zn64/staff/s1')).toBe(true);
+    expect(changesBusinessPages('POST', '/v1/businesses')).toBe(true);
+    expect(changesBusinessPages('GET', '/v1/businesses/OwaGGq61Zn64')).toBe(false);
+    expect(changesBusinessPages('POST', '/v1/bookings')).toBe(false);
+    expect(changesBusinessPages('POST', '/v1/businessesx')).toBe(false);
+  });
+
+  it('files the kept answers about businesses under the tag those calls expire', () => {
+    expect(aboutBusinesses('/v1/businesses/gentlemens-corner-0e724f-lahore')).toBe(true);
+    expect(aboutBusinesses('/v1/businesses/gentlemens-corner-0e724f-lahore/services')).toBe(true);
+    expect(aboutBusinesses('/v1/businesses?city=Lahore')).toBe(true);
+    expect(aboutBusinesses('/v1/categories')).toBe(false);
+    expect(BUSINESS_ANSWERS_TAG.length).toBeLessThanOrEqual(256);
   });
 });
 
