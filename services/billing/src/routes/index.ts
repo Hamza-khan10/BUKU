@@ -17,6 +17,7 @@ import { Router, type Express } from 'express';
 import type { Redis } from 'ioredis';
 import type { AccountService } from '../account-service.js';
 import type { CatalogService } from '../catalog-service.js';
+import type { EnterpriseService } from '../enterprise-service.js';
 import type { StoreService } from '../store-service.js';
 import { requestContext } from '../http/context.js';
 import {
@@ -33,6 +34,10 @@ import {
   CodeParams,
   CostBody,
   CreatePlanBody,
+  CurrencyParams,
+  DealBody,
+  DealChangesBody,
+  DealsQuery,
   EconomicsBody,
   EndBody,
   ExternalIdBody,
@@ -41,6 +46,8 @@ import {
   IdParams,
   PriceBody,
   PricingQuery,
+  QuoteBody,
+  RateCardBody,
   SettingsBody,
   SubscriptionsQuery,
   UpdateCostBody,
@@ -50,6 +57,7 @@ import {
 export interface RouteDeps {
   plane: DataPlane;
   catalog: CatalogService;
+  enterprise: EnterpriseService;
   accounts: AccountService;
   store: StoreService;
   verifier: JwtVerifier;
@@ -448,6 +456,56 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
         res,
         await deps.accounts.declineRequest(params.id, admin(req), body.note, requestContext(req)),
       );
+    }),
+  );
+
+  // Enterprise (D-151): the rate card, quotes, and the deals made with chains.
+  a.get('/enterprise/rate-card', async (_req, res) => {
+    sendSuccess(res, await deps.enterprise.rateCard());
+  });
+  a.put(
+    '/enterprise/rate-card/:currency',
+    validated({ params: CurrencyParams, body: RateCardBody }, async ({ params, body }, req, res) => {
+      sendSuccess(
+        res,
+        await deps.enterprise.setRateCard(params.currency, body, admin(req), requestContext(req)),
+      );
+    }),
+  );
+  a.delete(
+    '/enterprise/rate-card/:currency',
+    validated({ params: CurrencyParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.enterprise.clearRateCard(params.currency, admin(req), requestContext(req)));
+    }),
+  );
+  a.post(
+    '/enterprise/quote',
+    validated({ body: QuoteBody }, async ({ body }, _req, res) => {
+      sendSuccess(res, await deps.enterprise.quote(body));
+    }),
+  );
+  a.get(
+    '/enterprise/deals',
+    validated({ query: DealsQuery }, async ({ query }, _req, res) => {
+      sendSuccess(res, await deps.enterprise.deals(query.status));
+    }),
+  );
+  a.post(
+    '/enterprise/deals',
+    validated({ body: DealBody }, async ({ body }, req, res) => {
+      sendCreated(res, await deps.enterprise.createDeal(body, admin(req), requestContext(req)));
+    }),
+  );
+  a.patch(
+    '/enterprise/deals/:id',
+    validated({ params: IdParams, body: DealChangesBody }, async ({ params, body }, req, res) => {
+      sendSuccess(res, await deps.enterprise.updateDeal(params.id, body, admin(req), requestContext(req)));
+    }),
+  );
+  a.post(
+    '/enterprise/deals/:id/end',
+    validated({ params: IdParams }, async ({ params }, req, res) => {
+      sendSuccess(res, await deps.enterprise.endDeal(params.id, admin(req), requestContext(req)));
     }),
   );
   app.use('/v1/admin/billing', a);
