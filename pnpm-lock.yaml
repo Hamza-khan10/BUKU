@@ -409,8 +409,8 @@ importers:
         specifier: 6.0.0
         version: 6.0.0(supports-color@10.2.2)
       jose:
-        specifier: 6.2.14
-        version: 6.2.14
+        specifier: 6.2.18
+        version: 6.2.18
       pino:
         specifier: 10.4.0
         version: 10.4.0
@@ -571,8 +571,8 @@ importers:
         specifier: 6.0.0
         version: 6.0.0(supports-color@10.2.2)
       jose:
-        specifier: 6.2.14
-        version: 6.2.14
+        specifier: 6.2.18
+        version: 6.2.18
       zod:
         specifier: 4.6.7
         version: 4.6.7
@@ -5027,8 +5027,8 @@ packages:
   jju@1.4.0:
     resolution: {integrity: sha512-8wb9Yw966OSxApiCt0K3yNJL8pnNeIv+OEq2YMidz4FKP6nonSRoOXc80iXY4JaN2FC11B9qsNmDsm+ZOfMROA==}
 
-  jose@6.2.14:
-    resolution: {integrity: sha512-3JasLuki1NRLQvY4wCoC37KZk4qxoBx2k2aFqLxT84IezqW0bkJKnNtxnZj/Fu1xsQivoc/lytxaRHJoGLjJ1A==}
+  jose@6.2.18:
+    resolution: {integrity: sha512-doV4thUwgkrycJH4yLeqwTGIIZphHl+pk7CPReuMIhYhncmgzdko85MaCG4YQFTxqMFr1/oEH32tZuKKovcDEg==}
 
   joycon@3.1.1:
     resolution: {integrity: sha512-34wB/Y7MW7bzjKRjUKTa46I2Z7eV62Rkhva+KkopW7Qvv/OSWBqvkSY7vusOPrNuZcUG3tApvdVgNB8POj3SPw==}
@@ -10957,7 +10957,7 @@ snapshots:
 
   jju@1.4.0: {}
 
-  jose@6.2.14: {}
+  jose@6.2.18: {}
 
   joycon@3.1.1: {}
 
