@@ -193,12 +193,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     needs: quality
-    env:
-      APP_URL: http://localhost:3000
-      API_URL: http://localhost:8000
-      PADDLE_CLIENT_TOKEN: test_ci00000000000000
-      EARLY_ACCESS_TEST_STORE: 'true'
-      WEB_CLIENT_IP_HEADER: x-real-ip
+    # The website's settings are given to its own steps only: set for the whole job, Docker Compose
+    # would hand them to the services too (billing refuses a Paddle client token on its own).
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -211,6 +207,8 @@ jobs:
       - name: Start the whole stack (databases, Kafka, storage, every service, the gateway, the seed)
         run: docker compose -f docker-compose.dev.yml up -d
       - name: Wait until the gateway answers and the seeded businesses can be found
+        env:
+          API_URL: http://localhost:8000
         run: |
           for i in $(seq 1 90); do
             if curl -fsS "$API_URL/v1/businesses/search?limit=1" 2>/dev/null | grep -q '"slug"'; then
@@ -220,11 +218,24 @@ jobs:
           done
           docker compose -f docker-compose.dev.yml ps -a
           exit 1
-      - run: pnpm --filter @buku/web build
+      - name: Build the website
+        run: pnpm --filter @buku/web build
+        env:
+          APP_URL: http://localhost:3000
+          API_URL: http://localhost:8000
+          PADDLE_CLIENT_TOKEN: test_ci00000000000000
+          EARLY_ACCESS_TEST_STORE: 'true'
+          WEB_CLIENT_IP_HEADER: x-real-ip
       - name: Install the test browser
         run: pnpm --filter @buku/web exec playwright install --with-deps chromium
       - name: The browser tests that need the API
         working-directory: apps/web
+        env:
+          APP_URL: http://localhost:3000
+          API_URL: http://localhost:8000
+          PADDLE_CLIENT_TOKEN: test_ci00000000000000
+          EARLY_ACCESS_TEST_STORE: 'true'
+          WEB_CLIENT_IP_HEADER: x-real-ip
         run: pnpm exec playwright test $(grep -l "apiAvailable()" e2e/*.spec.ts | tr '\n' ' ')
       - name: Test report on failure
         if: failure()
