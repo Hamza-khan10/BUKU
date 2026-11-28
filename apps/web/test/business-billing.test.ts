@@ -100,6 +100,12 @@ describe('A business’s plan', () => {
     // On the free plan: buy online; the free plan is where they are.
     expect(planAction(paid, billing(), true)).toBe('checkout');
     expect(planAction(free, billing(), true)).toBe('current');
+    // Enterprise is priced for each chain: asked for, never bought online.
+    const quoted = { code: 'business_enterprise', free: false, byRequest: true };
+    expect(planAction(quoted, billing(), true)).toBeNull();
+    expect(
+      planAction(quoted, { ...essential, plan: { code: 'business_enterprise', name: 'Enterprise' } }, true),
+    ).toBe('current');
     // Paying on the web: switch; paying in an app store: change it there.
     expect(planAction(paid, essential, true)).toBe('change');
     expect(planAction(free, essential, true)).toBeNull(); // cancelling is how to go back

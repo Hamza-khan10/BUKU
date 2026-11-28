@@ -137,13 +137,14 @@ export function meter(u: Usage): { share: number | null; tone: Tone; text: strin
 export type PlanAction = 'current' | 'checkout' | 'change' | 'store';
 
 export function planAction(
-  plan: { code: string; free: boolean },
+  plan: { code: string; free: boolean; byRequest?: boolean },
   b: BusinessBilling,
   owner: boolean,
 ): PlanAction | null {
   if (everythingIncluded(b)) return null;
   if (plan.code === b.plan.code) return 'current';
-  if (!owner || plan.free) return null;
+  // Nothing to buy online on the free plan, or on one BUKU prices for each business (asked for below).
+  if (!owner || plan.free || plan.byRequest) return null;
   const sub = b.subscription;
   if (sub?.provider === 'paddle') return 'change';
   if (sub?.provider === 'google_play' || sub?.provider === 'app_store') return 'store';

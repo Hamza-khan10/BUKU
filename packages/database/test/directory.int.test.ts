@@ -413,7 +413,7 @@ describe('global handles (DB-018)', () => {
 });
 
 describe('reference data (DB-015)', () => {
-  it('starts as v1 left it: kinds of business, plans in minor units, charging off', async () => {
+  it('starts as v1 left it, with the launch prices: kinds of business, plans in minor units, charging off', async () => {
     const own = { suggestedById: null, id: { lte: 127n } };
     expect(await owner.category.count({ where: { ...own, depth: 0 } })).toBe(11);
     expect(await owner.category.count({ where: { ...own, depth: 1 } })).toBe(116);
@@ -424,9 +424,15 @@ describe('reference data (DB-015)', () => {
       where: { code: 'business_essential' },
       include: { prices: true },
     });
-    expect(essential.prices.map((p) => [p.channel, p.currency, p.amountMinor])).toEqual([
-      ['web', 'USD', 2499n],
+    // The launch catalog (D-150): rupees and dollars, a month and a year; v1's price kept, archived.
+    const live = essential.prices.filter((p) => !p.archivedAt);
+    expect(live.map((p) => `${p.channel} ${p.currency} ${p.interval} ${p.amountMinor}`).sort()).toEqual([
+      'web PKR month 249900',
+      'web PKR year 2499000',
+      'web USD month 1500',
+      'web USD year 15000',
     ]);
+    expect(essential.prices.filter((p) => p.archivedAt).map((p) => p.amountMinor)).toEqual([2499n]);
     const settings = await owner.billingSettings.findMany({ orderBy: { audience: 'asc' } });
     expect(settings.map((b) => [b.audience, b.enabled])).toEqual([
       ['business', false],

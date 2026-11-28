@@ -8,6 +8,8 @@ import { ENTITLED } from './entitlements.js';
  * Enterprise; an operator's approval moves every branch, and branches added later follow.
  */
 export const NETWORK_PLAN = 'business_network';
+/** Network is for two branches or more: a single branch is Essential or Professional. */
+export const NETWORK_MIN_BRANCHES = 2;
 export const ENTERPRISE_PLAN = 'business_enterprise';
 
 export type ChainStanding = 'enterprise' | 'network' | 'other';

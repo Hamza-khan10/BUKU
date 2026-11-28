@@ -21,6 +21,8 @@ export interface Plan {
   features: Record<string, boolean>;
   prices: Price[];
   free: boolean;
+  /** No price to pay online: BUKU prices it for each business, asked for with a request (Enterprise). */
+  byRequest: boolean;
 }
 
 export interface Pricing {

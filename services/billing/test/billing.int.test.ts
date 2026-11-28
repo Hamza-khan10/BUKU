@@ -76,23 +76,47 @@ describe('The pricing page', () => {
     ).toBe('4.99');
   });
 
-  it('businesses: Essential, Professional and Enterprise with their limits and features to compare', async () => {
+  it('businesses: the launch plans and prices (D-137), with their limits and features to compare', async () => {
     const res = await get('/v1/billing/plans?audience=business');
-    const plans = res.body.data.plans as {
+    type Listed = {
       code: string;
-      prices: { amount: string }[];
+      prices: { amount: string; currency: string; interval: string }[];
       limits: Record<string, number | null>;
       features: Record<string, boolean>;
-    }[];
-    expect(plans.map((p) => [p.code, p.prices[0]?.amount])).toEqual([
-      ['business_essential', '24.99'],
-      ['business_professional', '49.99'],
-      ['business_enterprise', '99.99'],
+      free: boolean;
+      byRequest: boolean;
+    };
+    const plans = res.body.data.plans as Listed[];
+    // Dollars by default, a month first and then a year (ten months).
+    expect(plans.map((p) => [p.code, p.prices.map((x) => `${x.amount}/${x.interval}`)])).toEqual([
+      ['business_essential', ['15.00/month', '150.00/year']],
+      ['business_professional', ['35.00/month', '350.00/year']],
+      ['business_network', ['29.00/month', '290.00/year']],
+      ['business_enterprise', []],
     ]);
-    expect(plans.map((p) => p.limits.team_accounts)).toEqual([3, 15, null]);
+    // Enterprise has no price to pay online: it's priced for each chain, asked for (D-146).
+    expect(plans.map((p) => [p.free, p.byRequest])).toEqual([
+      [false, false],
+      [false, false],
+      [false, false],
+      [false, true],
+    ]);
+    // Rupees for Pakistan.
+    const rupees = (await get('/v1/billing/plans?audience=business&currency=PKR')).body.data
+      .plans as Listed[];
+    expect(rupees.map((p) => p.prices.map((x) => `${x.currency} ${x.amount}/${x.interval}`))).toEqual([
+      ['PKR 2499.00/month', 'PKR 24990.00/year'],
+      ['PKR 5999.00/month', 'PKR 59990.00/year'],
+      ['PKR 4999.00/month', 'PKR 49990.00/year'],
+      [],
+    ]);
+    expect(plans.map((p) => p.limits.team_accounts)).toEqual([3, 15, 15, null]);
     // Ads aren't offered yet (D-087): no plan advertises them, in its features, the comparison or its words.
     expect(plans.every((p) => !('ads' in p.features))).toBe(true);
-    expect(plans.map((p) => p.features.queue)).toEqual([true, true, true]);
+    expect(plans.map((p) => p.features.queue)).toEqual([true, true, true, true]);
+    // Starter, the plan everyone starts on, has the walk-in queue too (D-137).
+    const starter = await h.world.directory.plan.findUniqueOrThrow({ where: { code: 'business_free' } });
+    expect((starter.features as Record<string, boolean>).queue).toBe(true);
     expect(res.body.data.comparison.features.map((f: { key: string }) => f.key)).not.toContain('ads');
     expect(JSON.stringify(res.body.data)).not.toMatch(/\bads?\b/i);
     expect(res.body.data.comparison.limits.map((l: { label: string }) => l.label)).toEqual([
@@ -109,11 +133,11 @@ describe('Changing prices and plans at any time', () => {
   it('a new price replaces the old one for new customers; existing subscribers keep theirs', async () => {
     const plans = (await get('/v1/admin/billing/plans', admin())).body.data as {
       code: string;
-      prices: { id: string; channel: string; active: boolean }[];
+      prices: { id: string; channel: string; currency: string; interval: string; active: boolean }[];
     }[];
     const oldWeb = plans
       .find((p) => p.code === 'business_essential')!
-      .prices.find((p) => p.channel === 'web' && p.active)!;
+      .prices.find((p) => p.channel === 'web' && p.currency === 'USD' && p.interval === 'month' && p.active)!;
     const subscriber = await x.business();
     await subscribe(subscriber, {
       planCode: 'business_essential',
@@ -135,7 +159,7 @@ describe('Changing prices and plans at any time', () => {
       (await get('/v1/billing/plans?audience=business')).body.data.plans[0].prices.map(
         (p: { amount: string }) => p.amount,
       ),
-    ).toEqual(['29.99']);
+    ).toEqual(['29.99', '150.00']);
     // Kept in minor units on the directory (DB-009).
     expect(
       (await h.world.directory.planPrice.findUniqueOrThrow({ where: { id: BigInt(res.body.data.price.id) } }))
@@ -147,15 +171,15 @@ describe('Changing prices and plans at any time', () => {
     ).auditLog.findFirstOrThrow({
       where: { action: 'billing.price_set', resourceId: BigInt(res.body.data.price.id) },
     });
-    expect(audit.newValues).toMatchObject({ amount: '29.99', previous: { amount: '24.99' } });
+    expect(audit.newValues).toMatchObject({ amount: '29.99', previous: { amount: '15.00' } });
 
-    // Back to $24.99 (another new price, the history stays).
+    // Back to the launch price, $15 (another new price, the history stays).
     await send('post', '/v1/admin/billing/plans/business_essential/prices', admin(), {
       channel: 'web',
-      amount: 24.99,
+      amount: 15,
     });
     expect((await get('/v1/billing/plans?audience=business')).body.data.plans[0].prices[0].amount).toBe(
-      '24.99',
+      '15.00',
     );
     expect(
       (
@@ -174,7 +198,7 @@ describe('Changing prices and plans at any time', () => {
     ).not.toBeNull();
     expect(
       (await get('/v1/billing/plans?audience=business')).body.data.plans.map((p: { code: string }) => p.code),
-    ).toEqual(['business_professional', 'business_enterprise']);
+    ).toEqual(['business_professional', 'business_network', 'business_enterprise']);
     expect(
       (
         await send('post', '/v1/admin/billing/plans/business_essential/prices', admin(), {
@@ -184,7 +208,7 @@ describe('Changing prices and plans at any time', () => {
       ).status,
     ).toBe(409);
     await send('post', '/v1/admin/billing/plans/business_essential/restore', admin());
-    expect((await get('/v1/billing/plans?audience=business')).body.data.plans).toHaveLength(3);
+    expect((await get('/v1/billing/plans?audience=business')).body.data.plans).toHaveLength(4);
 
     const protectedPlan = await send('post', '/v1/admin/billing/plans/user_free/archive', admin());
     expect([protectedPlan.status, protectedPlan.body.error.message]).toEqual([
@@ -317,7 +341,8 @@ describe('Switching billing on and off', () => {
     expect(res.body.data).toMatchObject({
       plan: { code: 'business_free', name: 'Starter' },
       usage: { team_accounts: { used: 1, limit: 1, remaining: 0 }, services: { used: 0, limit: 10 } },
-      features: { queue: false, ads: false },
+      // The walk-in queue is on Starter too (D-137).
+      features: { queue: true, ads: false },
     });
     expect((await grant(b, 'business_enterprise', 'Launch partner')).status).toBe(201);
     expect((await get(`/v1/businesses/${b.publicId}/billing`, b.owner)).body.data).toMatchObject({

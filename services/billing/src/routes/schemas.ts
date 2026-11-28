@@ -141,5 +141,7 @@ export const ApproveBody = zBody({
 
 export const DeclineBody = zBody({ note: zSafeText({ kind: 'text', min: 3, max: 500 }) });
 
-export const CheckoutBody = zBody({ planCode: zPlanCode });
-export const ChangePlanBody = zBody({ planCode: zPlanCode });
+/** A plan and how often to pay for it (a year costs ten months, D-137). */
+const zPeriod = z.enum(['month', 'year']).default('month');
+export const CheckoutBody = zBody({ planCode: zPlanCode, interval: zPeriod });
+export const ChangePlanBody = zBody({ planCode: zPlanCode, interval: zPeriod });

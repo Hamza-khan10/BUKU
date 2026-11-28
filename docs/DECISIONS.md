@@ -1651,3 +1651,18 @@ the business workspace's), for personal accounts: the unread count on the bell (
 name saying it in words ("Notifications, 3 unread"), a tooltip on hover and keyboard focus, and
 marked while you're on the notifications page. The avatar opens the account menu and nothing else;
 "Notifications" left that menu so it lives in one place.
+
+**D-150 · The launch catalog: what the pricing page sells, the database sells.** Before billing can
+be switched on, the plan catalog takes D-137's prices (migration `20261128120000_launch_catalog`,
+the owner's go on 2026-11-28). v1's three business prices are archived (anyone on one keeps it).
+Essential, Professional and Network each get four web prices: rupees for Pakistan and dollars
+elsewhere, a month and a year (a year costs ten months), per branch, without tax: Essential
+Rs 2,499 / $15, Professional Rs 5,999 / $35, Network Rs 4,999 / $29 a month. Network goes on sale,
+and checkout refuses it to an owner with one branch (two or more, D-146), counting the owner's
+businesses on every shard. Enterprise has no price: the plan listing marks a public plan with no
+price anywhere as `byRequest`, the workspace shows it as "Priced for your chain" and offers it
+only as a request, and checkout refuses it. Starter gets the walk-in queue, as the pricing page
+promises. Checkout now takes the period (`interval`, a month by default) and only ever charges
+that period's dollar price, where it used to take the first dollar price it found. Still before
+billing goes live: rupee payments (a local gateway; Paddle charges dollars), choosing a year in
+the workspace, and linking each price to Paddle from the console.

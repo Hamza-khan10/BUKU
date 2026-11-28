@@ -1,3 +1,4 @@
+import { NETWORK_MIN_BRANCHES, NETWORK_PLAN } from '@buku/billing';
 import { AppError, ErrorCodes, logger, recordSecurityEvent, type Actor } from '@buku/common';
 import {
   recordShardAudit,
@@ -9,6 +10,17 @@ import { auditCtx, type RequestContext } from './http/context.js';
 import type { PaddleClient, PaddleSubscription } from './paddle/client.js';
 import { verifyPaddleSignature } from './paddle/signature.js';
 import { auditByPerson, exponents, LIVE, money } from './shared.js';
+
+type Interval = 'month' | 'year';
+
+/**
+ * The live web price a store sells a plan at, for the period asked: in dollars, the currency of
+ * BUKU's prices outside Pakistan (D-137; rupees need a local payment route, which isn't built).
+ * Never another period's price instead.
+ */
+function storePrice<P extends { currency: string; interval: string }>(prices: P[], interval: Interval) {
+  return prices.find((p) => p.currency === 'USD' && p.interval === interval);
+}
 
 /**
  * Paying on the web with Paddle (D-069). Paddle is the merchant of record: it
@@ -68,7 +80,13 @@ export class StoreService {
 
   // ── Business owners ──────────────────────────────────────────────────────
 
-  async checkout(payer: Payer, planCode: string, actor: Actor, ctx: RequestContext) {
+  async checkout(
+    payer: Payer,
+    planCode: string,
+    actor: Actor,
+    ctx: RequestContext,
+    interval: Interval = 'month',
+  ) {
     // Who may do this first: an outsider learns nothing, not even whether payments are set up.
     await this.authorize(payer, actor);
     const { paddle, config } = this.require();
@@ -82,11 +100,12 @@ export class StoreService {
     });
     if (!plan || plan.audience !== audience || plan.archivedAt || !plan.isPublic)
       throw AppError.notFound('Plan');
-    const price = plan.prices.find((p) => p.currency === 'USD') ?? plan.prices[0];
+    const price = storePrice(plan.prices, interval);
     if (!price?.externalPriceId) {
       throw new AppError('This plan can’t be bought online yet', ErrorCodes.FEATURE_DISABLED, 409);
     }
     const { businessId } = payer;
+    if (plan.code === NETWORK_PLAN) await this.assertNetworkFits(businessId);
     const publicId = await this.plane.inBusiness(businessId, async (tx) => {
       if (await liveStoreSubscription(tx, businessId))
         throw AppError.conflict('You already have a paid plan; change it instead of buying another');
@@ -150,7 +169,13 @@ export class StoreService {
   }
 
   /** Switch to another plan now (prorated). */
-  async changePlan(payer: Payer, planCode: string, actor: Actor, ctx: RequestContext) {
+  async changePlan(
+    payer: Payer,
+    planCode: string,
+    actor: Actor,
+    ctx: RequestContext,
+    interval: Interval = 'month',
+  ) {
     const owner = await this.authorize(payer, actor);
     const { paddle } = this.require();
     const sub = await this.ownStoreSubscription(owner);
@@ -161,10 +186,11 @@ export class StoreService {
     });
     if (!plan || plan.audience !== 'business' || plan.archivedAt || !plan.isPublic)
       throw AppError.notFound('Plan');
-    if (plan.id === sub.planId) return this.view(businessId, sub.id);
-    const price = plan.prices.find((p) => p.currency === 'USD') ?? plan.prices[0];
+    const price = storePrice(plan.prices, interval);
+    if (plan.id === sub.planId && price?.id === sub.priceId) return this.view(businessId, sub.id);
     if (!price?.externalPriceId)
       throw new AppError('This plan can’t be bought online yet', ErrorCodes.FEATURE_DISABLED, 409);
+    if (plan.code === NETWORK_PLAN) await this.assertNetworkFits(businessId);
     await this.applyTo(
       businessId,
       await paddle.changePrice(sub.externalSubscriptionId!, price.externalPriceId),
@@ -396,6 +422,29 @@ export class StoreService {
       requireBusinessPermissionOnShard(tx, payer.businessId, actor, 'billing.manage'),
     );
     return payer.businessId;
+  }
+
+  /**
+   * Network is for two branches or more (D-146): the owner's businesses, counted on every shard.
+   * Read through billing's cross-business role, for the paying owner's own businesses only, and
+   * only the count.
+   */
+  private async assertNetworkFits(businessId: bigint) {
+    const { ownerUserId } = await this.plane.inBusiness(businessId, (tx) =>
+      tx.business.findUniqueOrThrow({ where: { id: businessId }, select: { ownerUserId: true } }),
+    );
+    const perShard = await this.plane.acrossBusinesses((tx) =>
+      tx.business.count({ where: { ownerUserId, deletedAt: null } }),
+    );
+    const branches = perShard.reduce((sum, n) => sum + n, 0);
+    if (branches < NETWORK_MIN_BRANCHES) {
+      throw new AppError(
+        `Network is for ${NETWORK_MIN_BRANCHES} branches or more: add your next branch first`,
+        ErrorCodes.CONFLICT,
+        409,
+        { details: { minBranches: NETWORK_MIN_BRANCHES, branches } },
+      );
+    }
   }
 
   /** Call after `authorize`. */

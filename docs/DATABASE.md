@@ -334,9 +334,11 @@ it yet, and every copy costs a replication slot (adding one is a flag in `SHARD_
   snowflake IDs. Admins change it there, with every rule in a CHECK. A ninth plan came later by
   migration (`20261122200000_network_plan`, D-146): Network, id 9, Professional's limits and
   features, hidden from sale (`is_public` false, no price) until billing's catalog step sets the
-  launch prices; Enterprise's `sort_order` moved from 3 to 4 to make room. The six seeded prices
-  are still v1's (Essential $24.99, Professional $49.99, Enterprise $99.99): that catalog step
-  replaces them with D-137's.
+  launch prices; Enterprise's `sort_order` moved from 3 to 4 to make room. The launch catalog
+  (`20261128120000_launch_catalog`, D-150) archived v1's three business prices and added D-137's:
+  ids 7 to 18, rupees and dollars, a month and a year, for Essential, Professional and Network
+  (now on sale); Enterprise has no price (priced for each chain, D-146), and Starter has the
+  walk-in queue.
 - **Published** as `buku_reference`. A new reference table is added to it in its own migration (a
   test fails otherwise), and the same columns are added to the copies (a test compares the columns
   of every copy with the source).
