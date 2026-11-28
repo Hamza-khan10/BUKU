@@ -906,6 +906,15 @@ The detailed plan — every page, its data and edge cases, the design system and
   branch ("Two branches: $58 a month") and Enterprise as "Priced for your chain". Tests: the
   listing in both currencies, a year charged at the year price, Network refused at one branch and
   sold at two, Enterprise never sold online (billing integration); the Plan page (browser).
+- **3.7q Where people land after signing in — ✅ done (D-152).** `/start` after any sign-in with no
+  page asked for: one business, its workspace; several, a chooser ("Where to, Bilal?", with "For
+  yourself"); none, home. Home at `/` is the person's own once signed in: greeting, search and kinds
+  of place, the board with their number in a line (or next visit, or an invitation), their
+  businesses, book again, places in their city; on phones the board comes straight after search.
+  Designed with the design skills, checked on desktop, phone and dark mode, with a live ticket, a
+  next visit and nothing booked. Tests: e2e/after-sign-in.spec.ts (a customer lands home, not the
+  guide; an owner of one business lands in it, of two chooses; a page asked for is kept), the
+  welcome's refused other site now leads to /start.
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

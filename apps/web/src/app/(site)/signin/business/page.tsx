@@ -4,7 +4,7 @@ import { Alert } from '@/components/ui/alert';
 import { BusinessSignInForm } from '@/features/auth/components/business-sign-in-form';
 import { OtherWayIn, SignInShell } from '@/features/auth/components/sign-in-shell';
 import { businessHandleFrom, usernameFrom } from '@/features/auth/handles';
-import { signInHref } from '@/features/auth/paths';
+import { landingAfterSignIn, signInHref } from '@/features/auth/paths';
 import { apiConfigured } from '@/lib/flags';
 import { safeNext } from '@/lib/session/next';
 import { signedInHere } from '@/lib/session/server';
@@ -25,7 +25,7 @@ const first = (value: string | string[] | undefined) => (Array.isArray(value) ? 
 export default async function BusinessSignInPage({ searchParams }: PageProps<'/signin/business'>) {
   const params = await searchParams;
   const next = safeNext(params.next);
-  if (await signedInHere()) redirect(next as Route);
+  if (await signedInHere()) redirect(landingAfterSignIn(next) as Route);
 
   return (
     <SignInShell

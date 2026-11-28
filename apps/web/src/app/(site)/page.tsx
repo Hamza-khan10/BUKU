@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Container, SectionHeading } from '@/components/ui/layout';
 import { CategoryFinder } from '@/features/categories/components/category-finder';
 import { CategoryIcon } from '@/features/categories/icons';
-import { PlacesRail } from '@/features/home/components/places-rail';
+import { PlacesRail, type Shelf } from '@/features/home/components/places-rail';
+import { SignedInHome } from '@/features/home/components/signed-in/signed-in-home';
 import { BoardGlow } from '@/components/motion/board';
 import { CountUp } from '@/components/motion/count-up';
 import { Magnetic } from '@/components/motion/magnetic';
@@ -18,12 +19,13 @@ import { ScrollStory } from '@/features/home/components/scroll-story';
 import { QueueBoard } from '@/features/home/components/queue-board';
 import { CATEGORY_SNAPSHOT } from '@/features/categories/snapshot';
 import { categoryTree, cities, shelf } from '@/features/search/api';
+import { CityPicker } from '@/features/home/components/city-picker';
 import { SearchBox } from '@/features/search/components/search-box';
-import type { CategoryNode, City } from '@/features/search/types';
-import { cn } from '@/lib/cn';
+import type { CategoryNode } from '@/features/search/types';
 import { apiConfigured, prelaunch } from '@/lib/flags';
 import { jsonLd, pageMetadata } from '@/lib/seo';
 import { brandGraph } from '@/lib/brand';
+import { signedInHere } from '@/lib/session/server';
 import { siteUrl } from '@/lib/site-url';
 
 export const metadata = pageMetadata({
@@ -66,32 +68,13 @@ const PROMISES = [
   },
 ];
 
-function CityPicker({ list, current }: { list: City[]; current: string }) {
-  if (list.length < 2) return null;
-  return (
-    <nav
-      aria-label="Choose a city"
-      className="inline-flex max-w-full gap-1 self-start overflow-x-auto rounded-full bg-sunken p-1"
-    >
-      {list.slice(0, 8).map((c) => {
-        const on = c.city.toLowerCase() === current.toLowerCase();
-        return (
-          <Link
-            key={`${c.city}-${c.country}`}
-            href={`/?city=${encodeURIComponent(c.city)}` as Route}
-            scroll={false}
-            aria-current={on ? 'true' : undefined}
-            className={cn(
-              'inline-flex h-9 items-center rounded-full px-4 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow] duration-200',
-              on ? 'bg-surface text-ink shadow-soft' : 'text-ink-2 hover:text-ink',
-            )}
-          >
-            {c.city}
-          </Link>
-        );
-      })}
-    </nav>
-  );
+/** Up to `n` kinds of place (the first of each group, then the second…), for a row of quick picks. */
+function kindsAcross(tree: CategoryNode[], n: number): CategoryNode[] {
+  const kinds: CategoryNode[] = [];
+  for (let i = 0; kinds.length < n && tree.some((g) => i < g.children.length); i++) {
+    for (const g of tree) if (i < g.children.length && kinds.length < n) kinds.push(g.children[i]!);
+  }
+  return kinds;
 }
 
 /** Up to `n` kinds of place, taken a few from every group in turn, so one big group doesn't fill the line. */
@@ -131,6 +114,34 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
       ])
     : [[], [], []];
   const nothingYet = city && [openNow, trending, topRated].every((s) => s.length === 0);
+  const shelves: Shelf[] = [
+    {
+      id: 'open-now',
+      label: 'Open now',
+      moreLabel: `All places open now in ${city}`,
+      items: openNow,
+      more: `/explore?${cityQuery}&openNow=1` as Route,
+    },
+    {
+      id: 'trending',
+      label: 'Popular this week',
+      moreLabel: `Every place in ${city}`,
+      items: trending,
+      more: `/explore?${cityQuery}` as Route,
+    },
+    {
+      id: 'top-rated',
+      label: 'Top rated',
+      moreLabel: `Top-rated places in ${city}`,
+      items: topRated,
+      more: `/explore?${cityQuery}&sort=rating` as Route,
+    },
+  ];
+
+  // Signed in, home is theirs: not the page that explains BUKU to a first-time visitor.
+  if (!prelaunch() && (await signedInHere())) {
+    return <SignedInHome city={city} cityList={cityList} kinds={kindsAcross(tree, 8)} shelves={shelves} />;
+  }
 
   return (
     <div className="flex flex-col gap-20 pb-8 sm:gap-36">
@@ -211,31 +222,7 @@ export default async function HomePage({ searchParams }: PageProps<'/'>) {
             />
             <CityPicker list={cityList} current={city} />
           </div>
-          <PlacesRail
-            shelves={[
-              {
-                id: 'open-now',
-                label: 'Open now',
-                moreLabel: `All places open now in ${city}`,
-                items: openNow,
-                more: `/explore?${cityQuery}&openNow=1` as Route,
-              },
-              {
-                id: 'trending',
-                label: 'Popular this week',
-                moreLabel: `Every place in ${city}`,
-                items: trending,
-                more: `/explore?${cityQuery}` as Route,
-              },
-              {
-                id: 'top-rated',
-                label: 'Top rated',
-                moreLabel: `Top-rated places in ${city}`,
-                items: topRated,
-                more: `/explore?${cityQuery}&sort=rating` as Route,
-              },
-            ]}
-          />
+          <PlacesRail shelves={shelves} />
           {nothingYet && (
             <p className="text-ink-2">
               No places to show in {city} right now.{' '}

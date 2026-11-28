@@ -1666,3 +1666,17 @@ promises. Checkout now takes the period (`interval`, a month by default) and onl
 that period's dollar price, where it used to take the first dollar price it found. Still before
 billing goes live: rupee payments (a local gateway; Paddle charges dollars), choosing a year in
 the workspace, and linking each price to Paddle from the console.
+
+**D-152 · Signed in, people land on their own place.** The owner's report (2026-11-28): after signing
+in or signing up, people still saw the pages that explain BUKU to a first-time visitor. Now:
+
+- **After signing in** with nowhere particular to go, `/start` takes each person to their own place:
+  an owner (or team member) of one business straight into its workspace; someone with several picks
+  one, or "For yourself"; everyone else home. A page they were on before signing in is still kept
+  (`landingAfterSignIn`, used by every way in: the sign-in pages, Google, two-step, the welcome).
+- **Home, signed in,** is theirs (the same address, `/`; visitors and search engines still get the
+  page that explains BUKU): a greeting by the time of day on their device; search, and the kinds of
+  place people look for most; on BUKU's board, what matters right now (their number in a line with
+  how many are ahead on split flaps, kept fresh; else their next visit; else an invitation to take a
+  number); their businesses, if they run any; the places they've been, to book again; and real
+  places in their city. What's personal is read in the browser, as everywhere on BUKU.
