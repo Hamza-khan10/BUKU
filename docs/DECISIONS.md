@@ -1666,3 +1666,28 @@ promises. Checkout now takes the period (`interval`, a month by default) and onl
 that period's dollar price, where it used to take the first dollar price it found. Still before
 billing goes live: rupee payments (a local gateway; Paddle charges dollars), choosing a year in
 the workspace, and linking each price to Paddle from the console.
+
+**D-151 · Enterprise is quoted from a rate card and its deals are recorded.** The owner asked
+(2026-11-28) for a way to work out an Enterprise price in the console, to change it as a chain opens
+and closes branches, and to count it in the revenue. In the console's Billing, an **Enterprise** tab:
+the month's Enterprise revenue in each currency, a quote, the deals, and the rate card.
+
+- **The rate card**, per currency: tiers by the number of branches (a price a branch a month and
+  its floor), and the terms (off for paying a year or two ahead, the most taken off when a chain
+  asks and from how many branches, what a branch costs BUKU, the tax a chain withholds). The
+  owner's private figures: typed in the console, kept in the directory's own `sales` schema, which
+  only billing-service can see (not even its use is granted to another service), copied nowhere,
+  and never in this public repository. A currency's card can be cleared.
+- **A quote** (`quoteEnterprise`, `@buku/billing`): the tier's price, less the discounts, never
+  below the floor; and **adding a branch never lowers the bill**: a chain just below a tier pays no
+  more than the next tier's starting total (with D-146's rate card, 24 branches pay what 25 would).
+  It shows what BUKU keeps after running the branches, the tax withheld from each invoice, and the
+  least BUKU takes (every branch at the floor). Nothing is saved.
+- **A deal** is with a chain, every business its owner holds (D-146): the price a branch agreed, in
+  one currency, invoiced each month, year or two years. What it brings in is that price times the
+  branches the chain has now, so the bill follows branches opened and closed with no new meeting;
+  a chain that has moved into another tier since signing is marked "Quote again". One live deal a
+  chain; ended deals stay on record. Every change is audited on the operator's shard.
+- **Advice given with it:** quote from the formula, one call for the first contract, and branch
+  changes follow it until renewal; lower a chain's risk with a short pilot on a few branches
+  rather than lowering the list price.

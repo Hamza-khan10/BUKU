@@ -10,6 +10,7 @@ import type { Express } from 'express';
 import type { Redis } from 'ioredis';
 import { AccountService } from './account-service.js';
 import { CatalogService } from './catalog-service.js';
+import { EnterpriseService } from './enterprise-service.js';
 import type { PaddleClient } from './paddle/client.js';
 import { StoreService, type PaddleConfig } from './store-service.js';
 import { registerRoutes } from './routes/index.js';
@@ -37,6 +38,7 @@ export function buildBillingApp(deps: BillingAppDeps): { app: Express; accounts:
       registerRoutes(app, {
         plane: deps.plane,
         catalog: new CatalogService(deps.plane),
+        enterprise: new EnterpriseService(deps.plane),
         accounts,
         store,
         verifier: deps.verifier,

@@ -14,6 +14,9 @@
 //                unique across every shard.
 //  • ops.*       emergency switches (D-129): parts of BUKU an operator turns off at once and back
 //                on; every service reads them every few seconds.
+//  • sales.*     Enterprise's rate card and the deals made with chains (D-151). Confidential:
+//                billing alone reads it, it isn't copied anywhere, and its figures are typed in
+//                the console, never kept in the code.
 //
 // Everything that may need to change as BUKU grows is a row, not code: add a region, a cluster, a
 // shard family or a shard; change a limit. Statuses are text with CHECK constraints (not enums),
@@ -31,7 +34,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas  = ["registry", "ids", "lookup", "reference", "ops"]
+  schemas  = ["registry", "ids", "lookup", "reference", "ops", "sales"]
 }
 
 /// A region data can be kept in (DB-002: the top 3 bits of an ID's generator say which).
@@ -237,7 +240,10 @@ model Currency {
   active   Boolean @default(true)
   name     String  @db.VarChar(60)
 
-  prices PlanPrice[]
+  prices          PlanPrice[]
+  enterpriseRates EnterpriseRate[]
+  enterpriseTerms EnterpriseTerms?
+  enterpriseDeals EnterpriseDeal[]
 
   @@map("currencies")
   @@schema("reference")
@@ -431,4 +437,81 @@ model Switch {
 
   @@map("switches")
   @@schema("ops")
+}
+
+/// Enterprise's rate card (D-151): a chain's price a branch a month by its size, in one currency,
+/// and the least BUKU takes a branch at that size, after every discount (its floor). A tier runs
+/// from its number of branches up to the next tier's.
+model EnterpriseRate {
+  id           BigInt   @id
+  fromBranches Int      @map("from_branches")
+  currency     String   @db.Char(3)
+  /// A branch a month before any discount, in minor units.
+  priceMinor   BigInt   @map("price_minor")
+  /// The least a branch a month after every discount, in minor units.
+  floorMinor   BigInt   @map("floor_minor")
+  updatedById  BigInt?  @map("updated_by_id")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  currencyRow Currency @relation(fields: [currency], references: [code], onDelete: Restrict)
+
+  @@unique([currency, fromBranches])
+  @@map("enterprise_rates")
+  @@schema("sales")
+}
+
+/// How Enterprise quotes work in one currency (D-151): the discounts for paying ahead, the most
+/// taken off when a chain asks (and from how many branches), what a branch costs BUKU, and the tax
+/// a chain withholds from each payment.
+model EnterpriseTerms {
+  currency                  String   @id @db.Char(3)
+  /// What one branch costs BUKU a month (servers, messages, support, setup spread out), minor units.
+  costPerBranchMinor        BigInt   @map("cost_per_branch_minor")
+  yearlyDiscountPercent     Decimal  @map("yearly_discount_percent") @db.Decimal(5, 2)
+  twoYearDiscountPercent    Decimal  @map("two_year_discount_percent") @db.Decimal(5, 2)
+  askedDiscountPercent      Decimal  @map("asked_discount_percent") @db.Decimal(5, 2)
+  askedDiscountFromBranches Int      @map("asked_discount_from_branches")
+  withholdingPercent        Decimal  @map("withholding_percent") @db.Decimal(5, 2)
+  updatedById               BigInt?  @map("updated_by_id")
+  updatedAt                 DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  currencyRow Currency @relation(fields: [currency], references: [code], onDelete: Restrict)
+
+  @@map("enterprise_terms")
+  @@schema("sales")
+}
+
+/// A deal with an Enterprise chain (D-151): the price a branch a month agreed, in one currency,
+/// invoiced each month, year or two years. The chain is every business its owner holds, so the
+/// bill follows its branches as they open and close. One live deal a chain (a partial unique
+/// index in the migration).
+model EnterpriseDeal {
+  id                  BigInt    @id
+  ownerUserId         BigInt    @map("owner_user_id")
+  /// The branch it was recorded from.
+  businessId          BigInt    @map("business_id")
+  name                String    @db.VarChar(160)
+  currency            String    @db.Char(3)
+  /// month | year | two_years
+  term                String    @db.VarChar(10)
+  /// Agreed, a branch a month, after discounts, in minor units.
+  pricePerBranchMinor BigInt    @map("price_per_branch_minor")
+  branchesAtSigning   Int       @map("branches_at_signing")
+  startsOn            DateTime  @map("starts_on") @db.Date
+  endsOn              DateTime? @map("ends_on") @db.Date
+  /// active | ended
+  status              String    @default("active") @db.VarChar(10)
+  notes               String?   @db.VarChar(500)
+  createdById         BigInt    @map("created_by_id")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  endedAt             DateTime? @map("ended_at") @db.Timestamptz(6)
+
+  currencyRow Currency @relation(fields: [currency], references: [code], onDelete: Restrict)
+
+  @@index([ownerUserId])
+  @@index([currency])
+  @@index([status, startsOn])
+  @@map("enterprise_deals")
+  @@schema("sales")
 }

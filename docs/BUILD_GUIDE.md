@@ -906,6 +906,17 @@ The detailed plan — every page, its data and edge cases, the design system and
   branch ("Two branches: $58 a month") and Enterprise as "Priced for your chain". Tests: the
   listing in both currencies, a year charged at the year price, Network refused at one branch and
   sold at two, Enterprise never sold online (billing integration); the Plan page (browser).
+- **3.7p Enterprise in the console — ✅ done (D-151).** Billing's Enterprise tab: the month's
+  Enterprise revenue in each currency; a quote worked out from the rate card (the tier, the
+  discounts, the floor, a chain never paying less for more branches, what BUKU keeps, the tax
+  withheld, the least to take); recording the deal at that price; the deals, each billing every
+  branch its chain has now and marked "Quote again" when it moves tier, changed or ended in place;
+  and the rate card itself, a currency at a time. The figures live in the directory's private
+  `sales` schema, billing's alone, and are typed in by an operator: none is in the code. Tests: the
+  quote's rules (unit, made-up figures); the rate card, quotes, a deal following its chain through
+  branches opened and closed and a tier change, one live deal a chain, refusals, the audit
+  (billing integration); only billing can see `sales` (database); the tab, a quote and its
+  accessibility (console browser test, which leaves a real rate card alone).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request

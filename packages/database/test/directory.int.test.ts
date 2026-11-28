@@ -670,4 +670,27 @@ describe('each service’s rights on the directory (D2d)', () => {
       await Promise.all([billing.$disconnect(), business.$disconnect(), booking.$disconnect()]);
     }
   });
+  it('Enterprise’s rate card and deals are billing’s alone: no other service can even see them (D-151)', async () => {
+    const billing = asService('billing', 'buku_directory_test');
+    const others = (['auth', 'business', 'booking', 'search', 'notification'] as const).map((s) =>
+      asService(s, 'buku_directory_test'),
+    );
+    try {
+      expect(
+        await billing.$queryRawUnsafe<{ n: bigint }[]>(
+          'SELECT (SELECT count(*) FROM sales.enterprise_rates) + (SELECT count(*) FROM sales.enterprise_deals) AS n',
+        ),
+      ).toHaveLength(1);
+      await billing.$executeRawUnsafe(`DELETE FROM sales.enterprise_terms WHERE currency = 'XXX'`);
+      for (const other of others) {
+        for (const table of ['enterprise_rates', 'enterprise_terms', 'enterprise_deals']) {
+          await expect(other.$queryRawUnsafe(`SELECT 1 FROM sales.${table} LIMIT 1`)).rejects.toThrow(
+            /permission denied for schema sales/,
+          );
+        }
+      }
+    } finally {
+      await Promise.all([billing.$disconnect(), ...others.map((o) => o.$disconnect())]);
+    }
+  });
 });

@@ -145,3 +145,60 @@ export const DeclineBody = zBody({ note: zSafeText({ kind: 'text', min: 3, max: 
 const zPeriod = z.enum(['month', 'year']).default('month');
 export const CheckoutBody = zBody({ planCode: zPlanCode, interval: zPeriod });
 export const ChangePlanBody = zBody({ planCode: zPlanCode, interval: zPeriod });
+
+// ── Enterprise (D-151) ──────────────────────────────────────────────────────
+
+const zTerm = z.enum(['month', 'year', 'two_years']);
+const zPercent = z.number().min(0).max(100).multipleOf(0.01);
+const zBranches = z.number().int().min(1).max(100_000);
+const zAmount = z.number().min(0).max(10_000_000).multipleOf(0.01);
+const zDay = z.iso.date();
+
+export const CurrencyParams = z.object({ currency: zCurrency });
+
+export const RateCardBody = zBody({
+  /** By the number of branches each starts at (a tier runs to the next one's start). */
+  tiers: z
+    .array(z.object({ fromBranches: zBranches.min(2), price: zAmount, floor: zAmount }))
+    .min(1)
+    .max(12),
+  terms: z.object({
+    costPerBranch: zAmount,
+    yearlyDiscountPercent: zPercent,
+    twoYearDiscountPercent: zPercent,
+    askedDiscountPercent: zPercent,
+    askedDiscountFromBranches: zBranches.min(2),
+    withholdingPercent: zPercent,
+  }),
+});
+
+export const QuoteBody = zBody({
+  currency: zCurrency,
+  branches: zBranches,
+  term: zTerm.default('month'),
+  /** What the chain asked off, in percent. */
+  askedDiscountPercent: zPercent.optional(),
+});
+
+export const DealsQuery = z.object({ status: z.enum(['active', 'ended', 'all']).default('all') });
+
+export const DealBody = zBody({
+  /** Any branch of the chain, by its public ID: the deal covers every business its owner holds. */
+  businessId: zPublicId,
+  name: zSafeText({ kind: 'title', min: 2, max: 160 }),
+  currency: zCurrency,
+  term: zTerm,
+  /** Agreed, a branch a month, after discounts. */
+  pricePerBranch: zAmount,
+  startsOn: zDay,
+  endsOn: zDay.optional(),
+  notes: zSafeText({ kind: 'text', max: 500 }).optional(),
+});
+
+export const DealChangesBody = zBody({
+  name: zSafeText({ kind: 'title', min: 2, max: 160 }).optional(),
+  term: zTerm.optional(),
+  pricePerBranch: zAmount.optional(),
+  endsOn: zDay.nullable().optional(),
+  notes: zSafeText({ kind: 'text', max: 500 }).nullable().optional(),
+}).refine((b) => Object.values(b).some((v) => v !== undefined), 'at least one field is required');

@@ -506,6 +506,73 @@ test.describe('Admin app', () => {
   });
 });
 
+/**
+ * Enterprise (D-151). Made-up figures in dollars: the owner's rate card is private. If a real one
+ * is set on this machine the test leaves it alone; otherwise it clears its own afterwards.
+ */
+test.describe('Enterprise', () => {
+  test.beforeAll(async () => {
+    test.skip(!(await apiAvailable()), 'the API stack is not running');
+  });
+
+  test('a rate card, a quote worked out from it, and the screen read in order', async ({ page }) => {
+    test.slow();
+    await newOperator(page);
+    await page.goto('/billing?view=enterprise');
+    await expect(page.getByRole('heading', { name: 'Enterprise a month' })).toBeVisible();
+    const dollars = page.getByRole('region', { name: 'Rate card in dollars' });
+    test.skip(
+      !(await dollars.getByText('Not set yet').isVisible()),
+      'a dollar rate card is already set here; this test would change it',
+    );
+    await expectAccessible(page);
+
+    // Two tiers: from 6 branches 100 a branch (floor 60), from 25 90 (floor 55).
+    await dollars.getByLabel('Tier 1: price a branch a month, USD').fill('100');
+    await dollars.getByLabel('Tier 1: floor a branch a month, USD').fill('60');
+    await dollars.getByRole('button', { name: 'Add a tier' }).click();
+    await dollars.getByLabel('Tier 2: from how many branches').fill('25');
+    await dollars.getByLabel('Tier 2: price a branch a month, USD').fill('90');
+    await dollars.getByLabel('Tier 2: floor a branch a month, USD').fill('55');
+    for (const [label, value] of [
+      ['A branch costs BUKU a month (USD)', '10'],
+      ['Off for paying a year ahead (%)', '10'],
+      ['Off for paying two years ahead (%)', '15'],
+      ['The most off when a chain asks (%)', '10'],
+      ['Chains may ask from (branches)', '50'],
+      ['Tax the chain withholds (%)', '4'],
+    ] as const) {
+      await dollars.getByLabel(label).fill(value);
+    }
+    await dollars.getByRole('button', { name: 'Save the USD rate card' }).click();
+    await expect(dollars.getByText('Now: 6 to 24 branches at $100; 25 branches and up at $90')).toBeVisible();
+
+    try {
+      // 24 branches pay what 25 would: one more branch never costs less.
+      await page.getByRole('combobox', { name: 'Currency', exact: true }).selectOption('USD');
+      await page.getByRole('spinbutton', { name: 'Branches', exact: true }).fill('24');
+      await page.getByRole('button', { name: 'Work out the quote' }).click();
+      const quote = page.getByRole('region', { name: 'The quote' });
+      // The chain a month, and each (monthly) invoice.
+      await expect(quote.getByText('$2,250', { exact: true })).toHaveCount(2);
+      await expect(
+        quote.getByText('24 branches pay what 25 would ($2,250 a month)', { exact: false }),
+      ).toBeVisible();
+      await expect(quote.getByText('$2,400 a month', { exact: false })).toHaveCount(0);
+      await expectAccessible(page);
+
+      // Too small for Enterprise: said plainly.
+      await page.getByRole('spinbutton', { name: 'Branches', exact: true }).fill('4');
+      await page.getByRole('button', { name: 'Work out the quote' }).click();
+      await expect(page.getByText('Enterprise starts at 6 branches')).toBeVisible();
+    } finally {
+      await dollars.getByRole('button', { name: 'Clear', exact: true }).click();
+      await dollars.getByRole('button', { name: 'Clear it' }).click();
+      await expect(dollars.getByText('Not set yet')).toBeVisible();
+    }
+  });
+});
+
 /** A new platform admin with two-step sign-in set up, on the overview. */
 async function newOperator(page: Page) {
   await devSignIn(page, newEmail(), 'Sana Operator');
