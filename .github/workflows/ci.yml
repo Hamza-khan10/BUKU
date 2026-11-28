@@ -184,6 +184,59 @@ jobs:
             apps/admin/playwright-report
           retention-days: 14
 
+  # The browser tests that need the API (3.7n): booking, the queue, the business workspace, billing,
+  # settings and the rest skip themselves in the job above, which has no API behind the website.
+  # Here the whole development stack runs as on a laptop (throwaway secrets, every service, the
+  # gateway, the seed), and those tests run against the production build of the website.
+  web-stack:
+    name: Web app · browser tests against the stack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    needs: quality
+    env:
+      APP_URL: http://localhost:3000
+      API_URL: http://localhost:8000
+      PADDLE_CLIENT_TOKEN: test_ci00000000000000
+      EARLY_ACCESS_TEST_STORE: 'true'
+      WEB_CLIENT_IP_HEADER: x-real-ip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - name: Generate throwaway secrets and install
+        run: bash scripts/setup-dev.sh
+      - name: Start the whole stack (databases, Kafka, storage, every service, the gateway, the seed)
+        run: docker compose -f docker-compose.dev.yml up -d
+      - name: Wait until the gateway answers and the seeded businesses can be found
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS "$API_URL/v1/businesses/search?limit=1" 2>/dev/null | grep -q '"slug"'; then
+              echo "the stack is up after $((i * 10)) s"; exit 0
+            fi
+            sleep 10
+          done
+          docker compose -f docker-compose.dev.yml ps -a
+          exit 1
+      - run: pnpm --filter @buku/web build
+      - name: Install the test browser
+        run: pnpm --filter @buku/web exec playwright install --with-deps chromium
+      - name: The browser tests that need the API
+        working-directory: apps/web
+        run: pnpm exec playwright test $(grep -l "apiAvailable()" e2e/*.spec.ts | tr '\n' ' ')
+      - name: Test report on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-stack-e2e-report
+          path: apps/web/playwright-report
+          retention-days: 14
+      - name: Service logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.dev.yml logs --tail=150
+
   # Lighthouse budgets (3.7h, D-142): the public pages as Google measures them (a phone on a slow
   # connection, simulated), each held to its scores and its JavaScript budget
   # (apps/web/scripts/lighthouse-budgets.ts). Beside the browser tests, so neither waits.
