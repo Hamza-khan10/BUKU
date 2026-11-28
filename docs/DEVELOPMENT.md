@@ -313,7 +313,8 @@ Signups: `pnpm --filter @buku/web exec wrangler d1 execute buku-early-access --r
 before any email goes out; remove a person on request (`DELETE … WHERE email = ?`).
 
 The site still builds and runs on Vercel or `next start` (no D1 there: the list says it opens
-soon), which is how CI's browser tests run it.
+soon), which is how CI's browser tests run it: once with no API behind it (the tests that need
+the API skip themselves), and once against the whole stack (3.7n), which runs those.
 
 ### The domain, search engines and Cloudflare settings (D-136)
 
