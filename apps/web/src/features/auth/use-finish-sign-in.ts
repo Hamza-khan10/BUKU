@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from '@/components/ui/toaster';
 import { isSignedIn } from '@/lib/api/client';
 import { ME_KEY, mustChangePassword, needsTwoStep, type SignInAnswer } from './api';
-import { verifyHref, welcomeHref, type SignInStart } from './paths';
+import { landingAfterSignIn, verifyHref, welcomeHref, type SignInStart } from './paths';
 
 export const COOKIES_BLOCKED =
   'Your browser didn’t keep BUKU’s sign-in cookies. Allow cookies for this site and try again.';
@@ -16,7 +16,8 @@ export const COOKIES_BLOCKED =
  *  • 'two-step'      — the code comes next: on to /signin/verify;
  *  • 'new-password'  — signed in on a temporary password: the caller asks for a new one;
  *  • 'no-cookies'    — the browser refused the session cookies: the caller says so;
- *  • 'done'          — welcomed, and on to where they were going (a new account via /welcome).
+ *  • 'done'          — welcomed, and on to where they were going (a new account via /welcome),
+ *                      or to their own place (/start) when they weren't going anywhere.
  */
 export type FinishOutcome = 'two-step' | 'new-password' | 'no-cookies' | 'done';
 
@@ -42,8 +43,10 @@ export function useFinishSignIn() {
     const first = answer.user.name.split(' ')[0] ?? '';
     const greeting = answer.isNewUser ? `Welcome to BUKU, ${first}` : `Welcome back, ${first}`;
     toast.success(welcome ? welcome(first) : greeting);
-    // A new account first sees /welcome (a couple of choices), then goes on.
-    router.replace((answer.isNewUser ? welcomeHref(next) : next) as Route);
+    // A new account first sees /welcome (a couple of choices), then goes on: to the page they were
+    // on, or to their own place (/start).
+    const landing = landingAfterSignIn(next);
+    router.replace((answer.isNewUser ? welcomeHref(landing) : landing) as Route);
     router.refresh();
     return 'done';
   };

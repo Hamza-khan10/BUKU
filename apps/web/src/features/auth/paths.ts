@@ -23,6 +23,14 @@ export const verifyHref = (start: SignInStart, next: string) =>
 
 export const newPasswordHref = (next: string) => withQuery('/signin/new-password', { next });
 
+/**
+ * Where a sign-in goes when nothing asked for a page (`next` is home): /start, which takes the
+ * person to their own place: their business's workspace, a choice between their businesses, or
+ * their home. A page someone was on before signing in is kept.
+ */
+export const START = '/start';
+export const landingAfterSignIn = (next: string) => (next === '/' ? START : next);
+
 /** First time here: a couple of choices, then on to where they were going. */
 export const welcomeHref = (next: string) => withQuery('/welcome', { next });
 

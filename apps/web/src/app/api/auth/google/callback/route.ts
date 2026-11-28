@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { signInHref, verifyHref, welcomeHref } from '@/features/auth/paths';
+import { landingAfterSignIn, signInHref, verifyHref, welcomeHref } from '@/features/auth/paths';
 import { callGateway } from '@/lib/api/gateway';
 import {
   decodeFlow,
@@ -130,7 +130,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const signedIn = takeSession(data);
   if (signedIn.tokens) {
     const isNewUser = (signedIn.data as { isNewUser?: unknown }).isNewUser === true;
-    const response = go(isNewUser ? welcomeHref(next) : next);
+    const landing = landingAfterSignIn(next);
+    const response = go(isNewUser ? welcomeHref(landing) : landing);
     setSession(response, signedIn.tokens);
     return response;
   }

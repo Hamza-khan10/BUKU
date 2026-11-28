@@ -21,6 +21,7 @@ import {
   type PrefsChange,
 } from '@/features/notifications/api';
 import { fetchMe, ME_KEY, updateProfile, type Me } from '../api';
+import { landingAfterSignIn } from '../paths';
 import { problemFrom, type Problem } from '../problems';
 import { ProblemAlert } from './problem-alert';
 
@@ -113,7 +114,7 @@ function WelcomeFields({ me, prefs, next }: { me: Me; prefs: NotificationPrefs; 
       return;
     }
     toast.success('You’re all set');
-    router.replace(next as Route);
+    router.replace(landingAfterSignIn(next) as Route);
     router.refresh();
   };
 

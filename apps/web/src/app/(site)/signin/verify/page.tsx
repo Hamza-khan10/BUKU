@@ -5,7 +5,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { OtherWayIn, SignInShell } from '@/features/auth/components/sign-in-shell';
 import { TwoStepForm } from '@/features/auth/components/two-step-form';
-import { signInHref, startFrom } from '@/features/auth/paths';
+import { landingAfterSignIn, signInHref, startFrom } from '@/features/auth/paths';
 import { safeNext } from '@/lib/session/next';
 import { pendingChallenge, signedInHere } from '@/lib/session/server';
 
@@ -24,7 +24,7 @@ export default async function VerifyPage({ searchParams }: PageProps<'/signin/ve
   const params = await searchParams;
   const next = safeNext(params.next);
   const start = startFrom(params.start);
-  if (await signedInHere()) redirect(next as Route);
+  if (await signedInHere()) redirect(landingAfterSignIn(next) as Route);
   const challenge = await pendingChallenge();
 
   return (

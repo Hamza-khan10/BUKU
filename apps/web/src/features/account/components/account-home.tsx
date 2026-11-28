@@ -11,8 +11,8 @@ import { EmptyState } from '@/components/ui/states';
 import { Ticket } from '@/components/ui/ticket';
 import { fetchMe, ME_KEY } from '@/features/auth/api';
 import { fetchReliability, fetchVisits, RELIABILITY_KEY } from '@/features/booking/api';
+import { bookAgain } from '@/features/booking/again';
 import { bookHref, clockLabel, dayParts } from '@/features/booking/choices';
-import type { Receipt } from '@/features/booking/types';
 import { useMinute } from '@/features/booking/notice';
 import { fetchMyTicket, MY_TICKET_KEY } from '@/features/queue/api';
 import { fetchMyReviews, MY_REVIEWS_KEY } from '@/features/reviews/api';
@@ -28,18 +28,6 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
       {children}
     </section>
   );
-}
-
-/** Services people actually went for, newest first, each place and service once. */
-function bookAgain(past: Receipt[]): Receipt[] {
-  const seen = new Set<string>();
-  return past.filter((r) => {
-    const key = `${r.business.id}:${r.service.id}`;
-    const went = r.status === 'completed' || r.checkedInAt !== null;
-    if (!went || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 }
 
 /**

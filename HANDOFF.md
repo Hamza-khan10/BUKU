@@ -4,7 +4,7 @@ The state of the whole project in one place: what is built, how it is run and wo
 things stand on GitHub, and what comes next. Last updated **2026-11-18**.
 
 Deeper detail lives in the docs this page points to — [BUILD_GUIDE](docs/BUILD_GUIDE.md) (the
-phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-151),
+phase plan and status), [DECISIONS](docs/DECISIONS.md) (every decision, D-001 → D-152),
 [DATABASE](docs/DATABASE.md) (database v2), [ARCHITECTURE](docs/ARCHITECTURE.md),
 [SECURITY](docs/SECURITY.md), [API_REFERENCE](docs/API_REFERENCE.md),
 [DEVELOPMENT](docs/DEVELOPMENT.md) (setting up and running) and [WEB_PLAN](docs/WEB_PLAN.md).
@@ -214,8 +214,8 @@ chat. Names: database, Kafka and Valkey passwords per service, JWT keys, PII enc
    6th branch as a milestone in the app (3.7k, D-147, with sixty new businesses an hour for
    Enterprise, D-148), notifications on their own bell (3.7l, D-149), the visual pass of the
    signed-in screens (3.7j), the copy review (3.7m), the browser tests in CI against the
-   whole stack (3.7n), the launch catalog (3.7o, D-150), Enterprise in the console (3.7p, D-151):
-   3.7 is done. Next: where people land after signing in, then the founder-skill's test of
+   whole stack (3.7n), the launch catalog (3.7o, D-150), Enterprise in the console (3.7p, D-151),
+   where people land after signing in (3.7q, D-152): 3.7 is done. Next: the founder-skill's test of
    the business, then D5, proof at scale.
 2. **D5** — proof at scale (10M people, 1M businesses, 200M appointments) on a test cluster; the
    slow-query review.

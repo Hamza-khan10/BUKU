@@ -18,7 +18,7 @@ import { webAnalyticsToken } from '@/lib/web-analytics';
  *    (D-136), and Cloudflare's visit counter may load when it's set up.
  */
 
-const PERSONAL = ['/account', '/appointments', '/queue', '/business', '/welcome'];
+const PERSONAL = ['/account', '/appointments', '/queue', '/business', '/welcome', '/start'];
 const SESSION_HINTS = ['__Host-buku_s', 'buku_s'];
 
 export function proxy(request: NextRequest) {

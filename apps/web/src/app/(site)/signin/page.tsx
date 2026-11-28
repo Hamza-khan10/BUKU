@@ -5,7 +5,7 @@ import { Alert } from '@/components/ui/alert';
 import { DevSignInForm } from '@/features/auth/components/dev-sign-in-form';
 import { GoogleButton } from '@/features/auth/components/google-button';
 import { OtherWayIn, SignInShell } from '@/features/auth/components/sign-in-shell';
-import { signInHref } from '@/features/auth/paths';
+import { landingAfterSignIn, signInHref } from '@/features/auth/paths';
 import { SIGN_IN_ERRORS, signInErrorFrom, type SignInError } from '@/lib/auth/google';
 import { devSignInEnabled, googleSignInEnabled } from '@/lib/flags';
 import { safeNext } from '@/lib/session/next';
@@ -61,7 +61,7 @@ function SignInProblem({ error, next, until }: { error: SignInError; next: strin
 export default async function SignInPage({ searchParams }: PageProps<'/signin'>) {
   const params = await searchParams;
   const next = safeNext(params.next);
-  if (await signedInHere()) redirect(next as Route);
+  if (await signedInHere()) redirect(landingAfterSignIn(next) as Route);
   const error = signInErrorFrom(params.error);
   const google = googleSignInEnabled();
   const dev = devSignInEnabled();
