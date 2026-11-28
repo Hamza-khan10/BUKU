@@ -1,7 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createEvent, TOPICS, type EventEnvelope } from '@buku/kafka';
-import { givePlan, withBilling } from '../../../packages/database/test/services-world.js';
+import { givePlan, withBilling, withPlanFeature } from '../../../packages/database/test/services-world.js';
 import { queueEventHandler } from '../src/events/handlers.js';
 import { useQueueHarness, type Person, type Shop, type ShopOptions } from './harness.js';
 
@@ -414,14 +414,24 @@ describe('Front desk access and settings', () => {
 });
 
 describe('Plans (billing on)', () => {
-  it('the virtual queue needs a plan that includes it (Starter doesn’t)', async () => {
+  it('Starter has the walk-in queue (D-137)', async () => {
     await withBilling(h.world, 'business', async () => {
       const s = await shop({ open: false });
-      const refused = await desk(s, '/open');
-      expect([refused.status, refused.body.error.code]).toEqual([403, 'PLAN_FEATURE_UNAVAILABLE']);
-      await givePlan(h.world, s.b.id, 'business_essential');
       expect((await desk(s, '/open')).status).toBe(200);
     });
+  });
+
+  it('the virtual queue needs a plan that includes it', async () => {
+    await withBilling(h.world, 'business', () =>
+      // An operator could take it off Starter in the console.
+      withPlanFeature(h.world, 'business_free', 'queue', false, async () => {
+        const s = await shop({ open: false });
+        const refused = await desk(s, '/open');
+        expect([refused.status, refused.body.error.code]).toEqual([403, 'PLAN_FEATURE_UNAVAILABLE']);
+        await givePlan(h.world, s.b.id, 'business_essential');
+        expect((await desk(s, '/open')).status).toBe(200);
+      }),
+    );
   });
 
   it('customers join queues for free and as often as they like (D-101), one queue at a time', async () => {

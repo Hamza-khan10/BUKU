@@ -89,6 +89,46 @@ export async function withBilling<T>(
   }
 }
 
+/**
+ * A plan's feature switched while `fn` runs, as an operator could in the console: changed as
+ * billing-service, followed on every business shard by replication, put back afterwards.
+ */
+export async function withPlanFeature<T>(
+  world: DataPlane,
+  code: string,
+  feature: string,
+  value: boolean,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const billing = createDirectoryClient({
+    url: servicesWorld.urlFor('billing', SERVICES_DIRECTORY),
+    applicationName: 'services-test',
+  });
+  const read = (features: unknown) => (features as Record<string, boolean>)[feature];
+  const before = read((await billing.plan.findUniqueOrThrow({ where: { code } })).features);
+  const set = async (to: boolean) => {
+    const plan = await billing.plan.findUniqueOrThrow({ where: { code } });
+    await billing.plan.update({
+      where: { code },
+      data: { features: { ...(plan.features as Record<string, boolean>), [feature]: to } },
+    });
+    const deadline = Date.now() + 15_000;
+    for (const shard of await world.router.shards('business')) {
+      const copy = world.businesses.forShard(shard);
+      while (read((await copy.plan.findUnique({ where: { code } }))?.features) !== to) {
+        if (Date.now() > deadline) throw new Error(`${code} didn't reach ${shard.databaseName}`);
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+  };
+  try {
+    await set(value);
+    return await fn();
+  } finally {
+    await set(before ?? !value).finally(() => billing.$disconnect());
+  }
+}
+
 /** Billing switched on for businesses while `fn` runs. */
 export const withBusinessBilling = <T>(world: DataPlane, fn: () => Promise<T>) =>
   withBilling(world, 'business', fn);
