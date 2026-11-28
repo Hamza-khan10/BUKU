@@ -6,19 +6,43 @@ import type { Plan, Pricing } from '../api';
 
 const per = (interval: 'month' | 'year') => (interval === 'month' ? 'month' : 'year');
 
-/** "$1.99 / month", or "Free". */
+/** The plan for two to five branches, priced per branch (D-146). */
+const NETWORK = 'business_network';
+
+/** "$15 / month", "Free", or priced for the chain (Enterprise). The monthly price comes first. */
 export function PriceTag({ plan }: { plan: Plan }) {
-  const price = plan.prices[0];
+  const price = plan.prices.find((p) => p.interval === 'month') ?? plan.prices[0];
+  if (plan.byRequest) {
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-2xl font-semibold tracking-[-0.03em]">Priced for your chain</p>
+        <p className="text-sm text-ink-3">A price a branch, lower as you grow. Ask BUKU for it.</p>
+      </div>
+    );
+  }
   if (plan.free || !price) {
     return <p className="text-4xl font-semibold tracking-[-0.03em]">Free</p>;
   }
-  return (
+  const tag = (
     <p className="flex items-baseline gap-1.5">
       <span className="text-4xl font-semibold tracking-[-0.03em] tabular">
         {money(price.amount, price.currency)}
       </span>
       <span className="text-ink-3">/ {per(price.interval)}</span>
     </p>
+  );
+  if (plan.code !== NETWORK) return tag;
+  // Network is per branch, from two (as the pricing page says it): not mistaken for the chain's price.
+  return (
+    <div className="flex flex-col gap-1">
+      {tag}
+      <p className="text-sm text-ink-3">
+        Per branch.{' '}
+        <span className="whitespace-nowrap">
+          Two branches: {money(Number(price.amount) * 2, price.currency)} a {per(price.interval)}.
+        </span>
+      </p>
+    </div>
   );
 }
 

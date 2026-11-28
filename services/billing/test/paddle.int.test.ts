@@ -165,11 +165,11 @@ const post = (path: string, who: Person, body: object = {}) =>
 const get = (path: string, who: Person) => request(h.app).get(path).set(who.auth);
 const billingOn = <T>(fn: () => Promise<T>) => withBilling(h.world, 'business', fn);
 
-/** Sync a plan's web price to (fake) Paddle. */
-async function sync(code: string) {
+/** Sync a plan's web price in dollars, for a month or a year, to (fake) Paddle. */
+async function sync(code: string, interval: 'month' | 'year' = 'month') {
   const plan = await h.world.directory.plan.findUniqueOrThrow({
     where: { code },
-    include: { prices: { where: { channel: 'web', archivedAt: null } } },
+    include: { prices: { where: { channel: 'web', archivedAt: null, currency: 'USD', interval } } },
   });
   const res = await post(`/v1/admin/billing/prices/${plan.prices[0]!.id}/sync-paddle`, h.admin);
   expect(res.status).toBe(200);
@@ -182,7 +182,7 @@ describe('Linking prices to Paddle', () => {
     expect(first).toMatchObject({ created: true, externalPriceId: expect.stringMatching(/^pri_/) });
     const priceCall = fake.calls.find((c) => c.path === '/prices')!;
     expect(priceCall.body).toMatchObject({
-      unit_price: { amount: '2499', currency_code: 'USD' },
+      unit_price: { amount: '1500', currency_code: 'USD' },
       billing_cycle: { interval: 'month', frequency: 1 },
       tax_mode: 'external',
     });
@@ -218,7 +218,7 @@ describe('A business pays for Essential', () => {
         transactionId: expect.stringMatching(/^txn_/),
         clientToken: 'test_client_token',
         environment: 'sandbox',
-        price: { amount: '24.99', currency: 'USD' },
+        price: { amount: '15.00', currency: 'USD', interval: 'month' },
       });
       const txCall = fake.calls.filter((c) => c.path === '/transactions').at(-1)!;
       expect(txCall.body.custom_data).toEqual({
@@ -288,6 +288,75 @@ describe('A business pays for Essential', () => {
         plan: { code: 'business_free' },
         source: 'default',
       });
+    });
+  });
+});
+
+describe('Choosing how to pay and which plan', () => {
+  it('a year is charged at the year price, never the month one', async () => {
+    await billingOn(async () => {
+      const b = await x.business();
+      expect(
+        (
+          await post(`/v1/businesses/${b.publicId}/billing/checkout`, b.owner, {
+            planCode: 'business_professional',
+            interval: 'year',
+          })
+        ).status,
+      ).toBe(409); // the year price isn't linked to Paddle yet
+      const { externalPriceId } = await sync('business_professional', 'year');
+      const checkout = await post(`/v1/businesses/${b.publicId}/billing/checkout`, b.owner, {
+        planCode: 'business_professional',
+        interval: 'year',
+      });
+      expect(checkout.status).toBe(201);
+      expect(checkout.body.data.price).toEqual({ amount: '350.00', currency: 'USD', interval: 'year' });
+      expect(fake.calls.filter((c) => c.path === '/transactions').at(-1)!.body).toMatchObject({
+        items: [{ price_id: externalPriceId }],
+      });
+      expect(
+        (
+          await post(`/v1/businesses/${b.publicId}/billing/checkout`, b.owner, {
+            planCode: 'business_professional',
+            interval: 'week',
+          })
+        ).status,
+      ).toBe(400);
+    });
+  });
+
+  it('Network is for two branches or more: one branch is refused, the second opens it', async () => {
+    await billingOn(async () => {
+      await sync('business_network');
+      const first = await x.business();
+      const refused = await post(`/v1/businesses/${first.publicId}/billing/checkout`, first.owner, {
+        planCode: 'business_network',
+      });
+      expect(refused.status).toBe(409);
+      expect(refused.body.error.details).toEqual({ minBranches: 2, branches: 1 });
+
+      await x.business(first.owner);
+      const checkout = await post(`/v1/businesses/${first.publicId}/billing/checkout`, first.owner, {
+        planCode: 'business_network',
+      });
+      expect(checkout.status).toBe(201);
+      expect(checkout.body.data).toMatchObject({
+        plan: { code: 'business_network' },
+        price: { amount: '29.00', currency: 'USD', interval: 'month' },
+      });
+    });
+  });
+
+  it('Enterprise is never bought online: priced for each chain, asked for (D-146)', async () => {
+    await billingOn(async () => {
+      const b = await x.business();
+      expect(
+        (
+          await post(`/v1/businesses/${b.publicId}/billing/checkout`, b.owner, {
+            planCode: 'business_enterprise',
+          })
+        ).status,
+      ).toBe(409);
     });
   });
 });

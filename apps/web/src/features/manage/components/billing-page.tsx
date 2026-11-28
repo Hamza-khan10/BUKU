@@ -452,7 +452,8 @@ function Plans({
               : 'Only the owner can change the plan.'
         }
       />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {/* Four plans: two by two, or one row where four fit. */}
+      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
         {pricing.plans.map((plan) => (
           <div key={plan.code} className="flex flex-col gap-3">
             <PlanCard

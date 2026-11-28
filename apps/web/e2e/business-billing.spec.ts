@@ -42,6 +42,10 @@ test.describe('The plan', () => {
     // The plans, for when BUKU starts charging: nothing to buy yet.
     const plans = page.getByRole('region', { name: 'Plans' });
     await expect(plans.getByRole('heading', { name: 'Enterprise' })).toBeVisible();
+    // The launch prices, a month each (D-137); Network on sale; Enterprise priced for each chain.
+    await expect(plans.getByRole('heading', { name: 'Network' })).toBeVisible();
+    await expect(plans.getByText('$15', { exact: true })).toBeVisible();
+    await expect(plans.getByText('Priced for your chain')).toBeVisible();
     await expect(page.getByRole('button', { name: /^Choose / })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Switch to / })).toHaveCount(0);
     await expectAccessible(page);

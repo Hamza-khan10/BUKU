@@ -92,9 +92,16 @@ export class CatalogService {
     const plans = await this.dir.plan.findMany({
       where: { audience, isPublic: true, archivedAt: null },
       orderBy: { sortOrder: 'asc' },
-      include: { prices: { where: { archivedAt: null, channel, currency } } },
+      include: {
+        // A month first, then a year: a page that shows one price shows the monthly one.
+        prices: { where: { archivedAt: null, channel, currency }, orderBy: { interval: 'asc' } },
+        _count: { select: { prices: { where: { archivedAt: null } } } },
+      },
     });
     const exp = await exponents(this.dir);
+    /** No price on any channel, and not the plan everyone starts on. */
+    const byRequest = (p: (typeof plans)[number]) =>
+      p._count.prices === 0 && p.code !== settings?.defaultPlan.code;
     return {
       audience,
       channel,
@@ -112,8 +119,10 @@ export class CatalogService {
           : null,
       comparison: describeKeys(audience),
       plans: plans
-        // A paid plan without a price on this channel isn't for sale here; free plans always show.
-        .filter((p) => p.prices.length > 0 || p.code === settings?.defaultPlan.code)
+        // A paid plan without a price on this channel isn't for sale here; free plans always show,
+        // and so do plans with no price anywhere: priced for each business by BUKU (Enterprise,
+        // D-146), asked for with a request.
+        .filter((p) => p.prices.length > 0 || p.code === settings?.defaultPlan.code || byRequest(p))
         .map((p) => ({
           code: p.code,
           name: p.name,
@@ -128,7 +137,8 @@ export class CatalogService {
             taxInclusive: x.taxInclusive,
             trialDays: x.trialDays,
           })),
-          free: p.prices.length === 0,
+          free: p.prices.length === 0 && !byRequest(p),
+          byRequest: byRequest(p),
         })),
     };
   }

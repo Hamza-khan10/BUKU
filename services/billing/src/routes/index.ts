@@ -107,7 +107,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       const actor = requireActor(req);
       sendCreated(
         res,
-        await deps.store.checkout({ userId: actor.id }, body.planCode, actor, requestContext(req)),
+        await deps.store.checkout(
+          { userId: actor.id },
+          body.planCode,
+          actor,
+          requestContext(req),
+          body.interval,
+        ),
       );
     }),
   );
@@ -128,7 +134,13 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
       const actor = requireActor(req);
       sendSuccess(
         res,
-        await deps.store.changePlan({ userId: actor.id }, body.planCode, actor, requestContext(req)),
+        await deps.store.changePlan(
+          { userId: actor.id },
+          body.planCode,
+          actor,
+          requestContext(req),
+          body.interval,
+        ),
       );
     }),
   );
@@ -215,6 +227,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
           body.planCode,
           requireActor(req),
           requestContext(req),
+          body.interval,
         ),
       );
     }),
@@ -258,6 +271,7 @@ export function registerRoutes(app: Express, deps: RouteDeps): void {
           body.planCode,
           requireActor(req),
           requestContext(req),
+          body.interval,
         ),
       );
     }),

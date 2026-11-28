@@ -854,9 +854,8 @@ The detailed plan — every page, its data and edge cases, the design system and
   at 1024 px (all seven days fit from a tablet up), long labels spilling out of buttons (setup's
   "Go to …", adding a business's "use where I am"), the waiting-room screen's clock past a phone's
   edge, the workspace switcher's status breaking into three lines, and the bottom tabs'
-  "Appointments" running into "Check-in" (each tab now as wide as its word). Open: the workspace's
-  Plan page reads the plan catalog, whose prices are still v1's ($24.99, $49.99, $99.99) against the
-  site's D-137 prices: billing's catalog step fixes it (a database change for the owner's go).
+  "Appointments" running into "Check-in" (each tab now as wide as its word). The workspace's Plan
+  page then still showed v1's prices: fixed by the launch catalog (3.7o, D-150).
 - **3.7k Enterprise at the 6th branch — ✅ done (D-146, D-147).** Network in the plan list
   (`20261122200000_network_plan`: hidden, Professional's limits, no price yet). The owner cap
   follows the chain's plan, read from its subscriptions: none on Enterprise; anyone else at it is
@@ -899,6 +898,14 @@ The detailed plan — every page, its data and edge cases, the design system and
   that an owner's successful change expires at once (`changesBusinessPages`,
   `src/lib/api/bff-rules.ts`). Not a required check yet: it becomes one once it has run
   steadily.
+- **3.7o The launch catalog — ✅ done (D-150).** The plan catalog sells what the pricing page
+  says: D-137's prices in rupees and dollars, a month and a year, for Essential, Professional and
+  Network (on sale now, two branches or more at checkout); Enterprise priced for each chain and
+  only asked for; Starter with the walk-in queue; v1's prices archived. Checkout charges the period
+  asked for, never another. The workspace's Plan page shows the four plans two by two, Network per
+  branch ("Two branches: $58 a month") and Enterprise as "Priced for your chain". Tests: the
+  listing in both currencies, a year charged at the year price, Network refused at one branch and
+  sold at two, Enterprise never sold online (billing integration); the Plan page (browser).
 - **3.6a Monitoring — ✅ done (D-127).** `pnpm dev:monitoring` starts Prometheus (:9090) and
   Grafana (:3300) beside the stack:
   - Prometheus reads every service's metrics, the gateway's (Kong's own plugin: every request
